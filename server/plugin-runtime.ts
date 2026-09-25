@@ -334,6 +334,7 @@ import { createPendingQuestions } from "./runtime/pending-questions.js";
 import { createCardDetailHandler } from "./runtime/card-detail.js";
 import { createCardMutationHandlers } from "./runtime/card-mutations.js";
 import { createCardLifecycleHandlers } from "./runtime/card-lifecycle.js";
+import { createBuildThreadSync } from "./runtime/build-thread-sync.js";
 
 const pluginDir = resolvePluginRoot(
   dirname(fileURLToPath(import.meta.url)),
@@ -4474,436 +4475,36 @@ still need, then continue the scope — do not re-claim files you no longer touc
     publish: (event, payload) => bb.realtime.publish(event, payload),
   });
 
-  const INTENT_VALUES = [
-    "new-product",
-    "feature",
-    "bugfix",
-    "refactor",
-    "investigate",
-  ] as const;
-
-  async function syncThreadState(cardId: string): Promise<void> {
-    const card = getCard(cardId);
-    // Done is terminal for background sync too: a completed/blocked card must
-    // never be re-errored (e.g. a cleaned-up state dir) after it finished.
-    if (
-      !card?.worker_thread_id ||
-      isArchivedCard(card) ||
-      card.status === "completed" ||
-      card.status === "blocked"
-    )
-      return;
-    if (card.kind === "research") {
-      await syncResearchThreadState(card);
-      return;
-    }
-    if (card.kind === "explore") {
-      await syncExploreThreadState(card);
-      return;
-    }
-    try {
-      // Resolve this card's own per-workflow state file (not a shared root state.md).
-      const workspace = await cardWorkspace(card);
-      const projectPath = workspace?.path ?? null;
-      const stateBlob = await (async () => {
-        if (!projectPath) return null;
-        if (card.dir_hash) {
-          const stateDir = await workflowStateDir(
-            bb,
-            projectPath,
-            card.id,
-            card.dir_hash,
-          );
-          if (stateDir) {
-            return await bb.sdk.files
-              .read({ path: join(stateDir, "state.md") })
-              .then((f) => f.content)
-              .catch(() => null);
-          }
-          return null;
-        }
-        return await bb.sdk.files
-          .read({ path: join(projectPath, "state.md") })
-          .then((f) => f.content)
-          .catch(() => null);
-      })();
-
-      if (card.dir_hash && !stateBlob) {
-        updateCard(cardId, {
-          activity: "error",
-          last_error:
-            "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
-        });
-        return;
-      }
-
-      // Sync intent from state.md if the agent recorded a decision during triage.
-      if (card.intent === "unknown" && stateBlob) {
-        const stateName = text(stateBlob.match(/^name:\s*(\S+)/m)?.[1]);
-        const stateIntent = text(stateBlob.match(/^intent:\s*(\S+)/m)?.[1]);
-        // Only adopt the intent if this state.md belongs to this card.
-        if (
-          stateName === card.name &&
-          stateIntent &&
-          (INTENT_VALUES as readonly string[]).includes(stateIntent)
-        ) {
-          const ts = now();
-          db.prepare(
-            "UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?",
-          ).run(stateIntent, ts, cardId);
-        }
-      }
-      const thread = await bb.sdk.threads.get({
-        threadId: card.worker_thread_id,
-      });
-      const status = thread.status as string;
-      // Self-heal stale preset flags: a thread spawned BEFORE the current
-      // override was assigned provably predates it.
-      // Never clears here — only spawn paths clear, so a flagged card keeps
-      // offering Restart until it actually happens.
-      try {
-        const threadBorn = (thread as { createdAt?: number }).createdAt;
-        healPresetStaleness(
-          db,
-          cardId,
-          threadBorn,
-          card.preset_restart_pending,
-        );
-      } catch {
-        /* staleness stays best-effort; id comparison below still applies */
-      }
-      const lastOutput =
-        (
-          await bb.sdk.threads
-            .output({ threadId: card.worker_thread_id })
-            .catch(() => null)
-        )?.output ?? null;
-      // Stage source of truth is state.md (the agent advances it via `bb stelow
-      // advance`); the DB `stage` is a cache. Converge it on every sync —
-      // including question-wait and idle polls — so pills, progress, preset
-      // band, split eligibility, and the hero all read the real checkpoint
-      // instead of the last manually-advanced one. This write carries stage
-      // only: status/column movement stays with the explicit advance/moveCard
-      // paths and the new-card guard below, and question waits keep their
-      // activity-only contract (see lib/card-question-state).
-      let currentStage = card.stage;
-      if (stateBlob) {
-        currentStage =
-          text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
-      }
-      if (currentStage && currentStage !== card.stage) {
-        updateCard(cardId, { stage: currentStage });
-      }
-      if (status === "active" || status === "starting") {
-        const questionIds = await syncOpenQuestionInbox(card);
-        if (questionIds === null) return;
-        if (questionIds.length > 0) {
-          // Waiting is activity, never board position: the card stays in its
-          // stage column while the question waits. See lib/card-question-state.
-          updateCard(cardId, questionWaitUpdates(lastOutput));
-        } else {
-          // Keep freshly-created cards in the Triage column (draft) while the
-          // workflow is still at the triage stage, even though the thread is
-          // already active. Only move to Running (in-progress) once the agent
-          // has advanced past triage (current_stage != triage).
-          const nextStatus = statusForNewCardWork({
-            kind: card.kind,
-            status: card.status,
-            stage: currentStage,
-          }).status;
-          const updates: Record<string, unknown> = {
-            activity: "running" as const,
-            last_assistant_text: lastOutput,
-            status: nextStatus,
-          };
-          if (currentStage !== card.stage) updates.stage = currentStage;
-          updateCard(cardId, updates);
-        }
-      } else if (status === "idle" || status === "stopping") {
-        const questionIds = await syncOpenQuestionInbox(card);
-        if (questionIds === null) return;
-        const transitioningIntoIdle = card.activity !== "idle";
-        if (questionIds.length > 0) {
-          // The worker stopped (likely a timed-out ask) but a question is
-          // still unanswered. Keep the question surfaced via activity, but the
-          // card stays in its real stage column (no Gate-pending column) —
-          // the attention flag from listCards/cardDetail signals it. Answering
-          // on the card resumes the thread.
-          updateCard(cardId, questionWaitUpdates(lastOutput));
-        } else if (currentStage === "audit") {
-          // `audit` is the terminal stage, but reaching it is not completing:
-          // completion is an explicit worker commit (`bb stelow done`),
-          // verified in code. The old inference (audit + idle ⇒ completed)
-          // is gone on purpose — it made a worker that narrated completion
-          // and stopped indistinguishable from one that actually finished,
-          // and left completed cards showing a lit "audit" with no next
-          // step. Resume the worker with the done instruction instead
-          // (lib/auto-continue budget); an exhausted budget pauses with the
-          // instruction on the card, for the human.
-          const doneDecision = shouldDoneNudge({
-            status,
-            cardStatus: card.status,
-            questionPending: questionIds.length > 0,
-            transitioningIntoIdle,
-            autoCount: card.auto_continue_count ?? 0,
-            autoStage: card.auto_continue_stage ?? null,
-          });
-          if (doneDecision.proceed) {
-            // This is a host recovery instruction, not a card comment. Keep
-            // workflow mechanics out of the user's Conversation timeline.
-            const doneSent = await bb.sdk.threads
-              .send({
-                threadId: card.worker_thread_id,
-                mode: "auto",
-                input: [
-                  {
-                    type: "text",
-                    text: AUDIT_DONE_NUDGE,
-                    mentions: [],
-                    visibility: "agent-only",
-                  },
-                ],
-              })
-              .then(() => true)
-              .catch(() => false);
-            if (doneSent) {
-              const autoNext = nextAutoContinue({
-                stage: currentStage,
-                autoCount: card.auto_continue_count ?? 0,
-                autoStage: card.auto_continue_stage ?? null,
-              });
-              const doneFields: Parameters<typeof updateCard>[1] = {
-                activity: "running",
-                last_idle_at: null,
-                last_error: null,
-                auto_continue_count: autoNext.count,
-                auto_continue_stage: autoNext.stage,
-              };
-              if (lastOutput != null)
-                doneFields.last_assistant_text = lastOutput;
-              updateCard(cardId, doneFields);
-              return;
-            }
-          }
-          if (card.status !== "completed" && transitioningIntoIdle) {
-            // Once per idle period (transition edge only): the card says what
-            // is actually missing — the done commit — instead of a generic
-            // "paused". A human Resume hands the worker the same instruction.
-            logCardComment(
-              cardId,
-              "card",
-              cardId,
-              "agent",
-              "The workflow reached the audit stage, but the card completes only when the worker runs `bb stelow done` (verified in code — build \
-at audit, never past a pending question). Resume continues the worker with that instruction; nothing \
-is done until done runs.",
-            );
-          }
-          updateCard(cardId, {
-            activity: "idle",
-            last_assistant_text: lastOutput,
-            last_idle_at: card.last_idle_at ?? now(),
-            stage: currentStage,
-          });
-          const auditCurrent = getCard(cardId);
-          if (
-            auditCurrent &&
-            auditCurrent.status !== "archived" &&
-            auditCurrent.status !== "completed" &&
-            auditCurrent.last_idle_at &&
-            now() - auditCurrent.last_idle_at >= IDLE_ATTENTION_MS
-          ) {
-            recordInboxEvent(
-              auditCurrent,
-              "paused",
-              "At audit, waiting for the worker to run `bb stelow done` — resume continues it with that instruction.",
-              `paused:${cardId}:${auditCurrent.last_idle_at}`,
-              auditCurrent.last_idle_at,
-            );
-          }
-        } else {
-          // Auto-continue (lib/auto-continue): the provider ends a turn on
-          // any final text, so a worker that narrates progress idles after
-          // every stage with work remaining. Progress is fresh chat output
-          // or a stage advance in the finished turn (tool-only turns move
-          // the machine without narrating — detected via the turn's events,
-          // scoped to the last turn so older advances and user-stopped
-          // threads earn nothing). While progress exists, no question is
-          // pending, and the per-stage budget remains, resume the worker in
-          // place instead of waiting for a human Resume. Recording
-          // last_assistant_text here consumes the text signal, and recording
-          // the stage consumes the advance signal, so a still-idle thread
-          // cannot trigger a second nudge on the next poll; an exhausted
-          // budget falls through to the paused path below.
-          const autoProgressed =
-            lastOutput != null && lastOutput !== card.last_assistant_text;
-          let autoAdvanced = false;
-          if (!autoProgressed) {
-            try {
-              // Narrow to turn boundaries + completions: deltas and usage
-              // events are noise for this scan, and a tool-heavy turn holds
-              // more than a handful of completions.
-              const recent = await bb.sdk.threads.events.list({
-                threadId: card.worker_thread_id,
-                order: "desc",
-                limit: "100",
-                types: ["turn/completed", "turn/started", "item/completed"],
-              });
-              autoAdvanced = lastTurnAdvancedStages(recent);
-            } catch {
-              autoAdvanced = false;
-            }
-          }
-          const autoDecision = shouldAutoContinue({
-            status,
-            stage: currentStage,
-            questionPending: questionIds.length > 0,
-            transitioningIntoIdle,
-            progressed: autoProgressed || autoAdvanced,
-            autoCount: card.auto_continue_count ?? 0,
-            autoStage: card.auto_continue_stage ?? null,
-          });
-          let vetoedResume = false;
-          if (autoDecision.proceed) {
-            // Decision-API veto (auto-continue point): a confident "no real
-            // progress" cancels the resume and the card falls through to the
-            // paused path below. Every other outcome keeps the heuristic
-            // standing — the veto spends nothing, it only saves turns.
-            // Vetoes are named in the paused event (vetoedResume) so a pause
-            // after fresh-looking output explains itself.
-            const vetted = await vetAutoContinueNudge(
-              lastOutput != null
-                ? `Stage ${currentStage}. Worker output:\n${lastOutput}`
-                : null,
-            );
-            if (!vetted) {
-              vetoedResume = true;
-              // Fall through to the standard paused path below with no
-              // writes of our own — identical to a heuristic refusal.
-            } else {
-              // Automatic continuations are private orchestration, unlike a
-              // user-selected Retry or a card comment that deliberately resumes
-              // the worker.
-              const autoSent = await bb.sdk.threads
-                .send({
-                  threadId: card.worker_thread_id,
-                  mode: "auto",
-                  input: buildContinueInput(
-                    buildContinueNudge(INTERFACE_PICK),
-                    "private",
-                  ),
-                })
-                .then(() => true)
-                .catch(() => false);
-              if (autoSent) {
-                const autoNext = nextAutoContinue({
-                  stage: currentStage,
-                  autoCount: card.auto_continue_count ?? 0,
-                  autoStage: card.auto_continue_stage ?? null,
-                });
-                const autoFields: Parameters<typeof updateCard>[1] =
-                  autoContinueFields(autoNext, lastOutput);
-                updateCard(cardId, autoFields);
-                return;
-              }
-            }
-          }
-          // Backfill last_idle_at on the first poll that observes an already-idle
-          // card missing it, so it starts its own idle-stuck clock instead
-          // of falling through.
-          // Suspicious idle: the worker just stopped (running -> idle) yet
-          // produced no new output, no question, and no stage progress. That
-          // is a manual stop or a stall — never a routine between-turn rest,
-          // which always leaves fresh output behind. Skip the grace period so
-          // the card signals paused immediately instead of saying "nothing
-          // needs you" for 90s. Guarded to cards that have worked before, so
-          // a brand-new worker still gets its grace.
-          // A failed output read is "unknown", not "no progress": never backdate
-          // on lastOutput == null or a flaky read would false-positive.
-          const noProgress =
-            transitioningIntoIdle &&
-            card.last_assistant_text != null &&
-            lastOutput != null &&
-            lastOutput === card.last_assistant_text;
-          const backfillIdle = transitioningIntoIdle || !card.last_idle_at;
-          const idleAt = noProgress
-            ? now() - IDLE_ATTENTION_MS
-            : backfillIdle
-              ? now()
-              : card.last_idle_at;
-          if (noProgress) {
-            // Once per idle period (transition edge only): leave a trail so
-            // repeated silent stops are visible in Conversation, not just as
-            // identical paused banners.
-            logCardComment(
-              cardId,
-              "card",
-              cardId,
-              "agent",
-              "Worker stopped with no new output — treated as paused. If this repeats, inspect the thread before retrying: a silent stop usually \
-means the worker is waiting on input it never asked for.",
-            );
-          }
-          updateCard(cardId, {
-            activity: "idle",
-            last_assistant_text: lastOutput,
-            last_idle_at: idleAt,
-          });
-          // The Inbox must be driven by lifecycle transitions, never by a UI
-          // read. The scheduled sync revisits idle cards after the grace
-          // period, producing exactly one durable event per idle period.
-          const current = getCard(cardId);
-          if (
-            current &&
-            current.status !== "archived" &&
-            current.status !== "completed" &&
-            idleAt &&
-            now() - idleAt >= IDLE_ATTENTION_MS
-          ) {
-            recordInboxEvent(
-              current,
-              "paused",
-              `Idle with unfinished work — retry continues in place, restart begins fresh.${
-                vetoedResume
-                  ? " Auto-continue vetoed the resume: the last output showed no real progress."
-                  : ""
-              }`,
-              `paused:${cardId}:${idleAt}`,
-              idleAt,
-            );
-          }
-        }
-        if (lastOutput && lastOutput !== card.last_assistant_text) {
-          logCardComment(
-            cardId,
-            "card",
-            cardId,
-            "agent",
-            stripMessageDirectives(lastOutput),
-          );
-        }
-      } else if (status === "failed" || status === "error") {
-        await workers.applyFailed(cardId, card.worker_thread_id, null);
-      }
-    } catch (error) {
-      updateCard(cardId, {
-        activity: "error",
-        last_error:
-          error instanceof Error
-            ? error.message
-            : "Unable to read worker thread.",
-      });
-    }
-    escalateIfStalled(cardId);
-  }
-
-  // Deterministic sweep (bb 0.40 removed system/thread/interrupted from the
-  // plugin event API): periodically reconcile live cards so interrupts,
-  // missed transitions and stale states self-heal without event delivery.
-  // An idle card needs attention only after it has sat idle continuously for
-  // this long (two reconcile cycles). A worker that just finished a turn is
-  // idle for a few seconds before being resumed — not an attention item.
+  // Deterministic sweep plus lifecycle polling shares one attention window:
+  // an idle card becomes actionable only after two reconcile cycles.
   const IDLE_ATTENTION_MS = 90_000;
+  const AUDIT_DONE_NUDGE =
+    "The workflow is at the audit stage. If audit work remains, finish it first. Then commit completion with `bb stelow done` — it verifies in \
+" +
+    "code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
+
+  const syncThreadState = createBuildThreadSync({
+    bb,
+    db,
+    now,
+    getCard,
+    cardWorkspace,
+    workflowStateDir,
+    updateCard,
+    syncResearch: syncResearchThreadState,
+    syncExplore: syncExploreThreadState,
+    syncQuestions: syncOpenQuestionInbox,
+    applyFailed: (cardId, threadId, error) => workers.applyFailed(cardId, threadId, error),
+    logComment: (cardId, body) =>
+      logCardComment(cardId, "card", cardId, "agent", body),
+    recordInbox: recordInboxEvent,
+    vetContinuation: vetAutoContinueNudge,
+    escalateIfStalled,
+    stripMessageDirectives,
+    interfacePick: INTERFACE_PICK,
+    auditDoneNudge: AUDIT_DONE_NUDGE,
+    idleAttentionMs: IDLE_ATTENTION_MS,
+  });
 
   function maybeBumpSeverity(): Promise<void> {
     return decisionApi.maybeBumpSeverity();
@@ -4949,10 +4550,6 @@ means the worker is waiting on input it never asked for.",
   // commits with `bb stelow done`; the host verifies in code. Narrating
   // completion ("Workflow concluído") without running done leaves the card
   // waiting — this nudge is the only thing an audit-idle resume says.
-  const AUDIT_DONE_NUDGE =
-    "The workflow is at the audit stage. If audit work remains, finish it first. Then commit completion with `bb stelow done` — it verifies in \
-code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
-
   // Decision API, review policy, migrations, handlers, and execution seams
   // live behind one factory. Preset judging remains host-owned and injected.
   const decisionApi = createDecisionApi({

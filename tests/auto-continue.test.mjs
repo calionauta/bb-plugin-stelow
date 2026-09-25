@@ -162,29 +162,30 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 // Server contract: the idle branch sends the shared nudge privately only after
 // a successful send, while manual recovery sends the same transport publicly.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
+const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
-const autoStart = serverSource.indexOf("const autoSent = await");
-const autoEnd = serverSource.indexOf("// Backfill last_idle_at", autoStart);
-const autoBlock = serverSource.slice(autoStart, autoEnd);
+const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
+const autoEnd = threadSyncSource.indexOf("function persistStandardIdle", autoStart);
+const autoBlock = threadSyncSource.slice(autoStart, autoEnd);
 const retryStart = serverSource.indexOf("async retryWorker({ cardId })");
 const retryEnd = serverSource.indexOf("async startWorker({ cardId })", retryStart);
 const retryBlock = serverSource.slice(retryStart, retryEnd);
-assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
-assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
+assert.match(threadSyncSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
+assert.match(threadSyncSource, /cardStatus: snapshot\.card\.status/, "the audit watchdog receives persisted completion state");
 assert.match(
   autoBlock,
-  /input: buildContinueInput\([\s\S]*?buildContinueNudge\(INTERFACE_PICK\)[\s\S]*?"private"/,
+  /const input = buildContinueInput\([\s\S]*?buildContinueNudge\(deps\.interfacePick\)[\s\S]*?"private"[\s\S]*?sendAgentInput/,
   "auto-continue sends the shared continue nudge privately in place",
 );
 const successOrder = [
-  "if (autoSent)",
-  "nextAutoContinue({",
-  "autoContinueFields(autoNext, lastOutput)",
-  "updateCard(cardId, autoFields)",
-  "return;",
+  "const sent = await sendAgentInput",
+  "const next = nextAutoContinue({",
+  "deps.updateCard(",
+  "return true",
 ].map((token) => autoBlock.indexOf(token));
 assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
 assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
+assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
 assert.match(retryBlock, /: buildContinueNudge\(INTERFACE_PICK\);/, "manual build Retry shares the extracted nudge");
 assert.match(retryBlock, /input: buildContinueInput\(nudge, "public"\)/, "manual Retry stays public");
 assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
@@ -195,14 +196,14 @@ const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
-assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
+assert.match(threadSyncSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
 const advanceEventPattern = new RegExp([
-  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: card\.worker_thread_id,`,
+  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: snapshot\.card\.worker_thread_id!,`,
   String.raw`[\s\S]*?order: "desc",[\s\S]*?limit: "100",`,
   String.raw`[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]`,
 ].join(""));
 assert.match(
-  serverSource,
+  threadSyncSource,
   advanceEventPattern,
   "the scan reads turn boundaries and completions only",
 );

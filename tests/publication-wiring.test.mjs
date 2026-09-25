@@ -16,6 +16,8 @@ const publicationOperations = readFileSync(
 const server = [
   serverRoot,
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/thread-send.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   publicationContract,
   readFileSync(join(root, "server/artifacts-publication-commits.ts"), "utf8"),
@@ -140,10 +142,10 @@ assert.match(
   "a card forwards the BB composer environment instead of replacing it with a preset",
 );
 assert.match(server, /workers\.continuingEnvironment\(\s*card\s*,/, "later workers reuse the card's selected BB environment");
-assert.match(server, /text: AUDIT_DONE_NUDGE,\s*mentions: \[\],\s*visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
+assert.match(server, /agentText\(deps\.auditDoneNudge\)/, "automatic audit recovery uses private agent text");
 assert.match(
   server,
-  /input: buildContinueInput\([\s\S]*?buildContinueNudge\(INTERFACE_PICK\)[\s\S]*?"private"/,
+  /const input = buildContinueInput\([\s\S]*?buildContinueNudge\(deps\.interfacePick\)[\s\S]*?"private"/,
   "automatic continuations stay out of the user conversation",
 );
 

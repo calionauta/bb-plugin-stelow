@@ -12,6 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");
@@ -167,13 +168,13 @@ assert.ok(vetBody.includes('normalizePointMode(point?.mode, "rules") !== "api"')
 assert.ok(vetBody.includes("isDecisionApiDisabled(process.env)"), "the kill switch covers the veto");
 assert.ok(vetBody.includes("autoContinueQuestions()"), "the veto asks the single progress Noul");
 assert.ok(vetBody.includes("resolveAutoContinue({"), "the veto resolves through the lib cascade");
-const seamVetoAt = server.indexOf("const vetted = await vetAutoContinueNudge(");
+const seamVetoAt = server.indexOf("const vetoed = decision.proceed");
 assert.ok(seamVetoAt >= 0, "the resume path consults the veto");
-const sendAt = server.indexOf("buildContinueNudge(INTERFACE_PICK)", seamVetoAt);
+const sendAt = server.indexOf("await resumeWorker", seamVetoAt);
 assert.ok(sendAt > seamVetoAt, "the veto runs before any resume is sent");
-assert.ok(server.slice(seamVetoAt, sendAt).includes("if (!vetted)"), "a veto falls through to the paused path");
-assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
-assert.match(server, /const doneDecision = shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
+assert.ok(server.slice(seamVetoAt, sendAt).includes("!vetoed"), "a veto falls through to the paused path");
+assert.match(server, /shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
+assert.match(server, /shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
 assert.ok(!vetBody.includes("updateCard("), "the veto writes nothing itself — the paused path below owns all writes");
 assert.match(server, /Auto-continue vetoed the resume: the last output showed no real progress\./, "vetoed pauses name the veto in the event trail");
 

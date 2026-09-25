@@ -7,6 +7,8 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "thread-lifecycle.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "thread-state-projection.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "build-thread-sync.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail-artifacts.ts"), "utf8"),

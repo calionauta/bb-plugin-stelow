@@ -101,7 +101,7 @@
     "test:draft": "node tests/draft-burst.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-drafting.test.mjs",
     "test:spawn-freshness": "node tests/spawn-freshness.test.mjs",
     "test:worktree-storage": "node tests/worktree-storage.test.mjs",
-    "pretest": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/plugin-startup.test.mjs tests/runtime-composition.test.mjs tests/runtime-reconciler.test.mjs tests/runtime-flow-metrics.test.mjs tests/runtime-plugin-update.test.mjs tests/runtime-cli-registry.test.mjs tests/runtime-cli-inspection.test.mjs tests/runtime-card-preview.test.mjs",
+    "pretest": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/plugin-startup.test.mjs tests/runtime-composition.test.mjs tests/runtime-reconciler.test.mjs tests/runtime-flow-metrics.test.mjs tests/runtime-plugin-update.test.mjs tests/runtime-cli-registry.test.mjs tests/runtime-cli-inspection.test.mjs tests/runtime-card-preview.test.mjs tests/build-thread-sync.test.mjs",
     "test:presets": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-presets.test.mjs",
     "test:source-shape": "node tests/source-shape.test.mjs"
   },

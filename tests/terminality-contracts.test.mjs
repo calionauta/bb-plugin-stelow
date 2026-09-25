@@ -198,12 +198,12 @@ assert.match(
 // waits keep their activity-only contract.
 assert.match(
   server,
-  /if \(currentStage && currentStage !== card\.stage\) \{\s+updateCard\(cardId, \{ stage: currentStage \}\);/,
+  /if \(snapshot\.stage && snapshot\.stage !== snapshot\.card\.stage\) \{\s+deps\.updateCard\(snapshot\.card\.id, \{ stage: snapshot\.stage \}\);/,
   "sync converges the DB stage to the state.md slug on every poll",
 );
 assert.match(
   server,
-  /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/,
+  /updateCard\(snapshot\.card\.id, questionWaitUpdates\(snapshot\.lastOutput\)\)/,
   "question waits still write activity only",
 );
 
@@ -230,7 +230,7 @@ assert.match(
 );
 assert.match(
   server,
-  /cardStatus: card\.status/,
+  /cardStatus: snapshot\.card\.status/,
   "the audit watchdog refuses an already-completed card",
 );
 
