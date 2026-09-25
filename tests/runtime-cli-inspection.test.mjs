@@ -107,6 +107,24 @@ test("inspection family preserves helper and workspace error exits", async () =>
   });
 });
 
+test("inspection family refuses archived cards and unverified owned state", async () => {
+  const archived = createInspectionCommand(deps({
+    getCard: () => ({ ...card, status: "archived" }),
+  }));
+  const unverified = createInspectionCommand(deps({
+    workflowStateDir: async () => null,
+  }));
+
+  assert.deepEqual(await archived(["playbook", "--card", "card-1"], {}), {
+    exitCode: 1,
+    stderr: "archived",
+  });
+  assert.deepEqual(await unverified(["playbook", "--card", "card-1"], {}), {
+    exitCode: 1,
+    stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
+  });
+});
+
 test("inspection dispatcher leaves unrelated commands to the main CLI", async () => {
   const run = createInspectionCommand(deps());
 
