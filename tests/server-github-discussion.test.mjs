@@ -197,14 +197,24 @@ test("the mirror poller reads only live cards and warns once per failure", async
   app.db.prepare("INSERT INTO cards (id, name, prompt, intent, stage, status, project_id)"
     + " VALUES ('card-done', 'Done', 'p', 'bugfix', 'Build', 'completed', 'project-1')").run();
   app.db.prepare("INSERT INTO github_imports (issue_key, repo, number, label, card_id, imported_at)"
-    + " VALUES ('acme/widgets#2', ?, 2, 'bug', 'card-done', 1)").run(REPO);
-  app.state.items = [issue({ number: 1 }), issue({ number: 2 })];
+    + " VALUES ('acme/widgets#9', ?, 9, 'bug', 'card-done', 1)").run(REPO);
+  app.db.prepare("INSERT INTO cards (id, name, prompt, intent, stage, status, project_id)"
+    + " VALUES ('card-live', 'Live', 'p', 'bugfix', 'Build', 'active', 'project-1')").run();
+  app.db.prepare("INSERT INTO github_imports (issue_key, repo, number, label, card_id, imported_at)"
+    + " VALUES ('acme/widgets#8', ?, 8, 'bug', 'card-live', 1)").run(REPO);
+  // Only #1 exists upstream, so #8 fails to read and #9 would fail too — the
+  // difference is whether the poller is even allowed to ask.
+  app.state.items = [issue({ number: 1 })];
 
   await app.refreshLinkedDiscussions();
   await app.refreshLinkedDiscussions();
 
   assert.equal(app.db.prepare("SELECT COUNT(*) AS n FROM github_issue_comments").get().n, 0, "an empty remote comment list mirrors nothing");
-  assert.equal(app.state.warned.length, 0, "no failure to warn about");
+  assert.deepEqual(
+    app.state.warned,
+    [`linked discussion mirror skipped ${REPO}#8: no such issue ${REPO}#8`],
+    "an unreadable live card warns once, and a completed card is never fetched at all",
+  );
 });
 
 const doneCard = (overrides = {}) => ({

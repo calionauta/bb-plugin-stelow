@@ -80,17 +80,21 @@ function cardRow(overrides = {}) {  return {
  * @param options.repos       repo -> project mapping the plugin reports
  * @param options.envKind     effective spawn environment for the spawn gate
  * @param options.failList    reject listItems (simulates the plugin being down)
+ * @param options.statusError reject the status RPC (missing plugin vs outage)
  * @param options.failComment reject commentIssue
  * @param options.cards       the card rows the host knows about
  */
 function fakePluginReplies(state) {
   return {
-    status: async () => ({
-      ghOk: state.ghOk,
-      ghState: state.ghOk ? "ready" : "unauthenticated",
-      repos: state.repos,
-      lastSyncedAt: null,
-    }),
+    status: async () => {
+      if (state.statusError) throw new Error(state.statusError);
+      return {
+        ghOk: state.ghOk,
+        ghState: state.ghOk ? "ready" : "unauthenticated",
+        repos: state.repos,
+        lastSyncedAt: null,
+      };
+    },
     listItems: async () => {
       if (state.failList) throw new Error(state.failList);
       return { items: state.items };
@@ -187,6 +191,7 @@ export function harness(options = {}) {
     worktreePresetId: options.worktreePresetId ?? "preset-1",
     pinSucceeds: options.pinSucceeds ?? true,
     failList: options.failList ?? null,
+    statusError: options.statusError ?? null,
     failComment: options.failComment ?? null,
     failClose: options.failClose ?? null,
     posted: [],

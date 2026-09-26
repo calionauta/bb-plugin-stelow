@@ -130,7 +130,51 @@ test("the preview names what would match and what would not, with a reason", asy
   assert.deepEqual(result.skipped.map((entry) => [entry.number, entry.reason]), [[2, "already-imported"]], "a skip always names why");
   assert.equal(result.matches[0].title, "Login is broken");
 });
-test("a deleted rule stops firing and its history stops being readable", async () => {
+test("listing rules is scoped to the project, and a project with none reads empty", async () => {
+  const app = harness();
+  await app.handlers.saveAutomationRule({ projectId: "project-1", labels: ["bug"], enabled: false, startImmediate: false });
+  app.db.prepare(foreignProjectRule).run();
+
+  const mine = await app.handlers.listAutomationRules({ projectId: "project-1" });
+
+  assert.deepEqual(mine.rules.map((rule) => rule.projectId), ["project-1"], "another project's rule never leaks into this board");
+  assert.deepEqual((await app.handlers.listAutomationRules({ projectId: "project-2" })).rules.map((rule) => rule.id), ["rule-foreign"]);
+  assert.deepEqual((await app.handlers.listAutomationRules({ projectId: null })).rules, [], "no project is no rules, not all rules");
+});
+
+test("the status bridge tells a missing plugin apart from a reachable one", async () => {
+  const connected = harness();
+  assert.deepEqual(
+    await connected.githubStatus(),
+    { ok: true, pluginAvailable: true, ghOk: true, repos: [{ repo: REPO, projectId: "project-1" }] },
+    "a live plugin is the happy path",
+  );
+
+  const unauthenticated = harness({ ghOk: false });
+  assert.deepEqual(
+    await unauthenticated.githubStatus(),
+    { ok: true, pluginAvailable: true, ghOk: false, repos: [{ repo: REPO, projectId: "project-1" }] },
+    "reachable but signed out is still installed: the board must say which",
+  );
+});
+
+test("a missing plugin is an answer, and an unreachable one is a different answer", async () => {
+  const missing = harness({ statusError: "github: plugin not found" });
+  assert.deepEqual(
+    await missing.githubStatus(),
+    { ok: true, pluginAvailable: false, ghOk: false, repos: [] },
+    "not installed is a state the board can explain, not a failure",
+  );
+
+  const unreachable = harness({ statusError: "socket hang up" });
+  assert.deepEqual(
+    await unreachable.githubStatus(),
+    { ok: false, pluginAvailable: false, ghOk: false, repos: [] },
+    "a transport failure is not reported as a missing plugin",
+  );
+});
+
+test("a deleted rule stops firing, and its past runs stay readable as history", async () => {
   const app = harness();
   const saved = await app.handlers.saveAutomationRule({ projectId: "project-1", labels: ["bug"], enabled: true, startImmediate: false });
   app.db.prepare("INSERT INTO automation_rule_fires (rule_id, source_key, card_id, fired_at, outcome)"
@@ -151,3 +195,6 @@ test("a deleted rule stops firing and its history stops being readable", async (
 const enabledAutoStartRule = "INSERT INTO automation_rules"
   + " (id, project_id, label, labels, enabled, start_immediate, created_at, updated_at)"
   + ` VALUES ('rule-1', 'project-1', 'bug', '["bug"]', 1, 1, 1, 1)`;
+const foreignProjectRule = "INSERT INTO automation_rules"
+  + " (id, project_id, label, labels, enabled, start_immediate, created_at, updated_at)"
+  + ` VALUES ('rule-foreign', 'project-2', 'chore', '["chore"]', 1, 0, 1, 1)`;

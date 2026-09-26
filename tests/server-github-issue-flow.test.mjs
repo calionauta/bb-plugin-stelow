@@ -127,7 +127,9 @@ test("a park whose worktree preset vanished refuses instead of losing the isolat
     /Isolated start refused: the worktree preset no longer exists\. Choose a New-worktree preset/,
     "a pinned draft that cannot hold the preset must not read as an isolated start",
   );
-  assert.deepEqual(app.state.pinned, { cardId: app.created[0] && (app.state.pinned.cardId), presetId: "preset-1" });
+  const linked = app.db.prepare("SELECT card_id FROM github_imports WHERE issue_key = ?").get(`${REPO}#1`);
+  assert.equal(app.state.pinned.cardId, linked.card_id, "the pin names the card the import actually linked");
+  assert.equal(app.state.pinned.presetId, "preset-1", "and it pins the worktree preset, not some other choice");
 });
 test("a linked card returns its issue instead of creating a second one", async () => {
   const app = harness();
