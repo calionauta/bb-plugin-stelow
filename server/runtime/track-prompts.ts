@@ -8,6 +8,8 @@
  * and can never paste a second, drifting copy.
  */
 
+import { exploreArtifactFile } from "../../lib/research-artifacts.mjs";
+
 export type TrackPromptProtocols = {
   cardOwnerRules: string;
   doneProtocol: string;
@@ -227,8 +229,10 @@ function exploreArtifactStep(input: ExploreWorkerPromptInput): string {
   const { stage, workspaceRoot } = input;
   // The catalog names the deliverable, so a technique that ships its own file
   // (a scope map, a contrast) lands under its own name and the panel, the
-  // artifact registry, and `bb stelow verify` all read the same path.
-  const primaryArtifact = stage.primaryArtifact ?? `explore-${stage.id}.md`;
+  // artifact registry, and `bb stelow verify` all read the same path. Resolved
+  // by the same function the seal and the review CLI use: when the prompt and
+  // the check disagreed on the filename, the check silently stopped firing.
+  const primaryArtifact = exploreArtifactFile(stage.id);
   return `Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/${primaryArtifact} (create it; overwrite any existing content \
 with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it \
 back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: run \
