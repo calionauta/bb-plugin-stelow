@@ -217,6 +217,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   dead, and declaring a `primaryArtifact` was exactly what killed it. The prompt
   now asks the same resolver the checks ask, so a technique cannot switch its own
   verification off by naming its own file.
+- **An option's letter never routes it to a different option's section.** The
+  letter fallback exists for a brief that names its options by letter alone
+  (`## Proposal A`), and it must not fire on a heading that *describes* an
+  option. On a real card it did: `Hybrid A+C` shares the letter `a` with
+  `## Option A — Extend the existing Scope stage`, so clicking the hybrid
+  scrolled to Option A, which was not even one of the offered choices. The route
+  now fires only on a bare option marker — the letter plus generic marker words,
+  nothing that could belong to a described option.
+- **When a stage registers several documents, the one that names the options
+  wins.** Manifest order is not evidence of which document a question is about.
+  The `interface` stage on that card registered four entries, the first of which
+  was a *different decision* — a placement contrast with two options, while the
+  question offered three layouts and a hybrid living in a sibling file. The
+  recovery took the first, so every option opened a document containing none of
+  their content. Each candidate is now scored by how many of the ask's options it
+  actually contains, with manifest order as the deterministic tie-break, so a
+  stage with one document and an undecidable stage both behave exactly as before.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
