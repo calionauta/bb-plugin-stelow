@@ -8,8 +8,11 @@ const hasCode = (result, code) => result.failures.some((failure) => failure.code
 
 assert.deepEqual(
   EXPLORE_CONTRACTS.map((entry) => entry.id).sort(),
-  ["codebase-critique", "execution-critique", "interface-alternatives", "plan-critique", "shape-up", "tech-planning", "testing-ai-code", "ux-critique"].sort(),
-  "eight explore contracts",
+  [
+    "codebase-critique", "execution-critique", "interface-alternatives", "interface-contrast",
+    "plan-critique", "shape-up", "tech-planning", "testing-ai-code", "ux-critique",
+  ].sort(),
+  "nine explore contracts",
 );
 assert.equal(contractForExplore("nope"), null, "unknown stage is unmigrated");
 
