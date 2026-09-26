@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   applyFailedCheck,
   beginPluginUpdateApply,
@@ -14,7 +17,10 @@ import {
   shortRef,
   timeOutPluginUpdateApply,
   updateAvailableFrom,
+  updateComparison,
 } from "../lib/plugin-update.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 import {
   markPluginUpdateLoaded,
   markPluginUpdateUnloaded,
@@ -174,4 +180,35 @@ assert.equal(markPluginUpdateLoaded(), false);
 markPluginUpdateUnloaded();
 assert.equal(markPluginUpdateLoaded(), true, "a failed first read allows the next surface to retry");
 
-console.log("plugin update test ok: mapping, resilient checks, lifecycle transitions, shared signal");
+// The About panel must always name the RUNNING build next to the published
+// tag. The bug this pins: the unmanaged line said only "v0.51.0 is published
+// on GitHub", so a checkout running 0.50.0 read as if it were 0.51.0.
+// Both versions must be present in every state.
+assert.deepEqual(
+  updateComparison("0.51.0", { tag: "v0.51.0", newer: false }),
+  { installed: "0.51.0", published: "0.51.0", state: "current" },
+  "an up-to-date install compares as current",
+);
+const behind = updateComparison("0.50.0", { tag: "v0.51.0", newer: true });
+assert.equal(behind.state, "behind", "an older running build reads as behind, not as up to date");
+assert.equal(behind.installed, "0.50.0", "the running version is reported, not the published one");
+assert.equal(behind.published, "0.51.0", "the published version is reported alongside it");
+assert.equal(updateComparison("0.51.1", { tag: "v0.51.0" }).state, "ahead", "a build ahead of the release is not 'behind'");
+assert.equal(updateComparison("0.50.9", { tag: "v0.51.0" }).state, "behind", "0.50.9 is behind 0.51.0");
+assert.equal(updateComparison("0.51.0", null).state, "unknown", "no release lookup never claims to be current");
+assert.equal(updateComparison("dev", { tag: "v0.51.0" }).state, "unknown", "a dev build never compares as current");
+assert.equal(updateComparison("0.50.0", { tag: "not-a-version" }).state, "unknown", "an unparseable tag never claims to be current");
+assert.equal(updateComparison("not-a-version", { tag: "v0.51.0" }).state, "unknown", "an unparseable build never claims to be current");
+
+// The rendered line must carry BOTH versions, so the panel can never show a
+// published tag alone and let the reader assume it is the installed one.
+const status = readFileSync(join(root, "components", "settings", "plugin-update-status.tsx"), "utf8");
+assert.doesNotMatch(
+  status,
+  /\{github\.tag\} is published on GitHub/,
+  "the update line no longer names the published tag without the running version",
+);
+assert.match(status, /Running v\{comparison\.installed\};/, "the newer-release line opens with the running version");
+assert.match(status, /Running v\{comparison\.installed\}, the latest release on GitHub/, "the current line names the running version too");
+
+console.log("plugin update test ok: mapping, resilient checks, lifecycle transitions, shared signal, installed-vs-published comparison");
