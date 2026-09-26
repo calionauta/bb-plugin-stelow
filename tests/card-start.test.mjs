@@ -36,7 +36,18 @@ const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 // GitHub issues live decoupled: the feature module owns matching,
 // creation, scheduler, and RPCs; server.ts only wires the seam.
-const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf8");
+// The GitHub feature is a set of slices (github-issues.ts is the seam); read
+// them together so the pins below constrain the whole feature, not one file.
+const githubServer = [
+  "server/github-issues.ts",
+  "server/github-automation-rules.ts",
+  "server/github-rule-rpcs.ts",
+  "server/github-automation-context.ts",
+  "server/github-client.ts",
+  "server/github-issue-flow.ts",
+  "server/github-comments.ts",
+  "server/github-completion.ts",
+].map((file) => readFileSync(join(root, file), "utf8")).join("\n");
 const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
@@ -136,7 +147,7 @@ assert.doesNotMatch(disclosure, /CardDisclosure/, "the legacy card name is migra
 assert.doesNotMatch(app, /CardDisclosure/, "no legacy card name survives in the panel");
 assert.doesNotMatch(app, /function DisclosureSection\(/, "no local section copy survives in the panel");
 assert.match(readFileSync(join(root, "components", "isolated-worktree-check.tsx"), "utf8"), /<DetailsDisclosure summary="How it works">/, "the toggle discloses progressively");
-assert.match(githubServer, /presetId = resolveWorktreePreset\(\);/, "isolated import resolves the worktree preset");
+assert.match(githubServer, /presetId = resolveWorktreePreset\(ctx\);/, "isolated import resolves the worktree preset");
 assert.match(githubServer, /Isolated start refused:/, "missing isolation refuses with the redirect, never silent checkout");
 assert.match(
   githubServer,
@@ -147,8 +158,12 @@ assert.match(server, /pinCardPreset,/, "the runtime injects the tested preset pi
 assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
 assert.match(githubState, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
 assert.match(githubState, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
-assert.match(githubServer, /seenKeys: seenAutomationKeys\(row\.id\)/, "the tick consults the backlog guard before matching");
-assert.match(githubServer, /primed = await primeAutomationRule\(ruleId, projectId, clean, authors\)/, "enabling a rule primes the backlog without drafting");
+assert.match(githubServer, /seenKeys: seenAutomationKeys\(db, row\.id\)/, "the tick consults the backlog guard before matching");
+assert.match(
+  githubServer,
+  /primed = await primeAutomationRule\(db, client, \(\) => ctx\.now\(\), ruleId, projectId, clean, authors\)/,
+  "enabling a rule primes the backlog without drafting",
+);
 assert.match(githubServer, /Rule saved disabled \(/, "a prime failure refuses live rules with the retry path named");
 assert.equal((githubServer.match(/decideAutomationSpawn\(/g) ?? []).length, 3, "save, tick, and isolated import decide through one start-policy gate");
 assert.match(githubServer, /acquireGithubImportClaim\(db,/, "creation goes through the claim protocol, never check-then-insert");

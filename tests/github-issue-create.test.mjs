@@ -75,14 +75,19 @@ await assert.rejects(resolveGhPath(async () => false), /not available/, "no work
 // (and two issues). Order is the contract — a guard after the call guards
 // nothing.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const contract = readFileSync(join(root, "server/github-issues.ts"), "utf8");
+const contract = readFileSync(join(root, "server/github-rpc-contract.ts"), "utf8");
+const issueFlow = readFileSync(join(root, "server/github-issue-flow.ts"), "utf8");
 const createDialog = readFileSync(join(root, "components/creation/create-build-dialog.tsx"), "utf8");
 const doneDraft = readFileSync(join(root, "components/github/github-done-draft-dialog.tsx"), "utf8");
 const buildStart = createDialog.slice(createDialog.indexOf("async function start(request: NewThreadRequest)"), createDialog.indexOf("function resetOnOpen()"));
 assert.ok(buildStart.indexOf("if (!submission.trim() || submitBusyRef.current) return;") < buildStart.indexOf('rpc.call("createCard"'), "the busy guard precedes the card write");
 assert.ok(buildStart.indexOf("submitBusyRef.current = false") > buildStart.indexOf('rpc.call("createCard"'), "the flag clears after the write paths");
 assert.match(contract, /createLinkedGithubIssue: \{/, "the RPC is contracted");
-assert.match(contract, /async createLinkedGithubIssue\(\{ cardId/, "the RPC is implemented");
+assert.match(
+  issueFlow,
+  /createLinkedGithubIssue: \(input: \{ cardId: string; repo\?: string \| null \}\) => createLinkedGithubIssue\(ctx, client, input\)/,
+  "the RPC is wired to the flow slice, not declared and forgotten",
+);
 assert.match(createDialog, /rpc\.call\("createLinkedGithubIssue"/, "the creation dialog calls it after the card exists");
 assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Also create issue\{/, "the opt-in checkbox names the destination");
 assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Pick a repository/, "several mapped repos force an explicit pick, never a silent default");

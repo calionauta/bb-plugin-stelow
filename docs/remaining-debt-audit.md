@@ -30,8 +30,12 @@ those entries deliberately.
 
 ## 1. GitHub automation area
 
-`server/github-issues.ts` is the largest owned file in the tree and the only
-oversized file under `server/`. The branch changed it by 23 added and 23
+**Status: repaired (R1, R2, R3 landed).** The measurements below are kept as
+the pre-split record; what shipped is measured in
+"Phase 2 result" at the end of the section.
+
+`server/github-issues.ts` was the largest owned file in the tree and the only
+oversized file under `server/`. The branch had changed it by 23 added and 23
 removed lines, net zero.
 
 | Symbol | Lines | Range | master | HEAD | delta |
@@ -68,6 +72,38 @@ the factory holds 91 nested functions and 88 of them are already under 50 lines,
 and the seams for labels, claims, intent, issue creation, comments, lists, and
 release already live in `lib/github-*.mjs`. Only the factory shell and the three
 named inner functions are oversized.
+
+### Phase 2 result (re-derived from the shipped tree)
+
+The area is now eleven `server/github-*.ts` files. `server/github-issues.ts` is
+the seam and nothing else; every file is under the 400-line ceiling and every
+function under the 50-line one, so the five entries the baseline pinned for this
+area are gone rather than replaced.
+
+| File | Lines | Owns |
+| --- | --- | --- |
+| `server/github-issues.ts` | 57 | the seam: client, warn-once, handler map, both schedulers |
+| `server/github-automation-context.ts` | 92 | deps shape, kill switch, warn-once |
+| `server/github-client.ts` | 117 | the typed `github` plugin RPC bridge, status, pickers |
+| `server/github-migrations.ts` | 91 | tables, column ALTERs, the label backfill |
+| `server/github-issue-flow.ts` | 293 | candidates, the shared import path, issue creation |
+| `server/github-automation-rules.ts` | 232 | rule row shape, backlog guard, the tick |
+| `server/github-rule-rpcs.ts` | 210 | the five rule RPCs |
+| `server/github-comments.ts` | 140 | the issue-comment mirror and the gated post |
+| `server/github-completion.ts` | 96 | the completion write-back and its body |
+| `server/github-rpc-contract.ts` | 165 | the wire shapes |
+
+R1 landed as 39 behavior tests over `tests/helpers/github-harness.mjs` (a real
+database plus a fake `github` plugin behind the real RPC seam), in three files
+by area. The three functions the audit named — the tick, the candidate listing,
+and the write-back — are covered by the tests that fail when their behavior is
+inverted; the negative controls are listed in the phase report.
+
+R3 also surfaced one real defect the old shape hid: the dedupe read liveness by
+card existence (`liveImportedKeys`) but the claim only by `card_id IS NULL`, so
+a link whose card was gone was offered as importable by the candidate list and
+refused as in-flight by the import path — forever. `lib/github-claims.mjs` now
+agrees with itself, and `FEATURES.md` records the rule.
 
 ## 2. Decision API area
 
@@ -166,20 +202,15 @@ traverses.
 Ordered by dependency, then by risk. R1 is first because it is a hard
 prerequisite: R2 cannot be done honestly without it.
 
-1. **R1 — Give the three oversized GitHub inner functions behavior tests, and
-   extract them while doing so.** `runSingleAutomationRule` (53),
-   `listGithubCandidates` (58), `postGithubCompletion` (59). Extract to
-   `lib/github-automation-run.mjs`, `lib/github-candidates.mjs`, and
-   `lib/github-completion.mjs` behind the existing `GithubAutomationDeps`, each
-   with a node test that fails if the behavior is inverted. Precedent:
-   `run-bundle` and `artifact-manifest`. This is the only item where a split
-   done *first* would be untestable.
-2. **R2 — Collapse `createGithubAutomation` (701 lines, 242-942).** After R1 the
-   factory is a wiring shell over 22 already-small functions. Target under 50.
-3. **R3 — Split `server/github-issues.ts` (942 lines).** Natural seams already
-   exist: the RPC contract (75-151), `runGithubMigrations` (152-215), `execGh`
-   (230-237), and the factory (242-942). Land R2 first so the factory seam is
-   small.
+1. ~~**R1 — Give the three oversized GitHub inner functions behavior tests,
+   and extract them while doing so.**~~ **DONE.** 39 tests in three files by
+   area; the three named functions are covered and their negative controls
+   were executed. The seams went to `server/` slices rather than `lib/`,
+   because these are host-wired paths, not pure decisions.
+2. ~~**R2 — Collapse `createGithubAutomation` (701 lines, 242-942).**~~ **DONE**
+   with R3: the seam is 56 lines and holds no logic.
+3. ~~**R3 — Split `server/github-issues.ts` (942 lines).**~~ **DONE.** Ten
+   slices, the largest 293 lines; see "Phase 2 result" above.
 4. **R4 — Decision API, starting with the zero-headroom file.** Split
    `server/decision-api.ts` (exactly 400 lines, invisible to the gate) before
    anything else in the area, then `createDecisionApi` (319) and

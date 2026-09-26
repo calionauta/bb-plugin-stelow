@@ -39,7 +39,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`lib/automation-rules.mjs`, exact labels with AND semantics), one intent
   heuristic (`lib/github-intent.mjs`), and one creation path with a single
   `github_imports` dedupe claimed before any work starts — manual and
-  automatic never draft the same `repo#number` twice, even racing. Each
+  automatic never draft the same `repo#number` twice, even racing. The
+  dedupe reads liveness by card existence, never by a bare link: a link
+  whose card is gone reads as not-imported everywhere (candidate list,
+  tick, and import), so a deleted card's issue can come back instead of
+  being offered as importable and then refused as in-flight forever. Each
   flow carries its own explicit Start immediately checkbox, both defaulting
   to parked Bucket drafts (creation dialogs default to started instead).
   Manual import adds one shared Isolated worktree checkbox
@@ -76,8 +80,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (band routing wins over passed presets): without an isolated worktree
   destination it fails closed (save refuses, ticks park with the fix
   named). Rules never move cards, merge code, or import behind the user's
-  back. The whole feature is one decoupled module (`server/github-issues.ts`
-  + `components/github/`, pure core in `lib/`): evolve it
+  back. The whole feature is one decoupled module set
+  (`server/github-issues.ts` is the seam; migrations, the client bridge,
+  the issue flow, the rules, the rule RPCs, the comment mirror, and the
+  completion write-back are one slice each, `components/github/` the UI,
+  pure core in `lib/`): evolve it
   there, and `STELOW_GITHUB_ISSUES=0` on the host switches off its
   scheduler, RPCs, and panel button without touching anything else.
   Operator guide (flows, trust model, kill switch, module map):

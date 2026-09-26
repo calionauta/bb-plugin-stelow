@@ -22,7 +22,6 @@ const fileBaseline = new Map([
   ["components/ui/dialog.tsx", 541],
   ["components/ui/icon.tsx", 450],
   ["lib/artifact-contracts.mjs", 428],
-  ["server/github-issues.ts", 942],
   ["tests/kanban-layout.test.mjs", 401],
 ]);
 
@@ -33,11 +32,6 @@ const fileBaseline = new Map([
 // has to be recorded deliberately. Keys are the census identifiers.
 const functionBaseline = new Map([
   // Github
-  ["server/github-issues.ts:createGithubAutomation", 701],
-  ["server/github-issues.ts:createGithubAutomation/postGithubCompletion", 59],
-  ["server/github-issues.ts:createGithubAutomation/listGithubCandidates", 58],
-  ["server/github-issues.ts:createGithubAutomation/runSingleAutomationRule", 53],
-  ["server/github-issues.ts:runGithubMigrations", 64],
   ["components/github/github-dialog-state.ts:useGithubDialogState", 229],
   ["components/github/github-linked-discussion.tsx:LinkedDiscussionSection", 116],
   ["components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog", 89],
@@ -97,18 +91,12 @@ const functionBaseline = new Map([
 ]);
 
 // Every oversized function above is pinned, so this count only has to catch a
-// fifty-seventh one appearing.
-const functionCountBaseline = 56;
+// fifty-second one appearing.
+const functionCountBaseline = 51;
 
 const inheritedBaseline = [
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
-  "server/github-issues.ts: 942 lines (baseline 942)",
-  "server/github-issues.ts:runGithubMigrations#1: 64 lines (baseline 64)",
-  "server/github-issues.ts:createGithubAutomation#1: 701 lines (baseline 709)",
-  "server/github-issues.ts:createGithubAutomation/runSingleAutomationRule#1: 53 lines (baseline 53)",
-  "server/github-issues.ts:createGithubAutomation/listGithubCandidates#1: 58 lines (baseline 58)",
-  "server/github-issues.ts:createGithubAutomation/postGithubCompletion#1: 59 lines (baseline 59)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (baseline 104)",
   "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (baseline 66)",
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (baseline 59)",

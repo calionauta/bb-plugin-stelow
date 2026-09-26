@@ -91,6 +91,7 @@ for (const file of [
   "server/plugin-runtime.ts",
   "server/cards.ts",
   "server/github-issues.ts",
+  "server/github-client.ts",
   "server/runtime/wiring/card-surfaces.ts",
 ]) {
   assert.doesNotMatch(

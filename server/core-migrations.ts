@@ -4,7 +4,7 @@ import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { ensureTrackableEventsTable } from "../lib/trackable-events.mjs";
 import { runDecisionApiMigrations } from "./decision-api.js";
-import { runGithubMigrations } from "./github-issues.js";
+import { runGithubMigrations } from "./github-migrations.js";
 import { runInboxMigrations } from "./inbox.js";
 import { PRESET_MIGRATION_STATEMENTS, runPresetMigrations } from "./presets.js";
 import { runPublicationMigrations } from "./artifacts-publication.js";
