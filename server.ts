@@ -413,6 +413,12 @@ const askOptionSchema = z.object({
   description: z.string(),
   preview: z.string().nullable(),
   artifact: askArtifactSchema.nullable(),
+  // True when the document was NOT attached to this option — it was
+  // inherited from a sibling, or recovered from the stage manifest because
+  // the ask attached nothing at all. Without this the card presents one
+  // document as if it were the evidence for every option, which reads as a
+  // broken control rather than as the recovery it is.
+  artifactInherited: z.boolean(),
 });
 
 const workflowSchema = z.object({
@@ -3739,14 +3745,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const out = [];
     for (const [index, option] of options.entries()) {
       const source = inherited[index];
+      // Provenance: was this document attached to THIS option, borrowed from a
+      // sibling, or recovered from the stage manifest because the ask carried
+      // none? Only the first is this option's own evidence, and the card has
+      // to say so — one document on four rows otherwise reads as four pieces
+      // of evidence about four different options.
+      const own = options[index]?.artifact ?? null;
       if (!source || !card) {
-        out.push({ ...option, artifact: manifestArtifact });
+        out.push({ ...option, artifact: manifestArtifact, artifactInherited: manifestArtifact !== null });
         continue;
       }
       if (!resolved.has(source.path)) {
         resolved.set(source.path, await resolveAskArtifact(card, source.path).catch(() => null));
       }
-      out.push({ ...option, artifact: resolved.get(source.path) ?? null });
+      out.push({ ...option, artifact: resolved.get(source.path) ?? null, artifactInherited: own === null });
     }
     return out;
   }
