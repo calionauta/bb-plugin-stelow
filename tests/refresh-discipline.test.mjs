@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceBetween } from "./helpers/source-slice.mjs";
 
 // Refresh discipline: every host wrapper that mutates tracking or claims
 // must publish card-state (and board-changed) so claimed indicators,
@@ -13,11 +14,7 @@ const server = readFileSync(join(root, "server.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 
 function branch(open, close) {
-  const start = server.indexOf(open);
-  assert.ok(start >= 0, `branch exists: ${open}`);
-  const end = server.indexOf(close, start);
-  assert.ok(end > start, `branch closes: ${open}`);
-  return server.slice(start, end);
+  return sourceBetween(server, open, close);
 }
 
 function assertRefresh(name, open, close) {

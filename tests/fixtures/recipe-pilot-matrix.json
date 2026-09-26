@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-09-23T23:58:41Z",
+  "validated_at": "2026-09-25T00:00:00Z",
   "host": {
     "name": "bb",
     "version": "0.43.3",
@@ -25,11 +25,11 @@
     },
     {
       "path": "lib/execution-route.mjs",
-      "sha256": "f810832bd4c7b74faf40fff34966877488d63cbadec589b43207f8aff8dfd7b8"
+      "sha256": "f5eb41f66b6c4a1a5182da0722d1dad07f5f5feb7eacf76b1252e35645924725"
     },
     {
       "path": "lib/bb-workflow-capabilities.mjs",
-      "sha256": "1f677e8733489ad414e0376ed435e725385b8ca9b539bd2a5353c326cb085d10"
+      "sha256": "5142fbe383d970742690b5cb54d7a180b9926969121c16ac820e1639ee2c97fa"
     }
   ],
   "recipes": [
