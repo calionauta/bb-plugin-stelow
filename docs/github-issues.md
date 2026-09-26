@@ -121,8 +121,10 @@ coordination on shared checkouts → 10/tick cap.
   - `server/github-completion.ts` — the completion write-back and its body.
   - `server/github-rpc-contract.ts` — the wire shapes; `server/rpc-contract.ts`
     composes them, `server/core-migrations.ts` calls
-    `runGithubMigrations`, and `server/plugin-runtime.ts` spreads the 11
-    handlers and registers the `stelow-automation-rules` schedule.
+    `runGithubMigrations`, `server/runtime/wiring/host-surfaces.ts` builds the
+    automation and spreads the 11 handlers, and
+    `server/runtime/composition.ts` registers the `stelow-automation-rules`
+    schedule.
 - Behavior tests over the real database and the real RPC seam against a
   fake `github` plugin live in `tests/server-github-automation.test.mjs`,
   `tests/server-github-issue-flow.test.mjs`, and
@@ -151,11 +153,14 @@ The integration is one module set plus narrow seams so a change of mind is a
 checklist, not archaeology. To remove it entirely: delete the eleven
 `server/github-*.ts` files, `lib/github-issue-create.mjs`,
 `lib/github-issue-comments.mjs` (+ tests + `.d.mts` twins),
-`components/github-issues-dialog.tsx`, `components/isolated-worktree-check.tsx`,
+`components/github/` (the dialog shell among them),
+`components/isolated-worktree-check.tsx`,
 and `docs/github-issues.md`; remove its fragment from
 `server/rpc-contract.ts`, its migration call from `server/core-migrations.ts`,
-and its handler spread and schedule from `server/plugin-runtime.ts`; delete
-the `GithubIssuesDialog` mount from `components/panels/build-panel-dialogs.tsx`,
+its handler spread and schedule from
+`server/runtime/wiring/host-surfaces.ts` and
+`server/runtime/composition.ts`; delete the
+`GithubIssuesDialog` mount from `components/panels/build-panel-dialogs.tsx`,
 `GithubCreateRow` from `components/creation/create-build-dialog.tsx`,
 `LinkedDiscussionSection` from the three detail bodies, and the done-draft
 dialog from `components/detail/build-detail-body.tsx`; drop the linked tables
