@@ -6,9 +6,9 @@
 // checked here, and each one fails if the split drops, renames, or typos an
 // entry: a cited `ref` must exist on disk, ids must be unique, every `kind`
 // must be one the interpreter dispatches, no check may be one that cannot fail,
-// and the word floors are the ones the split started from. Each assertion below is
-// re-run here against a deliberately broken copy, so a green run cannot come
-// from a check that never fires.
+// and the word floors are the ones the split started from. Every one of the
+// five has a negative control further down, so a green run cannot come from a
+// check that never fires.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -77,23 +77,37 @@ for (const contract of ALL_CONTRACTS) {
   assert.ok(floors.every((floor) => floor > 0), `${contract.id} has a non-positive word floor`);
 }
 
-// 4. No check that cannot fail. A `contains` with no needles, or a
-//    `table-rows` with no floor, passes every document and reads as depth
-//    coverage in review. The guided() factory is where one crept in.
+// 4. No check that cannot fail. Every kind but one carries a constraint a
+//    document can miss: a floor, a ceiling, or a non-empty list of names or
+//    needles. An empty one passes every document and still reads as depth
+//    coverage in review — the guided() factory shipped exactly that for
+//    job-to-be-done. gap-registry is exempt with a reason: a document is
+//    allowed to have no gaps, so "no registry" is a pass by design. A kind
+//    this table does not know is refused rather than skipped, so widening the
+//    DSL cannot quietly leave a kind unguarded.
+const FAILABLE_CONSTRAINT = {
+  headings: (check) => Number.isFinite(check.min) || Number.isFinite(check.max),
+  "named-headings": (check) => Array.isArray(check.names) && check.names.length > 0,
+  contains: (check) => Array.isArray(check.needles) && check.needles.length > 0,
+  "section-items": (check) => Number.isFinite(check.min) && check.min > 0,
+  "field-blocks": (check) => Number.isFinite(check.minBlocks) && check.minBlocks > 0,
+  "table-rows": (check) => Number.isFinite(check.min) && check.min > 0,
+  "table-columns": (check) => Array.isArray(check.names) && check.names.length > 0,
+  "gap-registry": () => true,
+};
 for (const contract of ALL_CONTRACTS) {
   for (const check of everyCheck(contract)) {
-    if (check.kind === "contains") {
-      assert.ok(
-        Array.isArray(check.needles) && check.needles.length > 0,
-        `${contract.id} has a contains check with no needle to look for`,
-      );
-    }
-    if (check.kind === "table-rows") {
-      assert.ok(
-        typeof check.min === "number" && check.min > 0,
-        `${contract.id} has a table-rows check with no floor to clear`,
-      );
-    }
+    const constrained = FAILABLE_CONSTRAINT[check.kind];
+    assert.equal(
+      typeof constrained,
+      "function",
+      `${contract.id} uses kind ${check.kind}, which has no failability rule here`,
+    );
+    assert.ok(
+      constrained(check),
+      `${contract.id} has a ${check.kind} check that cannot fail: `
+      + "no floor, no ceiling, and nothing to look for",
+    );
   }
 }
 
@@ -150,6 +164,57 @@ assert.equal(
 // A control for the dispatch list: a real kind is in it, an invented one is not.
 assert.ok(CHECK_KINDS.includes("gap-registry"), "control: a real kind is dispatched");
 assert.equal(CHECK_KINDS.includes("headingss"), false, "control: an invented kind is not dispatched");
+
+// A control for the failability rule: each predicate refuses the shape it
+// exists to refuse. Weakened to a constant true — the way a rule quietly stops
+// biting — these are what fail. Every kind is covered, not just the two the
+// job-to-be-done regression happened to need.
+for (const [kind, unfailable] of [
+  ["headings", { kind: "headings" }],
+  ["named-headings", { kind: "named-headings", names: [] }],
+  ["contains", { kind: "contains", needles: [] }],
+  ["section-items", { kind: "section-items", min: 0 }],
+  ["field-blocks", { kind: "field-blocks", minBlocks: 0 }],
+  ["table-rows", { kind: "table-rows", min: 0 }],
+  ["table-columns", { kind: "table-columns", names: [] }],
+]) {
+  assert.equal(
+    FAILABLE_CONSTRAINT[kind](unfailable),
+    false,
+    `control: an unfailable ${kind} check is recognised as one`,
+  );
+  assert.equal(
+    typeof FAILABLE_CONSTRAINT[kind],
+    "function",
+    `control: ${kind} has a failability rule to run`,
+  );
+}
+assert.equal(
+  typeof FAILABLE_CONSTRAINT["gap-registry"],
+  "function",
+  "control: the exempt kind is still covered, not skipped",
+);
+// The exemption is one entry, not a hole: a kind nobody ruled on is refused.
+assert.equal(
+  FAILABLE_CONSTRAINT["some-new-kind"],
+  undefined,
+  "control: an unruled kind has no predicate, so the rule above refuses it",
+);
+
+// A control for the pinned floors: the table is a literal read off the
+// pre-split file, so a drift in it is a mismatch rather than a silent
+// agreement. A copy with one floor 300 words off must not compare equal.
+const oneFloorDrifted = STRATEGY_FLOORS.map(([id, floors], index) => (
+  index === 0 ? [id, [floors[0] + 300]] : [id, floors]
+));
+assert.notDeepEqual(
+  STRATEGY_CONTRACTS.map((contract) => [
+    contract.id,
+    (contract.variants ?? [contract]).map((group) => group.minWords),
+  ]),
+  oneFloorDrifted,
+  "control: a 300-word drift in one strategy floor does not compare equal",
+);
 
 // The routing helpers still resolve every entry, and the facade re-exports the
 // same objects the slices hold (a re-export that copied would drift silently).

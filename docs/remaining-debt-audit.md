@@ -1069,3 +1069,122 @@ Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
 `tests/budget-lineage` — green. Every repair above was proved by inverting the
 rule it guards and watching the named test fail, then restoring it and watching
 it pass; the seven post-repair re-runs are in the commit message.
+
+## Review corrections (the Guards phase, adversarial pass)
+
+A fresh pass over the two guards phases, re-deriving their claims from the
+source rather than reading them. The load-bearing claims hold; three things
+about them did not, and all three are fixed here.
+
+**What was re-derived and holds.** Behaviour parity for the contract split was
+re-measured independently: the three slices plus the barrel were imported
+against the pre-split `lib/artifact-contracts.mjs` at `2363431^` and compared
+over 236 probes — every declared id plus near-misses, and eleven build paths
+against ten document bodies. **236 equal, 0 unequal**, so all seven exports now
+compare equal (the *Functions* phase measured six of seven, before the
+`guided()` repair). The fourteen strategy word floors pinned in
+`tests/contract-integrity.test.mjs` were read back off the pre-split file and
+match the table exactly. The `guided()` repair was a real defect, not a
+cosmetic one: `checkContains` maps an empty needle list to an empty `missing`,
+so the pre-fix `job-to-be-done` contract carried a check that could not fail.
+All six negative controls in the table at §2 were re-run and all six still bite:
+both overloads widened to the union fails `tsc` at 5 sites; a choice-mode
+`ok: true` with no `choice`, a criteria-mode coercion of a non-array
+`verdicts`, and a `summary`-keyed branch are each caught; and a guard re-added
+with its string, and one re-added without it, are both caught. The claim that a
+restored guard is invisible to `tsc` was re-checked directly: with a guard back
+in place `tsc` exits 0, so the source pins in `tests/decision-judges.test.mjs`
+really are the only witness. The three escapes the phases left standing were
+each re-checked and are genuinely dead: `normalizeDecisionApiModel` returns
+either the trimmed text or a fallback that is never falsy
+(`DECISION_API_DEFAULT_MODEL = "jev-latest"`), so the *Model must name a
+version* refusal has no reachable input.
+
+**Correction 1 — the sweep's reach was overstated.** The *Guards* commit's
+negative-control list claims a new parser branch "keyed on an unenumerated
+field is caught by the sweep". A generated sweep cannot do that: an unenumerated
+field is by construction not exercised. A branch keyed on `summary` is caught;
+one keyed on `rationale` passes the whole suite. The table in §2 already said
+`summary`, so the doc was right and the commit message was not — but the same
+overclaim had reached the test's own header comment, where the next reader
+would meet it. The comment now states the bounded property (a branch keyed on
+one of the seven enumerated keys fails here) and says plainly that the parser's
+per-mode check, not the sweep, carries the guarantee.
+
+**Correction 2 — rule 4 was a partial rule wearing a total name.** The suite
+header promises that every one of the five properties has a negative control so
+a green run cannot come from a check that never fires. Rules 1–3 had one; the
+two rules the *Functions* phase added did not, so the promise held for three of
+five. Both do fire — proved by inverting each, not assumed — but neither had
+the control its file promises. Controls added for both: one per
+failability predicate, so weakening any predicate to a constant `true` is caught,
+and a one-floor-300-words-drifted copy of the floors table, so rule 5's
+sensitivity to exactly the drift it exists to catch is on the record.
+
+**Correction 3 — rule 4 could not see four kinds of its own hole.** The rule
+refused an unfailable `contains` or `table-rows`, and read as "no check that
+cannot fail" while passing three kinds that carry the same defect: a
+`section-items` or `field-blocks` with a zero floor, a `headings` with neither
+floor nor ceiling, and a `named-headings` or `table-columns` with an empty
+name list all pass every document, exactly as an empty `contains` did. Rule 4 is
+now a kind→constraint table over all eight dispatched kinds, and a kind the
+table does not know is **refused** rather than skipped, so widening the DSL
+cannot quietly leave a kind unguarded. `gap-registry` is the single exemption,
+with its reason stated: a document is allowed to have no gaps, so "no registry"
+is a pass by design.
+
+Before/after, on the same mutated contract (`shape-up` carrying
+`{ kind: "section-items", min: 0 }`): the old rule reported **0** violations and
+the suite passed; the new rule refuses with *"shape-up has a section-items check
+that cannot fail"*. Two further controls: weakening one predicate to
+`() => true` fails on that predicate's control, and a kind with no rule is
+refused by name.
+
+### The E2E record, against the real `bb stelow` CLI
+
+`bb 0.43.3`. Everything below is a command and its real output, not a report.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `bb stelow status --json` | 0 | 40 cards; `sw-card_ahrsgllj` at `audit`, `in-progress` |
+| `bb stelow advance --dry-run --json audit` | 1 | `state.md is missing for the Stelow workflow. Reseed the workflow.` |
+| `bb stelow doctor --project proj_a6wdkdcfkk --json` | 1 | the same refusal, the helper's stderr verbatim |
+| `bb stelow schema` | 0 | publishes the `advance` contract; flags `--dry-run`, `--json`; exit 1 for a bad state |
+
+The advance refusal is the schema's own exit 1 for a bad state, carrying the
+helper's stderr, which is the `result.stderr || "stelow advance failed"`
+refusal in `server/execution-advance-cli.ts` behaving as the split left it. All
+four reproduce the *Functions* phase's record exactly, except the card's scope
+count, which is a live figure.
+
+**A seeded workflow root was created for a full gated advance, and the advance
+is still unreachable from the shell.** `bb stelow seed --project
+proj_ptzx3fbse4 --name "e2e guards phase verification" --intent refactor` exits
+0 and writes
+`.stelow/2026-09-26/sw-sw_e2e-guards-phase-verification/state.md` carrying
+`current_stage: triage`; the card is then visible in `status --json` with
+`dirHash: sw-sw_e2e-guards-phase-verification`. But `doctor` and `advance` still
+refuse on that root, and the reason is the resolution path, not the data:
+`server/runtime/cli-inspection.ts:215` derives `stateDir` from
+`context.threadId`'s card, so a shell run has no card, `stateDir` is `null`, and
+`ensureProjectArtifacts` reads the state at the *project root* — where a seeded
+workflow has none. Setting `STELOW_STATEDIR` to the card's state dir changes
+nothing, and the reason is worth recording: the schema lists `STELOW_STATE` and
+`STELOW_STATEDIR` under `advance`'s `env`, but nothing in `server/` or `lib/`
+ever *reads* them — `server/runtime/helper-script.ts:35-40` only *writes* them
+into the vendored helper's environment. They document the helper's interface,
+and following the schema as an operator's guide sends you nowhere.
+
+So the gated advance is reachable only from inside the card's own thread, where
+`context.threadId` resolves `dir_hash` to the seeded state dir. That path is
+established from the code and the seeded `dirHash`, and is **not** claimed here
+as executed: a full gated advance with artifacts remains unverified on this
+host, and that is the honest state of the E2E surface this phase leaves behind.
+`gap-registry` above is the same kind of claim, kept explicit for the same
+reason.
+
+Gates on this pass: `npm test` green (exit 0) before the corrections, the three
+corrected suites green after them, `npm run typecheck` green, and
+`npm run quality:shape` green. No user-facing behaviour changed and no portable
+`lib/` module was added, so `FEATURES.md` does not move and the upstream
+blueprint has nothing new to record.

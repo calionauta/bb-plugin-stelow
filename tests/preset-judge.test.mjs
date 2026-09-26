@@ -88,7 +88,11 @@ assert.equal(
 // Generated, not hand-picked: one payload per (key, value) pair plus the
 // top-level shapes JSON can produce. The parser is total per mode, so every
 // input either refuses or returns its mode's key — asserted for all of them,
-// so a branch keyed on a field nobody thought to enumerate fails here.
+// so a branch keyed on one of the seven keys below fails here. Its reach ends
+// at those seven keys: a branch keyed on a field this list does not name is
+// outside the sweep and would pass. That is why the sweep is a witness for the
+// keys it enumerates, not the guarantee — the guarantee is the parser's own
+// per-mode check, and it is the check a new branch must not skip.
 const sweepKeys = ["choice", "verdicts", "verdict", "answer", "findings", "summary", "result"];
 const sweepValues = ["bugfix", 7, null, [], [{ id: "c1" }], { c1: "met" }];
 let swept = 0;
