@@ -189,6 +189,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `scope-map.json` evidence. The result stays a draft until an approval receipt
   exists; Explore never creates a second Build stage or execution lifecycle.
   See the [Interface Contrast and Scope Map guide](docs/interface-contrast.md).
+- **Interface Contrast in Explore** (`interface-contrast`). Explore can run the
+  reaction-first method as one focused technique: a bounded comparison against a
+  preserved first reaction, ending in a recorded pick. The objection that kept
+  this out — a decision needs an owner, and Explore has no `selection` stage —
+  does not hold, because the Explore card detail already renders
+  `DetailQuestionSections`, the same component Build cards use, so a structured
+  question with options, per-option documents, previews and staleness works
+  there today. What Explore cannot do is own a decision that becomes a build,
+  which the technique's blurb says out loud. Explore also dispatches a skill
+  rather than a recipe, so the Build track's capability gate never applies here.
+  Its deliverable contract is derived from what the method actually produces, not
+  from its wireframe sibling: a real contrast rendering is 380 words and
+  table-free, so copying `interface-alternatives`' 800 words and 2 table rows
+  would have failed correct work and stamped "missing or thin" on a document that
+  is neither. The contract requires the three sections the method names —
+  fixed constraints, evidence, next action — and at least two option headings,
+  because a comparison with no options is not a comparison.
 - **One deliverable filename per technique, read by everything.** The Explore
   deliverable is named once in the catalog (`primaryArtifact`) and resolved by
   one function, because four surfaces used to disagree about it: the prompt that
