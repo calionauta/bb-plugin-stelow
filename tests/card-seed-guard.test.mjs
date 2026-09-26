@@ -22,7 +22,6 @@ assert.match(noDir, /already seeded/, "the fallback still states the workflow ex
 
 // Server contract: the seed CLI resolves the calling card worker and
 // refuses through the guard instead of minting a project-root workflow.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const seedBlock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-seed.ts"), "utf8");
 const seedingSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/workflow-seeding.ts"), "utf8");
 const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");

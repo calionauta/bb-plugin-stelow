@@ -49,7 +49,6 @@ const tripwire = readFileSync(
   join(root, "server/runtime/cli/cli-verify-delegation.ts"),
   "utf8",
 );
-const server = [registry, tripwire].join("\n");
 assert.match(registry, /verify-delegation[\s\S]*Count worker subagent delegations/, "the delegation tripwire is listed");
 assert.match(tripwire, /argv\[0\] !== "verify-delegation"\) return null;/, "the tripwire family claims exactly its verb");
 assert.match(

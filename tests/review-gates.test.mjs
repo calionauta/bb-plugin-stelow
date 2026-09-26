@@ -133,7 +133,6 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 // and the helper fails silent on every miss — designation, workflow,
 // artifact, thin file. Advance never depends on it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const executionAdvance = readFileSync(join(root, "server/execution-advance-cli.ts"), "utf8");
 assert.match(

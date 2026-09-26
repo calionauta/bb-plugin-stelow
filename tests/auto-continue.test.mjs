@@ -161,7 +161,6 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 
 // Server contract: the idle branch sends the shared nudge privately only after
 // a successful send, while manual recovery sends the same transport publicly.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
 const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
 const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");

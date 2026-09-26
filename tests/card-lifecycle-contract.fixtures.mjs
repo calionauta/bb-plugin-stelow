@@ -314,20 +314,12 @@ export const cardWiring = readFileSync(
   join(root, "server", "runtime", "wiring", "card-surfaces.ts"),
   "utf8",
 );
-export const executionWiring = readFileSync(
-  join(root, "server", "runtime", "wiring", "execution-surfaces.ts"),
-  "utf8",
-);
 export const hostWiring = readFileSync(
   join(root, "server", "runtime", "wiring", "host-surfaces.ts"),
   "utf8",
 );
 export const cliWiring = readFileSync(
   join(root, "server", "runtime", "wiring", "cli-surfaces.ts"),
-  "utf8",
-);
-export const threadCardLookup = readFileSync(
-  join(root, "server", "runtime", "thread-card-lookup.ts"),
   "utf8",
 );
 
