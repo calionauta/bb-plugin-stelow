@@ -135,4 +135,88 @@ assert.equal(noOptions.pass, false, "a rendering with no option headings is refu
 // technique, so the seal and the prompt cannot disagree about it.
 assert.equal(exploreArtifactFile("interface-contrast"), "explore-interface-contrast.md", "it uses the catalog convention, so nothing has to be declared");
 
+// The options requirement must not depend on ONE spelling. A faithful contrast
+// may name its options "Option A" or "Proposal A" — both occur in real briefs,
+// in the same document set on one card — and requiring the word "Option" failed
+// a correct document for using the other name.
+// A real two-option contrast runs shorter than a three-option one, so the
+// fixture is written to the depth the method asks for rather than trimmed to
+// fit: a 250-word floor is calibrated on the real 380-word rendering, and
+// lowering the floor to admit a short fixture would admit thin work.
+const byProposalNameText = [
+    "# Scope Map placement — readable contrast",
+    "",
+    "## Decision",
+    "Where does the approved Scope Map become visible to someone reading a Build card?",
+    "",
+    "## Fixed constraints (non-negotiable)",
+    "- The map stays in canonical stage data. No parallel scope state, no second lifecycle.",
+    "- The Scope stage keeps ownership of the approved map; Shape may only propose candidate slices.",
+    "- Scope IDs, ownership, IN/OUT boundaries and dependency meaning do not change with placement.",
+    "- A map challenge is a named artifact with a destination, never an in-place mutation.",
+    "- Whatever the placement, the map must be read-only: a reader never edits a decision here.",
+    "",
+    "## Proposal A — Extend the existing Scope stage",
+    "Add a headed Scope Map section inside the Scope stage view, above the slice list, so the map",
+    "sits where a reader already goes when they ask what a build contains. This keeps the",
+    "reader's eye where it is and adds no new concept to teach, and it needs no second surface to",
+    "keep in sync because there is no second surface. The cost is that the map is only visible",
+    "while the card sits in Scope: a reader arriving later from Execution has to navigate back to",
+    "find it, which is exactly the moment they are most likely to want it.",
+    "",
+    "## Proposal B — Separate user-visible concept",
+    "Surface the map as its own first-class object with its own panel, independent of the stage",
+    "that owns it, so the map is reachable from anywhere on the card and its lifecycle is legible",
+    "at a glance. The concept is clean and the placement question stops depending on which stage",
+    "the card happens to be in. The cost is a new thing to learn for readers who only wanted a",
+    "slice list, a second place to keep in sync with the stage view, and a second surface to keep",
+    "correct as the map's shape changes.",
+    "",
+    "## Evidence",
+    "- scope-map.json already assumes an Extend-style placement, so Proposal A is a contract",
+    "  assumption rather than a new policy decision.",
+    "- The spec v2 shape carries the same assumption, which is the strongest signal available here.",
+    "- No measured evidence exists for the separate-concept variant; it is argued from legibility",
+    "  alone, so a reader should treat it as the weaker of the two on present evidence.",
+    "",
+    "## Next action",
+    "Carry Proposal A into Shape as a named constraint on the Scope stage view, and record the",
+    "placement assumption explicitly so a later reader does not rediscover it. Product approval of",
+    "the placement is not this document's to give.",
+].join("\n");
+
+const byProposalName = validateExplore("interface-contrast", byProposalNameText);
+assert.equal(
+  byProposalName.pass,
+  true,
+  `a contrast that names its options "Proposal A" is faithful, not defective: ${JSON.stringify(byProposalName.failures)}`,
+);
+// And the requirement still bites. The no-options variant is DERIVED from the
+// one above by removing only the option sections, so length and the three
+// required sections are identical and the missing options are the only possible
+// reason it fails. A hand-written stub would have failed for being thin, and
+// would have proved nothing about this rule.
+const withoutOptions = byProposalNameText
+  .replace(/## Proposal A[\s\S]*?(?=## Evidence)/, "")
+  .replace(/## Proposal B[\s\S]*?(?=## Evidence)/, "");
+const noOptionHeadings = validateExplore("interface-contrast", withoutOptions);
+assert.doesNotMatch(
+  withoutOptions,
+  /^## (Proposal|Option|Alternative|Direction|Variant) /m,
+  "the derivation actually removed the option sections, and only those",
+);
+assert.match(withoutOptions, /## Evidence/, "and left the required sections in place");
+assert.equal(
+  noOptionHeadings.pass,
+  false,
+  `a comparison with no options is refused, and only for that reason: ${JSON.stringify(noOptionHeadings.failures)}`,
+);
+assert.ok(
+  noOptionHeadings.failures.some((failure) => failure.code === "too-few-headings"),
+  "the refusal names the missing options specifically, so a thin document and an optionless one are told apart",
+);
+// Control: the same derivation with the option sections kept must pass, or the
+// derivation itself is what the test is measuring.
+assert.equal(validateExplore("interface-contrast", byProposalNameText).pass, true, "the untrimmed body passes");
+
 console.log("explore interface contrast test ok: technique, deliverable contract, and the question surface the pick lands on");
