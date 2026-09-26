@@ -102,10 +102,21 @@ function useCommentDrafts(rpc: Rpc, open: boolean, cardId: string, file: Artifac
   return { drafts, sending, quoteSelection, sendAll, setDrafts };
 }
 
-function ArtifactContent({ file, content, truncated, loadError, loading }: { file: ArtifactFile; content: string | null; truncated: boolean; loadError: string | null; loading: boolean }) {
+type ArtifactContentProps = {
+  file: ArtifactFile;
+  content: string | null;
+  truncated: boolean;
+  loadError: string | null;
+  loading: boolean;
+  // The scroll container the option lookup needs, so the clicked option can be
+  // brought into view inside the document rather than quoted above it.
+  scrollRef?: React.Ref<HTMLDivElement>;
+};
+
+function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
   const isMarkdown = file ? /\.mdx?$/i.test(file.display) || /\.mdx?$/i.test(file.path) : false;
   return (
-    <div className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
+    <div ref={scrollRef} className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
       {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
       {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
       {!loading && !loadError && content !== null ? (
@@ -161,6 +172,9 @@ export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorT
   const { rpc, content, truncated, loadError, loading } = useArtifactContent(open, cardId, file);
   const drafts = useCommentDrafts(rpc, open, cardId, file, onCommented);
   const canComment = mode === "comment";
+  // The document's own scroll container, so the clicked option can be brought
+  // into view inside the document instead of quoted above it.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-4xl flex-col overflow-hidden">
@@ -169,8 +183,8 @@ export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorT
           <DialogDescription>{canComment ? "Read-only preview. Discuss below — notes go to the agent." : "Read the document before deciding. This review does not modify it."}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-          <OptionSection content={content} optionLabel={optionLabel} />
-          <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
+          <OptionSection content={content} optionLabel={optionLabel} containerRef={scrollRef} />
+          <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} scrollRef={scrollRef} />
           {canComment ? <CommentDrafts {...drafts} /> : null}
         </div>
         <DialogFooter>

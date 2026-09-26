@@ -495,14 +495,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   — which is precisely not that option. On a real card a reader opened the
   brief from "Hybrid A+C" and found proposals A and B: the hybrid is the last
   section in the file, below three options they did not pick. The viewer now
-  lifts the clicked option's own section and shows it above the document, so
-  the first thing read is the option under decision. Matching is on words
-  with three routes — the heading carries the label, the label carries the
-  heading (a brief that only wrote "## Proposal A"), or both name the same
+  scrolls to that option's own heading, so the brief still reads as one
+  document instead of a quotation above a copy of it. The rendered headings
+  carry no ids, but the host did render them as heading elements inside the
+  document's own scroll container, so one scroll finds them. Matching is on
+  words with three routes — the heading carries the label, the label carries
+  the heading (a brief that only wrote "## Proposal A"), or both name the same
   option letter — and no section at all means nothing is shown, never another
-  option's words under this option's name. Scrolling could not do this: the
-  rendered headings carry no ids to scroll to, and injecting them would mean
-  rewriting the renderer's output.
+  option's words under this option's name. The same matcher decides both the
+  text scan and the comparison against the rendered heading, so the scroll
+  cannot disagree with the anchor it follows. When the heading is absent from
+  the rendered DOM — a non-markdown file, a renderer that flattens headings, a
+  partial load — the option's section is lifted and shown above the document
+  instead, so the reader gets their option by either route.
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
