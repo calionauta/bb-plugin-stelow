@@ -51,13 +51,39 @@ function artifactViewerModeForOption(label: string): ArtifactViewerMode {
 // viewer where a file opener exists (card), and degrades to a plain
 // filename where it doesn't (thread) — never a dead button pretending
 // to open, never one shared button after the options.
+// A preview exists so the reader can judge an option WITHOUT opening
+// anything. Hiding it behind a disclosure defeats that: on a real card the
+// previews were 27-104 characters, so clicking "Preview" revealed two lines
+// that said no more than the label beside it — two clicks for less
+// information. A preview short enough to read at a glance is shown; only a
+// genuinely long one earns a disclosure.
+const AUTO_REVEAL_PREVIEW_CHARS = 280;
+
+// One class for both disclosures (preview and touched paths) so a keyboard
+// focus ring reads identically wherever a disclosure appears.
+const DISCLOSURE_SUMMARY_CLASS = [
+  "inline-flex min-h-11 cursor-pointer items-center gap-1.5",
+  "text-xs font-medium hover:underline",
+  "focus-visible:outline focus-visible:outline-2",
+].join(" ");
+
 function OptionPreview({ preview }: { preview: string | null }) {
   if (!preview) return null;
+  const text = preview.trim();
+  const body = <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{text}</pre>;
+  if (text.length <= AUTO_REVEAL_PREVIEW_CHARS) {
+    return (
+      <div className="ml-1 border-l-2 border-muted pl-2">
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">What this looks like</p>
+        {body}
+      </div>
+    );
+  }
   return (
     <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
       <details className="group">
         <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
-        <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{preview}</pre>
+        {body}
       </details>
     </div>
   );
@@ -67,18 +93,45 @@ function OptionPreview({ preview }: { preview: string | null }) {
 // removed document, a moved checkout with the touched paths — and points at
 // the existing exits (re-open the doc, request changes, regress the stage).
 // It never blocks answering and adds no new actions of its own.
+// Advisory only: names what moved since a question was asked — a revised or
+// removed document, a moved checkout with the touched paths — and points at
+// the existing exits (re-open the doc, request changes, regress the stage).
+// It never blocks answering and adds no new actions of its own.
+//
+// The file paths are what made this unusable: on a real card the notice
+// listed seven paths and pushed the actual question off the screen. The
+// reader needs the WARNING first and the paths only if they are auditing
+// which files moved, so the paths collapse behind a summary that still shows
+// the count. "What this means" is stated before "what changed", because the
+// first thing a person has to decide is whether it matters.
 function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) {
   if (!staleness.docRevised && !staleness.docRemoved && !staleness.checkoutMoved) return null;
+  const paths = staleness.touchedPaths;
   return (
     <div className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200" role="note" aria-label="Evidence changed since asked">
       <p className="font-semibold">Something changed since this question was asked</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4">
-        {staleness.docRevised ? <li>A linked document was revised — open the current version from the options below before answering.</li> : null}
-        {staleness.docRemoved ? <li>A linked document can no longer be opened at its recorded path.</li> : null}
-        {staleness.checkoutMoved ? <li>{staleness.commitCount > 0
-          ? `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed since${staleness.touchedPaths.length > 0 ? `, touching ${staleness.touchedPaths.join(", ")}` : ""}. The plan may assume code that changed.`
-          : "The checkout moved since this question was asked. The plan may assume code that changed."}</li> : null}
-      </ul>
+      <p className="mt-1">
+        {staleness.docRemoved
+          ? "A document this question relies on can no longer be opened."
+          : staleness.docRevised
+            ? "A document this question relies on was revised."
+            : `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed.`}
+        {" "}Check the linked document before answering if your choice depends on it.
+      </p>
+      {paths.length > 0 ? (
+        <details className="mt-1">
+          <summary
+            className={DISCLOSURE_SUMMARY_CLASS}
+
+          >
+            <DisclosureChevron />
+            {paths.length} file{paths.length === 1 ? "" : "s"} touched
+          </summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-[11px]">
+            {paths.map((path) => <li key={path} className="break-all">{path}</li>)}
+          </ul>
+        </details>
+      ) : null}
       <p className="mt-1 text-amber-900/70 dark:text-amber-200/70">If the plan no longer matches the code, request changes or return it to an earlier stage from Workflow progress.</p>
     </div>
   );
