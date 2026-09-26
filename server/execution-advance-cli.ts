@@ -31,7 +31,7 @@ export function createCliAdvance(deps: CliAdvanceDeps, services: AdvanceServices
   };
 }
 
-export function parseCli(argv: string[], context: CliContext): ParsedCli {
+function parseCli(argv: string[], context: CliContext): ParsedCli {
   const args = argv.slice(1);
   const flag = (name: string) => {
     const index = args.indexOf(name);

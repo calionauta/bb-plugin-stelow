@@ -1,9 +1,10 @@
 // Executable tests for the rules behind the two component hooks the oversized
 // state hooks were split into. The hooks themselves are thin bindings over these
 // module-level rules — a fake rpc and a set of sinks are the whole harness — so
-// each case below is a claim about behavior, not about where a string sits. The
-// negative controls at the end invert one rule at a time and name the case that
-// catches it.
+// each case below is a claim about behavior, not about where a string sits. Each
+// section carries its own negative control: an input the rule must refuse, or a
+// double that applies the updater it is handed, so a rule that stopped refusing —
+// or a rule whose "no-op" quietly became a no-op test — fails here.
 import assert from "node:assert/strict";
 import { listCandidates } from "../components/github/github-import-query.ts";
 import { importEach } from "../components/github/github-import-submit.ts";
@@ -53,7 +54,6 @@ const noop = () => {};
   assert.equal(sinks.cleared, 1, "an empty label set clears the stale candidates");
   assert.deepEqual(sinks.busy, [], "nothing was started, so nothing is marked busy");
 
-  const issue = { repo: "a/b", number: 1, alreadyImported: false };
   await listCandidates(rpc, setBusy, bind, [" stelow-work ", ""]);
   assert.deepEqual(rpc.find("listGithubCandidates").args, { labels: ["stelow-work"] }, "labels are trimmed and blanks dropped");
   assert.deepEqual(sinks.busy, [true, false], "a fetch owns the busy flag start to finish");
@@ -167,9 +167,15 @@ const noop = () => {};
 
   const named = rpcDouble({ upsertPreset: { preset: { id: "p9", name: "Fast" } } });
   const saved = [];
-  const kept = [];
+  const namedForm = { ...managerForm, name: " Fast " };
+  // The form setter is a reducer, so the double applies it: recording the
+  // argument alone would pass a rule that stopped writing the id back.
+  const forms = [];
+  const recordForm = (next) => {
+    forms.push(typeof next === "function" ? next(namedForm) : next);
+  };
   await savePreset(named, {
-    state: { ...state, form: { ...managerForm, name: " Fast " } },
+    state: { form: namedForm, setForm: recordForm },
     setBusy: noop,
     setMessage: noop,
     onChanged: async () => { saved.push("changed"); },
@@ -180,10 +186,14 @@ const noop = () => {};
   }, "the saved name is trimmed and the unmanaged fields are explicit nulls");
   assert.deepEqual(saved, ["changed"], "a successful save refreshes the list");
   // The saved id is what makes the next save an update rather than a copy.
-  const withId = { ...state, form: { ...managerForm, name: "Fast", id: "p9" } };
-  await savePreset(named, { state: withId, setBusy: noop, setMessage: noop, onChanged: async () => {} });
+  assert.equal(forms.at(-1).id, "p9", "the id the server assigned is written through the form");
+  await savePreset(named, {
+    state: { form: { ...managerForm, name: "Fast", id: "p9" }, setForm: recordForm },
+    setBusy: noop,
+    setMessage: noop,
+    onChanged: async () => {},
+  });
   assert.equal(named.calls.at(-1).args.id, "p9", "an existing preset is sent with its id, so the save updates it");
-  assert.deepEqual(kept, [], "the id is written through the form, not through the rpc call");
 }
 
 // A new preset starts from the default's fields, and the id and name are cleared

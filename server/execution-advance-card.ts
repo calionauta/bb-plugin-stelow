@@ -5,10 +5,13 @@
  * after the helper has actually advanced the stage does the band swap and the
  * route dispatch happen, so a failed advance leaves the card where it was.
  */
-import type { AdvanceCardResult, AdvanceDeps } from "./execution-advance-types.js";
+import type {
+  AdvanceCardResult,
+  AdvanceDeps,
+  PreparedOrRefusal,
+} from "./execution-advance-types.js";
 import type { DispatchInput, DispatchResult } from "./execution-advance-dispatch.js";
 import type { PreflightInput } from "./execution-advance-preflight.js";
-import type { PreparedOrRefusal } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
 type CardAdvanceDeps = Pick<
@@ -52,7 +55,7 @@ export async function advanceCard(
   if (!card) return refuse(deps.errors.cardNotFound);
   if (deps.isArchivedCard(card)) return refuse(deps.errors.cardArchived);
   const kindRefusal = NO_STAGE_KINDS[card.kind];
-  if (kindRefusal) return { ok: false, stdout: "", error: kindRefusal };
+  if (kindRefusal) return refuse(kindRefusal);
   const workspace = await deps.cardWorkspace(card);
   if (!workspace?.path) return refuse(deps.errors.workspaceUnavailable);
   const stateDir = card.dir_hash ? await deps.stateDir(card, workspace.path) : null;

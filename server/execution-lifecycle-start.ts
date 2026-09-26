@@ -9,7 +9,6 @@
 import { activeExecutionRun, type ExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import type { LifecycleRuleDeps, StartContext } from "./execution-lifecycle-types.js";
-import type { WorkerCard } from "./workers-types.js";
 
 export type StartDeps = Pick<
   LifecycleRuleDeps,

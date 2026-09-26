@@ -29,16 +29,11 @@ export type PreflightInput = {
 
 export function createAdvancePreflight(deps: PreflightDeps) {
   return {
-    recordExecution: (
-      cardId: string,
-      evidence: string,
-      transition: "execution-refused" | "execution-entered",
-    ) => recordExecution(deps, cardId, evidence, transition),
     prepareAdvance: (input: PreflightInput) => prepareAdvance(deps, input),
   };
 }
 
-export function recordExecution(
+function recordExecution(
   deps: PreflightDeps,
   cardId: string,
   evidence: string,
@@ -88,7 +83,7 @@ async function routePreflight(
  * that cannot start its next scope, or whose scope graph cycles, is refused
  * before the state moves.
  */
-export async function syncExecutionScopes(
+async function syncExecutionScopes(
   deps: PreflightDeps,
   card: WorkerCard,
   rootPath: string,
