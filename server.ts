@@ -86,6 +86,15 @@ import { resolveClaimKey } from "./lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import {
+  answerCommentBody,
+  answeredCardPatch,
+  buildAnswerPayload,
+  EXPIRED_QUESTION_ID_PREFIX,
+  expiredQuestionId,
+  expiredQuestionRowId,
+  parseAnswerArgs,
+} from "./lib/question-answer-recording.mjs";
 import { decideAskGate } from "./lib/ask-gate.mjs";
 import { cleanAnswerList } from "./lib/expired-question-answers.mjs";
 import { matchAutomationIssues } from "./lib/automation-rules.mjs";
@@ -3652,7 +3661,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   function openExpiredQuestionIds(cardId: string): string[] {
     return (db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC").all(cardId) as Array<{ id: string }>)
-      .map((row) => `expired:${row.id}`);
+      .map((row) => expiredQuestionId(row.id));
   }
 
   // Pending plugin interactions (stelow asks), narrowed so payload/title read.
@@ -4285,6 +4294,143 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     normalizeStatus,
   });
 
+  // The two answering doors live here, at plugin scope, so the RPC contract
+  // and the `bb stelow answer` CLI verb share ONE implementation. A second
+  // copy in the CLI would drift the moment the recording rule changes.
+  async function answerQuestions({ cardId, answers }: { cardId: string; answers: Array<{ questionId: string; answers: string[] }> }) {
+    // Atomic batch answer: one worker continuation and one Inbox
+    // reconciliation — no fragmented pings.
+    const card = getCard(cardId);
+    if (!card?.worker_thread_id) return { ok: false as const, answered: 0, error: "This card has no worker thread." };
+    if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
+    try {
+      const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
+      const pendingById = new Map(pendingAsks(list).map((entry) => [entry.id, entry]));
+      const questionText = new Map<string, string>();
+      for (const entry of pendingById.values()) {
+        for (const item of expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload })) {
+          questionText.set(item.questionId, item.question);
+        }
+      }
+      const grouped = groupBatchAnswers(answers);
+      const decisions: Array<{ question: string; answers: string[] }> = [];
+      const answeredInteractionIds = new Set<string>();
+      for (const [interactionId, value] of grouped) {
+        if (!pendingById.has(interactionId)) continue;
+        await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId, value: { answers: value.answers } });
+        answeredInteractionIds.add(interactionId);
+        if (value.kind === "single") {
+          decisions.push({ question: questionText.get(interactionId) ?? "", answers: value.answers });
+        } else {
+          value.answers.forEach((slot, index) => {
+            decisions.push({ question: questionText.get(`${interactionId}#${index}`) ?? "", answers: slot });
+          });
+        }
+      }
+      if (decisions.length === 0) return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
+      // Split proposals answered on the card land here instead of the
+      // blocking call above — one shared recording (lib/split-proposal).
+      recordSplitAnswer(db, cardId, decisions);
+      // The lifecycle suppresses the ordinary worker continuation only for
+      // its exact native-boundary answer; all other batches resume normally.
+      const boundaryRun = await executionLifecycle.routeAnswerContinuation(
+        cardId,
+        card.worker_thread_id,
+        decisions,
+      );
+      const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
+      const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
+      // Name the answered ones BEFORE the sync: disappearance alone would
+      // mislabel them superseded.
+      markInboxQuestionsAnswered(cardId, [...answeredInteractionIds]);
+      if (boundaryRun) {
+        const resumeError = await executionLifecycle.resumeAfterAnswers(boundaryRun, decisions);
+        if (resumeError) return { ok: false as const, answered: decisions.length, error: resumeError };
+      }
+      syncPendingQuestionInbox(card, openQuestionIds);
+      // One recording rule for both doors (lib/question-answer-recording):
+      // every answer is recorded, and a declared contract is named in the
+      // trail so a grep for it cannot miss a satisfied contract.
+      const trail = answerCommentBody(decisions.map((decision) => ({
+        question: decision.question,
+        answers: decision.answers,
+        contract: decision.question ? consumeAskContract(db, cardId, decision.question) : null,
+      })));
+      if (trail) {
+        logCardComment(cardId, "card", cardId, "user", trail);
+      }
+      // A fresh human answer resumes the worker: a stale provider error
+      // from the interrupted turn must not linger as "Failed" beside the
+      // recovery path. Failure history stays in the event log.
+      updateCard(cardId, answeredCardPatch(openQuestionIds.length > 0));
+      return { ok: true as const, answered: decisions.length, error: null };
+    } catch (error) {
+      return { ok: false as const, answered: 0, error: error instanceof Error ? error.message : "Unable to answer the questions." };
+    }
+  }
+
+  async function answerExpiredQuestions({ cardId, answers }: { cardId: string; answers: Array<{ questionId: string; answers: string[] }> }) {
+    // Timed-out questions remain one atomic blocking decision. Never resume
+    // the worker with a subset: later answers may reverse its direction.
+    const card = getCard(cardId);
+    if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
+    if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
+    type ExpiredRow = { id: string; thread_id: string; question: string };
+    const openRows = db
+      .prepare("SELECT id, thread_id, question FROM expired_questions WHERE card_id = ? AND answered = 0")
+      .all(cardId) as ExpiredRow[];
+    const openIds = new Set(openRows.map((row) => row.id));
+    const rows = new Map<string, { thread_id: string; question: string; answers: string[] }>();
+    for (const item of answers) {
+      const row = openRows.find((entry) => entry.id === item.questionId);
+      const cleanAnswers = cleanAnswerList(item.answers);
+      if (!row || rows.has(item.questionId) || cleanAnswers.length === 0) continue;
+      rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: cleanAnswers });
+    }
+    if (openIds.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
+    if (rows.size !== openIds.size) return { ok: false as const, answered: 0, error: "Answer every pending question before submitting." };
+    const decisions: Array<{ question: string; answers: string[]; contract: string | null }> = [];
+    // Resume the CURRENT worker: the row's thread may be stale (restart /
+    // reseed archives the thread but keeps its expired questions).
+    const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
+    db.transaction(() => {
+      for (const [questionId, row] of rows) {
+        const matched = consumeAskContract(db, cardId, row.question);
+        db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
+        decisions.push({ question: row.question, answers: row.answers, contract: matched });
+      }
+    })();
+    // Recovered split asks record through the same shared helper as live
+    // asks; otherwise a valid response would resume the worker but make
+    // `bb stelow split` refuse as unanswered.
+    recordSplitAnswer(db, cardId, decisions);
+    markInboxQuestionsAnswered(
+      cardId,
+      [...rows.keys()].map((questionId) => expiredQuestionId(questionId)),
+    );
+    const openQuestionIds = await syncOpenQuestionInbox(card);
+    // One recording rule for both doors (lib/question-answer-recording):
+    // this door used to write a differently-spelled comment per question,
+    // so a grep for a satisfied contract could miss it.
+    const trail = answerCommentBody(decisions);
+    if (trail) {
+      logCardComment(cardId, "card", cardId, "user", trail);
+    }
+    // Same stale-error rule as live answers: answering clears the
+    // interrupted turn's failure so the recovered card reads coherent.
+    updateCard(cardId, answeredCardPatch(hasOpenQuestions(cardId, openQuestionIds)));
+    bb.realtime.publish("card-state", { cardId });
+    if (threadId) {
+      try {
+        await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+      } catch {
+        // Thread may be stopped; the comments still record the answers.
+      }
+    }
+    return { ok: true as const, answered: decisions.length, error: null };
+  }
+
+
   bb.rpc.register(rpcContract, {
     ...decisionApi.handlers,
     ...github.handlers,
@@ -4398,76 +4544,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { approved: true, receiptPath, error: null };
     },
 
-    async answerQuestions({ cardId, answers }) {
-      // Atomic batch answer: one worker continuation and one Inbox
-      // reconciliation — no fragmented pings.
-      const card = getCard(cardId);
-      if (!card?.worker_thread_id) return { ok: false as const, answered: 0, error: "This card has no worker thread." };
-      if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
-      try {
-        const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
-        const pendingById = new Map(pendingAsks(list).map((entry) => [entry.id, entry]));
-        const questionText = new Map<string, string>();
-        for (const entry of pendingById.values()) {
-          for (const item of expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload })) {
-            questionText.set(item.questionId, item.question);
-          }
-        }
-        const grouped = groupBatchAnswers(answers);
-        const decisions: Array<{ question: string; answers: string[] }> = [];
-        const answeredInteractionIds = new Set<string>();
-        for (const [interactionId, value] of grouped) {
-          if (!pendingById.has(interactionId)) continue;
-          await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId, value: { answers: value.answers } });
-          answeredInteractionIds.add(interactionId);
-          if (value.kind === "single") {
-            decisions.push({ question: questionText.get(interactionId) ?? "", answers: value.answers });
-          } else {
-            value.answers.forEach((slot, index) => {
-              decisions.push({ question: questionText.get(`${interactionId}#${index}`) ?? "", answers: slot });
-            });
-          }
-        }
-        if (decisions.length === 0) return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
-        // Split proposals answered on the card land here instead of the
-        // blocking call above — one shared recording (lib/split-proposal).
-        recordSplitAnswer(db, cardId, decisions);
-        // The lifecycle suppresses the ordinary worker continuation only for
-        // its exact native-boundary answer; all other batches resume normally.
-        const boundaryRun = await executionLifecycle.routeAnswerContinuation(
-          cardId,
-          card.worker_thread_id,
-          decisions,
-        );
-        const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
-        const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
-        // Name the answered ones BEFORE the sync: disappearance alone would
-        // mislabel them superseded.
-        markInboxQuestionsAnswered(cardId, [...answeredInteractionIds]);
-        if (boundaryRun) {
-          const resumeError = await executionLifecycle.resumeAfterAnswers(boundaryRun, decisions);
-          if (resumeError) return { ok: false as const, answered: decisions.length, error: resumeError };
-        }
-        syncPendingQuestionInbox(card, openQuestionIds);
-        // Contract provenance: answers that match a declared contract id
-        // name it in the trail. Undeclared answers behave exactly as before.
-        const contractNotes: string[] = [];
-        for (const decision of decisions) {
-          const matched = decision.question ? consumeAskContract(db, cardId, decision.question) : null;
-          if (matched) contractNotes.push(`Q: ${decision.question}\nA: ${decision.answers.join(", ")} [contract: ${matched}]`);
-        }
-        if (contractNotes.length > 0) {
-          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question:\n\n${contractNotes.join("\n\n")}`);
-        }
-        // A fresh human answer resumes the worker: a stale provider error
-        // from the interrupted turn must not linger as "Failed" beside the
-        // recovery path. Failure history stays in the event log.
-        updateCard(cardId, { activity: openQuestionIds.length > 0 ? "awaiting-answer" : "running", status: "in-progress", last_error: null });
-        return { ok: true as const, answered: decisions.length, error: null };
-      } catch (error) {
-        return { ok: false as const, answered: 0, error: error instanceof Error ? error.message : "Unable to answer the questions." };
-      }
-    },
+    answerQuestions,
 
     async startWorkflow({ projectId, prompt }) {
       const thread = await workers.spawnWorkflow({
@@ -5741,56 +5818,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, strategy: picked.id, error: null };
     },
 
-    async answerExpiredQuestions({ cardId, answers }) {
-      // Timed-out questions remain one atomic blocking decision. Never resume
-      // the worker with a subset: later answers may reverse its direction.
-      const card = getCard(cardId);
-      if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
-      if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
-      const openRows = db.prepare("SELECT id, thread_id, question FROM expired_questions WHERE card_id = ? AND answered = 0").all(cardId) as Array<{ id: string; thread_id: string; question: string }>;
-      const openIds = new Set(openRows.map((row) => row.id));
-      const rows = new Map<string, { thread_id: string; question: string; answers: string[] }>();
-      for (const item of answers) {
-        const row = openRows.find((entry) => entry.id === item.questionId);
-        const cleanAnswers = cleanAnswerList(item.answers);
-        if (row && !rows.has(item.questionId) && cleanAnswers.length > 0) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: cleanAnswers });
-      }
-      if (openIds.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
-      if (rows.size !== openIds.size) return { ok: false as const, answered: 0, error: "Answer every pending question before submitting." };
-      const decisions: Array<{ question: string; answers: string[] }> = [];
-      // Resume the CURRENT worker: the row's thread may be stale (restart /
-      // reseed archives the thread but keeps its expired questions).
-      const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
-      db.transaction(() => {
-        for (const [questionId, row] of rows) {
-          const matched = consumeAskContract(db, cardId, row.question);
-          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question${matched ? ` (contract: ${matched})` : ""}:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
-          db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
-          decisions.push({ question: row.question, answers: row.answers });
-        }
-      })();
-      // Recovered split asks record through the same shared helper as live
-      // asks; otherwise a valid response would resume the worker but make
-      // `bb stelow split` refuse as unanswered.
-      recordSplitAnswer(db, cardId, decisions);
-      markInboxQuestionsAnswered(
-        cardId,
-        [...rows.keys()].map((questionId) => `expired:${questionId}`),
-      );
-      const openQuestionIds = await syncOpenQuestionInbox(card);
-      // Same stale-error rule as live answers: answering clears the
-      // interrupted turn's failure so the recovered card reads coherent.
-      updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress", last_error: null });
-      bb.realtime.publish("card-state", { cardId });
-      if (threadId) {
-        try {
-          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
-        } catch {
-          // Thread may be stopped; the comments still record the answers.
-        }
-      }
-      return { ok: true as const, answered: decisions.length, error: null };
-    },
+    answerExpiredQuestions,
 
     async advance({ projectId, stage }) {
       const rootPath = await projectRoot(bb, projectId);
@@ -6162,6 +6190,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
   const STELOW_CLI_COMMANDS = [
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
       { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once; write all content in English)" },
+      {
+        name: "answer",
+        summary: "Answer a card's pending questions programmatically (same rules as answering on the card)",
+        usage: "bb stelow answer --card <card_id> --question <question_id> --answer <text> "
+          + "[--question <question_id> --answer <text>]... [--json] "
+          + "(repeat pairs; every open question must be answered in one call)",
+      },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
@@ -6222,6 +6257,40 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
         if (board.error) return { exitCode: 1, stderr: board.error };
         return { exitCode: 0, stdout: board.workflows.map((workflow) => `${workflow.name}\t${workflow.status}\t${workflow.stage}`).join("\n") };
+      }
+      if (argv[0] === "answer") {
+        // Answering a card's questions programmatically, under exactly the
+        // rules the card form uses: every open question is answered in one
+        // atomic batch, the contract is consumed, the trail records the
+        // outcome, and the worker resumes. This is the door that makes the
+        // needs-input path testable without a browser.
+        const parsedAnswer = parseAnswerArgs(argv.slice(1));
+        if (parsedAnswer.error) return { exitCode: 2, stderr: parsedAnswer.error };
+        const { pairs, json: answerJson } = parsedAnswer;
+        const cardFlagIndex = argv.indexOf("--card");
+        const namedCard = cardFlagIndex >= 0 ? argv[cardFlagIndex + 1] : undefined;
+        const answerCard = namedCard ? getCard(namedCard) : ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        if (!answerCard) {
+          return { exitCode: 2, stderr: "Missing --card <card_id>. Answer must name the card whose questions it answers." };
+        }
+        const { live, expired } = buildAnswerPayload(pairs);
+        if (live.length > 0 && expired.length > 0) {
+          return { exitCode: 2, stderr: "Answer live and recovery questions in separate calls; each door answers its own set atomically." };
+        }
+        const door = live.length > 0 ? "live" : "expired";
+        const result = door === "live"
+          ? await answerQuestions({ cardId: answerCard.id, answers: live })
+          : await answerExpiredQuestions({
+            cardId: answerCard.id,
+            answers: expired.map((entry) => ({ questionId: expiredQuestionRowId(entry.questionId), answers: entry.answers })),
+          });
+        if (!result?.ok) {
+          return { exitCode: 1, stderr: result?.error ?? "Could not answer the questions.", stdout: "" };
+        }
+        const stdout = answerJson
+          ? JSON.stringify({ cardId: answerCard.id, answered: result.answered, door })
+          : `Answered ${result.answered} question(s) on card ${answerCard.id}.`;
+        return { exitCode: 0, stdout, stderr: "" };
       }
       if (argv[0] === "ask") {
         const flag = (name: string) => { const index = argv.indexOf(name); return index >= 0 ? argv[index + 1] : undefined; };

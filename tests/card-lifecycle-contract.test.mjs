@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceBetween } from "./helpers/source-slice.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
@@ -79,12 +80,16 @@ const detailScopes = readFileSync(join(root, "components", "detail", "scopes-lis
 const detailViewer = readFileSync(join(root, "components", "detail", "artifact-viewer-dialog.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
+// A handler inside the RPC contract object, ended by the next RPC method.
 function rpcMethod(name, nextName) {
-  const start = server.indexOf(`    async ${name}(`);
-  const end = server.indexOf(`    async ${nextName}(`, start + 1);
-  assert.notEqual(start, -1, `${name} RPC exists`);
-  assert.notEqual(end, -1, `${nextName} RPC marks the end of ${name}`);
-  return server.slice(start, end);
+  return sourceBetween(server, `    async ${name}(`, `    async ${nextName}(`);
+}
+
+// A plugin-scope function, ended by the next top-level marker. Used for
+// handlers hoisted out of the RPC object so the CLI and the contract share
+// one implementation.
+function sourceFn(name, nextMarker) {
+  return sourceBetween(server, `  async function ${name}(`, nextMarker);
 }
 
 
@@ -378,10 +383,18 @@ assert.match(advance, /deps\.isArchivedCard\(card\)/, "stage advances check arch
 assert.match(advance, /error: deps\.errors\.cardArchived/, "archived stage advances name the terminal refusal");
 assert.match(advance, /if \(card\.kind !== "build"\)/, "the execution advance route stays Build-only");
 assert.doesNotMatch(advance, /stage === "audit" \? "completed"/, "Audit is not an implicit completion path");
-const answer = rpcMethod("answerQuestions", "startWorkflow");
+// Both answering doors are hoisted to plugin-scope functions so the RPC
+// contract and the `bb stelow answer` CLI share one implementation. The pins
+// below guard the refusals those doors still own, and the topology pin keeps
+// them from being re-inlined as divergent copies.
+const answer = sourceFn("answerQuestions", "async function answerExpiredQuestions");
 assert.match(answer, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse batch answers");
-const answerExpired = rpcMethod("answerExpiredQuestions", "advance");
+const answerExpired = sourceFn("answerExpiredQuestions", "bb.rpc.register");
 assert.match(answerExpired, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse expired answers");
+assert.match(server, /\n    answerQuestions,\n/, "the live answer door is one implementation, shared by the contract and the CLI");
+assert.match(server, /\n    answerExpiredQuestions,\n/, "the recovery answer door is one implementation, shared by the contract and the CLI");
+assert.match(answer, /answerCommentBody\(/, "the live door records through the shared trail rule");
+assert.match(answerExpired, /const trail = answerCommentBody\(decisions\);/, "the recovery door records through the same shared trail rule");
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: card\.stage \}\)/, "a card comment reopens completed work through the shared lifecycle helper");
@@ -522,7 +535,12 @@ assert.match(server, /errorNeedsAttention\(row\.status, row\.last_error, activit
 assert.match(server, /errorNeedsAttention\(card\.status, card\.last_error, effectiveActivity\)/, "detail attention shares the same predicate — badge and card cannot disagree");
 const retry = rpcMethod("retryWorker", "restartWorker");
 assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked"/, "completed cards refuse Retry instead of nudging a finished worker");
-assert.match(server, /status: "in-progress", last_error: null \}\);/, "answering a question clears the interrupted turn's failure");
+// The "a fresh answer resumes and forgets the stale failure" rule moved into
+// lib/question-answer-recording so both doors obey it; the behavior test in
+// tests/question-answer-recording.test.mjs guards the values, and this pins
+// that the server no longer re-inlines them.
+assert.doesNotMatch(server, /status: "in-progress", last_error: null \}\);/, "the answer card patch is decided once in lib/, not pasted per door");
+assert.match(server, /updateCard\(cardId, answeredCardPatch\(/, "both doors apply the shared answer card patch");
 assert.match(server, /supersede it at birth/, "an error arriving with an open question counts once, in history");
 assert.match(boardCard, /cardCanResume\(card\)/, "build board cards use the shared terminal retry guard");
 assert.match(lightweightCard, /cardCanResume\(card\)/, "research/explore cards use the shared terminal retry guard");
