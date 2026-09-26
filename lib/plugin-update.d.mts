@@ -10,6 +10,11 @@ export declare function mapUpdateEntry(entry: unknown): {
 export declare function shortRef(version: unknown, display: unknown): string | null;
 export declare function isPathInstall(display: unknown): boolean;
 export declare function updateAvailableFrom(info: unknown): boolean;
+export declare function updateComparison(version: unknown, githubRelease: unknown): {
+  installed: string | null;
+  published: string | null;
+  state: "current" | "behind" | "ahead" | "unknown";
+};
 export interface GithubReleaseInfo {
   tag: string;
   url: string;

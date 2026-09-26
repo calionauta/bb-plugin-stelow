@@ -1,5 +1,5 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
-import { isPathInstall, shortRef, type PluginUpdateVerdict } from "../../lib/plugin-update.mjs";
+import { isPathInstall, shortRef, updateComparison, type PluginUpdateVerdict } from "../../lib/plugin-update.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
 import { Button } from "../ui/button";
 import { UpdateBadge } from "./update-badge";
@@ -67,10 +67,9 @@ function UnmanagedUpdateCopy({ version, update, github }: {
     || update.outcome === "unavailable";
   if (!unmanaged) return null;
   const pathInstall = isPathInstall(update.installedDisplay);
-  const matchesGithub = github !== null
-    && !github.newer
-    && version !== "dev"
-    && version.replace(/^v/, "") === github.tag.replace(/^v/, "");
+  // Both versions in one sentence: the running build next to the published
+  // tag. Naming only the published one read as a claim about this install.
+  const comparison = updateComparison(version, github);
   return (
     <>
       {update.detail ? <p>{update.detail}</p> : null}
@@ -86,14 +85,17 @@ function UnmanagedUpdateCopy({ version, update, github }: {
           BB can’t apply an update to this install automatically right now. “Check update” re-checks; new releases appear here once BB can apply them.
         </p>
       ) : null}
-      {matchesGithub ? <p>Matches {github.tag} on GitHub — this checkout is current.</p> : null}
+      {comparison.published && comparison.state === "current" ? (
+        <p>Running v{comparison.installed}, the latest release on GitHub — this checkout is current.</p>
+      ) : null}
       {github?.newer ? (
         <p className="text-amber-700 dark:text-amber-300">
+          Running v{comparison.installed};{" "}
           <UrlLink
             href={github.url}
             className="underline underline-offset-4 hover:text-foreground"
           >
-            {github.tag} is published on GitHub ↗
+            v{comparison.published} is published on GitHub ↗
           </UrlLink>
           {" "}{pathInstall
             ? "— pull the checkout, rebuild, and reload to run it."
