@@ -52,12 +52,18 @@ repaired, and is listed under *Review corrections (the Functions phase)*.
 `check-source-budgets.mjs` scores two different references, and both matter:
 
 - **New violations** are scoped to the *merge-base* with `origin/master`,
-  currently `1f968be` — `origin/master` is 12 commits past it and the branch
-  is 229.
+  `1f968be` — stable for the life of the branch, since the fork's own history
+  does not move it. The two counts beside it do move: `origin/master` advances
+  with every release merge, so read them from
+  `git rev-list --count $(git merge-base origin/master HEAD)..origin/master`
+  rather than from this file.
 - **Inherited debt** is scored against the *target tip* of `origin/master`,
-  currently `bdce8094` (`chore(master): release 0.51.1 (#99)`), which is the
-  SHA `check-source-budgets.mjs` prints as `debt baseline`. `12c6664` is a real
-  ancestor of that tip, not the tip.
+  which is `2ae7e8c` (`chore(master): release 0.51.2 (#101)`) as of this
+  review and was `bdce8094` (`0.51.1`) when the figures in the sections below
+  were measured. That SHA is the one `check-source-budgets.mjs` prints as
+  `debt baseline`, so the gate's own output is the authority and this
+  sentence is a reading of it, not a substitute. `12c6664` is a real ancestor
+  of the tip, never the tip.
 
 So "baseline" in the tables is the master value the gate subtracts, and a
 negative delta is real progress that the gate already accepts. Progress is
