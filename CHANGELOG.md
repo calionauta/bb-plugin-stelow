@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.51.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.50.0...v0.51.0) (2026-09-26)
+
+
+### Features
+
+* add Interface Contrast and Scope Map contracts ([#94](https://github.com/calionauta/bb-plugin-stelow/issues/94)) ([ee42633](https://github.com/calionauta/bb-plugin-stelow/commit/ee42633f81012379009a87657d87dacf02e19605))
+* decision router seams, scope-batch safety contract, gated fan-out, and programmatic answers ([#97](https://github.com/calionauta/bb-plugin-stelow/issues/97)) ([b7bc503](https://github.com/calionauta/bb-plugin-stelow/commit/b7bc50355475a5f3da2bd5621541dd8de5fb3207))
+
+
+### Bug Fixes
+
+* send the build card request and protocol to the worker ([#95](https://github.com/calionauta/bb-plugin-stelow/issues/95)) ([56fde6e](https://github.com/calionauta/bb-plugin-stelow/commit/56fde6e4f4c706fee8be27e70e0c2773309b0390))
+
 ## [0.50.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.49.1...v0.50.0) (2026-09-24)
 
 
