@@ -162,17 +162,31 @@ function tokensOf(text) {
   return tokenCache.get(text);
 }
 
-// Candidates are the same file and the same name, and nothing else: those are
-// the only two ways a function can be recognised before its content is read.
+// Sharing a file is not descent. The same symbol is the same nested path in the
+// same file, so a new function added to a file that already carries debt is
+// never its own ancestor — which is exactly the case this replaced: the old
+// rule matched every function in the file and waived anything under the
+// largest one's length.
+function isSameSymbol(left, right) {
+  return left.file === right.file && left.path.join("/") === right.path.join("/");
+}
+
+// Candidates are the same symbol in the same file and the same name anywhere
+// else: those are the only two ways a function can be recognised before its
+// content is read. The name arm is still filtered by lineageKind, so a repeated
+// label in another scope is not a same-file match.
 function lineageCandidates(record, index) {
   const candidates = new Map();
-  for (const candidate of index.byFile.get(record.file) ?? []) candidates.set(candidate, true);
+  for (const candidate of index.byFile.get(record.file) ?? []) {
+    if (isSameSymbol(record, candidate)) candidates.set(candidate, true);
+  }
   for (const candidate of index.byLabel.get(record.label) ?? []) candidates.set(candidate, true);
   return [...candidates.keys()];
 }
 
 function lineageKind(record, candidate) {
-  if (record.file === candidate.file) return "same-file";
+  if (isSameSymbol(record, candidate)) return "same-file";
+  if (record.file === candidate.file) return null;
   return provesMove(tokensOf(record.text), tokensOf(candidate.text)) ? "relocated" : null;
 }
 

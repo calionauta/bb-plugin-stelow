@@ -351,10 +351,11 @@ guard (51) with a stronger one: every oversized symbol in the tree has to be
 recorded, and a recorded one that stopped being oversized still has to be
 dropped. It also checks that a recorded ceiling is actually over its budget.
 
-`tests/source-budgets.test.mjs` is the new gate-level suite — nine scenarios on a
+`tests/source-budgets.test.mjs` is the new gate-level suite — eleven scenarios on a
 throwaway repository, run against the real checker: inherited debt, grown debt,
 a same-size rewrite, a name collision with no lineage, a copied body under a new
-name, a committed relocation, a recorded entry and a record that outgrew itself,
+name, a new function added beside inherited debt, a repeated label in a new
+scope, a committed relocation, a recorded entry and a record that outgrew itself,
 plus the two file cases. `tests/budget-lineage.test.mjs` pins the run threshold
 from both sides, 19 tokens a coincidence and 20 a move.
 
@@ -498,3 +499,40 @@ Two changes, both bounded:
   base, so a file with no changed lines is still never reported. Verified with a
   negative control: injecting a 171-character line into `server/github-status.ts`
   fails the test, and the file restores clean.
+
+## A hole the phase's own review found in the repaired gate
+
+The repair above was reviewed against the repository rather than its report, and
+the gate it shipped still had a waiver that did not need any similarity at all.
+
+`lineageCandidates` fed **every** function in the same file to the matcher, and
+`lineageKind` answered `same-file` on the file alone, without comparing names or
+paths. Any oversized function was therefore inherited by any larger oversized
+function sharing its file, and `bestLineage` picked the largest, so the waiver
+was granted to the new function for being *shorter* than its neighbour — the
+inverse of the growth rule the phase had just added. Two vectors reached it:
+
+- a brand new function, unrelated name and body, added to a file that already
+  carried inherited debt;
+- the same through the name arm, since a `callback` nested in a new scope shares
+  its label with a top-level `callback` the file already inherited.
+
+Measured on this branch, before the repair: a new 53-line function beside the
+recorded 57-line `lib/card-checks.mjs:groupCardChecks` was reported
+`inherited lib/card-checks.mjs:injectedProbe#1: 53 lines (baseline 57)` and the
+gate exited 0. After, it is `over budget … (no function baseline)` and exits 1.
+
+`isSameSymbol` now carries the rule the comment claimed: same file *and* the same
+nested path, which is what `censusKey` means by a symbol. The check sits in
+`lineageKind` rather than only in the candidate list, so the name arm is filtered
+too — a repeated label in another scope is not a same-file match.
+
+What this did **not** change: the inherited set on this branch is byte-identical
+before and after (7 entries, same files, same lines, same reasons), and the
+whole-tree census still reports 4 oversized files and 47 oversized functions.
+No real debt was relying on the loose rule. The ledger was checked against
+`origin/master` while reviewing it: 46 of its 47 function ceilings equal their
+master line count exactly, one (`tests/server-cards.test.mjs:callback#4`, 82) is
+honestly *below* its master's 84, and the remaining four are branch-created
+symbols in `server/runtime/**` with no master ancestor, which is what the record
+is for. No ceiling was inflated, and there are no stale entries.

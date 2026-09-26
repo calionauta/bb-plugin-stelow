@@ -1,8 +1,9 @@
 // What the budget gate may and may not call inherited, exercised against the
-// real checker on a throwaway repository. The four cases that matter are a debt
-// that really is inherited, a debt that really moved, a debt that grew, and a
-// debt that only *looks* like an ancestor — the last two are the ones a
-// similarity score used to wave through.
+// real checker on a throwaway repository. The cases that matter are a debt that
+// really is inherited, a debt that really moved, a debt that grew, and a debt
+// that only *looks* like an ancestor — the last two are the ones a similarity
+// score used to wave through, and cases 6 and 7 are the ones a same-file match
+// used to wave through. Sharing a file, or a name, is not descent.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -38,6 +39,26 @@ function statements(count, prefix) {
 
 function functionSource(name, count, prefix) {
   return `export function ${name}(input) {\n${statements(count, prefix)}\n  return input;\n}\n`;
+}
+
+// A `callback` label with no name of its own, the way an anonymous function
+// passed to a call is labelled. Top level here, so its path is `callback`.
+function callbackSource(count, prefix) {
+  const body = Array.from(
+    { length: count },
+    (_, index) => `    const ${prefix}${index} = ${prefix}Step(${index});`,
+  ).join("\n");
+  return `export const ${prefix}Mapper = [1].map(function callback(input) {\n${body}\n  return input;\n});\n`;
+}
+
+// The same label one scope down, so its path is `outer/callback` and it is a
+// different symbol that merely repeats the name.
+function nestedCallbackSource(count, prefix) {
+  const body = Array.from(
+    { length: count },
+    (_, index) => `    const ${prefix}${index} = ${prefix}Step(${index});`,
+  ).join("\n");
+  return `export function outer(input) {\n  return [1].map(function callback(item) {\n${body}\n    return item;\n  });\n}\n`;
 }
 
 function write(relative, source) {
@@ -79,7 +100,11 @@ try {
   mkdirSync(join(fixtureRoot, "lib"), { recursive: true });
   mkdirSync(join(fixtureRoot, "scripts"), { recursive: true });
   write("README.md", "fixture\n");
-  write("lib/legacy.mjs", `${functionSource("alphaHandler", 52, "alpha")}${functionSource("relocatableHandler", 52, "relocate")}`);
+  write("lib/legacy.mjs", [
+    functionSource("alphaHandler", 52, "alpha"),
+    functionSource("relocatableHandler", 52, "relocate"),
+    callbackSource(58, "base"),
+  ].join(""));
   write("lib/oversized-source.mjs", "export const value = 1;\n".repeat(401));
   git("add", "README.md", "lib");
   git("commit", "-m", "base");
@@ -132,7 +157,32 @@ try {
   ]);
   rmSync(join(fixtureRoot, "lib/lookalike.mjs"));
 
-  // 6. Debt that moved to another file keeps its name and its body, so the run
+  // 6. A new function added to a file that already carries inherited debt is a
+  // new symbol. Sharing a file is not descent, and the old rule matched every
+  // function in the file: this one was waived by an unrelated 61-line
+  // neighbour purely for being shorter than it.
+  write("lib/legacy.mjs", readFileSync(join(fixtureRoot, "lib/legacy.mjs"), "utf8")
+    .concat(functionSource("brandNewOversizedThing", 52, "zeta")));
+  expectOverBudget("new function beside inherited debt", [
+    "over budget lib/legacy.mjs:brandNewOversizedThing#1: 55 lines (no function baseline)",
+    "inherited lib/legacy.mjs:alphaHandler#1: 55 lines",
+  ]);
+  restore("lib/legacy.mjs");
+
+  // 7. The same hole by the name arm. The base tree's `callback` is a
+  // top-level anonymous function; the branch adds a `callback` one scope down.
+  // They share a label and a file, not a path, so the new one is new debt — the
+  // old rule matched the base `callback` by name and waived it for being
+  // shorter.
+  write("lib/legacy.mjs", readFileSync(join(fixtureRoot, "lib/legacy.mjs"), "utf8")
+    .concat(nestedCallbackSource(52, "wrap")));
+  expectOverBudget("new function reusing an inherited name in a new scope", [
+    "over budget lib/legacy.mjs:outer/callback#1: 55 lines (no function baseline)",
+    "inherited lib/legacy.mjs:callback#1: 61 lines",
+  ]);
+  restore("lib/legacy.mjs");
+
+  // 8. Debt that moved to another file keeps its name and its body, so the run
   // of identical tokens is the proof. The file it left is under budget, so only
   // the function can carry the debt across, and the report has to say where it
   // came from rather than quoting a line count.
@@ -142,7 +192,7 @@ try {
   ]);
   rmSync(join(fixtureRoot, "lib/moved.mjs"));
 
-  // 7. Debt with no ancestor anywhere is recorded, and the record is a ceiling
+  // 9. Debt with no ancestor anywhere is recorded, and the record is a ceiling
   // rather than a licence.
   writeLedger({ "lib/recorded.mjs:recordedHandler": 55 });
   write("lib/recorded.mjs", functionSource("recordedHandler", 52, "record"));
@@ -156,7 +206,7 @@ try {
   rmSync(join(fixtureRoot, "lib/recorded.mjs"));
   writeLedger({});
 
-  // 8. Files follow the same rule: a moved oversized file is inherited, a new
+  // 10. Files follow the same rule: a moved oversized file is inherited, a new
   // oversized file written in the same shape is not.
   copyFileSync(join(fixtureRoot, "lib/oversized-source.mjs"), join(fixtureRoot, "lib/oversized-copy.mjs"));
   expectClean("relocated oversized file", [
@@ -169,7 +219,7 @@ try {
   ]);
   rmSync(join(fixtureRoot, "lib/oversized-lookalike.mjs"));
 
-  // 9. A committed move, not an untracked one: the same relocation has to be
+  // 11. A committed move, not an untracked one: the same relocation has to be
   // inherited when the new file is on the branch rather than in the worktree.
   write("lib/moved.mjs", functionSource("relocatableHandler", 52, "relocate"));
   git("add", "lib/moved.mjs");
