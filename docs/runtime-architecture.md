@@ -156,16 +156,10 @@ into a second copy.
 The budget check reports no file or function over its limit among the changed
 sources. Everything it still reports is inherited, and the gate prints it with
 the baseline it matched so the number can be checked. The full inherited set is
-thirteen entries across eight files:
+seven entries across seven files:
 
 | File | Entry | Lines (baseline) |
 | --- | --- | --- |
-| `server/github-issues.ts` | the file | 942 (942) |
-| `server/github-issues.ts` | `createGithubAutomation` | 701 (709) |
-| `server/github-issues.ts` | `runGithubMigrations` | 64 (64) |
-| `server/github-issues.ts` | `createGithubAutomation/runSingleAutomationRule` | 53 (53) |
-| `server/github-issues.ts` | `createGithubAutomation/listGithubCandidates` | 58 (58) |
-| `server/github-issues.ts` | `createGithubAutomation/postGithubCompletion` | 59 (59) |
 | `server/runtime/cli/cli-bundle-writer.ts` | `writeBundle` | 68 (104) |
 | `server/runtime/cli/cli-review-subject.ts` | `deliverableSubject` | 69 (66) |
 | `server/runtime/cli/cli-split.ts` | `reportSplit` | 61 (59) |
@@ -186,19 +180,21 @@ every owned file, records each one over 400 lines and each function over 50,
 and pins them to a ratchet. Paying debt down lowers a number there; nothing
 raises one without a deliberate edit.
 
-Today the whole-tree census is five oversized files and fifty-six oversized
-functions, of which the diff-scoped gate reports one file and five functions.
-The two named areas of remaining work are:
+Today the whole-tree census is four oversized files and fifty-one oversized
+functions, of which the diff-scoped gate reports none: every entry it still
+prints is inherited, listed above. The GitHub automation area was the first
+named area of remaining work and is now paid down — the eleven
+`server/github-*.ts` slices, largest 293 lines, with behavior tests. What
+remains:
 
-- `server/github-issues.ts` — 942 lines, with `createGithubAutomation` at 701
-  (a 40-line `createCardFromGithub`, a 39-line `saveAutomationRule`, and 41-line
-  issue-linking seams inside it), plus 229 lines of
-  `useGithubDialogState` and the dialog components under `components/github/`,
-  none of which this branch has touched.
 - the decision API — `createDecisionApi` at 319 lines with an 84-line
   `setDecisionPoint`, and `createDecisionApiSeams` at 271 with a 55-line
   `vetAutoContinue`. `server/decision-api.ts` sits exactly on the 400-line file
   limit, so any addition to it is a violation the moment it is edited.
+- the GitHub dialog state — `useGithubDialogState` at 229 lines plus the
+  dialog components under `components/github/` (`LinkedDiscussionSection` at
+  116, `GithubDoneDraftDialog` at 89, `GithubCompletionDialog` at 60), the
+  server-side twin of the area this branch just split.
 
 One caveat, because the gate is a heuristic and not a lineage record: when a
 function has no same-named baseline it is matched to the most similar function

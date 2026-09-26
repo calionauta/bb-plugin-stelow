@@ -82,9 +82,10 @@ area are gone rather than replaced.
 
 | File | Lines | Owns |
 | --- | --- | --- |
-| `server/github-issues.ts` | 57 | the seam: client, warn-once, handler map, both schedulers |
+| `server/github-issues.ts` | 58 | the seam: client, warn-once, handler map, both schedulers |
 | `server/github-automation-context.ts` | 92 | deps shape, kill switch, warn-once |
 | `server/github-client.ts` | 117 | the typed `github` plugin RPC bridge, status, pickers |
+| `server/github-status.ts` | 25 | the shared unavailable-status shape |
 | `server/github-migrations.ts` | 91 | tables, column ALTERs, the label backfill |
 | `server/github-issue-flow.ts` | 293 | candidates, the shared import path, issue creation |
 | `server/github-automation-rules.ts` | 232 | rule row shape, backlog guard, the tick |
@@ -93,7 +94,7 @@ area are gone rather than replaced.
 | `server/github-completion.ts` | 96 | the completion write-back and its body |
 | `server/github-rpc-contract.ts` | 165 | the wire shapes |
 
-R1 landed as 39 behavior tests over `tests/helpers/github-harness.mjs` (a real
+R1 landed as 43 behavior tests over `tests/helpers/github-harness.mjs` (a real
 database plus a fake `github` plugin behind the real RPC seam), in three files
 by area. The three functions the audit named — the tick, the candidate listing,
 and the write-back — are covered by the tests that fail when their behavior is
@@ -203,12 +204,12 @@ Ordered by dependency, then by risk. R1 is first because it is a hard
 prerequisite: R2 cannot be done honestly without it.
 
 1. ~~**R1 — Give the three oversized GitHub inner functions behavior tests,
-   and extract them while doing so.**~~ **DONE.** 39 tests in three files by
+   and extract them while doing so.**~~ **DONE.** 43 tests in three files by
    area; the three named functions are covered and their negative controls
    were executed. The seams went to `server/` slices rather than `lib/`,
    because these are host-wired paths, not pure decisions.
 2. ~~**R2 — Collapse `createGithubAutomation` (701 lines, 242-942).**~~ **DONE**
-   with R3: the seam is 56 lines and holds no logic.
+   with R3: the seam is 58 lines and holds no logic.
 3. ~~**R3 — Split `server/github-issues.ts` (942 lines).**~~ **DONE.** Ten
    slices, the largest 293 lines; see "Phase 2 result" above.
 4. **R4 — Decision API, starting with the zero-headroom file.** Split

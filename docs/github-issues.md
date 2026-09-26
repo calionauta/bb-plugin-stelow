@@ -100,12 +100,34 @@ coordination on shared checkouts → 10/tick cap.
 
 ## Module map (for maintainers and agents)
 
-- `server/github-issues.ts` — contract fragment, migrations, matcher
-  wiring, scheduler entry point, and all 11 RPCs. `server/rpc-contract.ts`
-  composes the contract; `server/core-migrations.ts` calls
-  `runGithubMigrations`; `server/plugin-runtime.ts` spreads the handlers and
-  registers the `stelow-automation-rules` schedule. The capability seam is
-  an explicit deps object (`db`, `bb`, clock, preset and card operations).
+- `server/github-issues.ts` — the seam and nothing else (58 lines): it builds
+  the client, the warn-once registry, and the handler map out of the slices
+  below, and returns the two schedulers. Every job lives in its own slice:
+  - `server/github-automation-context.ts` — the deps shape every slice
+    receives (`db`, `bb`, clock, preset and card operations), the kill
+    switch, and warn-once.
+  - `server/github-client.ts` — the typed `github` plugin RPC bridge:
+    status (never throws), the issue/comment/label calls, and the
+    fail-soft per-repo pickers.
+  - `server/github-migrations.ts` — `runGithubMigrations`: the tables, the
+    column ALTERs, and the one label backfill.
+  - `server/github-issue-flow.ts` — candidate listing, the shared
+    claim-first issue → card path, and issue creation for a card.
+  - `server/github-automation-rules.ts` — the rule row shape, priming
+    (the backlog guard), and the scheduler tick.
+  - `server/github-rule-rpcs.ts` — the five watcher-rule RPCs.
+  - `server/github-comments.ts` — the linked-issue comment mirror (read
+    and post) and the mirror poller.
+  - `server/github-completion.ts` — the completion write-back and its body.
+  - `server/github-rpc-contract.ts` — the wire shapes; `server/rpc-contract.ts`
+    composes them, `server/core-migrations.ts` calls
+    `runGithubMigrations`, and `server/plugin-runtime.ts` spreads the 11
+    handlers and registers the `stelow-automation-rules` schedule.
+- Behavior tests over the real database and the real RPC seam against a
+  fake `github` plugin live in `tests/server-github-automation.test.mjs`,
+  `tests/server-github-issue-flow.test.mjs`, and
+  `tests/server-github-discussion.test.mjs`, on the shared harness
+  `tests/helpers/github-harness.mjs`.
 - `components/github/` — the dialog shell (`github-issues-dialog.tsx`),
   one state hook (`github-dialog-state.ts`: all tab state, RPC handlers,
   open/re-anchor/switch choreography), the tabs (`github-import-tab.tsx`,
@@ -125,9 +147,9 @@ coordination on shared checkouts → 10/tick cap.
 
 ## Removal (decoupling contract)
 
-The integration is one module plus narrow seams so a change of mind is a
-checklist, not archaeology. To remove it entirely: delete
-`server/github-issues.ts`, `lib/github-issue-create.mjs`,
+The integration is one module set plus narrow seams so a change of mind is a
+checklist, not archaeology. To remove it entirely: delete the eleven
+`server/github-*.ts` files, `lib/github-issue-create.mjs`,
 `lib/github-issue-comments.mjs` (+ tests + `.d.mts` twins),
 `components/github-issues-dialog.tsx`, `components/isolated-worktree-check.tsx`,
 and `docs/github-issues.md`; remove its fragment from

@@ -25,7 +25,7 @@ import { createWarnOnce, type GithubAutomationDeps } from "./github-automation-c
 import { createGithubClient } from "./github-client.js";
 import { githubCommentHandlers, refreshLinkedDiscussions } from "./github-comments.js";
 import { githubCompletionHandlers } from "./github-completion.js";
-import { createCardFromGithub, githubIssueFlowHandlers } from "./github-issue-flow.js";
+import { createCardFromGithub, githubIssueFlowHandlers, type CreateCardArgs } from "./github-issue-flow.js";
 import { githubRuleHandlers } from "./github-rule-rpcs.js";
 
 export { githubIssuesEnabled } from "./github-automation-context.js";
@@ -39,7 +39,8 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
   const warnOnce = createWarnOnce();
   // The one shared issue -> card path, injected so the watcher tick and the
   // manual import cannot drift into two different claim protocols.
-  const createCard = (args: Parameters<typeof createCardFromGithub>[2]) => createCardFromGithub(ctx, client, args);
+  const createCard = (args: CreateCardArgs): Promise<{ cardId: string | null; skipped: string | null }> =>
+    createCardFromGithub(ctx, client, args);
 
   const handlers = {
     ...githubRuleHandlers(ctx, client),
