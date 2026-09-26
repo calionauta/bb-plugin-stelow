@@ -133,24 +133,37 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 // and the helper fails silent on every miss — designation, workflow,
 // artifact, thin file. Advance never depends on it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
 assert.match(
   executionAdvance,
   /void deps\.requestGatePreReview\(card\.id, parsed\.stage\)\.catch\(\(\) => undefined\);/,
   "gate entry triggers without waiting",
 );
-assert.match(server, /async function requestGatePreReview\(cardId: string, stage: string\)/, "the trigger is one named helper");
-const preAt = server.indexOf("async function requestGatePreReview(");
-const preEnd = server.indexOf("\n  }\n", preAt);
+assert.match(
+  reviewPreflight,
+  /async function requestGatePreReview\(\s*deps: RuntimeDeps,\s*cardId: string,\s*stage: string,?\s*\): Promise<void>/,
+  "the trigger is one named helper owned by the preflight slice",
+);
+const preAt = reviewPreflight.indexOf("async function requestGatePreReview(");
+const preEnd = reviewPreflight.indexOf("\n  }\n", preAt);
 assert.ok(preAt >= 0 && preEnd > preAt, "the helper body is bounded");
-const preBody = server.slice(preAt, preEnd);
-assert.ok(preBody.includes("preReviewArtifactKind(stage)"), "eligibility resolves through the lib map, never inline");
+const preBody = reviewPreflight.slice(preAt, preEnd);
 assert.ok(preBody.includes("card.kind !== \"build\""), "research and explore never pre-review");
 assert.ok(preBody.includes("if (!reviewPreset) return;"), "undesignated reviewers stay silent, exactly like review refuses");
-assert.ok(preBody.includes("boardFromRoot(bb, workspace.path, card.dir_hash)"), "artifact resolution mirrors approveGate");
-assert.ok(preBody.includes("if (!depth || !depth.pass) return;"), "thin files never spend review budget");
-assert.ok(preBody.includes('}, "review")'), "pre-reviews ride the registered review site");
-assert.ok(preBody.includes('logCardComment(cardId, "card", cardId, "agent"'), "findings land as a card comment, never a gate file");
+assert.match(reviewPreflight, /preReviewArtifactKind\(stage\)/, "eligibility resolves through the lib map, never inline");
+assert.match(
+  reviewPreflight,
+  /boardFromRoot\(\s*deps\.bb,\s*workspace\.path,\s*card\.dir_hash/,
+  "artifact resolution mirrors approveGate",
+);
+assert.match(reviewPreflight, /return Boolean\(depth\?\.pass\)/, "thin files never spend review budget");
+assert.ok(reviewPreflight.includes('"review",'), "pre-reviews ride the registered review site");
+assert.match(
+  preBody,
+  /logCardComment\(\s*cardId,\s*"card",\s*cardId,\s*"agent"/,
+  "findings land as a card comment, never a gate file",
+);
 
 console.log("review gates test ok: normalize both directions, legacy no-regression, atom matrix, state.md storage, gate-named reasons");

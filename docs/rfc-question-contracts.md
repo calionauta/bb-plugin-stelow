@@ -92,7 +92,7 @@ New lib `lib/question-contracts.mjs` (pure, node-tested):
 - Pin test: vendored contract ↔ lib expectations (same shape as
   `tests/stage-skips.test.mjs` stub routes + gate table).
 
-Enforcement points (server.ts):
+Enforcement points (server/execution-advance.ts):
 - `advanceCard`: after the helper `advance` succeeds, resolve the
   checklist for the *destination* stage context (the stage just worked):
   every `agent-receipt` id must have its receipt file present and fresh

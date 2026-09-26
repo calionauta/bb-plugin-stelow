@@ -220,13 +220,21 @@ assert.equal(carriesMarker(null, markerFor("card_1")), false, "missing comments 
 // Claim protocol on a real :memory: DB: two interleaved racers, one
 // owner; release re-opens; completion closes with the card attached.
 const claimDb = new Database(":memory:");
+claimDb.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
 claimDb.exec("CREATE TABLE github_imports (issue_key TEXT PRIMARY KEY, repo TEXT NOT NULL, number INTEGER NOT NULL, label TEXT NOT NULL, card_id TEXT, imported_at INTEGER NOT NULL, claimed_by TEXT)");
 const claimArgs = { key: "acme/web#1", repo: "acme/web", number: 1, label: "stelow-work", token: "claim_a", now: 100 };
 const racerArgs = { ...claimArgs, token: "claim_b" };
 assert.deepEqual(acquireGithubImportClaim(claimDb, claimArgs), { owned: true, cardId: null }, "first racer owns a fresh key");
 assert.deepEqual(acquireGithubImportClaim(claimDb, racerArgs), { owned: false, cardId: null }, "second racer loses on a live claim");
 assert.equal(completeGithubImport(claimDb, { key: claimArgs.key, token: "claim_a", cardId: "card_1", label: "stelow-work", now: 200 }), true, "owner completes");
-assert.deepEqual(acquireGithubImportClaim(claimDb, racerArgs), { owned: false, cardId: "card_1" }, "late arrival sees the card, never a second one");
+claimDb.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
+assert.deepEqual(acquireGithubImportClaim(claimDb, racerArgs), { owned: false, cardId: "card_1" }, "late arrival sees the live card, never a second one");
+claimDb.prepare("UPDATE github_imports SET card_id = 'card_gone' WHERE issue_key = ?").run(claimArgs.key);
+assert.deepEqual(
+  acquireGithubImportClaim(claimDb, { ...claimArgs, token: "claim_d" }),
+  { owned: true, cardId: null },
+  "a link to a deleted card is stale, not in-flight: the write side agrees with liveImportedKeys",
+);
 releaseGithubClaim(claimDb, { key: "other#9", token: "claim_a" });
 assert.deepEqual(
   acquireGithubImportClaim(claimDb, { key: "acme/web#2", repo: "acme/web", number: 2, label: "stelow-work", token: "claim_c", now: 300 }),

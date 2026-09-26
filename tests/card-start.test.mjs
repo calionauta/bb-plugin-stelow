@@ -7,14 +7,47 @@ import { fileURLToPath } from "node:url";
 // today's behavior (spawn on submit); nothing in the server forces an
 // unstarted card — only the human unchecks the box.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/host-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/card-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/card-creator.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/gate-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/rpc-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-operations.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/worker-respawn-preparation.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/core-migrations.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-split.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
+].join("\n");
+const rpcRegistry = readFileSync(
+  join(root, "server/runtime/wiring/rpc-surfaces.ts"),
+  "utf8",
+);
 const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
 const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 // GitHub issues live decoupled: the feature module owns matching,
 // creation, scheduler, and RPCs; server.ts only wires the seam.
-const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf8");
+// The GitHub feature is a set of slices (github-issues.ts is the seam); read
+// them together so the pins below constrain the whole feature, not one file.
+const githubServer = [
+  "server/github-issues.ts",
+  "server/github-automation-rules.ts",
+  "server/github-rule-rpcs.ts",
+  "server/github-automation-context.ts",
+  "server/github-client.ts",
+  "server/github-issue-flow.ts",
+  "server/github-comments.ts",
+  "server/github-completion.ts",
+].map((file) => readFileSync(join(root, file), "utf8")).join("\n");
 const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
@@ -44,11 +77,11 @@ assert.equal(forcedParks.length, 0, "no hardcoded park remains — GitHub start 
 assert.match(githubServer, /start: decision\.start/, "automation passes the worktree-gated start policy through the shared GitHub path");
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
-assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");
+assert.match(server, /function startWorker\(/, "the handler resolves the card");
 assert.match(workers, /async function fresh\(/, "the worker seam owns the fresh-spawn body");
-assert.match(server, /workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
-assert.match(server, /return workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
-assert.match(server, /Drag-to-Doing on a threadless card starts it/, "dragging inbox to Doing spawns instead of lying");
+assert.match(server, /deps\.workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
+assert.match(server, /deps\.workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
+assert.match(server, /status === "in-progress" && !card\.worker_thread_id/, "dragging inbox to Doing spawns instead of lying");
 assert.match(cardsPersist, /thread\?\.id \?\? null/, "an unstarted card stores a null thread, never a placeholder");
 
 // Split children are approved work: they inherit the spawn default and
@@ -114,14 +147,23 @@ assert.doesNotMatch(disclosure, /CardDisclosure/, "the legacy card name is migra
 assert.doesNotMatch(app, /CardDisclosure/, "no legacy card name survives in the panel");
 assert.doesNotMatch(app, /function DisclosureSection\(/, "no local section copy survives in the panel");
 assert.match(readFileSync(join(root, "components", "isolated-worktree-check.tsx"), "utf8"), /<DetailsDisclosure summary="How it works">/, "the toggle discloses progressively");
-assert.match(githubServer, /presetId = resolveWorktreePreset\(\);/, "isolated import resolves the worktree preset");
+assert.match(githubServer, /presetId = resolveWorktreePreset\(ctx\);/, "isolated import resolves the worktree preset");
 assert.match(githubServer, /Isolated start refused:/, "missing isolation refuses with the redirect, never silent checkout");
-assert.match(githubServer, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)"\)\.run\(created\.cardId, presetId, now\(\)\)/, "parked isolated imports pin their preset for the later Start");
+assert.match(
+  githubServer,
+  /ctx\.presets\.pinCardPreset\(created\.cardId, presetId\)/,
+  "parked isolated imports pin their preset for the later Start",
+);
+assert.match(server, /pinCardPreset,/, "the runtime injects the tested preset pin into GitHub import");
 assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
 assert.match(githubState, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
 assert.match(githubState, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
-assert.match(githubServer, /seenKeys: seenAutomationKeys\(row\.id\)/, "the tick consults the backlog guard before matching");
-assert.match(githubServer, /primed = await primeAutomationRule\(ruleId, projectId, clean, authors\)/, "enabling a rule primes the backlog without drafting");
+assert.match(githubServer, /seenKeys: seenAutomationKeys\(db, row\.id\)/, "the tick consults the backlog guard before matching");
+assert.match(
+  githubServer,
+  /primed = await primeAutomationRule\(db, client, \(\) => ctx\.now\(\), ruleId, projectId, clean, authors\)/,
+  "enabling a rule primes the backlog without drafting",
+);
 assert.match(githubServer, /Rule saved disabled \(/, "a prime failure refuses live rules with the retry path named");
 assert.equal((githubServer.match(/decideAutomationSpawn\(/g) ?? []).length, 3, "save, tick, and isolated import decide through one start-policy gate");
 assert.match(githubServer, /acquireGithubImportClaim\(db,/, "creation goes through the claim protocol, never check-then-insert");
@@ -134,7 +176,7 @@ assert.match(githubServer, /const marker = markerFor\(cardId\)/, "write-back mar
 assert.match(githubServer, /carriesMarker\(after\.issue\.comments, marker\)/, "posted output is verified back on the remote");
 assert.match(githubServer, /GitHub issues are disabled on this host \(STELOW_GITHUB_ISSUES=0\)/, "disabled RPCs name the variable");
 assert.match(server, /STELOW_GITHUB_ISSUES/, "server.ts only names the switch, never its logic");
-assert.match(server, /\.\.\.github\.handlers/, "server.ts only spreads the feature handlers");
+assert.match(rpcRegistry, /\.\.\.host\.github\.handlers/, "the registry only spreads the feature handlers");
 assert.match(server, /runGithubMigrations\(db\)/, "server.ts delegates the feature migrations in one call");
 assert.doesNotMatch(githubServer, /card_id, fired_at\) VALUES/, "fires rows always carry their outcome");
 // environment_label is pinned by count in card-insert-contract (25
@@ -150,25 +192,53 @@ assert.equal((detailStartSource.match(/rpc\.call\("startWorker"/g) ?? []).length
 assert.match(heroActions, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
-assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
-const parkedStart = /if \(!card\.worker_thread_id\) \{\s*const started = await workers\.fresh\(cardId, "start"\);/;
+assert.match(
+  server,
+  /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{\s*hasWorker: Boolean\(card\.worker_thread_id\),\s*\}\s*\)/,
+  "the move policy knows whether the card already started",
+);
+const parkedStart = /if \(card\.worker_thread_id\) return[\s\S]*?const started = await deps\.workers\.fresh\(cardId, "start"\);/;
 assert.match(server, parkedStart, "entering a build phase starts a parked card");
-assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
+assert.match(server, /deps\.updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
 assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
 
 // Leaving the Bucket starts through the same starter on every track, and the
 // starter resolves creation-time choices: the pinned preset override
 // (provider/model) and the card's own project workspace — never ambient defaults.
-assert.match(server, /const effective = getReliablePresetForBand\(/, "Bucket exits spawn through the override-aware preset resolution");
+// Regression this catches: a card-start spawn site that resolves its own
+// preset instead of delegating to workers.fresh would silently ignore the
+// user's board-level reliable override. Every start in this module must go
+// through the single starter, where the backend resolves the override.
+const startPaths = server.match(/deps\.workers\.fresh\(cardId, "start"\)/g) ?? [];
+assert.equal(
+  startPaths.length,
+  3,
+  "every Bucket-exit start delegates to the single override-aware starter",
+);
+// The override-aware resolution itself inside the starter is pinned against
+// workers.ts in tests/reliable-preset.test.mjs; this file only guards that
+// nothing here spawns around it.
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
-assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
-assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.worker_thread_id\)/, "dragging a lightweight card to Doing starts it too");
+assert.match(
+  server,
+  /const workspace = await deps\.cardWorkspace\(card\);/,
+  "respawns run in the card's own project workspace",
+);
+assert.match(
+  server,
+  /if \(\s*status === "in-progress" && !card\.worker_thread_id\s*\)/,
+  "dragging a lightweight card to Doing starts it too",
+);
 
 // A Build workflow is code work: a Personal/exploratory folder only holds
 // Stelow state and cannot truthfully produce a diff, branch, or commit.
 assert.match(cardsCreate, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
 assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
-assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks the durable audit receipt before becoming Done");
+assert.match(
+  server,
+  /auditReceiptReadiness\(\s*await receiptContent\(deps, stateDir\)/,
+  "Build done checks the durable audit receipt before becoming Done",
+);
 
 // Automation rules live on the picker's project, not the board's: the Auto
 // tab offers every project (the dialog opens from boards with none active),

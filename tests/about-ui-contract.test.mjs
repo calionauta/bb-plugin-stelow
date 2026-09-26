@@ -10,7 +10,7 @@ const tools = readFileSync(new URL("../components/settings/host-tools-section.ts
 const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../components/settings/workflow-dependency-card.tsx", import.meta.url), "utf8");
 const onboarding = readFileSync(new URL("../components/settings/preset-onboarding.tsx", import.meta.url), "utf8");
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+const dependency = readFileSync(new URL("../server/runtime/workflow-dependency.ts", import.meta.url), "utf8");
 
 test("app mounts About through the focused settings module", () => {
   assert.match(app, /<StelowPanelRoute\b/, "the app shell mounts the extracted panel route");
@@ -46,11 +46,13 @@ test("BB Workflows status and explicit setup are wired into About and onboarding
   assert.match(workflow, /Install BB Workflows/);
   assert.match(workflow, /Enable BB Workflows/);
   assert.match(workflow, /Native execution is available for eligible Stelow recipes/);
-  assert.match(onboarding, /<WorkflowDependencyCard compact \/>/);
+  assert.match(onboarding, /<WorkflowDependencyCard \/>/,
+    "the first-visit setup carries the same dependency card as About");
   assert.match(about, /<WorkflowDependencyCard \/>/);
-  assert.match(server, /"plugin", "install", "builtin:workflows"/);
-  assert.match(server, /"plugin", "enable", "workflows"/);
-  assert.match(server, /workflowDependencyStatus/);
+  assert.match(dependency, /"plugin", "install", "builtin:workflows"/,
+    "the host command the install action runs survives the server split");
+  assert.match(dependency, /"plugin", "enable", "workflows"/);
+  assert.match(dependency, /workflowDependencyStatus/);
 });
 
 test("tool rows preserve exclusive install and resilient presentation", () => {

@@ -32,6 +32,12 @@ history). `stelow.json` and `.stelow/` remain the source of truth for the
 workflow itself — the board reads them, never replaces them. Details live in
 [FEATURES.md](./FEATURES.md).
 
+Maintainers can find the current server module map, lifecycle boundary, and
+remaining extraction work in [docs/runtime-architecture.md](./docs/runtime-architecture.md).
+The measured size debt in the GitHub automation and decision API areas, with
+its ordered repair list, is audited in
+[docs/remaining-debt-audit.md](./docs/remaining-debt-audit.md).
+
 ## Strategies and techniques
 
 The **Research tab** offers 14 product strategies. Each runs one

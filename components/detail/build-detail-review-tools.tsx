@@ -1,5 +1,5 @@
 import { shouldShowBuildDiff } from "../../lib/build-diff-presentation.mjs";
-import type { BuildDetailView } from "./build-detail-body";
+import type { BuildDetailView } from "./build-detail-view";
 import { BuildDiff } from "./build-diff";
 import { BuildPublication } from "./build-publication";
 import { WorkspaceRecoveryPanel } from "./build-recovery";

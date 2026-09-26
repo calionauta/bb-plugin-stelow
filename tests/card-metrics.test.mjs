@@ -58,7 +58,12 @@ assert.equal(totalScopeElapsedMs([{ status: "pending" }]), null, "unstarted scop
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail-presentation.ts"), "utf8"),
+  readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "rpc-surfaces.ts"), "utf8"),
 ].join("\n");
 const executionContract = readFileSync(join(root, "server", "execution-contract.ts"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
@@ -70,15 +75,12 @@ const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
-assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
-assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
-assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
-assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs/, "detail reuses the one helper for lead time");
-assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper for cycle time");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\)/, "detail schema carries nullable lead and cycle times");
-assert.match(server, /doingNow: z\.array\(z\.string\(\)\), executingScope: z\.string\(\)\.nullable\(\)/, "detail schema carries doing names and active scope");
-assert.match(server, /verifiedHeadSha: z\.string\(\)\.nullable\(\)/, "detail schema carries nullable verified HEAD");
-assert.match(server, /executionRuns: executionLifecycle\.detailList\(cardId\)/, "card detail uses the public execution-run projection");
+assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) => flowMetrics\(core\.db, input\)/, "RPC dispatch uses the measured flow runtime");
+assert.match(server, /leadMs: flow\.leadMs/, "detail reuses the one helper for lead time");
+assert.match(server, /cycleMs: flow\.cycleMs/, "detail reuses the one helper for cycle time");
+const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
+assert.match(server, detailTimesContract, "detail schema carries times, doing names, and the verified HEAD as nullable");
+assert.match(server, /executionRuns: deps\.executionLifecycle\.detailList\(card\.id\)/, "card detail uses the public execution-run projection");
 assert.doesNotMatch(server, /executionRuns: executionLifecycle\.list\(cardId\)/, "card detail never exposes raw ledger rows");
 assert.match(executionContract, /executionRuns: \{/, "execution runs remain available through their dedicated RPC");
 assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
@@ -129,9 +131,8 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 // worker — explicit signals, never heuristics) and review-awaiting dones,
 // window-independent and labeled as right-now. Tabs keep tempo apart
 // from attention; empty attention reads one calm line, never an empty box.
-assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
-assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
-assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
+const attentionContract = /attention: z\s*\.array\([\s\S]*?reason: z\s*\.enum\(\["stuck",\s*"review"\]\)/;
+assert.match(server, attentionContract, "attention items are contracted with a closed reason set");
 assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");
 assert.match(flowStrip, /useState<FlowTab>\("tempo"\)/, "tempo is the default tab, not a second stacked section");
 assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");

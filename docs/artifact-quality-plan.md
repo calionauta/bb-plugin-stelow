@@ -1,5 +1,10 @@
 # Artifact quality plan — from 200-char validity to verifiable depth
 
+Historical architecture note: research discovery and integrity now live in
+`server/runtime/research-artifacts.ts`; the worker prompt remains in
+`server/plugin-runtime.ts`. Pure validation stays in `lib/`. The plan below
+records the original failure and rollout, not the former `server.ts` layout.
+
 ## Implementation status (task list)
 
 - [x] Phase 0 — incident evidence (`thr_tz3xaiq73p`: Stelow, not Ponytail; 10 thin substeps passed `verify`).
@@ -25,7 +30,8 @@ request "criar produto de impacto social no brasil"):
   entry). Ponytail did not participate.
 - Worker prompt is the Stelow research prompt (Steps 1–5 + `DONE_PROTOCOL`).
   Step 3b tells the worker the file "must hold your playbook output with
-  real substance (200+ chars)" (`server.ts` research prompt builder).
+  real substance (200+ chars)" (`researchWorkerPrompt` in
+  `server/plugin-runtime.ts`).
 - Result: 1 primary round file (~2100 words) + 10 JTBD substep files at
   177–284 words each + `research-index.md` (527 words). `verify` PASSed and
   the worker announced "Full Mapping JTBD em 12 arquivos, tudo marcado como
@@ -47,8 +53,9 @@ Root cause (three layers, all confirmed in code):
 1. `lib/research-artifacts.mjs:22,39` — validity is `>= 200 chars +
    not-empty + not-mirroring-index`. Any 200-char file passes.
 2. `lib/research-strategies.mjs:15` declares JTBD `composite` with 10
-   substeps, and `missingSubsteps` exists — but `server.ts:researchRoundFiles`
-   uses it only for display (`round.missing`), while the enforcing path
+   substeps, and `missingSubsteps` exists — but
+   `server/runtime/research-artifacts.ts:researchRoundFiles` used it only for
+   display (`round.missing`), while the enforcing path
    (`researchRoundIntegrity` → `findInvalidRounds` → `researchReadiness` →
    `verify`/`done`) checks only the primary round file. Substeps are
    discovered visually, never gated.
@@ -63,8 +70,9 @@ Root cause (three layers, all confirmed in code):
   warning. Methodology text is fixed upstream in `calionauta/stelow` and
   propagates; enforcement code lives in this repo under `lib/` + `tests/`.
 - `data/product-strategies.json` is synced from upstream
-  `product-strategies.json` (merged at `server.ts:101-108` over embedded
-  contracts). The `single | variant | composite + substeps` shape stays
+  `product-strategies.json`; `lib/research-strategies.mjs` merges it with
+  embedded contracts, and `server/plugin-runtime.ts` loads the synced catalog.
+  The `single | variant | composite + substeps` shape stays
   upstream. Quantitative depth minima are enforcement data and belong in
   owned `lib/` (new module), not in vendored data.
 - Follow repo rules: conventional commits (`fix:`/`feat:` for user-facing),
@@ -77,7 +85,7 @@ Root cause (three layers, all confirmed in code):
 
 ## 2. Architecture: one generic engine, data-driven contracts
 
-New owned modules (all pure, unit-tested, no I/O):
+Landed owned modules (all pure, unit-tested, no I/O):
 
 - `lib/artifact-contracts.mjs` — declarative contract table. Each entry:
   `{ strategyId | stageId, artifactId, kind, requiredSections[],
@@ -91,9 +99,10 @@ New owned modules (all pure, unit-tested, no I/O):
   missing). Returns `{ pass, failures[] }` with machine-readable codes
   (`missing-section`, `too-few-items`, `thin`, `missing-table`,
   `missing-evidence-appendix`).
-- `lib/artifact-quality-report.mjs` — renders per-artifact and per-round
-  verdicts shared by `verify` text/JSON, `done` refusal, sync inbox error,
-  and card RPC (`researchIndex.rounds[].files[].quality`).
+- The proposed `lib/artifact-quality-report.mjs` was not landed. The current
+  host projects per-artifact and per-round verdicts from
+  `lib/artifact-validation.mjs` in `server/runtime/research-artifacts.ts`;
+  `verify` text/JSON and card RPCs consume that same runtime result.
 
 Verdict levels (structural gate only; no LLM judgment in v1):
 
@@ -134,14 +143,16 @@ Changes:
    `[{ n, slug, reason }]` where reason is `missing | thin | mirrors-index`.
    A substep is valid under the same `isValidRoundContent` predicate
    (keeps Phase 1 small; depth minima arrive in Phase 2).
-3. `server.ts:researchRoundIntegrity` — also scan substeps; return includes
+3. `server/runtime/research-artifacts.ts:researchRoundIntegrity` — also scan
+   substeps; return includes
    them (`{ n, label }` where label is `Round N — <strategy> (<slug>)`).
    `researchReadiness`, `verify`, and `done` pick this up with zero new
    branches (they already consume the invalid list).
 4. `lib/research-artifacts.mjs:researchVerifyText` — render per-item lines:
    `FAIL round 1 (Jobs to be done — functional-needs): missing/thin/mirrors
    index — rewrite it, then run verify again.` Keep exit codes.
-5. Worker prompt (`server.ts` research prompt, Step 3b): replace "200+
+5. Worker prompt (`researchWorkerPrompt` in `server/plugin-runtime.ts`,
+   Step 3b): replace "200+
    chars" with "the playbook's full result VERBATIM — every prompt's
    required sections, items, tables, and scores; the host validates each
    substep file and names the failing check". Add: broad request + Full

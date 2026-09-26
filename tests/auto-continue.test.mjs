@@ -3,7 +3,21 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { MAX_AUTO_CONTINUES, MAX_DONE_NUDGES, ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
+import {
+  MAX_AUTO_CONTINUES,
+  MAX_DONE_NUDGES,
+  ensureAutoContinueColumns,
+  lastTurnAdvancedStages,
+  nextAutoContinue,
+  resetAutoContinue,
+  shouldAutoContinue,
+  shouldDoneNudge,
+} from "../lib/auto-continue.mjs";
+import {
+  autoContinueFields,
+  buildContinueInput,
+  buildContinueNudge,
+} from "../lib/worker-continuation.mjs";
 
 // Regression: a build worker narrated progress ("Stage done, moving on")
 // and idled after every stage — the provider ends a turn on any final
@@ -30,6 +44,39 @@ assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 2, autoStage: "sh
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 9, autoStage: "context" }), { count: 1, stage: "shape" }, "a new stage restarts the count");
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 0, autoStage: null }), { count: 1, stage: "shape" }, "the first nudge counts one");
 assert.deepEqual(resetAutoContinue(), { count: 0, stage: null }, "manual resume/restart wipes the budget");
+
+// Continuation transport is private for automatic nudges and public for manual
+// retries. The explicit public path is the negative control for private visibility.
+const nudge = buildContinueNudge("Interface choice: use the selected form.");
+assert.match(nudge, /Interface choice: use the selected form\./, "the continuation keeps interface guidance");
+assert.match(nudge, /a prior chat message or split-proposal record does not/, "past messages are not pending questions");
+assert.match(nudge, /host refuses duplicates when a real form is open/, "invisible questions cannot bypass duplicate asks");
+assert.match(nudge, /Never claim to be waiting based on memory alone/, "memory cannot manufacture a wait");
+const privateInput = buildContinueInput(nudge, "private");
+const publicInput = buildContinueInput(nudge, "public");
+assert.equal(privateInput[0].visibility, "agent-only", "automatic continuation is private");
+assert.equal(publicInput[0].visibility, undefined, "manual continuation remains public");
+assert.equal(privateInput[0].text, publicInput[0].text, "both paths share the same continuation copy");
+assert.deepEqual(privateInput[0].mentions, [], "continuation input carries no mentions");
+
+const recorded = autoContinueFields({ count: 2, stage: "shape" }, "fresh output");
+assert.deepEqual(
+  {
+    activity: recorded.activity,
+    idle: recorded.last_idle_at,
+    error: recorded.last_error,
+  },
+  { activity: "running", idle: null, error: null },
+  "a successful continuation returns the card to a healthy running state",
+);
+assert.equal(recorded.auto_continue_count, 2, "a successful continuation records its budget");
+assert.equal(recorded.auto_continue_stage, "shape", "budget recording keeps the current stage");
+assert.equal(recorded.last_assistant_text, "fresh output", "fresh output is recorded");
+assert.equal(
+  autoContinueFields({ count: 3, stage: "context" }, null).last_assistant_text,
+  undefined,
+  "unknown output does not blank the previous trail",
+);
 
 // Done-nudge: reaching audit is not completing (the old audit+idle ⇒
 // completed inference is gone — it made narrate-and-stop indistinguishable
@@ -112,23 +159,67 @@ assert.equal(lastTurnAdvancedStages("nope"), false, "non-array history reads as 
 assert.equal(lastTurnAdvancedStages([{ type: "turn/completed", data: {} }, null, { nope: 1 }]), false, "odd shapes never throw, they just miss");
 assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing");
 
-// Server contract: the idle branch consults the guard and resumes through
-// the shared continue copy; manual recovery paths reset the budget.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
-assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
-assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
-assert.match(serverSource, /bb\.sdk\.threads\.send\(\{ threadId: card\.worker_thread_id, mode: "auto", input: \[\{ type: "text", text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only" \}\] \}\)/, "auto-continue sends the shared continue nudge privately in place");
-assert.match(serverSource, /auto_continue_count: autoNext\.count, auto_continue_stage: autoNext\.stage/, "a resume records its budget use");
-assert.match(serverSource, /function buildContinueNudge\(\): string/, "manual Retry and auto-continue share one nudge");
-assert.match(serverSource, /Only a visible structured form on the card counts as a pending question/, "the recovery nudge cannot wait on an invisible question");
-assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
-assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
-assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");
-const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
-assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
-assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
-assert.match(serverSource, /ensureAutoContinueColumns\(db\)/, "the migration ensures the budget columns");
-assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
-assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "100", types: \["turn\/completed", "turn\/started", "item\/completed"\] \}\)/, "the scan reads turn boundaries and completions only");
+// Server contract: the idle branch sends the shared nudge privately only after
+// a successful send, while manual recovery sends the same transport publicly.
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
+const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
+const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
+const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");
+const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");
+const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
+const askGateSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8");
+const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
+const autoEnd = threadSyncSource.indexOf("function persistStandardIdle", autoStart);
+const autoBlock = threadSyncSource.slice(autoStart, autoEnd);
+const retryStart = operationsSource.indexOf("async function retryWorker(");
+const retryEnd = operationsSource.indexOf("function startWorker(", retryStart);
+const retryBlock = operationsSource.slice(retryStart, retryEnd);
+assert.match(threadSyncSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
+assert.match(threadSyncSource, /cardStatus: snapshot\.card\.status/, "the audit watchdog receives persisted completion state");
+assert.match(
+  autoBlock,
+  /const input = buildContinueInput\([\s\S]*?buildContinueNudge\(deps\.interfacePick\)[\s\S]*?"private"[\s\S]*?sendAgentInput/,
+  "auto-continue sends the shared continue nudge privately in place",
+);
+const successOrder = [
+  "const sent = await sendAgentInput",
+  "const next = nextAutoContinue({",
+  "deps.updateCard(",
+  "return true",
+].map((token) => autoBlock.indexOf(token));
+assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
+assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
+assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
+assert.match(cardCopySource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
+assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");
+assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
+assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
+assert.match(askGateSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
+assert.match(askGateSource, /expiredCount: deps\.openExpiredQuestionIds\(cardId\)\.length,/, "the dispatcher receives the recoverable expired count");
+const doneSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-track.ts"),
+  "utf8",
+);
+const reseedSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed.ts"), "utf8");
+assert.match(operationsSource, /const reset = deps\.resetAutoContinue\(\)/, "manual retry resets the budget");
+assert.match(reseedSource, /const reset = deps\.resetAutoContinue\(\)/, "reseed resets the budget");
+assert.equal(
+  (doneSource.match(/resetAutoContinue\(\)/g) ?? []).length,
+  1,
+  "every done track resets the budget through one shared completion writer",
+);
+assert.match(protocolsSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
+assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
+assert.match(threadSyncSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
+const advanceEventPattern = new RegExp([
+  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: snapshot\.card\.worker_thread_id!,`,
+  String.raw`[\s\S]*?order: "desc",[\s\S]*?limit: "100",`,
+  String.raw`[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]`,
+].join(""));
+assert.match(
+  threadSyncSource,
+  advanceEventPattern,
+  "the scan reads turn boundaries and completions only",
+);
 
 console.log("auto-continue test ok: decision matrix, budget, migration, advance scan, shared nudge, prompt discipline");

@@ -12,6 +12,7 @@ import { normalizeKind } from "../lib/tracks.mjs";
 import { normalizeStatus } from "./scopes.js";
 import { stallCount } from "../lib/worker-ledger.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
+import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
 import type { WorkerCard } from "./workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -53,7 +54,7 @@ type CardsDeps = {
   idleAttentionMs: number;
   create: CardsCreateDeps;
   loadBoard: (projectId: string | null) => Promise<unknown>;
-  githubStatus: () => Promise<unknown>;
+  githubStatus: () => Promise<GithubStatus>;
   githubAutomationEnabled: () => boolean;
   store: ReturnType<typeof createCardStore>;
   strategyList: (row: WorkerCard) => string[];
@@ -97,7 +98,7 @@ export function createCardsServer(deps: CardsDeps) {
     handlers: {
       board: async ({ projectId }: { projectId: string | null }) => ({
         ...(await deps.loadBoard(projectId)) as Record<string, unknown>,
-        githubStatus: await deps.githubStatus().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] })),
+        githubStatus: await deps.githubStatus().catch(() => githubUnavailableStatus()),
         githubAutomationEnabled: deps.githubAutomationEnabled(),
       }),
       listCards,

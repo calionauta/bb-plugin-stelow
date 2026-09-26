@@ -102,7 +102,6 @@ export function StageTimeline({ currentStage, nextStages, artifacts, onPick, ski
       {Array.from(bands.entries()).map(([band, stages]) => {
         const bandActive = stages.some((stage) => stage === currentStage);
         const hasAnyPassed = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) < current);
-        const hasAnyUpcoming = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) > current);
         return (
           <div key={band}>
             <div className="mb-1 flex items-center gap-2">

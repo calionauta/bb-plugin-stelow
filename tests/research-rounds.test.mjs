@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROUNDS_DIR, slugify, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, normalizeHistory } from "../lib/research-rounds.mjs";
+import { slugify, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, normalizeHistory } from "../lib/research-rounds.mjs";
 
 // Naming: <strategy>[-<subskill>]-r<n>-<stamp>.md basenames (the server
 // nests them under the state dir's rounds/); slugs stay filesystem-safe.
@@ -41,7 +41,11 @@ assert.equal(parseRoundPath("plans/spec-product_v1.md", "pricing"), null, "non-r
 // All user-facing round files, including pending primaries and optional
 // sub-steps, share the publishability guard. A reserved path may be missing;
 // neither an empty placeholder nor whitespace may render as an artifact.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../", "server/runtime/card-seams.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/research-artifacts.ts"), "utf8"),
+].join("\n");
 assert.match(serverSource, /if \(!artifact \|\| !isPublishableArtifactContent\(artifact\.content\)\) continue;/, "empty sub-step artifacts are skipped");
 assert.match(serverSource, /round\.status === "pending" && isPublishableArtifactContent\(content\) && !researchRoundMirrorsIndex/, "empty pending primary artifacts are skipped");
 assert.match(serverSource, /async function ensureArtifactParent/, "round directories are created without reserving empty files");

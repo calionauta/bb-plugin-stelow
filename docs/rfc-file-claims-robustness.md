@@ -1,6 +1,12 @@
 # RFC: file-claims robustness
 
-Status: proposal. Scope: `bb-plugin-stelow` (+ mirror edits in `stelow` blueprint only).
+Status: implemented. `docs/rfc-file-claims-progress.md` is the execution log.
+
+Historical note: line references below identify the server layout when this
+proposal was written. `server.ts` is now the seven-line entry; runtime and
+capability behavior lives in `server/plugin-runtime.ts` and modules under
+`server/`. Treat the old line numbers as provenance, not navigation; use the
+named symbols and current tests to verify the landed behavior.
 
 ## 1. Current state (verified against code)
 
@@ -92,10 +98,10 @@ one key resolver), Convention over configuration (safe defaults, no new flags).
 - Reconcile sweep (`server.ts:4025-4044`): additionally reap claims whose
   holder sits in a terminal status (today only time-expiry), then
   `notifyClaimWaiters` on the same path.
-- New `tests/card-claims-release.test.mjs` (pattern: `card-claims.test.mjs`):
-  acquire → move to each terminal status → claims empty + waiters notified.
-  Wire into `test:inbox` script chain (note: `suite-wiring.test.mjs` runs under
-  `test:contracts`; keep both green).
+- `tests/claims-lifecycle.test.mjs` covers acquire → terminal release → empty
+  claims + waiter notification and is wired into `test:inbox`. The older plan
+  named a separate `card-claims-release` test; the landed test was consolidated
+  into the full-cycle claims lifecycle suite.
 - Commit: `fix:` (bug, no `FEATURES.md` entry).
 
 ### Phase 2 — Key by effective checkout

@@ -41,10 +41,10 @@ type OnboardingBodyProps = {
 
 function PresetOnboardingBody({ step, total, secondBody, children }: OnboardingBodyProps) {
   if (step === total - 1) return <StayInTouchStep />;
-  if (step === 1 && secondBody) return <div className="grid min-w-0 gap-3"><WorkflowDependencyCard compact />{secondBody}</div>;
+  if (step === 1 && secondBody) return <div className="grid min-w-0 gap-3"><WorkflowDependencyCard />{secondBody}</div>;
   return (
     <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-      {step <= 1 ? <WorkflowDependencyCard compact /> : null}
+      {step <= 1 ? <WorkflowDependencyCard /> : null}
       <p>
         Agent presets decide which provider, model, reasoning, and permission each worker runs with.
         {" "}Each track has its own band default; cards without one fall back to the board default,

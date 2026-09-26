@@ -6,7 +6,7 @@ import {
   artifactGroupTitle,
 } from "../artifacts/artifact-inventory";
 import { DisclosureSection } from "../disclosure";
-import type { BuildDetailView } from "./build-detail-body";
+import type { BuildDetailView } from "./build-detail-view";
 import { BuildProgress } from "./build-progress";
 import { heroFor } from "./detail-hero";
 

@@ -13,6 +13,13 @@ module.exports = {
       to: { circular: true },
     },
     {
+      name: "server-slices-do-not-import-composition-root",
+      comment: "Feature slices must depend downward on contracts and libraries, never back into the host composition root.",
+      severity: "error",
+      from: { path: "^server/" },
+      to: { path: "^server\\.ts$" },
+    },
+    {
       name: "lib-stays-host-neutral",
       comment: "Shared library code must not reach into the bb server or React app layers (including server/ slices).",
       severity: "error",

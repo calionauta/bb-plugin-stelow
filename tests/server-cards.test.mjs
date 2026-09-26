@@ -4,6 +4,19 @@ import { createCardsServer, createCardStore } from "../server/cards.ts";
 import { createCardInternal } from "../server/cards-create.ts";
 import { CARD_COLUMNS } from "../server/cards-create-persist.ts";
 
+const promptRules = {
+  cardOwnerRules: "owner",
+  neverSeed: "never",
+  cliEquivalents: "cli",
+  reconProtocol: "recon",
+  draftProtocol: "draft",
+  turnDiscipline: "turn",
+  commitStyle: "commit",
+  interfacePick: "pick",
+  doneProtocol: "done",
+  splitProtocol: "split",
+};
+
 const card = {
   id: "card_1",
   project_id: "proj_1",
@@ -129,6 +142,8 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     exploreIds: () => [],
     defaultPreset: () => preset,
     getPreset: () => preset,
+    getBandPresetId: () => "preset_1",
+    getReliablePresetId: () => null,
     presetParams: (value) => ({
       providerId: value.provider_id,
       modelId: value.model_id,
@@ -146,11 +161,7 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     ensureParent: async () => undefined,
     researchPrompt: () => "research",
     explorePrompt: () => "explore",
-    rules: {
-      cardOwnerRules: "owner", neverSeed: "never", cliEquivalents: "cli", reconProtocol: "recon",
-      draftProtocol: "draft", turnDiscipline: "turn", commitStyle: "commit", interfacePick: "pick",
-      doneProtocol: "done", splitProtocol: "split",
-    },
+    rules: promptRules,
     describeManagedWorktree: () => false,
     recordStageEvent: () => undefined,
     comment: () => undefined,

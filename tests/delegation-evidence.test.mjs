@@ -44,11 +44,23 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /name: "verify-delegation", summary: "Count worker subagent delegations/, "the delegation tripwire is listed");
-assert.match(server, /if \(argv\[0\] === "verify-delegation"\) \{/, "the tripwire branch exists");
-assert.match(server, /threads\.timeline\(\{ threadId: delegationCard\.worker_thread_id, segmentLimit: "100" \}\)/, "the tripwire reads the worker timeline, never the provider session");
-assert.match(server, /countDelegations\(timeline\)/, "delegation counting rides the prose-proof lib counter");
-assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(server.slice(server.indexOf('if (argv[0] === "verify-delegation") {'), server.indexOf('if (argv[0] === "draft") {'))), "verify-delegation makes zero database writes");
+const registry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8");
+const tripwire = readFileSync(
+  join(root, "server/runtime/cli/cli-verify-delegation.ts"),
+  "utf8",
+);
+const server = [registry, tripwire].join("\n");
+assert.match(registry, /verify-delegation[\s\S]*Count worker subagent delegations/, "the delegation tripwire is listed");
+assert.match(tripwire, /argv\[0\] !== "verify-delegation"\) return null;/, "the tripwire family claims exactly its verb");
+assert.match(
+  tripwire,
+  /threads\s*\.timeline\(\{ threadId: workerThreadId, segmentLimit: "100" \}\)/,
+  "the tripwire reads the worker timeline, never the provider session",
+);
+assert.match(tripwire, /countDelegations\(timeline\)/, "delegation counting rides the prose-proof lib counter");
+assert.ok(
+  !/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(tripwire),
+  "verify-delegation makes zero database writes",
+);
 
 console.log("delegation evidence test ok: structural counting, prose-proof, honest summaries");

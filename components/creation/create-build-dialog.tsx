@@ -39,7 +39,7 @@ function useCreateBuildSubmit({ activeProjectId, appetite, reviewGates, githubRe
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [prompt, setPrompt] = useState("");
-  const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
+  const intent = "unknown" as const;
   const [error, setError] = useState<string | null>(null);
   // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.

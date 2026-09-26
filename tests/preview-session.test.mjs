@@ -15,7 +15,7 @@ log = appendLog(log, " line done\nthird\n");
 assert.deepEqual(log.lines, ["first line", "second line done", "third"]);
 assert.equal(previewLogText(log), "first line\nsecond line done\nthird", "a complete log has no invented trailing line");
 assert.equal(previewLogText({ lines: ["a"], carry: "half" }), "a\nhalf", "the unfinished tail is still shown");
-const capped = appendLog({ lines: new Array(200).fill("x"), carry: "" }, "overflow\n");
+const capped = appendLog({ lines: Array.from({ length: 200 }, () => "x"), carry: "" }, "overflow\n");
 assert.equal(capped.lines.length, 200, "a chatty server cannot grow the state without bound");
 assert.equal(capped.lines.at(-1), "overflow");
 
