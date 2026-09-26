@@ -46,6 +46,10 @@ export const executionRunSchema = z.object({
   resumeOf: z.string().nullable(),
   errorCode: z.string().nullable(),
   previewDirective: z.string().nullable(),
+  // The question a needs_input run is actually waiting on. A wait the
+  // person cannot read is a phantom wait, so the run's own words travel
+  // to the surface instead of a bare "Needs input" label.
+  boundaryQuestion: z.string().nullable(),
   completionEventId: z.string().nullable(),
   boundaryContract: boundaryContractSchema,
   createdAt: z.number(),

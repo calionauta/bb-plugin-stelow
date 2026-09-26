@@ -20,6 +20,42 @@ const stateLabel: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+// A run waiting on a person is the one state the card must never understate:
+// it is not stalled and not broken. The question is the run's own words, so
+// it is quoted rather than summarized, and the tone is informational-amber
+// rather than the muted grey of a passive status.
+function waitingForYou(run: ExecutionRun) {
+  if (run.normalizedStatus !== "needs_input") return null;
+  const question = typeof run.boundaryQuestion === "string" ? run.boundaryQuestion.trim() : "";
+  return {
+    question: question.length > 0 ? question : null,
+    label: question.length > 0 ? "Waiting for you" : "Waiting for you — the run asked a question the card could not read",
+  };
+}
+
+// One run's identity line. A run waiting on a person quotes its own question
+// so the card reads as a question, not a stalled spinner; everything else
+// keeps the plain status-and-stage line.
+function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<typeof waitingForYou> }) {
+  if (!waiting) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {stateLabel[run.normalizedStatus] ?? run.normalizedStatus}
+        {run.stage ? ` · ${run.stage}` : ""}
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="text-xs font-medium text-amber-900 dark:text-amber-200">{waiting.label}</p>
+      {waiting.question ? <p className="mt-1 text-sm text-foreground">{waiting.question}</p> : null}
+      <p className="mt-1 text-xs text-muted-foreground">
+        {run.stage ? `${run.stage} · ` : ""}The run is paused until you answer on the card.
+      </p>
+    </>
+  );
+}
+
 export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
   const navigate = useBbNavigate();
   if (runs.length === 0) return null;
@@ -39,16 +75,19 @@ export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, on
             hasQuestion: run.normalizedStatus === "needs_input",
           });
           const active = ["queued", "running", "needs_input"].includes(run.normalizedStatus);
+          const waiting = waitingForYou(run);
           return (
             <div
               id={focusId ?? undefined}
               tabIndex={focusRunId === run.id ? -1 : undefined}
               key={run.id}
-              className="flex min-h-11 items-center justify-between gap-3 rounded-md border bg-background/60 px-3 py-2"
+              className={waiting
+                ? "flex min-h-11 items-start justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+                : "flex min-h-11 items-center justify-between gap-3 rounded-md border bg-background/60 px-3 py-2"}
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{run.recipeId}</p>
-                <p className="text-xs text-muted-foreground">{stateLabel[run.normalizedStatus] ?? run.normalizedStatus}{run.stage ? ` · ${run.stage}` : ""}</p>
+                <RunSummary run={run} waiting={waiting} />
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
