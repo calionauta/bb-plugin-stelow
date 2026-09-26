@@ -1207,6 +1207,255 @@ corrected suites green after them, `npm run typecheck` green, and
 `lib/` module was added, so `FEATURES.md` does not move and the upstream
 blueprint has nothing new to record.
 
+## The E2E phase, executed against the live board
+
+The section above is a *planning* record. This one is the executed result, and
+it corrects three of that section's claims, which were wrong about the cause
+rather than about the symptom.
+
+### The premise that did not hold: planning depth has no `auto`
+
+"Planning depth" is the `appetite` field, and its whole domain is three values:
+`appetiteSchema = z.enum(["Lean", "Core", "Complete"])` (`server/contracts.ts:18`),
+surfaced as the dialog's `APPETITE_OPTIONS` (`components/creation/creation-settings.tsx:12-16`).
+The running server agrees — `bb plugin rpc inspect stelow createCard` publishes
+that same three-value enum. `Auto` exists, but it is a **`reviewMode`**
+(review gates) value, not a planning depth
+(`reviewModeSchema`, `server/contracts.ts:19-26`); conflating the two is the
+whole error. There is no `auto` to set.
+
+The faithful reading of "let the system choose" is the board default, so that is
+what the card got. `bb plugin rpc call stelow boardWorkflowDefaults` returns
+`appetite: "Core"`, `reviewMode: "Product Spec + Interface + Scopes"`,
+`reviewGates: ["spec","interface","scope"]`, and the card below carries exactly
+those. Worth recording that "board default" is *not* a repo constant: the
+seed/template default is Core (`server/runtime/workflow-seeding.ts:216`,
+`lib/state-template.mjs:5`) while the RPC and schema defaults are Lean
+(`server/card-rpc-contract.ts:191`, `server/runtime/card-detail.ts:365`). The
+card's own `recon/setup.md` re-derived this independently and reached the same
+conclusion.
+
+### Correction 1: the card-scoped CLI *is* shell-reachable
+
+The claim above was that "everything card-scoped is thread-bound", from
+`playbook --card sw-card_ahrsgllj` exiting 2 with `Unknown card`. The cause is
+an id-space mix-up, not a missing registry. `sw-card_ahrsgllj` is a **dirHash**,
+the slug `status --json` and the state directory use; `--card` wants the
+**card id** `card_…`. Every id the previous phase tried was a dirHash. With a
+real card id all three card-scoped verbs work from the shell:
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `bb stelow playbook --card sw-card_ahrsgllj` | 2 | `Unknown card` (a dirHash, not a card id) |
+| `bb stelow playbook --card card_y6dnitl6` | 0 | prints `state`, `transitions`, `entry`, `router`, `orchestrator`, `stage(setup)` |
+| `bb stelow manifest --card card_y6dnitl6` | 0 | `Stelow-Artifacts: 2`, both paths listed |
+| `bb stelow verify --card card_y6dnitl6` | 0 | `Build verification requires --tests` |
+| `bb stelow done --card card_y6dnitl6` | 1 | `Refused: this workflow is at 'context', not 'audit'.` |
+
+So the sweeping claim is false and the narrow one survives: `advance` still
+refuses from the shell with `state.md is missing for the Stelow workflow`,
+because `server/runtime/cli-inspection.ts:215` resolves `stateDir` from
+`context.threadId`'s card and a shell run has none. The distinction is *which
+verb resolves its card*, not whether card-scoped work is possible off-thread.
+A board listing that hands out dirHashes while the card-scoped verbs demand
+card ids is the actual ergonomic defect here, and it is what produced a
+confident wrong conclusion.
+
+### Correction 2: `answer` exists
+
+"There is no `answer` subcommand" is stale. `bb stelow help answer` returns
+`bb stelow answer --card <card_id> --question <question_id> --answer <text>
+[--question … --answer …]… [--json] (repeat pairs; every open question must be
+answered in one call)`, and it is in `bb stelow help`'s 30-subcommand list. The
+card-scoped answer path is therefore shell-reachable too, which is the exact
+capability the previous phase recorded as missing.
+
+### Correction 3: `seed` does not create a card
+
+The previous section treated a `seed`-written workflow root as "the card is
+then visible in `status --json`", which reads as card creation. It is not:
+`server/runtime/cli/cli-seed.ts` calls `deps.seedWorkflow(rootPath, …)` and
+prints the state path — it writes `.stelow/<dirHash>/state.md` at the project
+root and returns. It mints no card row, so it exercises none of the card
+lifecycle. Card creation is the `createCard` RPC, and it *is* shell-drivable:
+`bb plugin rpc call stelow createCard --input-file <path>`, the platform's
+own RPC invocation path. That is the supported equivalent this phase used, and
+it is the answer to "if the CLI cannot create a card".
+
+### The card, and what it actually did
+
+`bb plugin rpc call stelow createCard` returned `cardId: card_y6dnitl6`,
+`threadId: thr_v3dwdyacu4`, on `env_v9s2z9xbm2`. `cardDetail` reports
+`kind: "build"`, `stage: triage`, `activity: running`. The state dir is
+`.stelow/2026-09-26/sw-card_y6dnitl6/`, and the board went 40 → 41 workflows.
+
+Its `state.md` carried the requested configuration through verbatim —
+`appetite: Core`, `review_gates: [spec, interface, scope]`,
+`review_mode: Product Spec + Interface + Scopes` — and the card advanced
+`triage → select → setup → context` across two **native** runs, each with a
+registration receipt:
+
+| Run | Recipe | Stage | Status | Outputs |
+| --- | --- | --- | --- | --- |
+| `exec_7zly28ff` | `setup-recon` | setup | succeeded | `recon/setup.md` |
+| `exec_9l7rotyd` | `strategic-context` | context | succeeded | `strategic/context.md`, `strategic/context-analysis.md` |
+
+`context/recon-receipt.json` is a real receipt (`stelow-recon-v2`, git
+workspace, cymbal/ripwire/sem/ast-grep all available, `missing: []`), and
+`bb stelow manifest` counts the artifacts as they land: 1, then 2.
+
+**It did not reach `planning`, and the reason is the finding below.** Given
+`intent: investigate` plus a read-only instruction, the worker used its own
+card as an investigator and inspected a *different* live Build card,
+`card_2xjusphs` (`live-validation-add-a-read-only-scope-map-view-to-`,
+`intent: feature`), walking its planning leg: triage 09:29Z → select → setup →
+context → shape → critique → spec gate → `scope`. Those claims were
+re-derived here rather than trusted: the target's `state.md` reads
+`current_stage: scope` with the same `Core` / `[spec, interface, scope]` config;
+its `plans/spec-product_v2.md:21-25` carries the spec `gate_receipt`
+(`decision: user-approved (Approve spec v2)`, `approval_tool_fallback: structured
+ask (visual_review unavailable on this host)`), which is consistent with
+`.stelow/approvals/` naming only two *other* cards; and its artifact count is
+**17** exactly (`shape` 7, `critique` 7, `setup` 2, `triage` 1), matching the
+report. The trail record is
+`.stelow/2026-09-26/sw-card_y6dnitl6/build-card-verification.md`, with
+`audit.md` beside it.
+
+### The finding: an investigate card at `context` has no forward move
+
+The investigator card tried to finish and could not. Its own `audit.md` records
+`bb stelow advance audit` being refused from `context`. That is not a staging
+accident — it is structural, and it is a deadlock, which is the one outcome a
+transition table must never produce.
+
+`allowed_candidates_for_stage` (`data/stelow:207-242`) computes a stage's
+candidates from its `next`/`accept`/`reject`/`rework` lines and then
+**intersects** them with the intent's projected route, under an explicit rule:
+*"Intent routes are projections of the full graph, never extra edges. A route
+may omit stages, but it may not invent a transition outside the graph."* Run
+verbatim against the vendored `transitions.md`:
+
+| `(stage, intent)` | Effective candidates |
+| --- | --- |
+| `context` / `investigate` | `[setup]` — **backward only** |
+| `context` / `feature` | `[shape, planning, setup]` |
+| `setup` / `investigate` | `[context, triage]` |
+| `audit` / `investigate` | `[]` (terminal by design) |
+
+The two tables disagree. The `investigate` route is
+`triage → select → setup → context → audit`
+(`skills/stelow-workflow-orchestrator/references/transitions.md:289`), but the
+`### context` block declares only `next: shape, planning` and
+`reject: setup` (`:72-80`) — so `audit` is an edge the route invents, and the
+intersection deletes `shape` and `planning` for being outside the route,
+leaving the single backward reject. Read alone, neither table looks wrong.
+
+Blast radius on this board right now: **29 of 42** state files are
+`intent: investigate`, and **three** are `active` and parked at `context` —
+`card_4piqzxb0`, `card_4ukw3w4x`, and `card_y6dnitl6`. `investigate` is what
+the research and explore tracks use, so this is the default path for the short
+tracks, not an edge case.
+
+The format blocks the obvious repair, and this was checked rather than
+assumed. `audit` terminates *every* route, so adding it to `### context`'s
+`next` to free `investigate` also grants `feature` a `context → audit` skip
+past shape, critique, both review gates, planning, execution, verification,
+and the diff gate. Re-running the same probe against that one-word edit:
+
+```
+context/investigate    -> [audit,setup]
+context/feature        -> [shape,planning,audit,setup]   # gate-bypassing skip
+```
+
+So the fix is a format change or an intent-scoped helper, never a shared
+`next:` list, and it belongs upstream: `skills/` and `data/stelow` are
+sync-owned, so this is fixed in `calionauta/stelow` and propagated. The
+blueprint entry recording the anti-pattern and the invariant to pin shipped
+as `stelow` `27d701e`. The invariant worth adding as a test: for every
+`(stage, intent)` pair a route visits, the effective set must contain a
+forward edge, exempting only the terminal stage whose `next: (done)`
+legitimately has none — asserted against the same intersection the helper
+computes, so it fails on the disagreement instead of restating the tables.
+
+A control on the finding: the same sweep reports "no forward move" for
+`audit` on all five intents, and that is **not** a defect. `### audit` declares
+`next: (done — workflow complete)`, which the paren-cut empties, so `audit` is
+terminal and completion is `done`, not an advance. Only the `context`/
+`investigate` row is a real deadlock.
+
+### The completion gate holds, verified as a control
+
+The investigator registered an `audit` artifact while `current_stage` was
+still `context` and `stages.audit` still read `pending`, so `state.md` can
+carry an artifact for a stage the card has not reached — the artifact registry
+does not check the stage it is handed. That is worth knowing, and it is *not* a
+completion bypass: `done` refuses. `bb stelow done --card card_y6dnitl6` exits
+**1** on stderr with `Refused: this workflow is at 'context', not 'audit'. Keep
+working the current stage and advancing — run 'bb stelow done' only when the
+audit work is complete.` The stage check is `lib/completion.mjs:23-25`, and
+`doneBuildGates` (`lib/build-gates.mjs:70`) returns `null` for any stage but
+`audit`. The refusal names its exit, as AGENTS.md requires — though here the
+only exit it can name is "keep advancing", because at `context` on this intent
+there is nowhere to advance to.
+
+### Smaller findings, each measured
+
+- **`stelow.json`'s `stage` block is a seed-time snapshot.** It is written in
+  exactly one place, `server/runtime/workflow-seeding.ts:194-199`, and no
+  advance path touches it, so it reads `triage` forever. **15 of 41** entries
+  disagree with their own `state.md`; all 15 read `triage`. The `config` block
+  in the same entry stays correct because the same seed call writes it. Not
+  user-visible today: the `board` RPC reports stage from `state.md` (verified —
+  it returned `context` for a card whose mirror says `triage`), and
+  `server/runtime/worker-restart-prompt.ts:47` already tells a restarting
+  worker to take the *path* from `stelow.json` and the *stage* from
+  `state.md`. A latent trap, not an active bug, and the reason it is easy to
+  miss is that both files look authoritative.
+- **`board` returns `artifacts: []` for all 41 workflows**, including cards
+  with 17 registered artifacts, while `manifest` counts them correctly. Uniform
+  emptiness reads as an unpopulated summary field rather than a per-card bug;
+  recorded as an observation, not a defect claim.
+- **`executionRunStatus`'s `runId` input is an `exec_` id, not a run id.** Both
+  `wfr_d68ad2e9` and the full native UUID
+  `wfr_d68ad2e9-cd75-4105-b988-742b5def54bd` return
+`Execution run not found.`, while `exec_7zly28ff` resolves. `reconcileOne`
+(`server/execution-reconcile-run.ts:49`) looks the row up by that id, and the
+sweep passes `run.id` (`server/execution-reconcile-sweep.ts:48`) — while the
+row's own `runId` field holds the native id. So the RPC parameter is named
+after the field it collides with, and an operator who reads "native identity
+for one execution run" and passes back the `runId` from a previous response
+gets a not-found. `cancelExecutionRun` takes the same parameter name. Reported,
+deliberately not fixed and deliberately not pinned: a test asserting the
+not-found would pin the defect as intended behaviour, and the fix is a rename
+that belongs with a caller sweep.
+- **`createCard`'s `environment` is a discriminated union, and a flat object
+  falls back.** `lib/card-environment.mjs` `selectCardEnvironment` accepts
+  `{type:"project-default"}`, `{type:"reuse", environmentId}`, `{type:"provider",
+  environmentProviderId}`, and `{type:"host", workspace:{type: …}}`; anything
+  else resolves to the fallback and emits `environmentFallbackNotice`. Passing
+  the `PreviewEnvironment` *read* shape (`server/runtime/card-seams.ts:30-37` —
+  `{id, path, hostId, …}`) yields `asked unknown shape`, and the card carries
+  the notice as a comment, naming asked-vs-used and the redirect. The fallback
+  happened to be the right environment here, so the outcome was correct and the
+  contract worked as designed — a fail-loud substitution, caught and reported
+  rather than silently swallowed. The read shape and the request shape sharing a
+  name is the trap.
+
+### Phase gates
+
+`npm run typecheck`, `npm test`, the architecture check, `npm run quality:shape`,
+and the source-budget check are all green on this commit; the tree-wide numbers
+are unchanged from the previous phase because this phase changed no source. No
+user-facing behaviour changed, so `FEATURES.md` does not move. One blueprint
+anti-pattern was added upstream (`stelow` `27d701e`) — the only upstream change,
+and it is a doc entry, so the `stelow` vitest baseline is unchanged by
+construction.
+
+Nothing in the plugin checkout was edited by the E2E: the card's outputs are
+all under the gitignored `.stelow/`, and `git status` stayed clean throughout,
+which is the correct outcome for an investigation card and is itself worth
+recording as evidence rather than as an absence.
+
 ## Review corrections (the Blueprint phase)
 
 The blueprint phase wrote two subsections and one anti-pattern upstream
