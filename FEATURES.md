@@ -450,6 +450,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way.
+  **Answering is also programmatic**: `bb stelow answer --card <card_id>
+  --question <question_id> --answer <text>` (repeat pairs; one
+  `--question` may take several `--answer` values for a multi-select)
+  applies the card form's exact rules — atomic per door, contract consumed,
+  outcome written to the trail, worker resumed — so a scripted run or a test
+  can clear a wait without a browser. A recovery question is addressed as
+  `expired:<id>`; live and recovery questions are answered in separate calls
+  because each door answers its own set atomically. An unknown flag refuses
+  rather than being ignored, so a typo cannot answer the wrong question.
   A group may declare its question contract (`--contract <id>`, validated
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave

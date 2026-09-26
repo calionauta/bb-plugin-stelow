@@ -55,7 +55,7 @@
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/question-batch.test.mjs && node tests/question-form.test.mjs",
     "test:question-presence": "node tests/question-presence.test.mjs",
-    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs",
+    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs && node tests/github-issue-create.test.mjs && node tests/github-issue-comments.test.mjs",
     "test:automation": "node tests/automation-rules.test.mjs",
     "test:promote": "node tests/promote-card.test.mjs",
