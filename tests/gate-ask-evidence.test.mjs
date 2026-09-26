@@ -118,3 +118,30 @@ const mixedPlanGate = {
 assert.equal(gateEvidenceGate(mixedPlanGate).allowed, true, "label-only approvals stay valid at plan-gate");
 
 console.log("gate ask evidence test ok: gates require evidence, everything else untouched");
+
+// Provenance of a per-option document. Two paths put a document on an option
+// that never attached one: the inheritance rule, and the manifest recovery
+// that fires when the ask carried nothing at all. A real card hit the SECOND
+// one — the worker attached nothing, the host injected `interfaces.md`, and
+// all four options rendered "Open: interfaces.md" as if it were each option's
+// own evidence. Marking only inheritance (the first path) fixed nothing.
+assert.match(
+  serverSource,
+  /out\.push\(\{ \.\.\.option, artifact: manifestArtifact, artifactInherited: manifestArtifact !== null \}\)/,
+  "a manifest-recovered document is marked as not the option's own",
+);
+assert.match(
+  serverSource,
+  /artifactInherited: own === null/,
+  "an option that borrowed its document is marked, and one that attached its own is not",
+);
+assert.match(
+  questionFormSource,
+  /artifactInherited: own === null && artifact !== null/,
+  "the thread path applies the same rule, so the card and a live question never disagree",
+);
+assert.match(
+  conversationSource,
+  /artifactInherited \? "Shared brief" : "Open"/,
+  "the control names the document and whether it is shared",
+);

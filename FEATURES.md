@@ -476,7 +476,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   rather than "Open document", because a filename hidden in a hover-only
   tooltip is not a label, and the same brief on four rows reads as four
   pieces of evidence about four different options. Options that brought their
-  own document say so instead. Option
+  own document say so instead. The same marking covers BOTH ways a document
+  reaches an option it was never attached to — the sibling inheritance and
+  the stage-manifest recovery that fires when an ask carries nothing at all.
+  Marking only the first fixed nothing: on a real card the worker attached no
+  document, the host injected the stage's own `interfaces.md` into all four
+  options, and every row claimed it as its own evidence. Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
