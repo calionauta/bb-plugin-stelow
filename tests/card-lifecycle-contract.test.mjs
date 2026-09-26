@@ -567,7 +567,15 @@ assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split q
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
 assert.match(answerExpired, /cleanAnswerList\(item\.answers\)/, "timed-out answers are cleaned through the shared helper before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
-assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");
+// Timed-out batches still refuse a partial answer — the refusal now names
+// which questions are still open, so the exit is visible.
+assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) \{/, "a partial batch is refused before the worker resumes");
+assert.match(
+  answerExpired,
+  /Answer every pending question: a partial answer would resume the worker early/,
+  "the refusal still explains the all-or-nothing rule",
+);
+assert.match(answerExpired, /Still open: \$\{stillOpen\.join\(", "\)\}/, "the refusal names the questions still open");
 assert.match(conversation, /\{sel\.isLastQuestion \? <Button size="sm" disabled=\{!sel\.complete \|\| busy\}/, "the batch action only renders on the last step and waits for every decision");
 // Stepper composition: one selection hook drives dots, options, and
 // submit; heading and option list render through dedicated units.
