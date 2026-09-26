@@ -235,5 +235,3 @@ function advanceStage(deps: RpcSurfacesDeps) {
     return { stage, stdout: result.stdout, error: null };
   };
 }
-
-

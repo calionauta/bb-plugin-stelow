@@ -87,4 +87,3 @@ test("verify-delegation without a worker thread says nothing to inspect", async 
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /No worker thread/);
 });
-
