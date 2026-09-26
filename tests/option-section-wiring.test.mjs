@@ -48,23 +48,67 @@ assert.match(inventory, /\n    optionLabel,\n  \}\);/, "and stores it on the vie
 // as `undefined` and quietly disable the feature.
 assert.match(detailBody, /optionLabel\?: string;/, "the card's viewer state carries the label");
 assert.match(detailBody, /optionLabel=\{view\.viewerFile\?\.optionLabel\}/, "and the dialog receives it");
-assert.match(dialog, /<OptionSection content=\{content\} optionLabel=\{optionLabel\} \/>/, "the dialog renders the option's section");
-
-// The section must be shown ABOVE the document, not appended after it: the
-// reader who opened a shared brief is looking for the option, and everything
-// after the full document is something they have already scrolled past.
-assert.ok(
-  dialog.indexOf("<OptionSection") < dialog.indexOf("<ArtifactContent"),
-  "the option's section comes before the full document, not after it",
+assert.match(
+  dialog,
+  /<OptionSection content=\{content\} optionLabel=\{optionLabel\} containerRef=\{scrollRef\} \/>/,
+  "the dialog renders the option's section",
 );
 
-// And it must render nothing when there is no section, rather than a wrong
-// section under this option's name.
-assert.match(optionSection, /if \(section === null\) return null;/, "no section for the option renders nothing, not a wrong section");
+// The option is scrolled to INSIDE the document, not quoted above it. Lifting
+// the section duplicates the reader's own text and makes the brief read as two
+// documents; the host already rendered the headings inside a scroll container
+// this component owns, so one scrollIntoView is enough.
+assert.match(
+  optionSection,
+  /target\.scrollIntoView\(\{ block: "start" \}\)/,
+  "the reader is taken to the option's heading inside the document",
+);
+assert.match(
+  dialog,
+  /scrollRef=\{scrollRef\}/,
+  "the document's scroll container is handed to the option lookup, or there is nothing to scroll",
+);
+assert.match(
+  dialog,
+  /<div ref=\{scrollRef\} className="max-h-\[46dvh\] overflow-auto/,
+  "the container the headings live in is the one that scrolls",
+);
+
+// The DOM comparison reuses the pure matcher's key. A second, looser copy in
+// the UI is how the scroll starts disagreeing with the anchor.
+assert.match(
+  optionSection,
+  /import \{ optionSectionExcerpt, sectionHeadingsMatch \} from "\.\.\/\.\.\/lib\/option-anchor\.mjs";/,
+  "the UI calls the pure matcher instead of restating its rule inline",
+);
+// The import alone is not enough: an inline predicate leaves the import in
+// place while the comparison stops being the tested one. Pin the call, with
+// both operands, so replacing it with any local heuristic fails here. The DOM
+// path itself cannot be unit-tested, so this is the only place the two can be
+// caught drifting apart.
+assert.match(
+  optionSection,
+  /\.find\(\(node\) => sectionHeadingsMatch\(node\.textContent, section\.heading\)\)/,
+  "the rendered heading is compared with the SHARED matcher, on the heading the scan resolved",
+);
+
+// The lifted section is the FALLBACK, not the primary: shown only when the
+// heading is absent from the rendered DOM, never on top of a working scroll,
+// and never a wrong section under this option's name.
+assert.match(
+  optionSection,
+  /if \(!target\) \{\s*setNeedsFallback\(true\);/,
+  "a missing heading is what promotes the excerpt, not the default path",
+);
+assert.match(
+  optionSection,
+  /if \(!section \|\| !needsFallback\) return null;/,
+  "a working scroll shows nothing extra — the document is not quoted twice",
+);
 assert.match(
   optionSection,
   /Your selection · \{optionLabel\}/,
-  "the panel says which option it is quoting, so it is never read as the whole document",
+  "the fallback says which option it is quoting, so it is never read as the whole document",
 );
 
-console.log("option section wiring ok: the label reaches the viewer, and the section renders before the document");
+console.log("option section wiring ok: the label reaches the viewer, the option is scrolled to, and the excerpt is only a fallback");

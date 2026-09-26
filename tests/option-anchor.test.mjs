@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { optionSectionAnchor, optionSectionExcerpt, anchorIdFor } from "../lib/option-anchor.mjs";
+import { optionSectionAnchor, optionSectionExcerpt, sectionHeadingsMatch, anchorIdFor } from "../lib/option-anchor.mjs";
 
 // The real brief from the card that started this: four options, one combined
 // document, and the hybrid sitting at the bottom below three proposals the
@@ -164,5 +164,40 @@ assert.equal(optionSectionExcerpt(brief, "D something else"), null, "an option w
 
 assert.equal(anchorIdFor("## Anything", 3), "option-section-anything-3", "the id includes the index so duplicate headings stay distinct");
 assert.equal(anchorIdFor("", 0), "option-section-0", "an empty heading still yields a usable id");
+
+// The viewer does not scroll to a line number — the host renders the headings
+// and this compares the rendered text against the heading the scan resolved.
+// Same question, so it must be the same answer: a component-local copy of the
+// rule is how a scroll starts disagreeing with its own anchor, and it cannot
+// be tested without a DOM.
+const hybridHeading = optionSectionExcerpt(brief, "Hybrid A+C").heading;
+assert.equal(hybridHeading, "Hybrid recommendation (A + C)", "the scan resolves the brief's own heading wording");
+assert.equal(
+  sectionHeadingsMatch("Hybrid recommendation (A + C)", hybridHeading),
+  true,
+  "an identically-worded rendered heading matches",
+);
+// The renderer may normalize whitespace and case; the words still name it.
+assert.equal(sectionHeadingsMatch("  hybrid   recommendation (a + c) ", hybridHeading), true, "case and spacing do not decide it");
+assert.equal(sectionHeadingsMatch("Hybrid recommendation — A and C", hybridHeading), true, "an em-dash rewording still matches");
+assert.equal(sectionHeadingsMatch("Proposal A — Stacked per-scope blocks", hybridHeading), false, "another option's heading does not match");
+assert.equal(
+  sectionHeadingsMatch("Scope Map interface proposals (v1, Core: 3 + hybrid)", hybridHeading),
+  false,
+  "the document title does not match, even though it mentions the hybrid",
+);
+
+// Containment runs both ways, so a brief whose heading is the fuller name
+// still matches a card that says "Hybrid A+C".
+assert.equal(sectionHeadingsMatch("Hybrid", "Hybrid A+C"), true, "a broader rendered heading still names the option");
+
+for (const [label, rendered, target] of [
+  ["an empty rendered heading", "", "Hybrid A+C"],
+  ["an empty target", "Hybrid A+C", ""],
+  ["null rendered", null, "Hybrid A+C"],
+  ["a number", 7, "Hybrid A+C"],
+]) {
+  assert.equal(sectionHeadingsMatch(rendered, target), false, `${label} does not match rather than throwing`);
+}
 
 console.log("option anchor test ok: an option opens at its own section, or honestly at the top");
