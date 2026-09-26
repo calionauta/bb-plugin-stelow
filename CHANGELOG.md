@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.52.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.52.0...v0.52.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* the Explore quality seal honours the artifact the worker is told to write ([#120](https://github.com/calionauta/bb-plugin-stelow/issues/120)) ([36d9056](https://github.com/calionauta/bb-plugin-stelow/commit/36d9056e3fcfc4cc10dcd95ed1339c149a57a72f))
+
 ## [0.52.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.8...v0.52.0) (2026-09-26)
 
 
