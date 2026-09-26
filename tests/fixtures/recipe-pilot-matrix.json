@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-09-25T00:00:00Z",
+  "validated_at": "2026-09-26T17:11:05Z",
   "host": {
     "name": "bb",
     "version": "0.43.3",
@@ -9,11 +9,11 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -41,9 +41,15 @@
       "execution_claim": "validation-only",
       "source_sha256": "4f369a23cf6b5c653892fb77c381fb5f22f8dcb8814c385e8eb60f4162fed79b",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["audits/codebase-structure.md", "audits/codebase-risk.md", "audits/codebase-critique.md"]
+      "outputs": [
+        "audits/codebase-structure.md",
+        "audits/codebase-risk.md",
+        "audits/codebase-critique.md"
+      ]
     },
     {
       "id": "execution-audit",
@@ -53,9 +59,15 @@
       "execution_claim": "validation-only",
       "source_sha256": "7c9677a80959a7b62652a60b494effd3637f67b8f3ead214c5b96de193a2c294",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["audit/requirements.md", "audit/evidence.md", "audit/report.md"]
+      "outputs": [
+        "audit/requirements.md",
+        "audit/evidence.md",
+        "audit/report.md"
+      ]
     },
     {
       "id": "interface-alternatives",
@@ -65,9 +77,15 @@
       "execution_claim": "validation-only",
       "source_sha256": "44d130280dcd030dd33ac4d632e2b8164ceafc00c5fb1e0c49f7eac49c72379b",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["interfaces/alternatives.json", "interfaces/alternatives-verification.json", "interfaces/interfaces.md"]
+      "outputs": [
+        "interfaces/alternatives.json",
+        "interfaces/alternatives-verification.json",
+        "interfaces/interfaces.md"
+      ]
     },
     {
       "id": "interface-contrast",
@@ -75,11 +93,18 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "1459371700eab5092e49b8fe596914cf47c67466857805401e4bafd372b31b1d",
+      "source_sha256": "9e31facb9bd0addd7a85d0d6dd3cc13a8fb4b9f4bba7c72bb6cb8b61807808b3",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
-      "human_boundaries": ["contrast"],
-      "outputs": ["interfaces/contrast.json", "interfaces/interfaces.md"]
+      "failure_policies": [
+        "fail"
+      ],
+      "human_boundaries": [
+        "contrast"
+      ],
+      "outputs": [
+        "interfaces/contrast.json",
+        "interfaces/interfaces.md"
+      ]
     },
     {
       "id": "plan-critique",
@@ -89,9 +114,15 @@
       "execution_claim": "validation-only",
       "source_sha256": "750c5951bbf5c3317074623c7729e5b02df10cbcee7b10c81d74983d5b69df69",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["critiques/critique-report.json", "critiques/critique-verification.json", "critiques/critique-report.md"]
+      "outputs": [
+        "critiques/critique-report.json",
+        "critiques/critique-verification.json",
+        "critiques/critique-report.md"
+      ]
     },
     {
       "id": "planning-research",
@@ -101,9 +132,15 @@
       "execution_claim": "validation-only",
       "source_sha256": "65a22f623e50ec3a67e459c426b7b2efe9616dc4bd4c9d5ab13ed29a09001217",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["plans/stack-research.md", "plans/testing-strategy.md", "plans/planning-alignment.md"]
+      "outputs": [
+        "plans/stack-research.md",
+        "plans/testing-strategy.md",
+        "plans/planning-alignment.md"
+      ]
     },
     {
       "id": "scope-batch",
@@ -113,9 +150,19 @@
       "execution_claim": "waived",
       "source_sha256": "6dc65a396d53483e31eb827f6e0316c9529f9471fbb028a2bbc5d903350deeb1",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
-      "human_boundaries": ["gap-escalation"],
-      "outputs": ["execution/scope-partition.json", "execution/scope-results.json", "execution/scope-verification.json", "execution/parent-verification.json", "execution/gap-escalation.json"],
+      "failure_policies": [
+        "fail"
+      ],
+      "human_boundaries": [
+        "gap-escalation"
+      ],
+      "outputs": [
+        "execution/scope-partition.json",
+        "execution/scope-results.json",
+        "execution/scope-verification.json",
+        "execution/parent-verification.json",
+        "execution/gap-escalation.json"
+      ],
       "waiver_id": "workspace-writing-scope-batch"
     },
     {
@@ -126,9 +173,13 @@
       "execution_claim": "validation-only",
       "source_sha256": "297ee800cb4dcfab52b51f8aeb7f03eb7d8f71d197afd8e3d60255ea2c5c7ab6",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["scope-map.json"]
+      "outputs": [
+        "scope-map.json"
+      ]
     },
     {
       "id": "setup-recon",
@@ -138,9 +189,13 @@
       "execution_claim": "validation-only",
       "source_sha256": "7745e05a8894f345e31dae7c8d0a4259e555d2d3f61e5ed81d11b40be19710a7",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["recon/setup.md"]
+      "outputs": [
+        "recon/setup.md"
+      ]
     },
     {
       "id": "shape-recon",
@@ -150,9 +205,13 @@
       "execution_claim": "validation-only",
       "source_sha256": "fc6fa558b7d6c56a29e8f0d4f4470e358cd5c354e849ea30c6ebb78f3a79966f",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["recon/shape.md"]
+      "outputs": [
+        "recon/shape.md"
+      ]
     },
     {
       "id": "strategic-context",
@@ -162,9 +221,14 @@
       "execution_claim": "validation-only",
       "source_sha256": "f56aa7f5d6928e7d3549d0da4d686f707ffbcd9a92af89ead30427e4c7da6499",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["strategic/context-analysis.md", "strategic/context.md"]
+      "outputs": [
+        "strategic/context-analysis.md",
+        "strategic/context.md"
+      ]
     },
     {
       "id": "testing-strategy",
@@ -174,9 +238,13 @@
       "execution_claim": "validation-only",
       "source_sha256": "a0453c63eb4cb7bffeb7c29d25f102bc633a40d624eb04ef1a01690ec80dbb73",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["plans/testing-strategy.md"]
+      "outputs": [
+        "plans/testing-strategy.md"
+      ]
     },
     {
       "id": "ux-critique",
@@ -186,9 +254,14 @@
       "execution_claim": "validation-only",
       "source_sha256": "3bb4b8d834485c5ce20f094ff5a13effc2d649fe026be45e3da645e7154d2d42",
       "permission_profile": "inherit",
-      "failure_policies": ["fail"],
+      "failure_policies": [
+        "fail"
+      ],
       "human_boundaries": [],
-      "outputs": ["audits/ux-critique.md", "audits/ux-verification.md"]
+      "outputs": [
+        "audits/ux-critique.md",
+        "audits/ux-verification.md"
+      ]
     },
     {
       "id": "verification",
@@ -198,9 +271,16 @@
       "execution_claim": "validation-only",
       "source_sha256": "da46b91c150855c65f092b5ea01b12e3af2c53a31481ca89afb4800efba595dd",
       "permission_profile": "inherit",
-      "failure_policies": ["fail", "skip-with-reason"],
+      "failure_policies": [
+        "fail",
+        "skip-with-reason"
+      ],
       "human_boundaries": [],
-      "outputs": ["verification/tests.json", "verification/ui-review.md", "verification/report.md"]
+      "outputs": [
+        "verification/tests.json",
+        "verification/ui-review.md",
+        "verification/report.md"
+      ]
     }
   ],
   "waivers": [
@@ -214,7 +294,11 @@
       "reason": "Native fan-out is deferred on this host because file claims, isolated workers, transitive partition proof, parent merge, and parent verification are not proven. Host compilation and artifact contracts are recorded, but no native execution is claimed.",
       "required_route": "coordinator-sequential",
       "native_pilot_allowed": false,
-      "preserves": ["artifact", "claims", "parent-verification"]
+      "preserves": [
+        "artifact",
+        "claims",
+        "parent-verification"
+      ]
     }
   ]
 }
