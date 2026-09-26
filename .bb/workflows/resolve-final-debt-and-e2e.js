@@ -25,14 +25,46 @@ commit there; never reset or discard its existing diff. For E2E, use the real
 bb stelow CLI and record card id, stage, gates, artifacts, and final state.
 `;
 
+// The goal strings are the workflow's whole contract with each phase, so they
+// are wrapped one clause per line: the single-line form was six lines over the
+// repository's 160-character source-shape limit, and the gate now runs it.
 const phases = [
-  ["audit", "Audit", "Measure every remaining owned server function over 50 lines, the three dead guards, the upstream blueprint location, and the real bb stelow CLI syntax. Fix nothing broad; record exact symbols and safe boundaries."],
-  ["functions", "Functions", "Split the remaining owned server functions: createExecutionReconcile, createExecutionNative, createExecutionLifecycle, execution-advance helpers, useGithubDialogState, and PresetManagerDialog. Respect ownership: split logic, do not just relocate it. Add executable behavior tests and negative controls. Treat shadcn primitives and unrelated test fixtures separately with an explicit reason."],
-  ["guards", "Guards", "Retire the three dead TypeScript narrowing guards and sibling unreachable error strings using the smallest sound type-level change. Prove with typecheck and focused tests that runtime behavior is unchanged and no dead branch remains."],
-  ["blueprint", "Blueprint", "Update /home/deploy/repos/stelow docs/host-plugin-blueprint.md for the portable feature-slice, runtime composition, lifecycle, disposal, and secure subprocess patterns. Preserve any existing upstream diff, commit upstream separately, and push only that checkout's intended change. Also update the local architecture note and link evidence."],
-  ["e2e", "E2E", "Use the real bb stelow CLI. Create one Build card on the Stelow board with planning depth set to auto, follow it through triage/planning, inspect its live stage, gates, receipts, and artifacts, and leave an openable record. If the CLI cannot create a card, use the supported RPC/CLI equivalent and report the exact blocker rather than fabricating a card."],
-  ["final", "FinalAudit", "Run typecheck, full npm test, quality:shape, source budgets, quality report, architecture, security:production, build:reload, bundle grep, workflow validation, git diff check, and inspect both checkouts and the E2E card. Report exact residuals."],
+  ["audit", "Audit", `Measure every remaining owned server function over 50 lines,
+the three dead guards, the upstream blueprint location, and the real bb stelow CLI syntax.
+Fix nothing broad; record exact symbols and safe boundaries.`],
+  ["functions", "Functions", `Split the remaining owned server functions:
+createExecutionReconcile, createExecutionNative, createExecutionLifecycle,
+execution-advance helpers, useGithubDialogState, and PresetManagerDialog.
+Respect ownership: split logic, do not just relocate it.
+Add executable behavior tests and negative controls.
+Treat shadcn primitives and unrelated test fixtures separately with an explicit reason.`],
+  ["guards", "Guards", `Retire the three dead TypeScript narrowing guards and sibling
+unreachable error strings using the smallest sound type-level change.
+Prove with typecheck and focused tests that runtime behavior is unchanged
+and no dead branch remains.`],
+  ["blueprint", "Blueprint", `Update /home/deploy/repos/stelow docs/host-plugin-blueprint.md
+for the portable feature-slice, runtime composition, lifecycle, disposal,
+and secure subprocess patterns.
+Preserve any existing upstream diff, commit upstream separately,
+and push only that checkout's intended change.
+Also update the local architecture note and link evidence.`],
+  ["e2e", "E2E", `Use the real bb stelow CLI.
+Create one Build card on the Stelow board with planning depth set to auto,
+follow it through triage/planning, inspect its live stage, gates, receipts, and artifacts,
+and leave an openable record.
+If the CLI cannot create a card, use the supported RPC/CLI equivalent
+and report the exact blocker rather than fabricating a card.`],
+  ["final", "FinalAudit", `Run typecheck, full npm test, quality:shape, source budgets,
+quality report, architecture, security:production, build:reload, bundle grep,
+workflow validation, git diff check, and inspect both checkouts and the E2E card.
+Report exact residuals.`],
 ];
+
+const agentOptions = {
+  provider: "acp-opencode",
+  model: "opencode/space-bunny-free",
+  reasoningLevel: "medium",
+};
 
 const results = [];
 let previous = "No prior phase.";
@@ -45,25 +77,13 @@ Goal: ${goal}
 Prior phase report: ${previous}
 Complete only this phase with a bounded acceptance criterion. Commit and push the
 green phase, and report exact files, tests, counts, and evidence.`,
-  {
-    label: `implement:${id}`,
-    phase: phaseName,
-    provider: "acp-opencode",
-    model: "opencode/space-bunny-free",
-    reasoningLevel: "medium",
-  });
+  { ...agentOptions, label: `implement:${id}`, phase: phaseName });
   const review = await agent(`${common}
 Fresh adversarial review of phase ${id}. Inspect actual source, commits, and
 checkouts, not the implementation report. Verify behavior parity, coding
 standards, tests, negative controls, source shape, budgets, and evidence. Fix
 real issues, commit and push, then report exact before/after state. Do not loop.`,
-  {
-    label: `review:${id}`,
-    phase: phaseName,
-    provider: "acp-opencode",
-    model: "opencode/space-bunny-free",
-    reasoningLevel: "medium",
-  });
+  { ...agentOptions, label: `review:${id}`, phase: phaseName });
   results.push({ id, implementation, review });
   previous = review;
 }
@@ -74,11 +94,5 @@ Synthesize the final evidence. State exactly which functions and guards were
 split, the upstream blueprint commit, the real Build card id and end-to-end
 stage/gate/artifact evidence, all gate results, both checkout states, and any
 genuine residual blocker. Never claim an E2E card that was not observed.`,
-{
-  label: "final-debt-e2e-report",
-  phase: "FinalAudit",
-  provider: "acp-opencode",
-  model: "opencode/space-bunny-free",
-  reasoningLevel: "medium",
-});
+  { ...agentOptions, label: "final-debt-e2e-report", phase: "FinalAudit" });
 return { phases: results, final };

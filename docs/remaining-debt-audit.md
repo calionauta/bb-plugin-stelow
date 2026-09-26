@@ -648,3 +648,178 @@ dependencies), `tests/source-shape`, `tests/source-budgets`,
 `tests/budget-lineage`, and `tests/debt-baseline` green.
 
 
+## Phase 7 result (the audit phase of `resolve-final-debt-and-e2e`)
+
+The tree-wide debt R1–R6 left behind is now measured as it stands, not as the
+ledger records it: every figure below is a fresh TypeScript AST census over all
+771 owned files, using the same traversal `tests/debt-baseline.test.mjs` uses
+(function declarations, expressions, arrows, methods, constructors, getters,
+setters, and default-export labels). The gate's own output at this commit is
+`3 oversized file(s) and 45 oversized function(s), 7 inherited entries`.
+
+**3 oversized files** — all three recorded at their exact current size, none
+grown: `components/ui/dialog.tsx` 541, `components/ui/icon.tsx` 450,
+`tests/kanban-layout.test.mjs` 401. Two are vendored shadcn primitives and one is
+a test fixture; §*Review corrections* already argued the primitives are not
+worth splitting by hand, and this phase did not touch them.
+
+### 1. The remaining owned server functions over 50 lines
+
+Eleven, and they are exactly the eleven `server/` entries in
+`scripts/source-debt.json` — no unrecorded server debt. The `master` column is
+`git show origin/master:<file>` measured with the same traversal, so a branch
+that merely moved a file cannot hide growth here.
+
+| Symbol | Lines | Range | master | shape |
+| --- | --- | --- | --- | --- |
+| `server/execution-reconcile.ts:createExecutionReconcile` | 261 | 54-314 | 261 | 12 inner functions, all under 50 |
+| `server/execution-native.ts:createExecutionNative` | 249 | 142-390 | 249 | 5 inner, `prepareStart` 69 also over |
+| `server/execution-lifecycle.ts:createExecutionLifecycle` | 223 | 46-268 | 223 | 11 inner, `resumeAfterAnswers` 53 also over |
+| `server/execution-advance.ts:createExecutionAdvance` | 203 | 44-246 | 203 | 8 inner, all under 50 |
+| `server/runtime/workflow-seeding.ts:seedWorkflow` | 72 | 210-281 | no ancestor | 0 inner; flat |
+| `server/runtime/cli/cli-review-subject.ts:deliverableSubject` | 69 | 111-179 | no ancestor | 6 callbacks, one 5 lines |
+| `server/execution-native.ts:createExecutionNative/prepareStart` | 69 | 225-293 | 69 | nested in the factory above |
+| `server/runtime/cli/cli-bundle-writer.ts:writeBundle` | 68 | 223-290 | no ancestor | 1 one-line callback |
+| `server/runtime/cli/cli-split.ts:reportSplit` | 61 | 282-342 | no ancestor | 2 one-line callbacks |
+| `server/bb-workflow-bridge.ts:renderInlineWorkflowScript` | 57 | 120-176 | 57 | 1 callback, 11 lines |
+| `server/execution-lifecycle.ts:createExecutionLifecycle/resumeAfterAnswers` | 53 | 199-251 | 53 | nested in the factory above |
+
+Seven of the eleven are byte-for-byte their master line count: **the four
+`execution-*` factories and their two nested functions have not moved on this
+branch at all**, which is the honest headline of this section. The other four are
+the branch-created `server/runtime/**` symbols the ledger records rather than
+inherits, and they are the three the *Phase 4 result* section describes as having
+been waived by the old similarity fallback before R6 gave them records.
+
+**Safe boundaries, per file.** Each of the four factories is already a
+dependency-injected closure whose inner functions are individually small, so the
+split is a move of named rules out of one closure into sibling modules with the
+deps object as the only parameter — the shape R1 and R4 already shipped twice.
+The inner census gives the seams:
+
+- `createExecutionReconcile` (316-line file): `reconcileOne` 41 (209-249),
+  `reconcileBoundary` 38 (66-103), `reconcileStageEntries` 28, `reconcileArtifacts`
+  24, `requestRegistration` 20, `registrationRecorded` 18, `reconcileSimpleState`
+  18, `reconcileRuns` 15, `failArtifacts` 11, `reconcile` 10, `sendToCard` 8,
+  `readArtifactContents` 7. The registration pair (`requestRegistration` +
+  `registrationRecorded` + `failArtifacts`, 105-163) is one rule and belongs in
+  one module; the four `reconcile*` steps are one each. The file at 316 lines has
+  84 lines of headroom, so a module per rule cannot be added here — the siblings
+  have to be new files.
+- `createExecutionNative` (393-line file, 7 lines of headroom): `prepareStart` 69
+  (225-293) is itself over budget and is the one symbol that must be split even
+  if the shell is not; `startNativeStageForCard` 48, `resolveStageExecutionRoute`
+  42, `launchNativeRun` 39, `recordCoordinatorSequentialRoute` 26, `adapterFor` 11.
+- `createExecutionLifecycle` (270-line file): `resumeAfterAnswers` 53 (199-251) is
+  over budget on its own; `failResume` 31, `routeAnswerContinuation` 24,
+  `prepareResume` 23, `startExecutionRun` 19, `stopOwned` 15, `cancelExecutionRun`
+  13, `cancelRemoteRun` 9, `keepsCardRunning` 6, `publishCard` 3.
+- `createExecutionAdvance` (248-line file): `advanceCli` 40, `dispatchAdvance` 35,
+  `syncExecutionScopes` 31, `prepareAdvance` 30, `advanceCard` 27, `parseCli` 12,
+  `applyBand` 9, `recordExecution` 8.
+
+The four `server/runtime/**` and `bb-workflow-bridge` symbols are flat functions
+with no inner seams: each is one straight-line rule, so each is a candidate for a
+whole-file move out of its parent rather than a decomposition. None of the five
+files is near the 400-line ceiling, so a move is not forced by file size — it is
+forced by the 50-line function ceiling, which no argument of relocation satisfies.
+
+The 34 oversized functions outside `server/` are unchanged by this phase and stay
+pinned; the two named in this workflow's *Functions* phase
+(`useGithubDialogState` 229 and `PresetManagerDialog` 223) are the two largest
+components, and both are single oversized functions rather than factory shells.
+
+### 2. The three dead guards
+
+The *Phase 3 result* section named them by file and line; this phase re-derived
+deadness from the parser rather than from the report, and all three hold.
+
+`lib/preset-judge.mjs:parsePresetJudgeOutput` has exactly three `ok: true`
+returns and both mode branches are total: criteria mode returns
+`{ ok: true, verdicts }` after a check that guarantees `verdicts` is an array, and
+choice mode returns `{ ok: true, choice, confidence }` after a check that
+guarantees `choice` is a string inside `validChoices`. So in both modes the
+`ok: true` shape is the only one, and these guards can never be false:
+
+| Site | Guard | Dead string | Kind |
+| --- | --- | --- | --- |
+| `server/decision-seed.ts:127` (`seedFromPreset`) | `!("choice" in parsed)` | `"verdict shape mismatch"` | choice |
+| `server/decisions/scored-batch-judge.ts:83` | `!("verdicts" in parsed)` | `"judge verdict shape mismatch"` | criteria |
+| `server/decisions/artifact-criteria-judge.ts:108` | `!("verdicts" in parsed)` | `"judge verdict shape mismatch"` | criteria |
+
+No test in the tree references either string. Each guard is also the only
+TypeScript narrowing on the parser's un-narrowed return union, so deleting one
+fails `tsc`; retiring all three needs one `@overload` pair on
+`parsePresetJudgeOutput` in `lib/preset-judge.mjs` plus its `.d.mts`, after which
+the three guards and the three strings go together. The overload is the whole
+fix: three deletions and a signature, in one pure `lib/` module whose suite is
+`tests/preset-judge.test.mjs`.
+
+### 3. The upstream blueprint
+
+`/home/deploy/repos/stelow/docs/host-plugin-blueprint.md`, 673 lines, on `main`
+at `8671c78`, working tree clean at the time of this measurement. The two
+sections that own this workflow's lessons already exist and are where the
+*Blueprint* phase must write: **§9 Anti-patterns** (each entry is a mistake paid
+for once — a narrowing guard kept alive by an un-narrowed parser is one, and
+nothing of that shape is listed yet) and **§14 Host runtime composition and
+lifecycle slices** (which already states that extraction is a migration and not
+a relabeling, and which names `bb-plugin-stelow` as its reference evidence). A
+second copy exists at
+`/home/deploy/repos/stelow-blueprint-repair-20260924/docs/host-plugin-blueprint.md`;
+the `stelow` checkout is the upstream one named by `AGENTS.md` and is the one to
+commit in.
+
+### 4. The real `bb stelow` CLI
+
+`bb 0.43.3` on this host. `bb stelow help` lists 29 subcommands, and `bb stelow
+schema` publishes machine-readable contracts for ten of them (`advance`, `ask`,
+`audit-trail`, `config`, `doctor`, `lock`, `scope`, `seed`, `status`,
+`sync-scopes`) with their env vars, flags, output, and exit codes. The syntax
+the *E2E* phase needs, taken from `bb stelow help <subcommand>` rather than
+inferred:
+
+```
+bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>
+bb stelow status [--project <proj_id>] [--json]
+bb stelow doctor [--project <proj_id>] [--json]
+bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]...
+bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>
+bb stelow done [--card <card_id>]
+bb stelow playbook [--card <card_id>]
+```
+
+Two facts the E2E phase must not rediscover the hard way. There is **no
+`answer` subcommand**: a pending question is answered through the plugin's RPC
+surface, not the CLI, so `ask` is a one-way probe from the shell. And the
+`bb-plugin-stelow` checkout is **not a stelow workflow root** — `bb stelow
+doctor --project proj_a6wdkdcfkk --json` answers `state.md is missing for the
+Stelow workflow. Reseed the workflow`, while `bb stelow status --json` still
+lists 39 existing cards for that project. A card under test is therefore created
+by `seed` against its own project id and root, and the plugin checkout's own 39
+cards are the fixture to read, not the card to drive.
+
+### 5. One bounded repair this phase had to make
+
+The branch was **red on the shape gate** when the phase started, and not on any
+code this audit measured: commit `625f31b` added
+`.bb/workflows/resolve-final-debt-and-e2e.js` with six phase goals on single
+lines of 237, 423, 260, 372, 375, and 274 characters, and
+`tests/debt-baseline.test.mjs` (which runs the shape gate) failed on all six.
+Nothing local had caught it because the gate is step 4 of `.github/workflows/ci.yml`.
+
+The repair is the same one the *Gate repairs* section of this file shipped for
+the previous workflow, and it is deliberately that narrow: each goal became a
+template literal wrapped one clause per line, and the three identical agent
+option objects became one `agentOptions` const, matching
+`.bb/workflows/resolve-remaining-debt.js`. Verified rather than asserted — the
+six goal strings are compared word by word against `HEAD` and every sequence is
+identical (212, 390, 233, 339, 354, and 244 characters each, before and after),
+and the rewritten file parses and runs to the same six phases in the same order
+with `agent` and `phase` stubbed. The gate's own report is the negative control:
+it named those six lines and exited 1 before the change, and reports green after
+it. No prompt wording, phase order, label, provider, or model changed.
+
+Gates on this phase: `npm run typecheck` green, `npm run architecture` clean
+(712 modules, 1675 dependencies), `npm run test:source-shape` green,
+`npm run test:source-budgets` green.
