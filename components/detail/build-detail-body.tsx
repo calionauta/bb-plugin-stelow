@@ -44,6 +44,9 @@ type ViewerFile = {
   path: string;
   target: WorkspaceFileTarget | HostFileTarget | null;
   mode?: ArtifactViewerMode;
+  // The option whose control opened this file, so the viewer can show that
+  // option's section instead of the document's first line.
+  optionLabel?: string;
 } | null;
 
 type PresetDialogRenderer = (state: {
@@ -359,6 +362,7 @@ function PresetDialogs({ cardId, view }: { cardId: string; view: BuildDetailView
         file={view.viewerFile}
         editorTarget={view.viewerFile?.target ?? null}
         mode={view.viewerFile?.mode}
+        optionLabel={view.viewerFile?.optionLabel}
         onCommented={() => void load()}
       />
       <AdvanceDialog

@@ -22,7 +22,10 @@ export function fileLinkTarget(useWorkspace: boolean, environmentId: string | nu
 }
 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
-type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: "review" | "comment" };
+// optionLabel travels with the file so the viewer can show the section about
+// the option the reader clicked. Without it the viewer opens a shared brief at
+// its first line — which is the one place the option they picked is not.
+type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: "review" | "comment"; optionLabel?: string };
 
 export function openAskArtifact(
   card: { workspaceKind: string },
@@ -30,6 +33,7 @@ export function openAskArtifact(
   setViewerFile: (file: ViewerFile | null) => void,
   artifact: AskArtifact,
   mode: ViewerFile["mode"],
+  optionLabel?: string,
 ): void {
   const path = artifact.absolutePath ?? artifact.path;
   setViewerFile({
@@ -37,6 +41,7 @@ export function openAskArtifact(
     path,
     target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", path),
     mode,
+    optionLabel,
   });
 }
 

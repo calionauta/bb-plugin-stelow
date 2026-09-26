@@ -7,6 +7,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
+import { OptionSection } from "./option-section";
 import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
@@ -144,7 +145,7 @@ function CommentDrafts({ drafts, quoteSelection, sendAll, setDrafts }: ReturnTyp
   );
 }
 
-export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, mode = "comment", onCommented }: {
+export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, mode = "comment", onCommented, optionLabel }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   cardId: string;
@@ -152,6 +153,10 @@ export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorT
   editorTarget: EditorTarget;
   mode?: ArtifactViewerMode;
   onCommented: () => void;
+  // The option whose control opened this. The document is a shared brief, so
+  // without it the reader lands on the first line of every proposal instead
+  // of the one they asked about.
+  optionLabel?: string;
 }) {
   const { rpc, content, truncated, loadError, loading } = useArtifactContent(open, cardId, file);
   const drafts = useCommentDrafts(rpc, open, cardId, file, onCommented);
@@ -164,6 +169,7 @@ export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorT
           <DialogDescription>{canComment ? "Read-only preview. Discuss below — notes go to the agent." : "Read the document before deciding. This review does not modify it."}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <OptionSection content={content} optionLabel={optionLabel} />
           <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
           {canComment ? <CommentDrafts {...drafts} /> : null}
         </div>
