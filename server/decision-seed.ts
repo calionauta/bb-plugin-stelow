@@ -135,9 +135,12 @@ async function seedBuildIntent(
       point,
       DECISION_POINT_TRIAGE_INTENT,
     ).routeAt;
+    // `await`, not a bare return: returning a promise completes this block, so
+    // a rejection would escape the catch below and break card creation instead
+    // of degrading to the built-in rules.
     if (mode === "preset")
-      return seedFromPreset(ctx, promptText, projectId, point, routeAt);
-    return seedFromApi(ctx, promptText, point, routeAt);
+      return await seedFromPreset(ctx, promptText, projectId, point, routeAt);
+    return await seedFromApi(ctx, promptText, point, routeAt);
   } catch {
     return "unknown";
   }

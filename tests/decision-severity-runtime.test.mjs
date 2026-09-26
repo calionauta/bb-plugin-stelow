@@ -34,19 +34,22 @@ try {
   );
   db.prepare("INSERT INTO cards VALUES ('c1', 'Ship it', 'c1', 'build', 'build')").run();
   const settled = now() - 10 * 60 * 1000;
-  const addEvent = (id, severity, reasons, occurred, resolved = null) =>
+  // `kind` is written on purpose: production carries it on both sides of the
+  // sweep's join, and a fixture without it would not notice a bare `kind` in
+  // the candidate query going ambiguous again.
+  const addEvent = (id, kind, severity, reasons, occurred, resolved = null) =>
     db
       .prepare(
-        "INSERT INTO inbox_events VALUES (?, 'c1', 'Routine blocker', ?, ?, ?, ?, NULL)",
+        "INSERT INTO inbox_events VALUES (?, 'c1', 'Routine blocker', ?, ?, ?, ?, ?, NULL)",
       )
-      .run(id, severity, reasons, occurred, resolved);
+      .run(id, kind, severity, reasons, occurred, resolved);
   for (let index = 0; index < 4; index += 1) {
-    addEvent(`e${index}`, 1, null, settled);
+    addEvent(`e${index}`, "error", 1, null, settled);
   }
-  addEvent("judged", 1, '["model-judged"]', settled);
-  addEvent("settling", 1, null, now());
-  addEvent("done", 1, null, settled, now());
-  addEvent("high", 2, null, settled);
+  addEvent("judged", "error", 1, '["model-judged"]', settled);
+  addEvent("settling", "error", 1, null, now());
+  addEvent("done", "error", 1, null, settled, now());
+  addEvent("high", "error", 2, null, settled);
 
   const asked = [];
   const bump = (impl) =>
@@ -141,6 +144,60 @@ try {
     1,
     "an advisory failure leaves the deterministic tiers untouched",
   );
+
+  // The gate the sweep is only allowed through in api mode. Each case below
+  // plants a fresh, settled, unjudged item — so a sweep that ran anyway would
+  // have work to do and would move it. "Nothing changed" therefore means the
+  // gate stopped it, not that there was nothing to judge.
+  let gateSeq = 0;
+  const plantGateItem = () => {
+    gateSeq += 1;
+    addEvent(`gate${gateSeq}`, "error", 1, null, settled);
+    return `gate${gateSeq}`;
+  };
+  const unjudged = () =>
+    db
+      .prepare(
+        "SELECT id FROM inbox_events WHERE id LIKE 'gate%' AND severity_reasons IS NULL",
+      )
+      .all()
+      .map((row) => row.id);
+
+  const rulesItem = plantGateItem();
+  const rulesRoute = {
+    provider: "classifier",
+    endpoint: null,
+    apiKey: null,
+    model: null,
+  };
+  store.savePoint("inbox-severity", pointWrite({ mode: "rules", route: rulesRoute }), now);
+  const askedBeforeRules = asked.length;
+  await bump(blocking(0.9)).maybeBumpSeverity();
+  assert.equal(asked.length, askedBeforeRules, "rules mode never calls out");
+  assert.deepEqual(
+    unjudged(),
+    [rulesItem],
+    "rules mode leaves the item exactly where the deterministic tiers put it",
+  );
+
+  store.savePoint("inbox-severity", pointWrite({ route: rulesRoute }), now);
+  const switchItem = plantGateItem();
+  process.env.STELOW_DECISION_API = "0";
+  const askedBeforeSwitch = asked.length;
+  const publishedBeforeSwitch = published.length;
+  await bump(blocking(0.9)).maybeBumpSeverity();
+  assert.equal(asked.length, askedBeforeSwitch, "the kill switch spends no call");
+  assert.equal(
+    published.length,
+    publishedBeforeSwitch,
+    "the kill switch publishes nothing",
+  );
+  assert.deepEqual(
+    unjudged(),
+    [rulesItem, switchItem],
+    "the kill switch leaves the item where the deterministic tiers put it",
+  );
+  delete process.env.STELOW_DECISION_API;
 } finally {
   restoreEnv(saved);
 }

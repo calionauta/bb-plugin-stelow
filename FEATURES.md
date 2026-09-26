@@ -777,7 +777,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   router pins its own. Test connection sends one fixed probe with latency.
   Unconfigured means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
   blocks every outbound call: reads degrade, api writes and probes refuse
-  naming the variable.
+  naming the variable. A stored key also means a stored key is spent: a host
+  whose endpoint has gone stale pays one real outbound call per auto-continue
+  veto and per inbox-severity tick, each failing soft to the built-in rules.
+  Set the kill switch to stop the calls as well as the writes.
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (no extra calls, default), Decision

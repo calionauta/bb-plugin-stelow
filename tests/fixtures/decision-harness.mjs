@@ -5,6 +5,11 @@ import { createDecisionStore, runDecisionApiMigrations } from "../../server/deci
 // two tables the seams read, a log that can be asserted on, and the
 // realtime publishes a sweep produces. One definition, so a slice test never
 // re-creates a fixture that drifts from the one the next test uses.
+//
+// `inbox_events` carries a `kind` column on purpose: production has one on
+// both sides of the severity sweep's join (core-migrations.ts), so a fixture
+// without it cannot reproduce the ambiguous-column rejection a bare `kind`
+// in that query causes. Keep the column even when no assertion names it.
 
 export const ENV_KEYS = [
   "STELOW_DECISION_API",
@@ -35,8 +40,8 @@ export function decisionHarness() {
   );
   CREATE TABLE inbox_events (
     id TEXT PRIMARY KEY, card_id TEXT NOT NULL, summary TEXT NOT NULL,
-    severity INTEGER NOT NULL, severity_reasons TEXT, occurred_at INTEGER NOT NULL,
-    resolved_at INTEGER, archived_at INTEGER
+    kind TEXT, severity INTEGER NOT NULL, severity_reasons TEXT,
+    occurred_at INTEGER NOT NULL, resolved_at INTEGER, archived_at INTEGER
   );`);
   runDecisionApiMigrations(db);
   const logs = [];

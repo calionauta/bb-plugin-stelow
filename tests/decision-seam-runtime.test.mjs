@@ -20,6 +20,15 @@ const saved = savedEnv();
 try {
   clearDecisionEnv();
 
+  // A route that IS usable without a key, so "no call went out" can only mean
+  // the mode gate stopped it — never that the provider was unresolvable.
+  const keylessRoute = {
+    provider: "classifier",
+    endpoint: null,
+    apiKey: null,
+    model: null,
+  };
+
   // --- auto-continue: the router may only hold the heuristic back --------
   {
     const { bb, logs, store } = decisionHarness();
@@ -43,24 +52,31 @@ try {
       answers: { progress: { type: "noul", noul: value } },
     });
 
-    const rules = withCall(noul(0));
+    // Rules mode on a usable route: the gate, not an unresolvable key, is what
+    // keeps the worker turn in-house. Delete the gate and this calls out and
+    // vetoes on the built-in rules' behalf.
+    store.savePoint(
+      "auto-continue",
+      pointWrite({
+        mode: "rules",
+        thresholds: { routeAt: 0.7 },
+        route: keylessRoute,
+      }),
+      () => 1,
+    );
+    const rules = withCall(noul(0.2));
     assert.equal(
       await rules.vetAutoContinue("worker output"),
       true,
       "rules mode never calls out",
     );
-    assert.equal(seen.length, 0);
+    assert.equal(seen.length, 0, "rules mode on a usable route spends no call");
 
     store.savePoint(
       "auto-continue",
       pointWrite({
         thresholds: { routeAt: 0.7 },
-        route: {
-          provider: "classifier",
-          endpoint: null,
-          apiKey: null,
-          model: null,
-        },
+        route: keylessRoute,
       }),
       () => 1,
     );
@@ -155,6 +171,32 @@ try {
       warnedAbout(logs, "ignores preset mode"),
       "the ignored preset mode is named in the log",
     );
+
+    // The kill switch outranks a perfectly good api route: a host that turned
+    // api mode off must make no outbound call at all, on any point, in any mode.
+    store.savePoint(
+      "auto-continue",
+      pointWrite({ thresholds: { routeAt: 0.7 }, route: keylessRoute }),
+      () => 1,
+    );
+    process.env.STELOW_DECISION_API = "0";
+    const beforeSwitch = seen.length;
+    const warnsBefore = logs.length;
+    const switched = withCall(async () => {
+      throw new Error("a host with the kill switch on must never call out");
+    });
+    assert.equal(
+      await switched.vetAutoContinue("idle"),
+      true,
+      "the kill switch keeps the heuristic standing",
+    );
+    assert.equal(seen.length, beforeSwitch, "the kill switch spends no call");
+    assert.equal(
+      logs.length,
+      warnsBefore,
+      "the kill switch is not a failure, so it says nothing",
+    );
+    delete process.env.STELOW_DECISION_API;
   }
 
   // --- triage intent seeding: fail-soft to unknown on every path ---------
@@ -271,6 +313,18 @@ try {
       "unknown",
     );
     delete process.env.STELOW_DECISION_API;
+
+    // The seam documents that every path fails soft to "unknown", so a
+    // collaborator that REJECTS has to land there too — a bare `return
+    // promise` inside the try would let it escape into card creation.
+    const rejecting = seedWith(neverApi, async () => {
+      throw new Error("judge bridge is down");
+    });
+    assert.equal(
+      await rejecting.seedBuildIntent("add dark mode", "project"),
+      "unknown",
+      "a rejecting judge fails soft instead of throwing into card creation",
+    );
   }
 } finally {
   restoreEnv(saved);

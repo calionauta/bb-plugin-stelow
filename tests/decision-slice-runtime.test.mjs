@@ -138,8 +138,11 @@ try {
     assert.equal(unknownJudge.error, 'Unknown preset "ghost".');
     assert.ok(!missingJudge.ok && !unknownJudge.ok);
 
-    // The kill switch outranks the preset checks: an api-mode write refuses
-    // naming the variable even when its judge is also unknown.
+    // The kill switch refuses an api-mode write naming the variable, even
+    // though the same write's judge preset is also unknown. The two checks
+    // cannot actually race — the switch only fires on mode "api" and the
+    // preset refusals only on mode "preset" — so this is not an ordering
+    // assertion. It pins that the switch is not a preset-mode concern.
     process.env.STELOW_DECISION_API = "0";
     const disabled = resolvePointWrite(
       { point: "triage-intent", mode: "api", presetId: "ghost" },
