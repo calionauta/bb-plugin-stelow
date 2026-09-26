@@ -434,8 +434,8 @@ prerequisite: R2 cannot be done honestly without it.
    It is deliberately not done from this branch's own phase work: it is a merge,
    and a phase that merges cannot also claim an honest before/after for the
    merge itself. The tree-wide debt the audit deliberately did not measure is
-   untouched by all of this and still pinned — 4 oversized files and 47
-   oversized functions, listed in `tests/debt-baseline.test.mjs`.
+   untouched by all of this and still pinned — as of Phase 5, 3 oversized files
+   and 47 oversized functions, listed in `tests/debt-baseline.test.mjs`.
 6. ~~**R6 — Only then, consider the budget-checker defects in section 3.**~~
    **DONE.** The split bases and the full-tree fallback are both gone: a
    finding is inherited only through same-file descent, a run-proven move, or a
@@ -541,3 +541,56 @@ master line count exactly, one (`tests/server-cards.test.mjs:callback#4`, 82) is
 honestly *below* its master's 84, and the remaining four are branch-created
 symbols in `server/runtime/**` with no master ancestor, which is what the record
 is for. No ceiling was inflated, and there are no stale entries.
+
+## Phase 5 result (the tree-wide debt, first file)
+
+R1–R4 and R6 measured two named areas; the census in `tests/debt-baseline.test.mjs`
+is the only record of the debt outside them. This phase takes the first of those
+files, and the only one that is pure owned logic rather than a vendored UI
+primitive or a test file.
+
+**`lib/artifact-contracts.mjs` 428 → 17 lines, one oversized file closed.** The
+file was three datasets sharing a lookup helper, so it is now three slices by
+area, with the old path kept as a re-export facade so no consumer moved:
+
+| Slice | Lines | Holds |
+|---|---|---|
+| `lib/jtbd-contracts.mjs` | 163 | `JTBD_CONTRACTS` (10 composite substeps), `contractForSubstep` |
+| `lib/strategy-contracts.mjs` | 132 | `STRATEGY_CONTRACTS` (14 research primaries), `contractForStrategy` |
+| `lib/explore-contracts.mjs` | 165 | `EXPLORE_CONTRACTS` (8 stages), `contractForExplore`, `contractForBuildArtifact` |
+| `lib/artifact-contract-lookup.mjs` | 10 | the shared `findByKey` |
+| `lib/artifact-contracts.mjs` | 17 | the re-export facade only |
+
+No function in the split is over the 50-line budget (the longest is
+`contractForBuildArtifact`, 22 lines), so the ledger's function list is unchanged
+by this phase. The file entry `"lib/artifact-contracts.mjs": 428` is deleted from
+`scripts/source-debt.json`; the census now reports **3 oversized files and 47
+oversized functions**, down from 4 and 47.
+
+Two data facts the split surfaced, both fixed here rather than carried:
+
+- the check-DSL comment documented `{ kind: "min-words", min }`, a kind the
+  interpreter never dispatched — the floor is the `minWords` field. The DSL is
+  now documented on the interpreter that owns it, and the `.d.mts` union no
+  longer names a kind that cannot run.
+- a kind the interpreter does not know was silently ignored, so a typo made a
+  check a no-op that passed the document. The `if/else` chain is now a
+  `CHECKS_BY_KIND` map — one entry per kind, `CHECK_KINDS` exported from it — and
+  an unknown kind throws instead of passing.
+
+**`tests/contract-integrity.test.mjs` (new, 32 contracts).** The split is only
+honest if the data still means what the DSL and the vendored methodology say, so
+the test asserts three properties over all 32 entries: every `ref` names a file
+that exists on disk (previously only `ref.startsWith("skills/")` was checked),
+ids are unique per list (a duplicate would shadow an entry, since every lookup
+returns the first match), and every `kind` is dispatched. It also asserts an
+unknown kind throws. Four negative controls were executed, each reverting clean
+afterwards: a typo in a ref path, a duplicated strategy id, an undispatched
+`table-rowz` kind, and a Build rule pointing at a renamed stage — all four
+failed the test as intended.
+
+Gates on this phase: `npm test` green (exit 0, 237 test files wired),
+`npm run typecheck` green, `npm run architecture` clean (702 modules, 1665
+dependencies), `tests/source-shape`, `tests/source-budgets`,
+`tests/budget-lineage`, and `tests/debt-baseline` green.
+

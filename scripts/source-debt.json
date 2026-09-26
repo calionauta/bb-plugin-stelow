@@ -2,7 +2,6 @@
   "files": {
     "components/ui/dialog.tsx": 541,
     "components/ui/icon.tsx": 450,
-    "lib/artifact-contracts.mjs": 428,
     "tests/kanban-layout.test.mjs": 401
   },
   "functions": {
