@@ -1183,6 +1183,24 @@ host, and that is the honest state of the E2E surface this phase leaves behind.
 `gap-registry` above is the same kind of claim, kept explicit for the same
 reason.
 
+**The card-scoped surface is not reachable from the shell at all**, which is the
+deeper reason behind the refusal above and the part an operator hits first.
+`bb stelow playbook --card sw-card_ahrsgllj` exits **2** with `Unknown card
+"sw-card_ahrsgllj"`, and so does every other id `status --json` lists —
+`sw-card_pttx9ion`, `sw-card_9givfhhc`, and the freshly seeded
+`sw-sw_e2e-guards-phase-verification` among them — as does
+`bb stelow manifest --card sw-card_ahrsgllj`. `bb stelow playbook` with no
+`--card` exits **2** with `No card in context (run from the worker thread or
+pass --card <card_id>).` The ids `status` enumerates and the ids `--card`
+resolves therefore come from different scopes: `status` aggregates the
+project's workflows, while the plugin instance answering a shell run holds no
+card registry, so `deps.getCard` finds nothing (`cli-inspection.ts:179`). The
+fleet-wide read-only commands are the part that works shell-side — `metrics`
+(exit 0), `storage` (exit 0), `help` (29 subcommands, exit 0), `schema` (exit 0)
+— and `status` itself. Everything card-scoped is thread-bound, which is the
+single fact the *E2E* phase has to plan around: a gated advance cannot be
+driven from a shell on this host at all, only from the card's own worker thread.
+
 Gates on this pass: `npm test` green (exit 0) before the corrections, the three
 corrected suites green after them, `npm run typecheck` green, and
 `npm run quality:shape` green. No user-facing behaviour changed and no portable
