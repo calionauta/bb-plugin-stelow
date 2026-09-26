@@ -205,7 +205,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   would have failed correct work and stamped "missing or thin" on a document that
   is neither. The contract requires the three sections the method names —
   fixed constraints, evidence, next action — and at least two option headings,
-  because a comparison with no options is not a comparison.
+  because a comparison with no options is not a comparison. That rule matches
+  the stems real briefs use (`Option A` and `Proposal A` both occur, in the same
+  document set on one card) rather than one spelling: requiring the word
+  "Option" failed a faithful contrast that used "Proposal".
 - **One deliverable filename per technique, read by everything.** The Explore
   deliverable is named once in the catalog (`primaryArtifact`) and resolved by
   one function, because four surfaces used to disagree about it: the prompt that
