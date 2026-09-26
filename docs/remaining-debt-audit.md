@@ -1048,8 +1048,8 @@ checkout, which is a workflow root: `bb stelow status --json` exits 0 and lists
 pending. `bb stelow advance --dry-run --json audit` exits **1** with
 `state.md is missing for the Stelow workflow. Reseed the workflow.` — the
 schema's exit 1 for a bad state, carrying the helper's own stderr verbatim,
-which is the `result.stderr || "stelow advance failed"` refusal in
-`server/execution-advance-cli.ts` behaving as the split left it.
+which is the `result.stderr || "advance failed"` refusal in
+`server/execution-advance-cli.ts:92` behaving as the split left it.
 `bb stelow doctor --project proj_a6wdkdcfkk --json` refuses the same way, and
 `bb stelow schema` still publishes the `advance` contract (flags `--dry-run`,
 `--json`; env `STELOW_STATE`, `STELOW_STATEDIR`, `STELOW_TRANSITIONS`,
@@ -1152,8 +1152,8 @@ refused by name.
 | `bb stelow schema` | 0 | publishes the `advance` contract; flags `--dry-run`, `--json`; exit 1 for a bad state |
 
 The advance refusal is the schema's own exit 1 for a bad state, carrying the
-helper's stderr, which is the `result.stderr || "stelow advance failed"`
-refusal in `server/execution-advance-cli.ts` behaving as the split left it. All
+helper's stderr, which is the `result.stderr || "advance failed"`
+refusal in `server/execution-advance-cli.ts:92` behaving as the split left it. All
 four reproduce the *Functions* phase's record exactly, except the card's scope
 count, which is a live figure.
 
@@ -1206,3 +1206,95 @@ corrected suites green after them, `npm run typecheck` green, and
 `npm run quality:shape` green. No user-facing behaviour changed and no portable
 `lib/` module was added, so `FEATURES.md` does not move and the upstream
 blueprint has nothing new to record.
+
+## Review corrections (the Blueprint phase)
+
+The blueprint phase wrote two subsections and one anti-pattern upstream
+(`stelow` `4ce9d69`, §9 plus §14 "splitting one oversized module into feature
+slices" and "secure subprocess and delegated execution") and mirrored them in
+`docs/runtime-architecture.md` (`a94efab`). This review re-derived every claim
+from the host rather than from that commit message. The §9 dispatch entry and
+the whole data-slice recipe hold; three claims in the subprocess subsection did
+not, and one of them is the kind a reader would act on.
+
+**What was re-derived and holds.** `CHECKS_BY_KIND`, its exported
+`CHECK_KINDS`, and the throw on an unknown kind are in
+`lib/artifact-validation.mjs:216-240`, and `tests/contract-integrity.test.mjs`
+pins every contract entry's kind against that list at `:69` with a paired
+control at `:165-166` — the §9 entry describes the code, not an intention. The
+`minWords` half is too: the doc comment names the field the interpreter actually
+reads (`lib/artifact-validation.mjs:235`), the `.d.mts` union matches, and no
+`min-words` spelling survives anywhere. The argv-array spawn, the import-time
+`HELPER_SCRIPT` resolution in `server/plugin-paths.ts:32-45`, and the
+environment-carried state in `server/runtime/helper-script.ts:28-43` are as
+described. The disposable-spawn rule is exact: `assertDisposableSpawn` throws
+before the SDK call in `lib/delegation-map.mjs`, the retry in
+`server/runtime/disposable-spawn.ts` is bounded to the one key and the one
+message, and `tests/delegation-map.test.mjs:54-58` pins one site marker per
+call site while `tests/server-drafting.test.mjs:183,231` exercise the field and
+the retry that drops it. Every census figure in the local mirror was re-measured
+and holds: 3 oversized files and 37 oversized functions,
+`dialog.tsx` 541, `icon.tsx` 450, `kanban-layout.test.mjs` 401, the largest
+execution slice 233, the largest GitHub slice 293, the largest decision slice
+226, `github-dialog-state.ts` 60, `preset-manager-band-routing.tsx` 351, and all
+three upstream anchors resolve to the real headings.
+
+**Correction 1 — the wrapped verb vocabulary was wrong in both directions.**
+The blueprint said to wrap "a fixed verb vocabulary — `advance`, `audit`,
+`schema`, `seed`". Two of those four are not verbs this host ever spawns, and
+five it does are missing. Counting the literal verb that reaches `runHelper`
+across `server/` gives exactly: `advance` (3 call sites), `audit-trail` (3),
+`sync-scopes` (2), `config`, `doctor`, `lock`, `schema`, and `scope` (1 each) —
+and `audit` at 0 and `seed` at 0. `seed` is implemented host-side in
+`server/runtime/cli/cli-seed.ts` and never crosses a process boundary, so
+naming it claimed a seam that does not exist; the verb the blueprint meant is
+`audit-trail`, with `check` and `build` as its operations. The blueprint now
+states the rule without a remembered list, tells the reader to derive and pin
+it from the call sites, and records the reference host's real thirteen call
+sites across the eight verbs.
+
+**Correction 2 — the reference host was cited as satisfying a rule it breaks.**
+The blueprint states "the card action and the CLI must call the same wrapper and
+the same preflight", then cites `cli-helper-passthrough.ts` as "the shared
+preamble" alongside `execution-advance-cli.ts` as a wrapper. The first half
+holds and the citation does not: the passthrough file shares its preamble across
+`sync-scopes`, `scope`, and `config get`, and `advanceCli` re-implements the
+same five beats — resolve the card from the thread context, take its workspace,
+derive the state dir, run the artifact guard, refuse without one — under renamed
+deps (`workflowStateDir` as `stateDir`, `ensureProjectArtifacts` as
+`ensureArtifacts`). The two copies also drifted independently: only the
+passthrough's guard can return the `helperContext` refusal shape, while
+`advanceCli` inlines the same refusal twice. Both the upstream subsection and
+the local mirror now say the host satisfies the rule for the passthrough family
+and violates it for `advance`, instead of citing the violation as evidence.
+
+**Correction 3 — the dead-end env var was left as a rule with no instance, and
+the instance is upstream-owned.** The subsection stated that a schema
+advertising an env var the host never reads is an operator's dead end, and cited
+no evidence. The instance is `STELOW_STATE` and `STELOW_STATEDIR` under
+`advance`'s env: nothing in `server/` or `lib/` reads either —
+`server/runtime/helper-script.ts:35-40` only writes them into the child's
+environment — which is the same finding the *E2E* section of this file reached
+by hitting the refusal. It is not host-fixable, because the schema is emitted by
+the vendored helper under sync-owned `data/stelow`; the subsection now says so,
+which is the difference between a rule and a fix someone will actually attempt.
+
+**One correction outside the phase, in this file.** Two sections attributed
+`result.stderr || "stelow advance failed"` to
+`server/execution-advance-cli.ts`, whose string is `"advance failed"` at `:92`.
+`"stelow advance failed"` is real but lives in
+`server/execution-advance-card.ts:72`, `server/runtime/card-gates.ts:176`, and
+`server/runtime/wiring/rpc-surfaces.ts:231`. The string was the only thing the
+two sections quoted from the file, so the error was invisible to anyone who did
+not grep it.
+
+**Not fixed, and named.** The duplicated advance preamble is real debt and is
+left in place: collapsing it changes the `advance` CLI's `Pick<AdvanceDeps, …>`
+contract and its wiring, which is production behavior and well past a
+documentation review. It is recorded in both files as the next place to start
+rather than closed as a doc edit.
+
+Gates on this review: `npm run typecheck` green, `npm test` green (exit 0),
+`npm run architecture` clean, and `npm run quality:shape` green. The changes are
+three documentation files and no source, so `FEATURES.md` does not move and no
+blueprint entry is owed for them.

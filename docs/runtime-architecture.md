@@ -257,13 +257,15 @@ this branch, and this note is where they are mirrored:
 - [§14, secure subprocess and delegated
   execution](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#secure-subprocess-and-delegated-execution)
   — the vendored orchestrator as an argv array with state in the environment
-  and verbatim exit code and streams; one wrapper and one preflight for both
+  and verbatim exit code and streams, over a verb vocabulary derived from the
+  call sites rather than remembered; one wrapper and one preflight for both
   entry points; a card-scoped command reachable only from its own worker
   thread; and a disposable spawn validated against its site registry before
   the SDK call, with one bounded compat retry. Mirrored by
-  `server/runtime/helper-script.ts` with its wrappers in
-  `server/runtime/cli/cli-helper-passthrough.ts` and
-  `server/execution-advance-cli.ts`, and by
+  `server/runtime/helper-script.ts` over the verbs `advance`, `audit-trail`,
+  `config`, `doctor`, `lock`, `schema`, `scope`, and `sync-scopes` — `seed` is
+  host-side and never spawns — with the shared preamble in
+  `server/runtime/cli/cli-helper-passthrough.ts`, and by
   `server/runtime/disposable-spawn.ts` over the `lib/delegation-map.mjs`
   registry.
 - [§9, anti-patterns](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#9-anti-patterns-each-paid-for-at-least-once)
@@ -272,3 +274,22 @@ this branch, and this note is where they are mirrored:
   `lib/artifact-validation.mjs`, which throw on an unknown kind, and by
   `tests/contract-integrity.test.mjs` pinning every contract entry against
   that list.
+
+The shared-preamble rule is only half met here, and the upstream note says so
+rather than glossing it. `cli-helper-passthrough.ts` holds the preamble once for
+`sync-scopes`, `scope`, and `config get`. `server/execution-advance-cli.ts`
+re-implements the same five beats under renamed deps (`workflowStateDir` as
+`stateDir`, `ensureProjectArtifacts` as `ensureArtifacts`), so the advance
+family carries a second copy — which is the anti-pattern the rule exists to
+prevent, reproduced by its own reference host. Left as recorded debt: collapsing
+it changes the `advance` CLI's deps contract, which is past the scope of a
+documentation review.
+
+The same area carries the dead-end env var the upstream section names.
+`STELOW_STATE` and `STELOW_STATEDIR` appear under `advance`'s env in
+`bb stelow schema`, but nothing in `server/` or `lib/` reads them;
+`server/runtime/helper-script.ts:35-40` only writes them into the child's
+environment. They document the vendored helper's interface, and following the
+schema as an operator's guide goes nowhere. The schema is emitted by the
+vendored helper under sync-owned `data/stelow`, so the correction is upstream
+and not this checkout's to make.
