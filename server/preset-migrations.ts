@@ -2,28 +2,28 @@ import type { PresetDb, PresetRow } from "./preset-contracts.js";
 
 export const PRESET_MIGRATION_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS presets (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    reasoning_level TEXT NOT NULL,
-    permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
-    environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
-    base_branch TEXT,
-    machine_id TEXT,
-    instructions TEXT NOT NULL DEFAULT '',
-    is_default INTEGER NOT NULL DEFAULT 0,
-    built_in INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      reasoning_level TEXT NOT NULL,
+      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
+      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
+      base_branch TEXT,
+      machine_id TEXT,
+      instructions TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      built_in INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
   `CREATE TABLE IF NOT EXISTS card_presets (
-    card_id TEXT PRIMARY KEY,
-    preset_id TEXT NOT NULL,
-    assigned_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
-    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-  )`,
+      card_id TEXT PRIMARY KEY,
+      preset_id TEXT NOT NULL,
+      assigned_at INTEGER NOT NULL,
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+      FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+    )`,
 ];
 
 export function runPresetMigrations(db: PresetDb, now: () => number): void {
