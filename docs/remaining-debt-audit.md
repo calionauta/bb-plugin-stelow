@@ -1749,3 +1749,57 @@ intersection over the vendored `transitions.md` for every stage against both
 34 pairs those two intents visit, the other 31 all have a forward edge, so the
 deadlock is a single cell in the table rather than a property of the
 intersection rule.
+
+## Review corrections (the final pass)
+
+Two of the three things this review changed are the record correcting itself;
+the third is dead code the record never claimed to have cleaned.
+
+**The dead reads the slice splits left behind.** The contract-test splits moved
+their pins out of `server/plugin-runtime.ts` and into the modules the runtime
+was carved into. What they left behind was the *reads*: thirteen test files
+still read a source file, or a concatenated blob, that nothing asserts on —
+eleven of them as unused named imports of
+`tests/card-lifecycle-contract.fixtures.mjs`, so 390 `readFileSync` calls that
+run at import time for every suite that imports the fixtures module and
+contribute to no assertion. Two exports of that fixtures module,
+`executionWiring` and `threadCardLookup`, were dead for the same reason.
+
+This is a real finding about the branch rather than about the phase, and it is
+the class AGENTS.md treats as a review failure: `npm run lint` exited 0 the
+whole time with **395** warnings, so the signal that would have caught it was
+present and drowned. It is now 1, and the survivor is inherited from master
+(an unused `context` parameter in the public signature of
+`renderInlineWorkflowScript`, left alone rather than renamed for a nit).
+
+The negative control is the shape of the diff, not the suite: **394 deletions,
+0 insertions**, with the `assert.` count byte-identical in all thirteen files.
+An unused binding cannot make a pin pass, so the suite re-run is only the
+floor here — what makes the commit safe is that it removed reads and imports
+and changed no assertion. `buildReviewTools` is the one that looks dead and is
+not: it is a member of the `detailSource` aggregate, which is asserted on as a
+whole.
+
+**What this pass deliberately did not do.** The `board` artifact defect recorded
+above is real and was re-verified from source: `findArtifacts`
+(`server/runtime/board-read.ts:112-124`) lists the state directory through
+`listPaths`, which passes `includeDirectories: false` (`:47`) and never
+descends, and nothing on that path excludes `state.md`, which
+`lib/artifact-manifest.mjs:43` classifies as bookkeeping for the unregistered
+list (`:58`) and `findArtifacts` does not. Both faults reproduce, and the test
+that should catch them (`tests/runtime-seams.test.mjs:141-172`) still uses a
+flat fixture — it lists `${dir}/spec-product.md` at the top level and nothing
+beneath it — so it passes on a layout no production workflow has. It stays
+deferred with its reproduction: the fix is a behavior change on a production
+read path plus a nested regression fixture, which is its own `fix:` and `test:`
+pair, and folding it into a review of a documentation phase is how a behavior
+change gets reviewed as a doc edit.
+
+Gates on this pass, all re-run after the last commit: `npm run typecheck`
+green; `npm test` exit 0, ending on "debt baseline ok: 3 oversized file(s) and
+37 oversized function(s), 7 inherited entries, shape gate green" — the census
+the sections above report, unchanged; `npm run architecture` clean at 747
+modules and 1740 dependencies; `npm run quality:shape` green with 7 inherited
+budget entries and no new ones; `npm run duplicates` at 0 exact clones; lint
+at 1 inherited warning. `FEATURES.md` does not move: nothing user-facing
+changed.
