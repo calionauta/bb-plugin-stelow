@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.53.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.1...v0.53.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* the contrast contract must not depend on one spelling of "option" ([#126](https://github.com/calionauta/bb-plugin-stelow/issues/126)) ([cc453bf](https://github.com/calionauta/bb-plugin-stelow/commit/cc453bfd9a2403206103a60c7cfd903cce5a707a))
+
 ## [0.53.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.0...v0.53.1) (2026-09-26)
 
 
