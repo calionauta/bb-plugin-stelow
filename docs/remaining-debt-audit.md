@@ -1304,6 +1304,17 @@ registration receipt:
 workspace, cymbal/ripwire/sem/ast-grep all available, `missing: []`), and
 `bb stelow manifest` counts the artifacts as they land: 1, then 2.
 
+Every count in this section is a **point-in-time reading of a live board**, and
+the board keeps moving. Re-derived on review, the same
+`bb stelow manifest --card card_y6dnitl6` now reports `Stelow-Artifacts: 7`,
+and the `17` artifacts recorded for `card_2xjusphs` are now 18 registered
+entries with the card at `interface` rather than `scope`. The claims that
+matter are the exit codes, the refusal text, and the fact that `manifest` counts
+what `board` does not — all three still hold verbatim, including
+`done` exiting 1 with the same sentence. Only the totals drift, so a later
+reader who re-derives a total and finds a different number is seeing a live
+board, not a contradiction.
+
 **It did not reach `planning`, and the reason is the finding below.** Given
 `intent: investigate` plus a read-only instruction, the worker used its own
 card as an investigator and inspected a *different* live Build card,
@@ -1377,11 +1388,52 @@ forward edge, exempting only the terminal stage whose `next: (done)`
 legitimately has none — asserted against the same intersection the helper
 computes, so it fails on the disagreement instead of restating the tables.
 
+**The repair site is not the file the finding names, and following the finding
+literally would lose the fix.** `transitions.md` is a *generated* mirror, not
+the source of truth: its own header calls it "a **data-only mirror** of
+`skills/stelow-workflow-orchestrator/stages.yaml`" and says to "edit
+`stages.yaml` first and then regenerate this file" (`:3`, `:8`), and the
+Regeneration section runs `python3 scripts/generate-transitions.py` with a
+`--check` drift gate (`:295`). So the two places that must change are:
+
+- `stages.yaml`, the `context` stage's `transitions:` block —
+  `next: [shape, planning]`, `accept: [shape, planning]`, `reject: [setup]` —
+  which is what the mirror renders; and
+- `stages.yaml:42`, `routes.intents.investigate:
+  [triage, select, setup, context, audit]`, the route that invents the edge.
+
+Editing the vendored mirror instead would be doubly wrong: it is sync-owned
+(AGENTS.md), *and* it is regenerated, so the edit would be reverted by the
+drift gate upstream and would leave no trace of the intent. Worth recording
+that **this plugin checkout has no local drift gate on the mirror** — upstream
+carries it as `test:skills` (`vitest run tests/skills`), and no test under
+`tests/` invokes `generate-transitions.py --check`. So a hand-edit made here
+would persist silently until the next sync overwrote it, which is the worst of
+both: it looks applied, and it is not.
+
 A control on the finding: the same sweep reports "no forward move" for
-`audit` on all five intents, and that is **not** a defect. `### audit` declares
-`next: (done — workflow complete)`, which the paren-cut empties, so `audit` is
-terminal and completion is `done`, not an advance. Only the `context`/
-`investigate` row is a real deadlock.
+`audit` on every intent, and that is **not** a defect. `### audit` declares
+`next: (done — workflow complete)`, so the paren-cut empties `next` and
+`accept`; `audit` is terminal and completion is `done`, not an advance. Only
+the `context`/`investigate` row is a real deadlock.
+
+Re-derived on review, because the first statement of this control did not
+survive its own probe. The paren-cut does **not** empty the whole set: `### audit`
+also declares `reject: execution`, and that token survives, so `audit`'s raw
+candidates are `['execution']` — a single *backward* edge, not an empty list. Its
+effective set is empty only because the intersection drops it:
+
+| `(stage, intent)` | raw candidates | effective | why |
+| --- | --- | --- | --- |
+| `audit` / `investigate` | `['execution']` | `[]` | `execution` is off the investigate route |
+| `audit` / `feature` | `['execution']` | `['execution']` | on-route, so the backward reject survives |
+
+Both still have no forward edge, so the control's conclusion — `audit` is
+terminal, not deadlocked — stands, and it stands for a *stronger* reason than the
+one first recorded: the terminal stage's only surviving token is a backward
+reject. The conclusion was right; the mechanism offered for it was not, and it
+was the kind of error that would have hidden a real regression had `audit`'s
+`reject` ever been pointed forward.
 
 ### The completion gate holds, verified as a control
 
@@ -1402,8 +1454,18 @@ there is nowhere to advance to.
 
 - **`stelow.json`'s `stage` block is a seed-time snapshot.** It is written in
   exactly one place, `server/runtime/workflow-seeding.ts:194-199`, and no
-  advance path touches it, so it reads `triage` forever. **15 of 41** entries
-  disagree with their own `state.md`; all 15 read `triage`. The `config` block
+  advance path touches it, so it reads `triage` for anything seeded by the
+  current code. **15 of 41** entries disagree with their own `state.md`, and
+  **14 of the 15** read `triage` — not all 15, as first recorded. The exception
+  is `sw-card_aqzlttfh`, whose mirror reads `critique` and carries a six-entry
+  `history` (triage → select → setup → context → shape → critique) against a
+  `state.md` of `execution`. Re-derived on review: no live writer produces that,
+  since the only `stage.history` construction in the plugin is the single-entry
+  seed at `workflow-seeding.ts:198` and the helper's advance path writes
+  `state.md` and `invariants.json` (`data/stelow:481`) but never the tracking
+  file's `stage` block. So it is a **legacy snapshot** from before the freeze,
+  which is the useful part: the freeze is real but not uniform, and one entry
+  proves a richer mirror once existed. The `config` block
   in the same entry stays correct because the same seed call writes it. Not
   user-visible today: the `board` RPC reports stage from `state.md` (verified —
   it returned `context` for a card whose mirror says `triage`), and
@@ -1411,10 +1473,38 @@ there is nowhere to advance to.
   worker to take the *path* from `stelow.json` and the *stage* from
   `state.md`. A latent trap, not an active bug, and the reason it is easy to
   miss is that both files look authoritative.
-- **`board` returns `artifacts: []` for all 41 workflows**, including cards
-  with 17 registered artifacts, while `manifest` counts them correctly. Uniform
-  emptiness reads as an unpopulated summary field rather than a per-card bug;
-  recorded as an observation, not a defect claim.
+- **`board` returns `artifacts: []` for all 41 workflows**, while `manifest`
+  counts them correctly. Re-derived on review, this is a **defect with a named
+  cause, not an unpopulated summary field** — the hedge it was first recorded
+  under is stronger than the evidence supports. `findArtifacts`
+  (`server/runtime/board-read.ts:104-131`) lists the state directory with
+  `includeDirectories: false` (`:47`), so it enumerates the **top level only**.
+  Every artifact a real workflow registers lives a level or more down —
+  `recon/setup.md`, `plans/spec-product*.md`, `critiques/critique-report.md`,
+  `strategic/context*.md` — so the board cannot reach any of them by
+  construction. `sw-card_2xjusphs` has 13 `.md` files and exactly **one** at the
+  top level. Driving `findArtifacts` against an fs-backed `FilesApi` returns
+  `1` entry — and it is `state.md`, the workflow's own bookkeeping, returned as
+  `kind: "other", label: "state.md"`. `lib/artifact-manifest.mjs:43` classifies
+  exactly that path as `STATE_BOOKEEPING` and excludes it from the unregistered
+  list; `findArtifacts` has no such exclusion, so the single artifact the board
+  *can* see is the one file that is not an artifact. The live RPC returns `0`
+  rather than `1` because the SDK yields no paths for the gitignored `.stelow`
+  tree at all, which is why the symptom is uniform emptiness rather than a
+  wrong-but-populated list. Two distinct faults, one observation: a
+  non-recursive walk, and a missing bookkeeping exclusion on top of it.
+  **This needs its own `fix:` commit** — it changes what the board returns, so it
+  is out of scope for a documentation-only phase, and it is recorded here at
+  review with a reproduction so the follow-up is mechanical.
+  - *The test cannot catch it, and that is the more serious half.* The fixture
+    in `tests/runtime-seams.test.mjs:141-172` puts `spec-product.md` **flat** in
+    `sw-1` and has `listPaths` return a flat list. The suite is green on a layout
+    that no production workflow uses, so the pins pass whether or not the
+    recursion exists — they would not fail if it were dropped, because it is
+    already dropped. A real regression test needs a nested fixture
+    (`recon/setup.md` under `sw-1`) and must assert that `state.md` is absent
+    from the result. Per AGENTS.md that is a `test:` change paired with the
+    `fix:`; it does not belong in this phase either.
 - **`executionRunStatus`'s `runId` input is an `exec_` id, not a run id.** Both
   `wfr_d68ad2e9` and the full native UUID
   `wfr_d68ad2e9-cd75-4105-b988-742b5def54bd` return
@@ -1451,10 +1541,52 @@ anti-pattern was added upstream (`stelow` `27d701e`) — the only upstream chang
 and it is a doc entry, so the `stelow` vitest baseline is unchanged by
 construction.
 
+All five re-run independently on review and confirmed green, with the numbers
+the phase reported: `typecheck` exit 0; `architecture` "no dependency
+violations found (747 modules, 1740 dependencies cruised)"; `quality:shape`
+"source shape ok: 372 source file(s) … no changed line over 160 characters" and
+7 inherited budget entries, no new ones; `npm test` exit 0 ending on
+"debt baseline ok: 3 oversized file(s) and 37 oversized function(s), 7 inherited
+entries, shape gate green". A phase whose only output is a document has an easy
+claim to fake, so the gate claim was the first thing re-derived rather than
+trusted.
+
 Nothing in the plugin checkout was edited by the E2E: the card's outputs are
 all under the gitignored `.stelow/`, and `git status` stayed clean throughout,
 which is the correct outcome for an investigation card and is itself worth
 recording as evidence rather than as an absence.
+
+### Review of the E2E phase (adversarial, independent)
+
+The phase's central finding was re-derived from source rather than accepted: the
+intersection probe was re-implemented against the vendored `transitions.md` and
+`context`/`investigate` → `['setup']` with no forward edge reproduces exactly.
+The finding is real, the blast radius is real (29 of 42 state files are
+`investigate`; `card_4piqzxb0`, `card_4ukw3w4x` and `card_y6dnitl6` are `active`
+at `context` right now), and the three corrections the phase made to its own
+earlier planning section all hold up — `appetite` really is a three-value enum
+with `Auto` belonging to `reviewMode`, `--card` really does resolve card ids
+where the earlier attempt passed dirHashes, and `seed` really does write a
+workflow root without minting a card. The four CLI exit codes re-ran verbatim,
+including `done` refusing with the exact recorded sentence.
+
+Four things were wrong or materially under-stated, and all four are corrected
+above: the `audit` control's stated mechanism (the paren-cut empties
+`next`/`accept` but not `reject: execution`, so the effective set is empty only
+because the token is off-route), "all 15 read `triage`" (14 do; the fifteenth is
+a legacy snapshot that itself disproves the uniform-freeze claim), the missing
+generated-file constraint that makes the recommended repair site `stages.yaml`
+rather than the mirror the finding names, and — the substantive one — the
+`board` artifact list recorded as a hedged observation when it is a diagnosable
+defect with a named cause, a missing bookkeeping exclusion, and a flat test
+fixture that cannot fail.
+
+Two of those four would have outlived this review as false record: the dead
+`audit` mechanism and the under-called board defect. The general lesson is the
+one the phase itself wrote into its own method — a claim hedged as "not a defect
+claim" is the cheapest kind to get wrong, because hedging reads as rigour while
+supplying no testable mechanism. Everything hedged should be diagnosed or left
+unclaimed.
 
 ## Review corrections (the Blueprint phase)
 
