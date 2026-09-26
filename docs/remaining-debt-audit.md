@@ -1599,7 +1599,10 @@ slices" and "secure subprocess and delegated execution") and mirrored them in
 `docs/runtime-architecture.md` (`a94efab`). This review re-derived every claim
 from the host rather than from that commit message. The §9 dispatch entry and
 the whole data-slice recipe hold; three claims in the subprocess subsection did
-not, and one of them is the kind a reader would act on.
+not, and one of them is the kind a reader would act on. A second, narrower pass
+over the same subsection — this one prompted by re-deriving the verb count rather
+than the prose — found a fourth, and corrected this file's own version of the
+count alongside it.
 
 **What was re-derived and holds.** `CHECKS_BY_KIND`, its exported
 `CHECK_KINDS`, and the throw on an unknown kind are in
@@ -1627,8 +1630,8 @@ three upstream anchors resolve to the real headings.
 The blueprint said to wrap "a fixed verb vocabulary — `advance`, `audit`,
 `schema`, `seed`". Two of those four are not verbs this host ever spawns, and
 five it does are missing. Counting the literal verb that reaches `runHelper`
-across `server/` gives exactly: `advance` (3 call sites), `audit-trail` (3),
-`sync-scopes` (2), `config`, `doctor`, `lock`, `schema`, and `scope` (1 each) —
+across `server/` gives exactly: `advance` (4 call sites), `audit-trail` (3),
+and `config`, `doctor`, `lock`, `schema`, `scope`, `sync-scopes` (1 each) —
 and `audit` at 0 and `seed` at 0. `seed` is implemented host-side in
 `server/runtime/cli/cli-seed.ts` and never crosses a process boundary, so
 naming it claimed a seam that does not exist; the verb the blueprint meant is
@@ -1636,6 +1639,34 @@ naming it claimed a seam that does not exist; the verb the blueprint meant is
 states the rule without a remembered list, tells the reader to derive and pin
 it from the call sites, and records the reference host's real thirteen call
 sites across the eight verbs.
+
+Re-derived on review, because the per-verb split in the paragraph above did
+not survive its own count. The two totals it reported were right — thirteen
+sites, eight verbs — but the distribution was not: `advance` has **four** call
+sites, not three, and `sync-scopes` has **one**, not two. The missing `advance`
+is `server/runtime/wiring/rpc-surfaces.ts:226`, which reaches the spawn as
+`core.runHelper` rather than `deps.runHelper`, so a grep on the dep-shaped name
+alone misses it; the four are `server/execution-advance-cli.ts:90`,
+`server/execution-advance-card.ts:70`, `server/runtime/card-gates.ts:175`, and
+that RPC surface. The extra `sync-scopes` is a double count of
+`server/runtime/cli/cli-helper-passthrough.ts:63`, whose `...passthrough`
+splat makes the second site easy to invent. Both errors are the kind that
+survive review, because a table whose totals add up looks derived.
+
+That correction has a consequence the record missed entirely, and it is the
+more useful half. The blueprint also claimed, in the same subsection, that "the
+card action and the CLI both reach `advance` through the same
+`runHelper(["advance", stage], …)` call" — while the paragraph below it recorded
+that `execution-advance-cli.ts` does not use the shared preamble at all. There
+is no such shared call: the card action spawns the literal
+`["advance", stage]` from two sites, the CLI builds its list in `helperArgs`
+(`server/execution-advance-cli.ts:105-112`) and appends `--dry-run` and `--json`
+only when set, and the RPC surface spawns the bare pair. The claim cited the
+rule as satisfied by the very file the next paragraph names as the violation,
+and the verb's real count is what exposes it. The blueprint now names the four
+`advance` sites, states that the two entry points do not share one, and pins
+the rule to the *shape* of the argument list rather than to a remembered
+literal (`stelow` `f659470`).
 
 **Correction 2 — the reference host was cited as satisfying a rule it breaks.**
 The blueprint states "the card action and the CLI must call the same wrapper and
@@ -1682,3 +1713,33 @@ Gates on this review: `npm run typecheck` green, `npm test` green (exit 0),
 `npm run architecture` clean, and `npm run quality:shape` green. The changes are
 three documentation files and no source, so `FEATURES.md` does not move and no
 blueprint entry is owed for them.
+
+**The second pass, and the gate it ran.** The only change is in this file plus
+one upstream commit (`stelow` `f659470`), both documentation. What was
+re-derived, and what held: the eight-verb vocabulary and its two zero entries
+(`audit` and `seed` at 0 call sites — no `runHelper(["audit"` or
+`runHelper(["seed"` exists anywhere in `server/`), and `seed` is host-side at
+`server/runtime/cli/cli-seed.ts:65`); the census figures quoted above, measured
+again from the tree (`dialog.tsx` 541, `icon.tsx` 450, `kanban-layout.test.mjs`
+401, `github-dialog-state.ts` 60, `preset-manager-band-routing.tsx` 351, the
+eleven GitHub slices largest 293, the twelve decision slices largest 226, the
+largest execution rule module 233); the three upstream anchors, which still
+resolve to `## 9. Anti-patterns` and to the §14 subsections
+"splitting one oversized module into feature slices" and "secure subprocess and
+delegated execution"; and the `assertDisposableSpawn` registry check, the
+one-marker-per-call-site topology pin, and the bounded lifetime-key retry
+(`server/runtime/disposable-spawn.ts:28`, whose matcher is still
+`/lifecycleOwnerThreadId|unrecognized key/i` and nothing wider). Upstream
+`npm run typecheck` and `npm run verify:execution` are green on `f659470`, and
+no added line in either file exceeds 160 characters.
+
+One thing re-derived here is worth keeping in this file even though it changes
+nothing: the E2E finding's own dead control, re-checked by running the
+intersection over the vendored `transitions.md` for every stage against both
+`investigate` and `feature`. Exactly three pairs have no forward edge —
+`context`/`investigate` (the real deadlock, effective set `['setup']`),
+`audit`/`investigate` (raw `['execution']`, dropped as off-route), and
+`audit`/`feature` (raw and effective `['execution']`, a backward reject). Of the
+34 pairs those two intents visit, the other 31 all have a forward edge, so the
+deadlock is a single cell in the table rather than a property of the
+intersection rule.
