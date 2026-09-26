@@ -57,15 +57,18 @@ export function nativeStatusOf(value: unknown): string {
   return String(value ?? "unknown");
 }
 
-export function nativeNeedsInput(value: unknown): { question: string; questionId: string | null } | null {
+export function nativeNeedsInput(value: unknown): { question: string; questionId: string | null; [key: string]: unknown } | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const result = record.result;
   const input = record.needsInput ?? record.needs_input ?? record.input ?? result ?? record;
   const question = typeof input === "object" && input ? (input as Record<string, unknown>).question ?? (input as Record<string, unknown>).prompt : input;
   if (typeof question !== "string" || !question.trim()) return null;
-  const id = typeof input === "object" && input ? (input as Record<string, unknown>).questionId ?? (input as Record<string, unknown>).id : null;
-  return { question: question.trim(), questionId: id == null ? null : String(id) };
+  const fields = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const id = fields.questionId ?? fields.id ?? null;
+  const boundaryKeys = ["contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
+  const boundary = Object.fromEntries(boundaryKeys.filter((key) => key in fields).map((key) => [key, fields[key]]));
+  return { question: question.trim(), questionId: id == null ? null : String(id), ...boundary };
 }
 
 export function normalizeNativeWorkflowStatus(status: string): "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled" {
@@ -165,7 +168,7 @@ while (completed.size + skipped.size < input.tasks.length) {
   const results = await parallel(ready.map((task) => () => executeTask(task)));
   for (let index = 0; index < ready.length; index += 1) {
     const result = results[index];
-    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, question: result.needsInput.question ?? result.needsInput.prompt ?? "The workflow needs a human decision.", questionId: result.needsInput.questionId ?? null };
+    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, question: result.needsInput.question ?? result.needsInput.prompt ?? "The workflow needs a human decision.", questionId: result.needsInput.questionId ?? null, contractId: result.needsInput.contractId ?? null, boundaryId: result.needsInput.boundaryId ?? null, kind: result.needsInput.kind ?? null, shapeVersion: result.needsInput.shapeVersion ?? null, scopeMapVersion: result.needsInput.scopeMapVersion ?? null, answerSchema: result.needsInput.answerSchema ?? null };
     completed.add(ready[index].id);
   }
 }

@@ -9,6 +9,8 @@ export declare function advanceExecutionGates(options?: {
   syncedCount?: number;
   cycles?: string[][] | null;
   hasUnstartablePending?: boolean;
+  intent?: string;
+  hasScopeMap?: boolean;
 }): AdvanceGateResult;
 export declare function doneBuildGates(options?: {
   kind?: string;

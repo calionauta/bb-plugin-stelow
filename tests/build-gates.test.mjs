@@ -44,6 +44,21 @@ assert.deepEqual(
   { refusal: null, note: null },
   "synced scopes pass silent",
 );
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, intent: "refactor", hasScopeMap: false }).refusal ?? "",
+  /multiple delivery scopes.*approved Scope Map.*Scope stage/,
+  "broad refactors cannot enter execution without an approved Scope Map",
+);
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, intent: "refactor", hasScopeMap: true }),
+  { refusal: null, note: null },
+  "a mapped refactor passes the sufficiency guard",
+);
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 1, intent: "refactor", hasScopeMap: false }),
+  { refusal: null, note: null },
+  "a narrow one-scope refactor stays lightweight",
+);
 assert.deepEqual(
   advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, cycles: [["scope-1", "scope-2", "scope-1"]] }),
   {

@@ -10,7 +10,9 @@ import {
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { nativeNeedsInput } from "./bb-workflow-bridge.js";
 import { requiredOutputPaths, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
+import { resolveInterfaceContrastRoute } from "../lib/interface-contrast.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
+import { boundaryRunPatch } from "./execution-boundary.js";
 import type { ExecutionLifecycle } from "./execution-lifecycle.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -18,7 +20,7 @@ import type { WorkerCard } from "./workers-types.js";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type PendingQuestion = { question: string };
 type ReconcileResult = { run: ExecutionRun | null; error: string | null };
-type Boundary = { question: string; questionId: string | null };
+type Boundary = Record<string, unknown> & { question: string; questionId: string | null };
 
 type ReconcileDeps = {
   db: Db;
@@ -70,19 +72,35 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
   ): Promise<void> {
     if (run.normalizedStatus !== "needs_input") {
       const boundaryId = deps.randomId("boundary");
+      const boundaryPatch = boundaryRunPatch(boundary, boundaryId);
+      if (boundaryPatch.issues.length) {
+        transitionExecutionRun(deps.db, run.id, "failed", {
+          nativeStatus: run.nativeStatus,
+          errorCode: "invalid-native-boundary",
+        });
+        deps.logComment(
+          card.id,
+          run.id,
+          `Native ${run.recipeId} returned an invalid human boundary: ${boundaryPatch.issues.join("; ")}.`,
+        );
+        return;
+      }
       run = transitionExecutionRun(deps.db, run.id, "needs_input", {
         nativeStatus: run.nativeStatus,
-        boundaryId,
-        boundaryQuestion: boundary.question,
+        ...boundaryPatch.patch,
       });
-      deps.logComment(card.id, run.id, `Native ${run.recipeId} run needs input. Boundary: ${boundary.question}`);
+      deps.logComment(
+        card.id,
+        run.id,
+        `Native ${run.recipeId} run needs input. Boundary: ${boundaryPatch.patch.boundaryQuestion}`,
+      );
       sendToCard(
         card,
         [
           `The native ${run.recipeId} run is waiting for input.`,
           "Ask this exact question on the card with the structured question tool,",
           `include the marker [Stelow boundary ${boundaryId}] in the question text, then stop.`,
-          `Do not invent an answer or resume the run yourself: ${boundary.question}`,
+          `Do not invent an answer or resume the run yourself: ${boundaryPatch.patch.boundaryQuestion}`,
         ].join(" "),
       );
     } else if (!run.needsInputSentAt) {
@@ -145,6 +163,7 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
     card: WorkerCard,
     run: ExecutionRun,
     paths: string[],
+    note = "",
   ): void {
     transitionExecutionRun(deps.db, run.id, run.normalizedStatus, {
       nativeStatus: run.nativeStatus,
@@ -158,8 +177,30 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
         "Register them at their canonical paths, then write",
         `${join(run.artifactRoot, ".registered.json")} with {"runId":"${run.id}","outputs":${JSON.stringify(paths)}}.`,
         "Do not advance the card before that receipt exists.",
+        note,
       ].join(" "),
     );
+  }
+
+  function interfaceRouteNote(
+    recipeId: string,
+    contents: Record<string, string>,
+  ): { note: string; error: string | null } {
+    if (recipeId !== "interface-contrast") return { note: "", error: null };
+    try {
+      const receipt = JSON.parse(contents["interfaces/contrast.json"]) as unknown;
+      const route = resolveInterfaceContrastRoute(receipt);
+      const stale = route.staleArtifacts.join(", ") || "none";
+      return {
+        note: `Interface Contrast route: ${route.destination}; stale artifacts: ${stale}.`,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        note: "",
+        error: error instanceof Error ? error.message : "Interface Contrast route is invalid.",
+      };
+    }
   }
 
   async function reconcileArtifacts(card: WorkerCard, run: ExecutionRun): Promise<void> {
@@ -167,13 +208,23 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
     if (!recipe) return;
     const context = record(record(JSON.parse(run.argsText)).context);
     const paths = requiredOutputPaths(recipe, context);
-    const validation = validateExecutionArtifacts({
-      recipe,
-      contents: await readArtifactContents(run, paths),
-      context,
-    });
+    const contents = await readArtifactContents(run, paths);
+    const validation = validateExecutionArtifacts({ recipe, contents, context });
     if (!validation.ok) {
       failArtifacts(card, run, validation.missing, validation.malformed);
+      return;
+    }
+    const route = interfaceRouteNote(run.recipeId, contents);
+    if (route.error) {
+      transitionExecutionRun(deps.db, run.id, "failed", {
+        nativeStatus: run.nativeStatus,
+        errorCode: "invalid-interface-route",
+      });
+      deps.logComment(
+        card.id,
+        run.id,
+        `Native interface-contrast produced an invalid route: ${route.error}.`,
+      );
       return;
     }
     if (await registrationRecorded(run, paths)) {
@@ -183,7 +234,7 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
         completionEventId: `registered:${run.id}`,
       });
     } else if (!run.completionEventId) {
-      requestRegistration(card, run, paths);
+      requestRegistration(card, run, paths, route.note);
     }
   }
 
