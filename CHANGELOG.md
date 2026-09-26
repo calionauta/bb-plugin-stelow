@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.53.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.2...v0.53.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* a declared research substep is gated whether or not it was registered ([#129](https://github.com/calionauta/bb-plugin-stelow/issues/129)) ([cbd3d93](https://github.com/calionauta/bb-plugin-stelow/commit/cbd3d93111f5a89280b1b712c8d8b711cbf9d191))
+
 ## [0.53.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.1...v0.53.2) (2026-09-26)
 
 
