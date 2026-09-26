@@ -27,9 +27,14 @@ like the one beside them, a line count no commit ever had, five sentences that
 were stale, self-contradicting, or less accurate than the review found them, and
 three in section 3 — the full-tree fallback was filed as a cost rather than as
 the correctness defect it was, `baseline 104` was presented as that function's
-own master line count, and the section 4 count was a commit behind. All are
-corrected above; the *Review corrections* list records what the first review
-found, not what the file now says.
+own master line count, and the section 4 count was a commit behind. A final
+adversarial review re-derived both result tables from the tree and rejected one
+more: `setDecisionPoint` was reported as 7 lines after the split when
+`server/decision-point-rpcs.ts:55-62` is 8. Every other figure in the two result
+tables, all eleven GitHub file counts, all twelve decision file counts, and the
+43-test claim (14 + 13 + 16) matched. All are corrected above; the *Review
+corrections* list records what the first review found, not what the file now
+says.
 
 ## How to read the deltas
 
@@ -177,7 +182,7 @@ nothing was left *adjacent* to one:
 | --- | --- | --- |
 | `server/decision-api.ts` (file) | 400 (zero headroom) | 70 |
 | `createDecisionApi` | 319 | 34 |
-| `setDecisionPoint` | 84 | 7, now a method in `decisionPointHandlers` |
+| `setDecisionPoint` | 84 | 8, now a method in `decisionPointHandlers` |
 | `server/decision-api-seams.ts` (file) | 340 | 57 |
 | `createDecisionApiSeams` | 271 | 15 |
 | `vetAutoContinue` | 55 | 19 |
@@ -411,7 +416,7 @@ prerequisite: R2 cannot be done honestly without it.
    parts, and the credit is split.** `73c4741` did the structural split:
    `server/decision-api.ts` 400 → 70 (it no longer sits *at* a ceiling,
    invisible to the gate), `createDecisionApi` 319 → 34, `setDecisionPoint` 84
-   → 7 as a method in `decisionPointHandlers`, `server/decision-api-seams.ts`
+   → 8 as a method in `decisionPointHandlers`, `server/decision-api-seams.ts`
    340 → 57, `createDecisionApiSeams` 271 → 15, and `vetAutoContinue` 55 → 19. The later
    phase did only what `73c4741` left open — R4's final clause, moving
    `seedFromPreset` off the 50-line line rather than leaving it at 49 beside it
