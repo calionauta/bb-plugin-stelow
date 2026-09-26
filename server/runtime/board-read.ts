@@ -14,6 +14,7 @@
  * `plans/` has to be findable and the bookkeeping that shares the directory
  * has to stay out.
  */
+import { isAbsolute } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -70,12 +71,21 @@ async function listDir(
     .map((entry) => {
       const raw = typeof entry === "string" ? entry : text(record(entry).path);
       if (!raw) return null;
-      return {
-        path: raw.startsWith(`${dir}/`) ? raw : join(dir, raw),
-        directory: record(entry).kind === "directory",
-      };
+      return { path: listedPath(dir, raw), directory: record(entry).kind === "directory" };
     })
     .filter((entry): entry is DirEntry => entry !== null);
+}
+
+/**
+ * Where a listed entry really lives.
+ *
+ * The host lists a directory with paths relative to the directory it was
+ * asked about, but a listing that already names the file in full is honoured
+ * rather than re-rooted. Anything else is read as relative to `dir`.
+ */
+function listedPath(dir: string, raw: string): string {
+  if (isAbsolute(raw) || raw.startsWith(`${dir}/`)) return raw;
+  return join(dir, raw);
 }
 
 /** Only a path below the directory the walk started from. */
@@ -92,8 +102,13 @@ function insideDir(dir: string, path: string): boolean {
  * that approves against this list refused with "the gate artifact does not
  * exist yet" for a spec that was on disk. Unreadable directories contribute
  * nothing: the board reads a half-written workspace by design.
+ *
+ * This is the ONE walk of a state dir. The card's artifact read walks the
+ * same tree to surface documents the manifest forgot, and two walks of one
+ * directory are how the card and the board came to disagree about what a card
+ * contains — so both call this.
  */
-async function listNestedFiles(
+export async function listNestedFiles(
   files: FilesApi,
   dir: string,
   depth = 0,

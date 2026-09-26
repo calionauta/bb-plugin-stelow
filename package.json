@@ -109,7 +109,7 @@
     "test:worktree-storage": "node tests/worktree-storage.test.mjs",
     "pretest": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/plugin-startup.test.mjs tests/runtime-composition.test.mjs tests/runtime-reconciler.test.mjs tests/runtime-flow-metrics.test.mjs tests/runtime-plugin-update.test.mjs tests/runtime-cli-registry.test.mjs tests/runtime-cli-inspection.test.mjs tests/runtime-card-preview.test.mjs tests/build-thread-sync.test.mjs",
     "test:presets": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-presets.test.mjs",
-    "test:runtime-seams": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-seams.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-board-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-wiring.test.mjs",
+    "test:runtime-seams": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-seams.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-board-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-detail-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-wiring.test.mjs",
     "test:source-shape": "node tests/source-shape.test.mjs && node tests/debt-baseline.test.mjs",
     "test:source-budgets": "node tests/source-budgets.test.mjs && node tests/budget-lineage.test.mjs"
   },
