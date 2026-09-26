@@ -1236,6 +1236,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I need to understand before building, I want a lightweight
 investigation that feeds the build board.*
 
+- **Registration is not a licence on a research substep.** A composite
+  research strategy declares its substeps, and each has a depth contract. The
+  gate used to run on whatever the worker chose to register in `state.md`, so
+  writing every declared substep as a stub and registering only the umbrella
+  round file made the round read as ready. A real card's index says it in the
+  present tense: the per-step files are "deliberately NOT registered in
+  `state.md`, so they do not gate `verify`/`done`" — accurate about the code and
+  wrong about the method, because the skill defines a simulated hypothesis as a
+  first-class output ("a plausible invented example used to make a candidate
+  concrete"), so the fix is richer labelled content rather than ten thin files.
+  A declared substep present in the round directory is now gated whether or not
+  it was registered, and the round listing is the same nested walk the board
+  uses, so a substep one level down is found here as it is there. A declared
+  substep that was never written is still not reported: nothing exists to gate,
+  and a legitimately partial run must be able to finish.
+
 - **Research tab** (`ResearchPanel`). Inbox / Doing / Done / Archived
   columns over research cards only; shared `FiltersBar` (project +
   attention); collapsible columns; per-tab

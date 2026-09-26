@@ -20,3 +20,10 @@ export declare function roundFileName(strategyId: string, roundNo: number, stamp
 export declare function parseRoundPath(relPath: unknown, strategyId: string): ParsedRoundPath | null;
 export declare function substepPathsForRound(manifestPaths: unknown, strategyId: string, primaryFile: string): string[];
 export declare function normalizeHistory(raw: unknown): StrategyRound[];
+export declare function unregisteredSubstepPaths(
+  declaredSlugs: unknown,
+  registeredPaths: unknown,
+  presentPaths: unknown,
+  strategyId: unknown,
+  primaryFile: unknown,
+): string[];

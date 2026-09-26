@@ -13,7 +13,7 @@ import {
   substepQuality,
 } from "../../lib/research-artifacts.mjs";
 import { expectedSubsteps, missingSubsteps, researchStrategyById } from "../../lib/research-strategies.mjs";
-import { parseRoundPath, substepPathsForRound } from "../../lib/research-rounds.mjs";
+import { parseRoundPath, substepPathsForRound, unregisteredSubstepPaths } from "../../lib/research-rounds.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "../../lib/research-ready.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
@@ -25,6 +25,8 @@ type ResearchDeps = {
   workflowStateDir: (rootPath: string, workflowId: string, dirHash: string) => Promise<string | null>;
   strategyRounds: (card: Pick<WorkerCard, "research_strategies" | "research_strategy">) => RoundHistory;
   joinPath: (root: string, relative: string) => string;
+  /** Every file under a round directory, nested included. */
+  roundFiles: (dir: string) => Promise<string[]>;
   workspaceRelative: (rootPath: string, path: string) => string | null;
   errors: { workspaceUnavailable: string };
 };
@@ -263,14 +265,25 @@ async function manifestSubsteps(
       .map((fields) => fields.path as string)
     : [];
   const substeps: SubstepRow[] = [];
-  history.forEach((entry, index) => {
+  for (const [index, entry] of history.entries()) {
     const n = index + 1;
-    const label = researchStrategyById(entry.id)?.label ?? entry.id;
-    for (const path of substepPathsForRound(manifestPaths, entry.id, entry.file)) {
+    const strategy = researchStrategyById(entry.id);
+    const label = strategy?.label ?? entry.id;
+    const registered = substepPathsForRound(manifestPaths, entry.id, entry.file);
+    for (const path of registered) {
       const slug = parseRoundPath(path, entry.id)?.subskill ?? path.split("/").pop() ?? path;
       substeps.push({ n, label, slug, path });
     }
-  });
+    // Registration is not a licence. A declared substep the worker wrote but
+    // did not register is gated too, or writing stubs and omitting them from
+    // state.md is a way to make a round read as ready.
+    const present = await deps.roundFiles(deps.joinPath(stateDir, "rounds"));
+    const undeclared = unregisteredSubstepPaths(strategy?.substeps, registered, present, entry.id, entry.file);
+    for (const path of undeclared) {
+      const slug = parseRoundPath(path, entry.id)?.subskill ?? path.split("/").pop() ?? path;
+      substeps.push({ n, label, slug, path });
+    }
+  }
   return substeps;
 }
 
