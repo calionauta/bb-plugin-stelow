@@ -126,7 +126,7 @@ const server = [
   readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
 ].join("\n");
-const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+const executionAdvance = readFileSync(join(root, "server/execution-advance-preflight.ts"), "utf8");
 assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 assert.match(

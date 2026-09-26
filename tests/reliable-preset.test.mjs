@@ -53,7 +53,7 @@ const cardsCreate = readFileSync(
   "utf8",
 );
 const executionAdvance = readFileSync(
-  join(root, "server", "execution-advance.ts"),
+  join(root, "server", "execution-advance-dispatch.ts"),
   "utf8",
 );
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");

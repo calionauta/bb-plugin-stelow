@@ -135,10 +135,10 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
-const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+const executionAdvance = readFileSync(join(root, "server/execution-advance-cli.ts"), "utf8");
 assert.match(
   executionAdvance,
-  /void deps\.requestGatePreReview\(card\.id, parsed\.stage\)\.catch\(\(\) => undefined\);/,
+  /void deps\.requestGatePreReview\(card\.id, stage\)\.catch\(\(\) => undefined\);/,
   "gate entry triggers without waiting",
 );
 assert.match(

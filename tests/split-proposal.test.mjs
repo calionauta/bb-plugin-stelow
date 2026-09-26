@@ -65,7 +65,7 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/question-answers.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-detail-rpc-contract.ts"), "utf8"),
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native-catalog.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-split.ts"), "utf8"),

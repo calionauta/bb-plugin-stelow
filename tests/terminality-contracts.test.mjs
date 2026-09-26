@@ -80,7 +80,7 @@ const cardDetailRuntime = readFileSync(
   "utf8",
 );
 const advance = readFileSync(
-  join(root, "server", "execution-advance.ts"),
+  join(root, "server", "execution-advance-card.ts"),
   "utf8",
 );
 assert.match(
@@ -90,11 +90,15 @@ assert.match(
 );
 assert.match(
   advance,
-  /error: deps\.errors\.cardArchived/,
+  /refuse\(deps\.errors\.cardArchived\)/,
   "archived stage advances name the terminal refusal",
 );
+const advancePreflight = readFileSync(
+  join(root, "server", "execution-advance-preflight.ts"),
+  "utf8",
+);
 assert.match(
-  advance,
+  advancePreflight,
   /if \(card\.kind !== "build"\)/,
   "the execution advance route stays Build-only",
 );
