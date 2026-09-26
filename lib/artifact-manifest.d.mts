@@ -11,6 +11,8 @@ export function resolveArtifactPath(projectRoot: string, artifactPath: string): 
 
 export function isPublishableArtifactContent(content: unknown): boolean;
 
+export function isDeliverableArtifactPath(candidate: unknown): boolean;
+
 export function unregisteredArtifactPaths(allPaths: string[], registeredPaths: string[]): string[];
 
 export interface ArtifactTrailerGaps {

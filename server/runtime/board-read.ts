@@ -7,10 +7,19 @@
  * can act on instead of throwing. A workflow is listed from its tracking
  * entry, then enriched with the stage from its OWN state.md — a project holds
  * several workflows, so a single project-level stage would be a lie.
+ *
+ * The document list walks the whole state dir, nested areas included, and
+ * keeps the manifest's own definition of a deliverable: the gate handler
+ * approves a gate against this list, so a machine artifact the layout put in
+ * `plans/` has to be findable and the bookkeeping that shares the directory
+ * has to stay out.
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { isPublishableArtifactContent } from "../../lib/artifact-manifest.mjs";
+import {
+  isDeliverableArtifactPath,
+  isPublishableArtifactContent,
+} from "../../lib/artifact-manifest.mjs";
 import { normalizeReviewGates } from "../../lib/review-gates.mjs";
 import { workflowSchema } from "../contracts.js";
 import { normalizeStatus, workflowScopes } from "../scopes.js";
@@ -20,6 +29,13 @@ import { join, projectRoot, readJson } from "./root-paths.js";
 
 type Workflow = z.infer<typeof workflowSchema>;
 type FilesApi = BbPluginApi["sdk"]["files"];
+
+/**
+ * How deep the artifact walk descends. Workflow areas are one level below the
+ * state dir (`plans/`, `context/`, `reviews/`), the headroom covers a nested
+ * card dir, and the bound is what keeps a cyclic listing from hanging a read.
+ */
+const MAX_WALK_DEPTH = 4;
 
 export type Board = {
   rootPath: string | null;
@@ -38,19 +54,57 @@ function classifyArtifact(
   return "other";
 }
 
-/** Every markdown file under a directory, as the host reports it. */
-async function listPaths(
+/** One listed path, and whether it is a directory to descend into. */
+type DirEntry = { path: string; directory: boolean };
+
+/** One directory as the host reports it, in whatever shape it lists entries. */
+async function listDir(
   files: FilesApi,
-  path: string,
-): Promise<string[]> {
+  dir: string,
+  includeDirectories: boolean,
+): Promise<DirEntry[]> {
   const result = await files
-    .listPaths({ path, includeFiles: true, includeDirectories: false })
+    .listPaths({ path: dir, includeFiles: true, includeDirectories })
     .catch(() => null);
   return array(record(result).paths)
-    .map((entry) =>
-      typeof entry === "string" ? entry : text(record(entry).path),
-    )
-    .filter(Boolean);
+    .map((entry) => ({
+      path: typeof entry === "string" ? entry : text(record(entry).path),
+      directory: record(entry).kind === "directory",
+    }))
+    .filter((entry) => Boolean(entry.path));
+}
+
+/** Only a path below the directory the walk started from. */
+function insideDir(dir: string, path: string): boolean {
+  return path.startsWith(`${dir}/`);
+}
+
+/**
+ * Every file under a directory, nested workflow areas included.
+ *
+ * The state-dir layout puts machine artifacts one level down — `plans/
+ * spec-product_<v>.md`, `context/recon-receipt.json`, `reviews/review-*.md` —
+ * so a top-level-only listing missed every one of them, and the gate handler
+ * that approves against this list refused with "the gate artifact does not
+ * exist yet" for a spec that was on disk. Unreadable directories contribute
+ * nothing: the board reads a half-written workspace by design.
+ */
+async function listNestedFiles(
+  files: FilesApi,
+  dir: string,
+  depth = 0,
+): Promise<string[]> {
+  if (depth > MAX_WALK_DEPTH) return [];
+  const entries = await listDir(files, dir, true);
+  const nested = await Promise.all(
+    entries
+      .filter((entry) => entry.directory && insideDir(dir, entry.path))
+      .map((entry) => listNestedFiles(files, entry.path, depth + 1)),
+  );
+  const direct = entries
+    .filter((entry) => !entry.directory)
+    .map((entry) => entry.path);
+  return [...new Set([...direct, ...nested.flat()])];
 }
 
 /** Receipt file names already approved for this workflow, newest state wins. */
@@ -59,15 +113,25 @@ async function approvedReceipts(
   root: string,
   dirHash: string,
 ): Promise<Set<string>> {
-  const listed = await listPaths(files, join(root, `.stelow/approvals/${dirHash}`));
+  // Receipts are written flat (one file per gate), so this read stays
+  // top-level: descending would spend a call per entry on a hot path for
+  // nothing the gate handler ever wrote.
+  const listed = await listDir(
+    files,
+    join(root, `.stelow/approvals/${dirHash}`),
+    false,
+  );
   return new Set(
-    listed.map((path) => path.split("/").pop()!).filter(Boolean),
+    listed.map((entry) => entry.path.split("/").pop()!).filter(Boolean),
   );
 }
 
 /**
- * One registered document, or null when the file is not a publishable
- * artifact (an empty or template-only file is not evidence of work).
+ * One registered document, or null when the file is not a deliverable
+ * artifact. The bar is the manifest's own — the workflow's `state.md` and
+ * its backups, a disposable draft, a non-Markdown file, and an empty or
+ * template-only file are bookkeeping, not evidence of work — judged on the
+ * state-dir-relative path so the board and the card list the same documents.
  */
 async function readArtifact(
   files: FilesApi,
@@ -77,14 +141,15 @@ async function readArtifact(
   dirHash: string,
   receipts: Set<string>,
 ): Promise<Workflow["artifacts"][number] | null> {
+  const relative = path.startsWith(root)
+    ? path.slice(root.length + 1)
+    : `.stelow/${created}/${dirHash}/${path.replace(/^\//, "")}`;
+  if (!isDeliverableArtifactPath(relative)) return null;
   const content = await files
     .read({ path })
     .then((file) => file.content)
     .catch(() => null);
   if (!isPublishableArtifactContent(content)) return null;
-  const relative = path.startsWith(root)
-    ? path.slice(root.length + 1)
-    : `.stelow/${created}/${dirHash}/${path.replace(/^\//, "")}`;
   const filename = relative.split("/").pop() ?? relative;
   const kind = classifyArtifact(filename);
   const receipt = gateReceiptFor(kind);
@@ -109,18 +174,16 @@ export async function findArtifacts(
   const created = text(workflow.created).slice(0, 10);
   const dirHash = text(workflow.dirHash);
   if (!created || !dirHash) return [];
-  const paths = await listPaths(
+  const paths = await listNestedFiles(
     files,
     join(root, `.stelow/${created}/${dirHash}`),
   );
   if (paths.length === 0) return [];
   const receipts = await approvedReceipts(files, root, dirHash);
   const candidates = await Promise.all(
-    paths
-      .filter((path) => path.endsWith(".md"))
-      .map((path) =>
-        readArtifact(files, path, root, created, dirHash, receipts),
-      ),
+    paths.map((path) =>
+      readArtifact(files, path, root, created, dirHash, receipts),
+    ),
   );
   return candidates
     .filter(

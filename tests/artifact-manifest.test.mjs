@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "../lib/artifact-manifest.mjs";
+import {
+  buildArtifactTrailer,
+  isDeliverableArtifactPath,
+  isPublishableArtifactContent,
+  parseArtifactManifest,
+  renderBundleManifest,
+  resolveArtifactPath,
+  unregisteredArtifactPaths,
+} from "../lib/artifact-manifest.mjs";
 
 const manifest = parseArtifactManifest(`---
 name: workflow
@@ -45,6 +53,32 @@ assert.deepEqual(unregisteredArtifactPaths(stateDirPaths, []), ["/w/.stelow/2026
 assert.deepEqual(unregisteredArtifactPaths(["/w/a.md", "/w/a.md"], []), ["/w/a.md"], "duplicates collapse");
 assert.deepEqual(unregisteredArtifactPaths(null, null), [], "off-shape input is an empty list, never a throw");
 assert.deepEqual(unregisteredArtifactPaths(["/w/.stelow/x/drafts/draft-1.md"], []), [], "disposable drafts never surface as unregistered");
+
+// The same bar, named: the board read filters its own listing with this, so
+// the two surfaces cannot drift into disagreeing about what a document is.
+for (const [path, deliverable] of [
+  ["audit.md", true],
+  ["plans/spec-product_v1.md", true],
+  ["explore/card_z9r4k/spec-product.md", true],
+  ["reviews/review-2026-09-26T09-40-00Z.md", true],
+  ["state.md", false],
+  ["state.md.bak", false],
+  ["context/state.md", false],
+  ["drafts/draft-1.md", false],
+  ["plans/nested/drafts/draft-2.md", false],
+  ["plans\\spec-tech_v1.md", true],
+  ["context/recon-receipt.json", false],
+  ["session.log", false],
+  ["", false],
+]) {
+  assert.equal(isDeliverableArtifactPath(path), deliverable, `isDeliverableArtifactPath(${JSON.stringify(path)})`);
+}
+assert.equal(isDeliverableArtifactPath(null), false, "off-shape input is not a deliverable path");
+assert.deepEqual(
+  stateDirPaths.filter(isDeliverableArtifactPath),
+  ["/w/.stelow/2026-09-15/sw-x/audit.md", "/w/.stelow/2026-09-15/sw-x/plans/spec-tech_v1.md"],
+  "the named bar and the sweep accept exactly the same files in a real state dir listing",
+);
 
 // Commit trailer: the audit link between a commit and the run that produced it.
 assert.deepEqual(

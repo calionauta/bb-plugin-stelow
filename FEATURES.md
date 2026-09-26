@@ -490,7 +490,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
-  with receipt files; review entry surfaces the artifact under decision.
+  with receipt files; review entry surfaces the artifact under decision. The
+  check walks the workflow's whole state dir, so the spec the layout wrote to
+  `plans/spec-product_<v>.md` is found: “the gate artifact does not exist
+  yet” now means the document really is missing.
 - **Workflow classification.** Correct the type freely while a Build card
   is in triage (`updateCardIntent`). After triage, **Card actions →
   Reclassify workflow…** starts a fresh worker from triage on the new route;
@@ -856,6 +859,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —
   the refusal redirects to the card's own state dir.
+- **Board document read** (`findArtifacts`, `bb stelow status --json`). A
+  workflow's documents come from a walk of its whole state dir, not of the
+  top level: the layout puts the machine artifacts one level down
+  (`plans/spec-product_<v>.md`, `plans/spec-tech_<v>.md`, `context/`,
+  `reviews/`, a nested card dir), so a flat listing hid every one of them and
+  published the bookkeeping sitting beside them. The deliverable bar is the
+  manifest's own (`isDeliverableArtifactPath`): `state.md` and its backups,
+  `drafts/`, and non-Markdown receipts stay out, judged on the
+  state-dir-relative path, so the board and the card name the same documents.
+  A nested area the host cannot list contributes nothing rather than failing
+  the read — a half-written workspace still reads as a board.
 - **Worker self-check** (`bb stelow verify [--card] [--tests] [--json]`). The same
   predicates the sync gate enforces, runnable by the worker before
   finishing: per-round PASS/FAIL for research, artifact check for
