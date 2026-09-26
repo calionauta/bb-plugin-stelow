@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.51.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.4...v0.51.5) (2026-09-26)
+
+
+### Bug Fixes
+
+* the question surface stops hiding the decision ([#106](https://github.com/calionauta/bb-plugin-stelow/issues/106)) ([67f77ab](https://github.com/calionauta/bb-plugin-stelow/commit/67f77ab794057e2339cc94da604bf48ab9b23f4e))
+
 ## [0.51.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.3...v0.51.4) (2026-09-26)
 
 
