@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.53.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.52.1...v0.53.0) (2026-09-26)
+
+
+### Features
+
+* Interface Contrast as a standalone Explore technique ([#122](https://github.com/calionauta/bb-plugin-stelow/issues/122)) ([0a1eacb](https://github.com/calionauta/bb-plugin-stelow/commit/0a1eacb15bff4d27f4e3c2288082e258661642d4))
+
 ## [0.52.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.52.0...v0.52.1) (2026-09-26)
 
 
