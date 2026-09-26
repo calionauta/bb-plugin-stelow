@@ -15,6 +15,7 @@ import {
   parseArtifactManifest,
   resolveArtifactPath,
 } from "../../lib/artifact-manifest.mjs";
+import { optionSectionExcerpt } from "../../lib/option-anchor.mjs";
 import {
   inheritAskArtifact,
   normalizeAskArtifactPath,
@@ -92,7 +93,7 @@ async function resolveAskOptions(
   const noOptionCarriesDocument = inherited.every((artifact) => !artifact);
   const manifestArtifact =
     card && noOptionCarriesDocument
-      ? await fallbackGateAskArtifact(deps, card).catch(() => null)
+      ? await fallbackGateAskArtifact(deps, card, options.map((option) => option.label)).catch(() => null)
       : null;
   const resolved = new Map<string, AskArtifact | null>();
   const out: Array<AskOption & { artifact: AskArtifact | null; artifactInherited: boolean }> = [];
@@ -121,6 +122,7 @@ async function resolveAskOptions(
 async function fallbackGateAskArtifact(
   deps: AskArtifactsDeps,
   card: WorkerCard,
+  optionLabels: string[] = [],
 ): Promise<AskArtifact | null> {
   const stage = await deps.cardStageSlug(card);
   const artifactStage = stage ? GATE_ARTIFACT_STAGE[stage] : null;
@@ -139,14 +141,82 @@ async function fallbackGateAskArtifact(
         .then((file) => file.content)
         .catch(() => null)
     : null;
-  const manifestEntry = stateBlob
-    ? parseArtifactManifest(stateBlob).find(
+  const candidates = stateBlob
+    ? parseArtifactManifest(stateBlob).filter(
         (entry) => entry.stage === artifactStage && entry.path,
       )
-    : null;
-  return manifestEntry
-    ? resolveAskArtifact(deps, card, manifestEntry.path)
-    : null;
+    : [];
+  if (candidates.length === 0) return null;
+  const chosen = await documentNamingTheOptions(deps, card, candidates, optionLabels);
+  return resolveAskArtifact(deps, card, chosen);
+}
+
+/**
+ * Which of a stage's registered documents the options were written from.
+ *
+ * A stage may register more than one document, and manifest order is not
+ * evidence of which one a question is about. On a real card the `interface`
+ * stage registered four entries, the first of which was a *different* decision
+ * than the one being asked — a placement contrast with two options, while the
+ * question offered three layouts and a hybrid that lived in a sibling file. The
+ * recovery took the first, so every option opened a document with none of their
+ * content in it.
+ *
+ * So the document that actually NAMES the options wins, scored by how many of
+ * them resolve to a section of it. Manifest order breaks ties, so the answer is
+ * deterministic. With one candidate, or no option labels to score against, this
+ * is the old first-match behaviour.
+ */
+async function documentNamingTheOptions(
+  deps: AskArtifactsDeps,
+  card: WorkerCard,
+  candidates: Array<{ path: string }>,
+  optionLabels: string[],
+): Promise<string> {
+  if (candidates.length === 1) return candidates[0].path;
+  const labels = optionLabels.filter((label) => typeof label === "string" && label.length > 0);
+  if (labels.length === 0) return candidates[0].path;
+  const scores = new Map<string, number>();
+  for (const candidate of candidates) {
+    const resolved = await resolveAskArtifact(deps, card, candidate.path).catch(() => null);
+    const absolute = resolved?.absolutePath ?? null;
+    const content = absolute
+      ? await deps.bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null)
+      : null;
+    scores.set(candidate.path, optionCoverage(content, labels));
+  }
+  return pickOptionDocument(candidates, scores);
+}
+
+/**
+ * How many of an ask's options this document actually contains.
+ *
+ * Unreadable or absent content scores zero rather than throwing, so an
+ * unreadable candidate simply loses instead of taking the recovery down.
+ */
+export function optionCoverage(content: unknown, labels: string[]): number {
+  if (typeof content !== "string" || content.length === 0) return 0;
+  return labels.filter((label) => optionSectionExcerpt(content, label) !== null).length;
+}
+
+/**
+ * The document that names the most options wins; manifest order breaks ties, so
+ * the choice is deterministic and a stage with one document is unaffected.
+ */
+export function pickOptionDocument(
+  candidates: Array<{ path: string }>,
+  scores: Map<string, number>,
+): string {
+  let best = candidates[0];
+  let bestScore = -1;
+  for (const candidate of candidates) {
+    const score = scores.get(candidate.path) ?? 0;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+  return best.path;
 }
 async function snapshotQuestionEvidence(
   deps: AskArtifactsDeps,
