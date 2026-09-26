@@ -37,6 +37,9 @@ remaining extraction work in [docs/runtime-architecture.md](./docs/runtime-archi
 The measured size debt in the GitHub automation and decision API areas, with
 its ordered repair list, is audited in
 [docs/remaining-debt-audit.md](./docs/remaining-debt-audit.md).
+How the runtime slices absorbed master's execution and scope contracts, and
+which two behaviors the extraction had dropped, is recorded in
+[docs/runtime-integration-2026-09.md](./docs/runtime-integration-2026-09.md).
 
 ## Strategies and techniques
 
