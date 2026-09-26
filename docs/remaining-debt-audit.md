@@ -34,14 +34,21 @@ more: `setDecisionPoint` was reported as 7 lines after the split when
 tables, all eleven GitHub file counts, all twelve decision file counts, and the
 43-test claim (14 + 13 + 16) matched. All are corrected above; the *Review
 corrections* list records what the first review found, not what the file now
-says.
+says. One further adversarial review, of the *Phase 7 result* audit itself,
+rejected eleven more claims and is listed under *Review corrections (this
+phase)*: a primitive that is not vendored, three miscounted inner functions, a
+line range that swept in a different rule, a sentence contradicted by its own
+table, a parser with two `ok: true` returns rather than three, two counts
+credited to the wrong gate, a commit distance read off the wrong reference, two
+drifted figures in a *Status* line this preamble calls current, and a card count
+that moves while other threads run.
 
 ## How to read the deltas
 
 `check-source-budgets.mjs` scores two different references, and both matter:
 
 - **New violations** are scoped to the *merge-base* with `origin/master`,
-  currently `1f968be` — 208 commits behind the branch tip.
+  currently `1f968be` — 8 commits behind the branch tip.
 - **Inherited debt** is scored against the *target tip* of `origin/master`,
   currently `12c6664`.
 
@@ -282,9 +289,11 @@ argument for doing it once rather than three times.
 **Status: repaired (R6 landed).** The measurements below are the pre-split
 record. `scripts/check-source-budgets.mjs` was 311 lines with no function over
 50, and it passed then: 267 changed owned files, 13 inherited entries, 0
-violations. It is now 302 lines beside a 75-line `scripts/budget-lineage.mjs`
-and still passes, at **303 changed owned files, 7 inherited entries, 0
-violations**. Three defects shaped how much
+violations. It is now 316 lines beside a 75-line `scripts/budget-lineage.mjs`
+and still passes, at **317 changed owned files, 7 inherited entries, 0
+violations** (re-measured at `a35e973`; the changed-file count rises with every
+phase that touches an owned root, the other two do not move). Three defects
+shaped how much
 trust the later phases could put in it; all three are gone.
 
 **The similarity fallback could waive anything.** `bestFunction` filtered
@@ -654,14 +663,20 @@ The tree-wide debt R1–R6 left behind is now measured as it stands, not as the
 ledger records it: every figure below is a fresh TypeScript AST census over all
 771 owned files, using the same traversal `tests/debt-baseline.test.mjs` uses
 (function declarations, expressions, arrows, methods, constructors, getters,
-setters, and default-export labels). The gate's own output at this commit is
-`3 oversized file(s) and 45 oversized function(s), 7 inherited entries`.
+setters, and default-export labels). The test's own line at this commit reads
+`3 oversized file(s) and 45 oversized function(s), 7 inherited entries`, and only
+the last of those three numbers is the budget gate's: `check-source-budgets.mjs`
+prints the inherited set and the violations, and never counts the whole tree.
 
-**3 oversized files** — all three recorded at their exact current size, none
-grown: `components/ui/dialog.tsx` 541, `components/ui/icon.tsx` 450,
-`tests/kanban-layout.test.mjs` 401. Two are vendored shadcn primitives and one is
-a test fixture; §*Review corrections* already argued the primitives are not
-worth splitting by hand, and this phase did not touch them.
+**3 oversized files** — all three recorded at their exact current size in
+`scripts/source-debt.json`, none grown: `components/ui/dialog.tsx` 541,
+`components/ui/icon.tsx` 450, `tests/kanban-layout.test.mjs` 401. One is a
+vendored shadcn primitive — `/* shadcn/ui-derived */` heads `dialog.tsx` — one is
+a test fixture, and the third is neither: `icon.tsx` is an owned barrel, 140
+lines of `@hugeicons/core-free-icons` imports, a 130-line inlined `Palette`
+glyph the free set does not ship, a 147-entry `ICON_MAP`, and a 16-line `Icon`
+component. So two of the three are data, and the third is a fixture; nothing here
+is a decomposition candidate, and this phase touched none of them.
 
 ### 1. The remaining owned server functions over 50 lines
 
@@ -672,12 +687,16 @@ that merely moved a file cannot hide growth here.
 
 | Symbol | Lines | Range | master | shape |
 | --- | --- | --- | --- | --- |
-| `server/execution-reconcile.ts:createExecutionReconcile` | 261 | 54-314 | 261 | 12 inner functions, all under 50 |
-| `server/execution-native.ts:createExecutionNative` | 249 | 142-390 | 249 | 5 inner, `prepareStart` 69 also over |
-| `server/execution-lifecycle.ts:createExecutionLifecycle` | 223 | 46-268 | 223 | 11 inner, `resumeAfterAnswers` 53 also over |
+"inner" counts named function declarations written directly in the factory body;
+arrows in the returned object literal are counted separately, since they are the
+surface, not the rules.
+
+| `server/execution-reconcile.ts:createExecutionReconcile` | 261 | 54-314 | 261 | 12 inner, all under 50, plus a 1-line returned arrow |
+| `server/execution-native.ts:createExecutionNative` | 249 | 142-390 | 249 | 6 inner, `prepareStart` 69 also over |
+| `server/execution-lifecycle.ts:createExecutionLifecycle` | 223 | 46-268 | 223 | 10 inner, `resumeAfterAnswers` 53 also over, plus 3 returned arrows |
 | `server/execution-advance.ts:createExecutionAdvance` | 203 | 44-246 | 203 | 8 inner, all under 50 |
 | `server/runtime/workflow-seeding.ts:seedWorkflow` | 72 | 210-281 | no ancestor | 0 inner; flat |
-| `server/runtime/cli/cli-review-subject.ts:deliverableSubject` | 69 | 111-179 | no ancestor | 6 callbacks, one 5 lines |
+| `server/runtime/cli/cli-review-subject.ts:deliverableSubject` | 69 | 111-179 | no ancestor | 7 fail-soft callbacks, one 5 lines |
 | `server/execution-native.ts:createExecutionNative/prepareStart` | 69 | 225-293 | 69 | nested in the factory above |
 | `server/runtime/cli/cli-bundle-writer.ts:writeBundle` | 68 | 223-290 | no ancestor | 1 one-line callback |
 | `server/runtime/cli/cli-split.ts:reportSplit` | 61 | 282-342 | no ancestor | 2 one-line callbacks |
@@ -701,9 +720,10 @@ The inner census gives the seams:
   `reconcileBoundary` 38 (66-103), `reconcileStageEntries` 28, `reconcileArtifacts`
   24, `requestRegistration` 20, `registrationRecorded` 18, `reconcileSimpleState`
   18, `reconcileRuns` 15, `failArtifacts` 11, `reconcile` 10, `sendToCard` 8,
-  `readArtifactContents` 7. The registration pair (`requestRegistration` +
-  `registrationRecorded` + `failArtifacts`, 105-163) is one rule and belongs in
-  one module; the four `reconcile*` steps are one each. The file at 316 lines has
+  `readArtifactContents` 7. The registration trio (`requestRegistration` +
+  `registrationRecorded` + `failArtifacts`, 113-163) is one rule and belongs in
+  one module — 105-111 is `readArtifactContents`, a different rule — and the four
+  `reconcile*` steps are one each. The file at 316 lines has
   84 lines of headroom, so a module per rule cannot be added here — the siblings
   have to be new files.
 - `createExecutionNative` (393-line file, 7 lines of headroom): `prepareStart` 69
@@ -718,11 +738,14 @@ The inner census gives the seams:
   `syncExecutionScopes` 31, `prepareAdvance` 30, `advanceCard` 27, `parseCli` 12,
   `applyBand` 9, `recordExecution` 8.
 
-The four `server/runtime/**` and `bb-workflow-bridge` symbols are flat functions
-with no inner seams: each is one straight-line rule, so each is a candidate for a
-whole-file move out of its parent rather than a decomposition. None of the five
-files is near the 400-line ceiling, so a move is not forced by file size — it is
-forced by the 50-line function ceiling, which no argument of relocation satisfies.
+Each of the four `server/runtime/**` symbols and `renderInlineWorkflowScript` is
+one straight-line rule with no *named* inner function — no decomposition seam
+exists inside any of them, only the fail-soft `.catch` arrows the table counts, so
+each is a candidate for a whole-file move out of its parent rather than a split.
+No file forces that move: the largest is `cli-bundle-writer.ts` at 358 lines, 42
+short of the ceiling, and the smallest is `bb-workflow-bridge.ts` at 176. The move
+is forced by the 50-line function ceiling alone, which no argument of relocation
+satisfies.
 
 The 34 oversized functions outside `server/` are unchanged by this phase and stay
 pinned; the two named in this workflow's *Functions* phase
@@ -734,12 +757,15 @@ components, and both are single oversized functions rather than factory shells.
 The *Phase 3 result* section named them by file and line; this phase re-derived
 deadness from the parser rather than from the report, and all three hold.
 
-`lib/preset-judge.mjs:parsePresetJudgeOutput` has exactly three `ok: true`
-returns and both mode branches are total: criteria mode returns
-`{ ok: true, verdicts }` after a check that guarantees `verdicts` is an array, and
-choice mode returns `{ ok: true, choice, confidence }` after a check that
-guarantees `choice` is a string inside `validChoices`. So in both modes the
-`ok: true` shape is the only one, and these guards can never be false:
+`lib/preset-judge.mjs:parsePresetJudgeOutput` has exactly **two** `ok: true`
+returns — `:106` and `:112`, one per mode — and both mode branches are total:
+criteria mode returns `{ ok: true, verdicts }` after a check that guarantees
+`verdicts` is an array, and choice mode returns `{ ok: true, choice, confidence }`
+after a check that guarantees `choice` is a string inside `validChoices`. (The
+file's third `ok: true` is `:36`, in `parseJsonBlock`, and carries
+`{ value }` — a different function and a different shape, which is where a count
+of three comes from.) So in both modes the `ok: true` shape is the only one, and
+these guards can never be false:
 
 | Site | Guard | Dead string | Kind |
 | --- | --- | --- | --- |
@@ -794,10 +820,17 @@ Two facts the E2E phase must not rediscover the hard way. There is **no
 surface, not the CLI, so `ask` is a one-way probe from the shell. And the
 `bb-plugin-stelow` checkout is **not a stelow workflow root** — `bb stelow
 doctor --project proj_a6wdkdcfkk --json` answers `state.md is missing for the
-Stelow workflow. Reseed the workflow`, while `bb stelow status --json` still
-lists 39 existing cards for that project. A card under test is therefore created
-by `seed` against its own project id and root, and the plugin checkout's own 39
+Stelow workflow. Reseed the workflow.`, while `bb stelow status --json` still
+lists the project's cards: 40 at this review, up from the 39 the audit measured
+an hour earlier, because every thread that seeds a card here moves it and the
+count is a live figure, not a fixed one. A card under test is therefore created
+by `seed` against its own project id and root, and the plugin checkout's own
 cards are the fixture to read, not the card to drive.
+
+The `ask` line above is the one place the block is edited rather than quoted:
+`bb stelow help ask` continues past `--artifact <path>...` with "(repeat
+`--question` groups to ask several at once; write all content in English)". The
+other six lines are verbatim.
 
 ### 5. One bounded repair this phase had to make
 
@@ -813,13 +846,79 @@ the previous workflow, and it is deliberately that narrow: each goal became a
 template literal wrapped one clause per line, and the three identical agent
 option objects became one `agentOptions` const, matching
 `.bb/workflows/resolve-remaining-debt.js`. Verified rather than asserted — the
-six goal strings are compared word by word against `HEAD` and every sequence is
-identical (212, 390, 233, 339, 354, and 244 characters each, before and after),
-and the rewritten file parses and runs to the same six phases in the same order
-with `agent` and `phase` stubbed. The gate's own report is the negative control:
-it named those six lines and exited 1 before the change, and reports green after
-it. No prompt wording, phase order, label, provider, or model changed.
+six goal strings are compared word by word against `625f31b`, the commit that
+added them, and every sequence is identical (212, 390, 233, 339, 354, and 244
+characters each, before and after), and the rewritten file parses and runs to the
+same six phases in the same order with `agent` and `phase` stubbed: 20 stubbed
+calls, the same 20 in the same order from both revisions. The gate's own report
+is the negative control: re-running it against `625f31b`'s copy of the file
+names those six lines at 237, 423, 260, 372, 375, and 274 characters and exits 1
+— and `tests/debt-baseline.test.mjs` fails with it, which is the wiring this
+file's *Gate repairs* section added. No prompt wording, phase order, label,
+provider, or model changed.
 
-Gates on this phase: `npm run typecheck` green, `npm run architecture` clean
-(712 modules, 1675 dependencies), `npm run test:source-shape` green,
-`npm run test:source-budgets` green.
+Gates on this phase: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run architecture` clean (712 modules, 1675 dependencies),
+`npm run test:source-shape` green, `npm run test:source-budgets` green.
+
+### Review corrections (this phase)
+
+The adversarial review of the audit re-derived every figure above from the tree,
+`origin/master`, and the live CLI rather than from the phase's own report, and
+rejected eleven claims. The corrections are in place; the rest of the phase
+survived unchanged, including all eleven server symbol lengths and line ranges,
+all eleven `master` values, the three guard sites, both the blueprint and the CLI
+sections, and the whole of section 5.
+
+- `icon.tsx` was called a vendored shadcn primitive. It is not: the
+  `shadcn/ui-derived` marker is on `dialog.tsx` and on no other file in the
+  tree, and `icon.tsx` is an owned barrel of hugeicons imports, one inlined
+  glyph, a 147-entry map, and a 16-line component. That also made the
+  cross-reference to *Review corrections* — which argues nothing about
+  primitives — dangling.
+- `createExecutionNative` was given 5 inner functions and
+  `createExecutionLifecycle` 11. They have 6 and 10 named declarations
+  respectively, plus 3 arrows in the lifecycle's returned object. Neither count
+  was right under any reading, and the second moved in the opposite direction
+  from the first. The table now states the counting convention.
+- `deliverableSubject` was given 6 callbacks. It has 7.
+- The registration trio in `createExecutionReconcile` was placed at 105-163.
+  It is 113-163; 105-111 is `readArtifactContents`.
+- The four `server/runtime/**` symbols and `renderInlineWorkflowScript` were
+  called "flat functions with no inner seams" one paragraph after the same
+  section's table counted 1, 7, 2, and 1 callbacks inside them. They have no
+  *named* inner function, which is the claim that survives, and it is now said
+  that way with the file sizes given instead of "not near the ceiling" — the
+  largest is 358 lines, 42 short of it.
+- `parsePresetJudgeOutput` was credited with three `ok: true` returns. It has
+  two, `:106` and `:112`; the third in the file is `parseJsonBlock`'s, and
+  carries a different shape. The deadness argument is unaffected — it only ever
+  needed one `ok: true` shape per mode — and the phase's own commit message
+  stated it correctly.
+- "The gate's own output" was credited with `3 oversized file(s) and 45
+  oversized function(s)`. `check-source-budgets.mjs` prints neither; it is
+  diff-scoped. Those two numbers are the whole-tree census in
+  `tests/debt-baseline.test.mjs`, and only the third number in that line is the
+  gate's. In a file about which gate sees what, that mattered.
+- The merge-base was described as "208 commits behind the branch tip". It is 8
+  commits behind; 208 was the *ahead* count section 4 measures at `1ee4ecc`, so
+  a number from one reference had been reused as a count against another.
+- Two figures in section 3's *Status* line, which this file's preamble promises
+  is current, had drifted: the budget checker is 316 lines rather than 302, and
+  the gate now walks 317 changed owned files rather than 303. The line now names
+  the commit it was measured at and says which of the three numbers moves.
+- The E2E section's "39 existing cards" is 40 now, because other threads seed
+  cards into this project between runs. The figure is labelled as live rather
+  than restated as a constant, and the `ask` syntax line is marked as the one
+  edited line in a block the section calls verbatim.
+
+Two claims were checked and held rather than corrected: that the four
+`execution-*` files and `bb-workflow-bridge.ts` are byte-identical to
+`origin/master` (md5 on all five), and that the section 4 diffstat is exact at
+the commit it names — `git rev-list --left-right --count origin/master...1ee4ecc`
+is `6 208` and the shortstat at `1ee4ecc` is `328 files changed, 42104
+insertions(+), 11179 deletions(-)`, both re-derived.
+
+Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run architecture` clean (712 modules, 1675 dependencies),
+`npm run test:source-shape` green, `npm run test:source-budgets` green.
