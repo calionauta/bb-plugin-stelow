@@ -17,7 +17,24 @@ import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 export type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 export type ArtifactViewerMode = "review" | "comment";
 export type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
-export type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; staleness?: QuestionStalenessNotice | null };
+export type BatchOption = {
+  label: string;
+  description: string;
+  preview: string | null;
+  artifact: AskArtifact | null;
+  // True when the document came from a sibling rather than this option.
+  artifactInherited?: boolean;
+};
+
+export type BatchItem = {
+  id: string;
+  title: string;
+  prompt: string;
+  multiple: boolean;
+  kind?: "standard" | "split";
+  options: BatchOption[];
+  staleness?: QuestionStalenessNotice | null;
+};
 // Structural view of a timed-out question: the section maps it into a
 // BatchItem, so the card never imports the detail contract for this.
 export type ExpiredQuestionItem = { id: string; question: string; multiple: boolean; kind?: "standard" | "split"; options: BatchItem["options"]; staleness?: QuestionStalenessNotice | null };
@@ -171,6 +188,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
   onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
 }) {
   const artifact = option.artifact;
+  const artifactInherited = option.artifactInherited === true;
   return (
     <div className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
       <div className={`flex min-h-11 items-stretch overflow-hidden rounded-md border ${active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"}`}>
@@ -190,14 +208,30 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
             // it, and borrows the shared outline treatment so it
             // harmonizes with the amber panel and the primary
             // accents instead of introducing a third color.
+            //
+            // The label names the FILE. "Open document" alone made the
+            // reader guess what they were about to open, and a filename
+            // buried in a hover-only title is not a label. When the
+            // document was inherited from a sibling it says so, because
+            // the same brief on four rows otherwise reads as four pieces
+            // of evidence about four different options.
             <Button
               variant="outline"
               size="sm"
               onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
-              title={`Open document: ${artifact.display}`}
-              aria-label={`Open document ${artifact.display}`}
-              className="mr-2 min-h-11 shrink-0 gap-1 self-center"
-            >Open document<span aria-hidden>↗</span></Button>
+              title={artifactInherited
+                ? `${artifact.display} — the brief shared by every option, not this option's own document`
+                : `${artifact.display} — this option's own document`}
+              aria-label={artifactInherited
+                ? `Open the shared brief ${artifact.display}, the same document every option links to`
+                : `Open this option's document ${artifact.display}`}
+              className="mr-2 min-h-11 max-w-[16rem] shrink-0 gap-1 self-center"
+            >
+              <span className="truncate">
+                {artifactInherited ? "Shared brief" : "Open"}: {artifact.display}
+              </span>
+              <span aria-hidden>↗</span>
+            </Button>
           ) : (
             <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
           )

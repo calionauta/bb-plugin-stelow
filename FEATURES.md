@@ -471,7 +471,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   option that carries no artifact inherits the first one attached to a
   sibling, so the approval option is never the only one blind to the
   document under decision (`inheritAskArtifact`, unit-tested); options
-  with their own documents — competing proposals — keep them. Option
+  with their own documents — competing proposals — keep them. An inherited
+  document is LABELLED as such: the control reads "Shared brief: <file>"
+  rather than "Open document", because a filename hidden in a hover-only
+  tooltip is not a label, and the same brief on four rows reads as four
+  pieces of evidence about four different options. Options that brought their
+  own document say so instead. Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
