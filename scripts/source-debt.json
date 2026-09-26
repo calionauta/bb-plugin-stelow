@@ -34,8 +34,6 @@
     "components/worktree-cleanup-suggestion.tsx:WorktreeCleanupSuggestion": 58,
     "lib/card-checks.mjs:groupCardChecks": 57,
     "lib/gap-registry.mjs:validateGapRegistry": 53,
-    "lib/preview-runtime.mjs:createPreviewRuntime": 264,
-    "lib/preview-runtime.mjs:createPreviewRuntime/start": 77,
     "lib/question-batch.mjs:parseAskGroups": 80,
     "lib/trackable-evidence.mjs:evidenceConditions": 74,
     "lib/workflow-skills-sync.mjs:syncWorkflowSkills": 112,

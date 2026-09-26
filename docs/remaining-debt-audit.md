@@ -589,8 +589,62 @@ afterwards: a typo in a ref path, a duplicated strategy id, an undispatched
 `table-rowz` kind, and a Build rule pointing at a renamed stage — all four
 failed the test as intended.
 
-Gates on this phase: `npm test` green (exit 0, 237 test files wired),
+Gates on this phase: `npm test` green (exit 0, 236 test files wired),
 `npm run typecheck` green, `npm run architecture` clean (702 modules, 1665
 dependencies), `tests/source-shape`, `tests/source-budgets`,
 `tests/budget-lineage`, and `tests/debt-baseline` green.
+
+## Phase 6 result (the tree-wide debt, the biggest function)
+
+The census's largest single entry was a factory, not a file:
+`lib/preview-runtime.mjs:createPreviewRuntime` at 264 lines, with a nested
+`start` at 77. It held the whole preview lifecycle — workspace probe, session
+store, process supervision, Connect, and the five operations — in one closure.
+Each of those is a rule with a name, so each became its own module and the
+factory became wiring.
+
+| Module | Lines | Owns |
+|---|---|---|
+| `lib/preview-session-store.mjs` | 38 | identity is the checkout (host + path), never the card; `starting` holds a port |
+| `lib/preview-app-root.mjs` | 61 | where the app is, probed from the host; root first, then one level down |
+| `lib/preview-process.mjs` | 139 | spawn, bounded starting, the log, SIGTERM-then-SIGKILL, stop-vs-crash |
+| `lib/preview-connect.mjs` | 37 | exposure is a bonus, never a gate; every call fail-soft |
+| `lib/preview-lifecycle.mjs` | 175 | the five operations as functions over an injected context |
+| `lib/preview-runtime.mjs` | 73 | `createPreviewRuntime`, now 22 lines of wiring |
+
+`createPreviewRuntime` 264 → 22 lines and `start` 77 → 20; both ledger entries are
+deleted, so the census now reports **3 oversized files and 45 oversized
+functions** (from 4 and 47). Every function introduced is under the 50-line
+budget; the longest is `createAppRootResolver` at 41. `lib/preview-runtime.mjs`
+itself went 333 → 73 lines.
+
+Two rules the split forced into the open, both kept as explicit contracts rather
+than implicit nesting:
+
+- `killGraceMs` and `logLimit` became parameters with production defaults
+  (`PREVIEW_KILL_GRACE_MS`, `PREVIEW_LOG_LIMIT`), so a test can drive the
+  SIGTERM→SIGKILL escalation in 40 ms without changing what a host runs. The
+  test asserts the default is still five seconds, so the seam cannot quietly
+  become the test's value.
+
+**`tests/preview-runtime-edges.test.mjs` (new, 255 lines).** The existing
+`tests/preview-runtime.test.mjs` still passes unchanged — that is the evidence
+the split moved no behavior — and the new file covers what it could not reach: a
+host that throws on spawn (the refusal names the host's own error, and a failed
+spawn never consumes one of the three preview slots), a process that errors
+after spawning, a failed session that is started again, a share retry on an
+unpaired host, a `runConnect` that throws because the CLI is not installed (the
+preview still runs at loopback and stop still releases it), the SIGTERM→SIGKILL
+escalation and its negative (an exited process is not signalled at all), and the
+store's identity rule asserted directly — a subdirectory app belongs to its
+checkout, a sibling does not, and the same path on another host is a different
+checkout. Four negative controls were executed and each failed the test: dropping
+the SIGKILL escalation, ignoring the host in the store key, letting a spawn
+throw escape into the caller, and inventing a share URL for an unpaired host.
+
+Gates on this phase: `npm test` green (exit 0, 237 test files wired),
+`npm run typecheck` green, `npm run architecture` clean (712 modules, 1675
+dependencies), `tests/source-shape`, `tests/source-budgets`,
+`tests/budget-lineage`, and `tests/debt-baseline` green.
+
 
