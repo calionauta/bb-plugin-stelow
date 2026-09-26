@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.51.7](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.6...v0.51.7) (2026-09-26)
+
+
+### Bug Fixes
+
+* an option opens at its own section, not the document's first line ([#110](https://github.com/calionauta/bb-plugin-stelow/issues/110)) ([5de8036](https://github.com/calionauta/bb-plugin-stelow/commit/5de8036d5b810495a9b032b2e22bd8deb0dff467))
+
+## [0.51.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.5...v0.51.6) (2026-09-26)
+
+
+### Bug Fixes
+
+* mark a document the option never attached, on both paths ([#108](https://github.com/calionauta/bb-plugin-stelow/issues/108)) ([1d700ee](https://github.com/calionauta/bb-plugin-stelow/commit/1d700ee43442fae3c63f33e62e6677ed183aee96))
+
 ## [0.51.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.4...v0.51.5) (2026-09-26)
 
 

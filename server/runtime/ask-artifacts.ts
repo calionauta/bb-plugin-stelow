@@ -87,7 +87,7 @@ async function resolveAskOptions(
   deps: AskArtifactsDeps,
   card: WorkerCard | null,
   options: AskOption[],
-): Promise<Array<AskOption & { artifact: AskArtifact | null }>> {
+): Promise<Array<AskOption & { artifact: AskArtifact | null; artifactInherited: boolean }>> {
   const inherited = inheritAskArtifact(options);
   const noOptionCarriesDocument = inherited.every((artifact) => !artifact);
   const manifestArtifact =
@@ -95,11 +95,17 @@ async function resolveAskOptions(
       ? await fallbackGateAskArtifact(deps, card).catch(() => null)
       : null;
   const resolved = new Map<string, AskArtifact | null>();
-  const out: Array<AskOption & { artifact: AskArtifact | null }> = [];
+  const out: Array<AskOption & { artifact: AskArtifact | null; artifactInherited: boolean }> = [];
   for (const [index, option] of options.entries()) {
     const source = inherited[index];
+    // Provenance: was this document attached to THIS option, borrowed from a
+    // sibling, or recovered from the stage manifest because the ask carried
+    // none? Only the first is this option's own evidence, and the card has
+    // to say so — one document on four rows otherwise reads as four pieces
+    // of evidence about four different options.
+    const own = options[index]?.artifact ?? null;
     if (!source || !card) {
-      out.push({ ...option, artifact: manifestArtifact });
+      out.push({ ...option, artifact: manifestArtifact, artifactInherited: manifestArtifact !== null });
       continue;
     }
     if (!resolved.has(source.path)) {
@@ -108,7 +114,7 @@ async function resolveAskOptions(
         await resolveAskArtifact(deps, card, source.path).catch(() => null),
       );
     }
-    out.push({ ...option, artifact: resolved.get(source.path) ?? null });
+    out.push({ ...option, artifact: resolved.get(source.path) ?? null, artifactInherited: own === null });
   }
   return out;
 }

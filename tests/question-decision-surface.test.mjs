@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const batch = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
+// The inline preview and its disclosure live with the option rows, which were
+// split out of the stepper; the staleness notice stayed with the stepper.
+const optionRows = readFileSync(join(root, "components", "conversation", "batch-options.tsx"), "utf8");
 
 // Two defects found by looking at a real card, both from the same cause: the
 // decision surface pushed the decision itself out of reach.
@@ -14,14 +17,14 @@ const batch = readFileSync(join(root, "components", "conversation", "question-ba
 // more than the label beside it: two clicks for less information. A preview
 // is the thing that lets a reader judge WITHOUT opening anything, so a short
 // one must be visible without a click.
-const short = batch.match(/const AUTO_REVEAL_PREVIEW_CHARS = (\d+);/);
+const short = optionRows.match(/const AUTO_REVEAL_PREVIEW_CHARS = (\d+);/);
 assert.ok(short, "the auto-reveal threshold is a named decision, not a magic number in the markup");
 assert.ok(
   Number(short[1]) >= 120,
   "the threshold covers the real previews that were being hidden; two lines of prose is under that",
 );
 assert.match(
-  batch,
+  optionRows,
   /if \(text\.length <= AUTO_REVEAL_PREVIEW_CHARS\) \{[\s\S]{0,600}What this looks like/,
   "a short preview renders inline, labelled, with no click required",
 );
@@ -29,7 +32,7 @@ assert.match(
 // A long preview keeps its disclosure — collapsing a 4000-character brief
 // into the page is its own kind of unusable.
 assert.match(
-  batch,
+  optionRows,
   /\}[\s\S]{0,400}<details className="group">[\s\S]{0,300}Preview/,
   "a long preview still collapses behind a disclosure",
 );

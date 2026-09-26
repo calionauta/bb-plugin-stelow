@@ -1,13 +1,11 @@
 {
   "files": {
-    "components/conversation/question-batch.tsx": 486,
     "components/ui/dialog.tsx": 541,
     "components/ui/icon.tsx": 450,
     "tests/kanban-layout.test.mjs": 401
   },
   "functions": {
     "app.tsx:callback": 56,
-    "components/conversation/question-batch.tsx:BatchOptionRow": 63,
     "components/conversation/question-batch.tsx:useBatchSelection": 53,
     "components/creation/create-build-dialog.tsx:useCreateBuildSubmit": 65,
     "components/detail/build-diff.tsx:DiffFile": 54,

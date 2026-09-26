@@ -326,6 +326,7 @@ function PresetDialogs({ cardId, view }: { cardId: string; view: BuildDetailView
         file={view.viewerFile}
         editorTarget={view.viewerFile?.target ?? null}
         mode={view.viewerFile?.mode}
+        optionLabel={view.viewerFile?.optionLabel}
         onCommented={() => void load()}
       />
       <AdvanceDialog

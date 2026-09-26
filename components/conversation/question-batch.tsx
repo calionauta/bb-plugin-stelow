@@ -5,59 +5,35 @@ import { Button } from "@/components/ui/button";
 import { DisclosureChevron } from "../disclosure";
 import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/expired-question-answers.mjs";
-import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
+import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
+import { BatchOptionList } from "./batch-options";
+import type {
+  BatchItem,
+  ExpiredQuestionItem,
+  OpenArtifactHandler,
+  QuestionStalenessNotice,
+} from "./batch-types";
 
 // Question conversation: the stepper (radio/checkbox options, free-text
 // Other, explicit skip, atomic submit), the live batch (answerQuestions),
 // and the expired batch (answerExpiredQuestions, every selected option
 // retained). Every track renders the same conversation — one home, not
-// three pasted steppers.
+// three pasted steppers. The option rows themselves, the question shapes
+// they render, and the document they open are declared alongside.
 
-export type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
-export type ArtifactViewerMode = "review" | "comment";
-export type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
-export type BatchOption = {
-  label: string;
-  description: string;
-  preview: string | null;
-  artifact: AskArtifact | null;
-  // True when the document came from a sibling rather than this option.
-  artifactInherited?: boolean;
-};
-
-export type BatchItem = {
-  id: string;
-  title: string;
-  prompt: string;
-  multiple: boolean;
-  kind?: "standard" | "split";
-  options: BatchOption[];
-  staleness?: QuestionStalenessNotice | null;
-};
-// Structural view of a timed-out question: the section maps it into a
-// BatchItem, so the card never imports the detail contract for this.
-export type ExpiredQuestionItem = { id: string; question: string; multiple: boolean; kind?: "standard" | "split"; options: BatchItem["options"]; staleness?: QuestionStalenessNotice | null };
-
-function artifactViewerModeForOption(label: string): ArtifactViewerMode {
-  // An approval is a decision after reading, not a request to alter the
-  // document. All other choices — especially Request/Review changes — keep
-  // the full quote-and-comment path to communicate precise feedback.
-  return /\b(approve|accept|proceed)\b/i.test(label) ? "review" : "comment";
-}
-
-// Per-option evidence: the document opens from inside the option row
-// (right side), the inline glance expands below. The artifact opens in the
-// viewer where a file opener exists (card), and degrades to a plain
-// filename where it doesn't (thread) — never a dead button pretending
-// to open, never one shared button after the options.
-// A preview exists so the reader can judge an option WITHOUT opening
-// anything. Hiding it behind a disclosure defeats that: on a real card the
-// previews were 27-104 characters, so clicking "Preview" revealed two lines
-// that said no more than the label beside it — two clicks for less
-// information. A preview short enough to read at a glance is shown; only a
-// genuinely long one earns a disclosure.
-const AUTO_REVEAL_PREVIEW_CHARS = 280;
+// The question shapes live in ./batch-types so the option rows and the stepper
+// can both import them without importing each other. They are re-exported
+// here because this module is where every consumer already reaches for them.
+export type {
+  AskArtifact,
+  ArtifactViewerMode,
+  BatchItem,
+  BatchOption,
+  ExpiredQuestionItem,
+  OpenArtifactHandler,
+  QuestionStalenessNotice,
+} from "./batch-types";
 
 // One class for both disclosures (preview and touched paths) so a keyboard
 // focus ring reads identically wherever a disclosure appears.
@@ -66,28 +42,6 @@ const DISCLOSURE_SUMMARY_CLASS = [
   "text-xs font-medium hover:underline",
   "focus-visible:outline focus-visible:outline-2",
 ].join(" ");
-
-function OptionPreview({ preview }: { preview: string | null }) {
-  if (!preview) return null;
-  const text = preview.trim();
-  const body = <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{text}</pre>;
-  if (text.length <= AUTO_REVEAL_PREVIEW_CHARS) {
-    return (
-      <div className="ml-1 border-l-2 border-muted pl-2">
-        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">What this looks like</p>
-        {body}
-      </div>
-    );
-  }
-  return (
-    <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
-      <details className="group">
-        <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
-        {body}
-      </details>
-    </div>
-  );
-}
 
 // Advisory only: names what moved since a question was asked — a revised or
 // removed document, a moved checkout with the touched paths — and points at
@@ -229,104 +183,6 @@ function BatchStepDots({ questions, index, onSelect, isDone, copy }: {
   );
 }
 
-// One option row: the select control, the label, the per-option document,
-// and the inline preview glance.
-function BatchOptionRow({ option, active, multiple, isKeepOption, description, onPick, onOpenArtifact }: {
-  option: BatchItem["options"][number];
-  active: boolean;
-  multiple: boolean;
-  isKeepOption: boolean;
-  description: string;
-  onPick: () => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
-}) {
-  const artifact = option.artifact;
-  const artifactInherited = option.artifactInherited === true;
-  return (
-    <div className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
-      <div className={`flex min-h-11 items-stretch overflow-hidden rounded-md border ${active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"}`}>
-        <button
-          role={multiple ? "checkbox" : "radio"}
-          aria-checked={active}
-          onClick={onPick}
-          className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 p-3 text-left text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        >
-          <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
-          <span className="min-w-0"><span className="block font-medium">{option.label}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
-        </button>
-        {artifact ? (
-          onOpenArtifact ? (
-            // The option's own document, not a second decision: it
-            // sits inside the row instead of forming a slab beside
-            // it, and borrows the shared outline treatment so it
-            // harmonizes with the amber panel and the primary
-            // accents instead of introducing a third color.
-            //
-            // The label names the FILE. "Open document" alone made the
-            // reader guess what they were about to open, and a filename
-            // buried in a hover-only title is not a label. When the
-            // document was inherited from a sibling it says so, because
-            // the same brief on four rows otherwise reads as four pieces
-            // of evidence about four different options.
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
-              title={artifactInherited
-                ? `${artifact.display} — the brief shared by every option, not this option's own document`
-                : `${artifact.display} — this option's own document`}
-              aria-label={artifactInherited
-                ? `Open the shared brief ${artifact.display}, the same document every option links to`
-                : `Open this option's document ${artifact.display}`}
-              className="mr-2 min-h-11 max-w-[16rem] shrink-0 gap-1 self-center"
-            >
-              <span className="truncate">
-                {artifactInherited ? "Shared brief" : "Open"}: {artifact.display}
-              </span>
-              <span aria-hidden>↗</span>
-            </Button>
-          ) : (
-            <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
-          )
-        ) : null}
-      </div>
-      <OptionPreview preview={option.preview} />
-    </div>
-  );
-}
-
-// Option list: one row per option of the current question, with split
-// descriptions resolved per row.
-function BatchOptionList({ current, isSplitProposal, splitKeepLabel, selected, onPick, onOpenArtifact }: {
-  current: BatchItem;
-  isSplitProposal: boolean;
-  splitKeepLabel: string;
-  selected: Record<string, string[]>;
-  onPick: (question: BatchItem, label: string) => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
-}) {
-  return (
-    <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
-      {current.options.map((option) => {
-        const active = (selected[current.id] ?? []).includes(option.label);
-        const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
-        return (
-          <BatchOptionRow
-            key={option.label}
-            option={option}
-            active={active}
-            multiple={current.multiple}
-            isKeepOption={isKeepOption}
-            description={isSplitProposal ? splitOptionDescription(option.description) : option.description}
-            onPick={() => onPick(current, option.label)}
-            onOpenArtifact={onOpenArtifact}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 // Question heading: progress counters, step dots, title, prompt, the
 // staleness advisory, and the split exclusivity notice.
 function BatchQuestionHeading({ questions, index, showHeading, copy, current, prompt, onSelectDot, isDone }: {
@@ -387,7 +243,7 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   submitLabel: string;
   showHeading?: boolean;
   onSubmit: (answers: string[][]) => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
+  onOpenArtifact?: OpenArtifactHandler;
 }) {
   const sel = useBatchSelection(questions);
   if (questions.length === 0) return null;
@@ -429,7 +285,13 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   );
 }
 
-export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
+export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: {
+  cardId: string;
+  questions: BatchItem[];
+  mode: "live" | "expired";
+  onAnswered: () => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -468,7 +330,12 @@ export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtif
   );
 }
 
-export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestionItem[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
+export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: {
+  cardId: string;
+  questions: ExpiredQuestionItem[];
+  onAnswered: () => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}) {
   if (questions.length === 0) return null;
   const copy = questionCopy();
   return (

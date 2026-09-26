@@ -101,3 +101,78 @@ file that is not named in an npm script, so that merge must also wire
 
 The reload reports the host's installed plugin version, not this worktree's; the
 bundle was verified with `grep dist/` instead.
+
+# Second integration: master 0.51.6 and 0.51.7
+
+Base: `8561376` (release 0.51.5) · integrated: master `485640b` (0.51.7), four
+commits ahead. Both are the same area of the product — what a reader gets when
+they open a pending question's document — which is why the conflict list is
+short and the shape work is not.
+
+## The three conflicts
+
+| File | Nature | Resolution |
+| --- | --- | --- |
+| `server.ts` | whole file | Took the refactor's seven-line entry again. Master's `artifactInherited` schema field and the two per-option provenance branches moved into the slices that own them (below). Nothing was lost: master's only other `server.ts` hunk in this range is the one that computes them. |
+| `components/detail/build-detail-body.tsx` | master's re-declared type block | Took the refactor's version, which imports `ViewerFile` from `build-detail-view.ts` instead of declaring it. Master's `optionLabel` field went into `build-detail-view.ts`, where the type now lives; the `optionLabel={view.viewerFile?.optionLabel}` prop on the dialog applied cleanly. |
+| `package.json` | union of one test chain | Strict union again: the branch's `answer-door-contract` plus master's `option-anchor` and `option-section-wiring` all run. `version` took master's 0.51.7. |
+
+Four files auto-merged and were reviewed rather than trusted:
+`FEATURES.md` (both entries intact), `lib/question-form.mjs` (master only
+rewords a comment on the rule that was already there), and
+`tests/gate-ask-evidence.test.mjs` — whose `serverSource` already reads
+`server/runtime/ask-artifacts.ts`, so master's new provenance pins resolve
+against the ported code instead of a 4000-line `server.ts`. The remaining
+twelve files are master-only and needed no resolution.
+
+## Where each master behavior now lives
+
+- **A document an option never attached is marked** (0.51.6). Both paths that
+  put a document on an option it did not bring: the sibling inheritance and the
+  stage-manifest recovery. `server/runtime/ask-artifacts.ts` (`resolveAskOptions`)
+  decides and `server/contracts.ts` declares it, so the card path and the live
+  question path cannot disagree — the thread path already applied the same rule
+  in `lib/question-form.mjs`.
+- **An option opens at its own section** (0.51.7). `lib/option-anchor.mjs` finds
+  the section by words, never by substring (substring containment lands the
+  anchor on the document's own H1); `components/detail/option-section.tsx` lifts
+  it above the document, because the rendered headings carry no ids to scroll
+  to. The label's path is the part a merge can silently break, so it is pinned
+  end to end in `tests/option-section-wiring.test.mjs`: the row → `openAskArtifact`
+  → viewer state → the dialog → the section.
+
+## Shape work the merge required
+
+Master's 0.51.7 hunk pushed `components/conversation/question-batch.tsx` to 507
+lines, past its recorded ceiling of 486. Rather than raise the ceiling (a
+ceiling may be lowered, never raised), the option row family was split out:
+
+- `components/conversation/batch-options.tsx` — the option row, the option list,
+  and the inline preview, plus the row's two halves (`OptionDocument`,
+  `OptionPickControl`) so no function arrives over the 50-line budget.
+- `components/conversation/batch-types.ts` — the question shapes, declared once
+  for both modules. Without it the row and the stepper would import each other's
+  types, and the architecture gate's no-cycle rule would fail the merge.
+- `scripts/source-debt.json` lost two entries as a consequence:
+  `question-batch.tsx` as a file (now 353) and `question-batch.tsx:BatchOptionRow`
+  (now under budget). The pins that named the moved code were re-pointed at its
+  new owner with their assertions kept: `option-section-wiring` (now counting the
+  named type across both modules), `question-decision-surface` (the preview
+  threshold and its two disclosure shapes), `question-form-artifact-provenance`
+  (the shared-brief control), and `gate-ask-evidence` (the outline treatment).
+
+## A failure this merge did not cause
+
+`tests/interface-contrast-schema-parity.test.mjs` fails on the branch tip,
+before this merge: the asset sync in `36c96ca` overwrote the hand-tightened
+`data/stelow-assets/schemas/interface-contrast.json` with upstream's copy, which
+at the pinned `d76c84b` still declares `items: { type: "object" }` for
+`fixedConstraints`, `evidence`, and `options`. The parity test is doing its job —
+the runtime validator in `lib/interface-contrast.mjs` requires the fields the
+published schema no longer names.
+
+`data/stelow` is sync-owned, so the fix belongs in `calionauta/stelow` (tighten
+`schemas/interface-contrast.json` there, pin the new commit, re-sync). Hand-editing
+the vendored file would be undone by the next sync, and editing the test would
+delete the guard that caught this. It is not a merge question, and this branch
+cannot land until upstream carries the fix.

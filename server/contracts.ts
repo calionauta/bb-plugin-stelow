@@ -105,6 +105,12 @@ export const askOptionSchema = z.object({
   description: z.string(),
   preview: z.string().nullable(),
   artifact: askArtifactSchema.nullable(),
+  // True when the document was NOT attached to this option — it was
+  // inherited from a sibling, or recovered from the stage manifest because
+  // the ask attached nothing at all. Without this the card presents one
+  // document as if it were the evidence for every option, which reads as a
+  // broken control rather than as the recovery it is.
+  artifactInherited: z.boolean(),
 });
 
 export const workflowSchema = z.object({
