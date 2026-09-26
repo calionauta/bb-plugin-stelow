@@ -191,17 +191,30 @@ every owned file, records each one over 400 lines and each function over 50,
 and pins them to a ratchet. Paying debt down lowers a number there; nothing
 raises one without a deliberate edit.
 
-Today the whole-tree census is four oversized files and forty-seven oversized
+Today the whole-tree census is three oversized files and thirty-seven oversized
 functions, of which the diff-scoped gate reports none: every entry it still
-prints is inherited, listed above. Both named areas of this branch are paid
-down — the eleven `server/github-*.ts` slices, largest 293 lines, and the
-twelve `server/decision-*.ts` slices, largest 226 lines, each with behavior
-tests. What remains:
+prints is inherited, listed above. All three named areas of this branch are
+paid down — the eleven `server/github-*.ts` slices, largest 293 lines, the
+twelve `server/decision-*.ts` slices, largest 226 lines, and the four
+execution factory families now split into named rule modules, largest 233
+lines, each with behavior tests. The three oversized files that remain are
+untouched vendor and fixture code: `components/ui/dialog.tsx` (541),
+`components/ui/icon.tsx` (450), and `tests/kanban-layout.test.mjs` (401).
 
-- the GitHub dialog state — `useGithubDialogState` at 229 lines plus the
-  dialog components under `components/github/` (`LinkedDiscussionSection` at
-  116, `GithubDoneDraftDialog` at 89, `GithubCompletionDialog` at 60), the
-  server-side twin of the area this branch just split.
+The two client-side areas that were still open are now split as well. The
+GitHub dialog state went from one 229-line hook to a 60-line
+`components/github/github-dialog-state.ts` over per-concern siblings
+(`github-dialog-tabs`, `github-import-query`, `github-import-submit`,
+`github-import-tab-state`, `github-automation-form`, `github-automation-rules`,
+`github-automation-transients`), and the preset manager shell went from 265
+lines to a shell over `preset-manager-crud`, `-assignments`, `-editor`,
+`-form-state`, `-routing-props`, and `-routing-section`. The three dialog
+components the census still names are unchanged siblings of that area, not
+part of the state hook: `LinkedDiscussionSection` at 116,
+`GithubDoneDraftDialog` at 89, and `GithubCompletionDialog` at 60. The largest
+file either split produced is `components/settings/preset-manager-band-routing.tsx`
+at 351 — still under the 400-line budget, and recorded here because it is now
+the file a further split would start from.
 
 The caveat the gate used to carry is gone, and it was worse than a caveat. When
 a function had no same-named baseline, it was matched to the most *similar*
@@ -227,3 +240,35 @@ portable contract mirrored here: capability-owned contracts and lifecycle,
 explicit dependency injection, migrations before registration, named
 schedules, idempotent disposal, and the rule that hot reload must not stop live
 worker threads.
+
+Two subsections and one anti-pattern were added upstream for the slice work in
+this branch, and this note is where they are mirrored:
+
+- [§14, splitting one oversized module into feature
+  slices](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#splitting-one-oversized-module-into-feature-slices)
+  — slice by area, extract the shared lookup before the data, leave a
+  re-export facade so no consumer moves, and repair in the same commit the
+  contract bugs the split reveals. Mirrored by
+  `lib/artifact-contracts.mjs` re-exporting `lib/jtbd-contracts.mjs`,
+  `lib/strategy-contracts.mjs`, and `lib/explore-contracts.mjs` over the
+  shared `lib/artifact-contract-lookup.mjs`, and by the execution factory
+  families split into `server/execution-{native,advance,lifecycle,reconcile}-*.ts`
+  rule modules.
+- [§14, secure subprocess and delegated
+  execution](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#secure-subprocess-and-delegated-execution)
+  — the vendored orchestrator as an argv array with state in the environment
+  and verbatim exit code and streams; one wrapper and one preflight for both
+  entry points; a card-scoped command reachable only from its own worker
+  thread; and a disposable spawn validated against its site registry before
+  the SDK call, with one bounded compat retry. Mirrored by
+  `server/runtime/helper-script.ts` with its wrappers in
+  `server/runtime/cli/cli-helper-passthrough.ts` and
+  `server/execution-advance-cli.ts`, and by
+  `server/runtime/disposable-spawn.ts` over the `lib/delegation-map.mjs`
+  registry.
+- [§9, anti-patterns](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#9-anti-patterns-each-paid-for-at-least-once)
+  — an undispatched key in a kind-dispatch table read as a passing document.
+  Mirrored by `CHECKS_BY_KIND` and its exported `CHECK_KINDS` in
+  `lib/artifact-validation.mjs`, which throw on an unknown kind, and by
+  `tests/contract-integrity.test.mjs` pinning every contract entry against
+  that list.
