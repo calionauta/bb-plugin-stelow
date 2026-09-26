@@ -189,6 +189,36 @@ export const cardDetailRpcContract = {
           specFile: z.string().nullable(),
         })
         .nullable(),
+      // The approved scope map, drawn as a graph. A server projection and
+      // nothing the card can write: the X-ray reports the map, the worker owns
+      // the map. Null on a card with no approved map to draw.
+      scopeXray: z
+        .object({
+          source: z.literal("server-projection"),
+          mutable: z.literal(false),
+          mapId: z.string(),
+          mapVersion: z.string(),
+          freshness: z.enum(["current", "stale", "unknown"]),
+          nodes: z.array(
+            z.object({
+              id: z.string(),
+              title: z.string(),
+              capabilities: z.array(z.string()),
+              state: z.enum(["current", "stale", "blocked", "unknown"]),
+              provenance: z.array(z.string()),
+            }),
+          ),
+          edges: z.array(
+            z.object({
+              from: z.string(),
+              to: z.string(),
+              kind: z.literal("depends-on"),
+              state: z.enum(["current", "stale", "blocked", "unknown"]),
+              provenance: z.array(z.string()),
+            }),
+          ),
+        })
+        .nullable(),
       artifacts: z.array(
         z.object({
           stage: z.string(),

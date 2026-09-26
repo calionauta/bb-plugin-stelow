@@ -226,7 +226,7 @@ test("intent ownership refusal remains a negative control", async () => {
   );
 });
 
-function lifecycleDeps(row) {
+function lifecycleDeps(row, overrides = {}) {
   const calls = [];
   const evidence = {
     status: "active",
@@ -252,6 +252,11 @@ function lifecycleDeps(row) {
     cardWorkspace: async () => null,
     workflowStateDir: async () => null,
     workers: { stop: async () => calls.push(["stop"]), deleteCard: () => calls.push(["delete"]) },
+    stopOwnedRuns: async (cardId, reason) => {
+      calls.push(["stopOwnedRuns", cardId, reason]);
+      return overrides.stopOwnedRuns ?? true;
+    },
+    cancelScopeBatches: (cardId, reason) => calls.push(["cancelScopeBatches", cardId, reason]),
     updateCard: (...args) => calls.push(["update", ...args]),
     releaseClaims: async () => calls.push(["release"]),
     removeCardPreset: () => calls.push(["preset"]),
@@ -298,4 +303,54 @@ test("card lifecycle preserves archive/delete boundaries and discard preview", a
     { deleted: true, error: null },
   );
   assert.ok(archived.calls.some(([name]) => name === "delete"));
+});
+
+// Archiving a card must stop the native runs it still owns and sweep its scope
+// batches: a run or a batch that outlives its card keeps owning files nobody
+// released. Removing either call passes every other assertion in this file, so
+// it is pinned here.
+test("archive and delete stop owned runs and sweep scope batches", async () => {
+  const active = lifecycleDeps(card());
+  assert.deepEqual(await active.handlers.cancelCard({ cardId: "card_1" }), { archived: true });
+  assert.ok(
+    active.calls.some(([name, , reason]) => name === "stopOwnedRuns" && reason === "card-archived"),
+    "archiving stops the card's owned native runs",
+  );
+  assert.ok(
+    active.calls.some(([name, , reason]) => name === "cancelScopeBatches" && reason === "card-archived"),
+    "archiving sweeps the card's scope batches",
+  );
+  assert.ok(
+    active.calls.some(([name]) => name === "release"),
+    "the generic claim release still runs after the batch sweep",
+  );
+
+  const archived = lifecycleDeps(card({ status: "archived" }));
+  assert.deepEqual(await archived.handlers.deleteCard({ cardId: "card_1" }), { deleted: true, error: null });
+  assert.ok(
+    archived.calls.some(([name, , reason]) => name === "stopOwnedRuns" && reason === "card-deleted"),
+    "deleting stops the card's owned native runs too",
+  );
+});
+
+// A run that will not stop is the refusal: archiving must not claim success
+// while a native workflow keeps running against a card the card list calls
+// archived.
+test("a run that will not stop refuses the archive and the delete", async () => {
+  const stuck = lifecycleDeps(card(), { stopOwnedRuns: false });
+  assert.deepEqual(
+    await stuck.handlers.cancelCard({ cardId: "card_1" }),
+    { archived: false },
+    "a card whose run will not stop is not archived",
+  );
+  assert.ok(!stuck.calls.some(([name]) => name === "update"), "the card is not marked archived");
+  assert.ok(!stuck.calls.some(([name]) => name === "release"), "claims are not released for a card that is not archived");
+
+  const stuckArchived = lifecycleDeps(card({ status: "archived" }), { stopOwnedRuns: false });
+  assert.deepEqual(
+    await stuckArchived.handlers.deleteCard({ cardId: "card_1" }),
+    { deleted: false, error: "The native workflow could not be stopped; the card was not deleted." },
+    "a card whose run will not stop is not deleted, and the refusal says why",
+  );
+  assert.ok(!stuckArchived.calls.some(([name]) => name === "delete"));
 });

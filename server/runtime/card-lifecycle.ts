@@ -8,6 +8,7 @@ import {
   type DiscardEvidence,
 } from "../../lib/discard-policy.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { batchIdsForCard, cancelScopeBatchRun } from "../scope-batch.js";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -32,6 +33,14 @@ type CardLifecycleDeps = {
     stop: (threadId: string | null) => Promise<unknown>;
     deleteCard: (cardId: string) => void;
   };
+  /** Stops the native runs this card still owns; false when one will not stop. */
+  stopOwnedRuns: (cardId: string, reason: string) => Promise<boolean>;
+  /**
+   * Sweeps the card's scope batches (claims, parked waiters, the in-flight run)
+   * before the generic claim release. Fail-soft by contract: archiving a card
+   * must never fail because a batch ledger hiccuped.
+   */
+  cancelScopeBatches: (cardId: string, reason: string) => void;
   updateCard: (cardId: string, values: Record<string, unknown>) => void;
   releaseClaims: (cardId: string) => Promise<void>;
   removeCardPreset: (cardId: string) => void;
@@ -57,6 +66,27 @@ const discardFailure = (error: string) => ({
   error,
 });
 
+/**
+ * Cancel every scope batch a card still holds. Whole-batch cancel (1 card x N
+ * scopes) has to sweep the claims, the parked waiters, and the in-flight run —
+ * otherwise an archived card leaves a batch that still believes it owns files.
+ * Fail-soft: the caller's generic claim release still runs.
+ */
+export function cancelCardScopeBatches(
+  db: Db,
+  cancelBatch: (batchId: string, cardId: string, reason: string) => void,
+): (cardId: string, reason: string) => void {
+  return (cardId, reason) => {
+    try {
+      for (const batchId of batchIdsForCard(db, cardId)) {
+        cancelBatch(batchId, cardId, reason);
+      }
+    } catch {
+      /* the generic release below still runs */
+    }
+  };
+}
+
 export function createCardLifecycleHandlers(deps: CardLifecycleDeps) {
   return {
     cancelCard: (input: { cardId: string }) => cancelCard(deps, input),
@@ -70,23 +100,22 @@ async function cancelCard(
   deps: CardLifecycleDeps,
   { cardId }: { cardId: string },
 ) {
-
   const card = deps.getCard(cardId);
   if (!card) return { archived: false };
   await deps.workers.stop(card.worker_thread_id);
+  if (!await deps.stopOwnedRuns(cardId, "card-archived")) return { archived: false };
   deps.updateCard(cardId, { status: "archived", activity: "idle" });
+  deps.cancelScopeBatches(cardId, "card-archived");
   await deps.releaseClaims(cardId);
   deps.bb.realtime.publish("card-state", { cardId });
   deps.bb.realtime.publish("board-changed", { cardId });
   return { archived: true };
-
 }
 
 async function deleteCard(
   deps: CardLifecycleDeps,
   { cardId }: { cardId: string },
 ) {
-
   const card = deps.getCard(cardId);
   if (!card) return { deleted: false, error: deps.errors.cardNotFound };
   if (card.status !== "archived") return {
@@ -94,6 +123,13 @@ async function deleteCard(
     error: "Only archived cards can be deleted. Archive it first.",
   };
   await deps.workers.stop(card.worker_thread_id);
+  if (!await deps.stopOwnedRuns(cardId, "card-deleted")) {
+    return {
+      deleted: false,
+      error: "The native workflow could not be stopped; the card was not deleted.",
+    };
+  }
+  deps.cancelScopeBatches(cardId, "card-deleted");
   await deps.releaseClaims(cardId);
   await removeOwnedState(deps, card);
   deleteCardRows(deps, cardId);

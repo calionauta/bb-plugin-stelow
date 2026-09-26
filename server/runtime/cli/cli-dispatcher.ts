@@ -1,4 +1,5 @@
 import { cliUnknownResult } from "../cli-registry.js";
+import { createAnswerCommand, type AnswerDoors } from "./cli-answer.js";
 import { createAskCommand } from "./cli-ask.js";
 import { createBundleWriter } from "./cli-bundle-writer.js";
 import { createCriteriaCommand } from "./cli-criteria.js";
@@ -27,10 +28,11 @@ import type { CliDeps } from "./cli-deps.js";
  * a lifecycle (the bundle writer, the helper passthroughs) are declared once
  * and flattened, so a verb has exactly one owner and adding a family is one
  * line. */
-function commandTable(deps: CliDeps): CliCommandFn[] {
+function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
   const exportRunBundle = createBundleWriter(deps);
   return [
     createAskCommand(deps),
+    createAnswerCommand(deps, doors),
     createSeedCommand(deps),
     createAdvanceCommand(deps),
     createGapScopesCommand(deps),
@@ -67,8 +69,8 @@ function createAdvanceCommand(deps: CliDeps): CliCommandFn {
  * the command families in table order, then the shared unknown-command
  * suggestion. A family returns null for verbs it does not own, so exactly one
  * family answers any verb. */
-export function createStelowCliRun(deps: CliDeps) {
-  const commands = commandTable(deps);
+export function createStelowCliRun(deps: CliDeps, doors: AnswerDoors) {
+  const commands = commandTable(deps, doors);
   return async function runCliCommand(
     argv: string[],
     ctx: CliRunContext,

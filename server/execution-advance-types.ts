@@ -30,6 +30,7 @@ export type AdvanceDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   projectRoot: (projectId: string | null) => Promise<string | null>;
   stateDir: (card: WorkerCard, rootPath: string) => Promise<string | null>;
+  scopeMapApproved: (stateDir: string | null) => Promise<boolean>;
   ensureArtifacts: (rootPath: string, stateDir: string | null, requireOwnedState: boolean) => Promise<string | null>;
   questionGate: (card: WorkerCard, stateDir: string | null) => Promise<string | null>;
   runHelper: (args: string[], rootPath: string, stateDir?: string) => Promise<HelperResult>;

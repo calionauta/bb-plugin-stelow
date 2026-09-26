@@ -59,6 +59,34 @@ test("runtime composition keeps extracted capabilities wired into registration",
   assert.match(mentions, /export function registerMentionProviders\(/, "the mention providers still have one owner");
 });
 
+// The layers are wired in dependency order, and nothing reaches back up. The
+// boundary seam is in that list because it IS a construction order: the answer
+// doors need the execution layer's port, and the execution layer needs the
+// gates' question contract, so the seam is created before either of them.
+function assertWiringOrder(source) {
+  const order = [
+    "createRuntimeCore(bb)",
+    "deferred<AnswerBoundaryPort>()",
+    "createGateSurfaces({ core, boundary })",
+    "createExecutionSurfaces({ core, gates, boundary })",
+    "createCardSurfaces({",
+    "createHostSurfaces({ core, cards, github: github.bind })",
+    "registerStelowRpc({",
+    "registerStelowCommand({",
+  ];
+  let cursor = -1;
+  for (const step of order) {
+    const at = source.indexOf(step, cursor + 1);
+    assert.ok(at > cursor, `the root assembles ${step} after the layer it depends on`);
+    cursor = at;
+  }
+  assert.match(
+    source,
+    /const boundary = deferred<AnswerBoundaryPort>\(\);\n\s*const gates = createGateSurfaces/,
+    "the seam is created before the layer that reads it, not after",
+  );
+}
+
 test("the composition root only assembles; no surface is built inside it", () => {
   const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
   for (const factory of [
@@ -75,22 +103,7 @@ test("the composition root only assembles; no surface is built inside it", () =>
       `${factory} is wired by a layer, not by the composition root`,
     );
   }
-  // The layers are wired in dependency order, and nothing reaches back up.
-  const order = [
-    "createRuntimeCore(bb)",
-    "createGateSurfaces(core)",
-    "createExecutionSurfaces({ core, gates })",
-    "createCardSurfaces({",
-    "createHostSurfaces({ core, cards, github: github.bind })",
-    "registerStelowRpc({",
-    "registerStelowCommand({",
-  ];
-  let cursor = -1;
-  for (const step of order) {
-    const at = source.indexOf(step, cursor + 1);
-    assert.ok(at > cursor, `the root assembles ${step} after the layer it depends on`);
-    cursor = at;
-  }
+  assertWiringOrder(source);
 
   // A fallback constant parked here is how a shape drifts into a second copy:
   // the root once held the "GitHub is not there" status beside its wiring.

@@ -292,13 +292,16 @@ test("platform exposes the complete public RPC handler set", () => {
     "applyPluginUpdate",
     "buildInfo",
     "checkPluginUpdate",
+    "enableWorkflowDependency",
     "installTool",
+    "installWorkflowDependency",
     "listProviderModels",
     "previewShare",
     "previewStart",
     "previewState",
     "previewStop",
     "toolStatus",
+    "workflowDependencyStatus",
   ]);
 });
 

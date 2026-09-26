@@ -222,7 +222,77 @@ test("expired answers remain all-or-nothing and use the current worker", async (
   });
   assert.equal(accepted.ok, true);
   assert.equal(calls.sends[0].threadId, "current_thread");
-  assert.equal(calls.comments.length, 2);
+  // One trail comment for the batch, not one per question: the two doors share
+  // a single recording rule (lib/question-answer-recording), so a grep for a
+  // satisfied contract cannot miss one spelling and find the other.
+  assert.equal(calls.comments.length, 1);
+  assert.match(calls.comments[0][4], /Q1\?/);
+  assert.match(calls.comments[0][4], /Q2\?/);
+  assert.match(calls.comments[0][4], /\[contract: direction-contract\]/);
+});
+
+// The native-boundary port: an answer that IS the run's boundary resumes the
+// RUN, and the worker thread is left alone. Without the port the same answer
+// sends an ordinary continuation, so removing the routing is a silent
+// regression a needs-input card would only discover at runtime.
+test("a boundary answer resumes the run and never the worker thread", async () => {
+  const resumed = [];
+  const { deps, calls } = answerDeps({
+    deps: {
+      boundary: {
+        read: () => ({
+          routeAnswerContinuation: async () => ({ id: "run_1" }),
+          resumeAfterAnswers: async (run, decisions) => {
+            resumed.push({ run, decisions });
+            return null;
+          },
+        }),
+      },
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(resumed.length, 1, "the boundary run is resumed once");
+  assert.equal(resumed[0].run.id, "run_1");
+  assert.equal(calls.sends.length, 0, "a boundary answer is not an ordinary worker continuation");
+});
+
+// A refused resume is reported, never swallowed: the answer was recorded, and
+// the caller has to learn that the run did not restart.
+test("a refused boundary resume surfaces its refusal with the answer counted", async () => {
+  const { deps, calls } = answerDeps({
+    deps: {
+      boundary: {
+        read: () => ({
+          routeAnswerContinuation: async () => ({ id: "run_1" }),
+          resumeAfterAnswers: async () => "The native boundary contract is missing or no longer current.",
+        }),
+      },
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.answered, 1, "the answer still counts: it was recorded before the resume");
+  assert.match(result.error, /no longer current/);
+  assert.equal(calls.sends.length, 0, "a refused boundary resume does not fall back to the thread");
+});
+
+// An unbound port (before the execution layer is wired) is the pre-native
+// behavior, not a crash.
+test("an absent boundary port answers as an ordinary worker continuation", async () => {
+  const { deps, calls } = answerDeps();
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls.sends.length, 1);
 });
 
 test("critique reader treats an unknown state as unmatched", async () => {

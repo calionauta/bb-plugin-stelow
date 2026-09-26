@@ -57,15 +57,18 @@ export function nativeStatusOf(value: unknown): string {
   return String(value ?? "unknown");
 }
 
-export function nativeNeedsInput(value: unknown): { question: string; questionId: string | null } | null {
+export function nativeNeedsInput(value: unknown): { question: string; questionId: string | null; [key: string]: unknown } | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const result = record.result;
   const input = record.needsInput ?? record.needs_input ?? record.input ?? result ?? record;
   const question = typeof input === "object" && input ? (input as Record<string, unknown>).question ?? (input as Record<string, unknown>).prompt : input;
   if (typeof question !== "string" || !question.trim()) return null;
-  const id = typeof input === "object" && input ? (input as Record<string, unknown>).questionId ?? (input as Record<string, unknown>).id : null;
-  return { question: question.trim(), questionId: id == null ? null : String(id) };
+  const fields = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const id = fields.questionId ?? fields.id ?? null;
+  const boundaryKeys = ["contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
+  const boundary = Object.fromEntries(boundaryKeys.filter((key) => key in fields).map((key) => [key, fields[key]]));
+  return { question: question.trim(), questionId: id == null ? null : String(id), ...boundary };
 }
 
 export function normalizeNativeWorkflowStatus(status: string): "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled" {
@@ -96,12 +99,51 @@ export async function nativeWorkflowStatus({ runId, workspaceId, projectId, thre
   const { stdout } = await execFileAsync(bbBin, ["workflows", "status", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
   try {
     const result = JSON.parse(stdout);
-    return result?.run ?? result?.data ?? result;
+    return scriptOutcome(result?.run ?? result?.data ?? result);
   } catch {
     const status = stdout.match(/\b(queued|running|needs[_ -]?input|succeeded|completed|failed|cancelled|canceled|stopped)\b/i)?.[1];
     if (status) return { status };
     throw new Error("BB Workflows status returned no recognized state");
   }
+}
+
+/**
+ * Fold the inline script's own return value into the run status.
+ *
+ * Context: the inline recipe script returns `{ state, error, outputs }`, and
+ * until now the host only ever read the WORKFLOW's status. A script that
+ * produced nothing still finished, so BB reported "succeeded" and the run was
+ * recorded as a plain artifact miss — the real cause never reached the card.
+ * The workflow succeeding only means the script ran to completion; whether
+ * the recipe did its work is the script's answer, so that answer is read.
+ *
+ * A missing or unrecognized result leaves the status untouched: a host that
+ * cannot read an outcome must not invent a failure.
+ */
+export function scriptOutcome(run: unknown): unknown {
+  if (run === null || typeof run !== "object" || Array.isArray(run)) return run;
+  const record = run as Record<string, unknown>;
+  const result = record.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return run;
+  const script = result as Record<string, unknown>;
+  const state = typeof script.state === "string" ? script.state : "";
+  if (state === "failed" || state === "error") {
+    const error = typeof script.error === "string" && script.error
+      ? script.error
+      : "the recipe script reported a failure";
+    return { ...record, status: "failed", scriptState: state, scriptError: error };
+  }
+  // A recipe that finished with no task outputs did nothing. That is a silent
+  // no-op, and leaving it as "succeeded" is what turned a real failure into
+  // a missing-file mystery three layers down.
+  if (state === "succeeded" && isEmptyOutputs(script.outputs)) {
+    return { ...record, status: "failed", scriptState: state, scriptError: "the recipe produced no task outputs" };
+  }
+  return run;
+}
+
+function isEmptyOutputs(outputs: unknown): boolean {
+  return outputs !== null && typeof outputs === "object" && !Array.isArray(outputs) && Object.keys(outputs).length === 0;
 }
 
 function stripWorkflowSchemaMetadata(value: unknown): unknown {
@@ -116,9 +158,26 @@ function workflowAgentSchema(schema: Record<string, unknown>): Record<string, un
   return stripWorkflowSchemaMetadata(schema) as Record<string, unknown>;
 }
 
-/** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
-export function renderInlineWorkflowScript(recipe: { id: string; tasks?: Array<{ id: string; skill?: string; output?: string; depends_on?: string[]; when?: string; requirements?: string[]; failure_policy?: string; human_boundary?: string; output_schema_contract?: Record<string, unknown> }> }, context: Record<string, unknown>): string {
-  const tasks = (recipe.tasks ?? []).map((task) => ({
+/** One catalog task as the recipe catalog declares it. */
+type CatalogTask = {
+  id: string;
+  skill?: string;
+  output?: string;
+  depends_on?: string[];
+  when?: string;
+  requirements?: string[];
+  failure_policy?: string;
+  human_boundary?: string;
+  output_schema_contract?: Record<string, unknown>;
+};
+
+/**
+ * One catalog task as the workflow's own task shape. The catalog is snake_case
+ * and nullable-by-omission; the generated script is camelCase and explicit, so
+ * the translation happens once here instead of inside the template.
+ */
+function toWorkflowTask(task: CatalogTask) {
+  return {
     id: task.id,
     skill: task.skill ?? null,
     output: task.output ?? null,
@@ -127,8 +186,18 @@ export function renderInlineWorkflowScript(recipe: { id: string; tasks?: Array<{
     requirements: task.requirements ?? [],
     failurePolicy: task.failure_policy ?? "fail",
     humanBoundary: task.human_boundary ?? "none",
-    outputSchema: workflowAgentSchema(task.output_schema_contract ?? { type: "object", additionalProperties: true }),
-  }));
+    outputSchema: workflowAgentSchema(
+      task.output_schema_contract ?? { type: "object", additionalProperties: true },
+    ),
+  };
+}
+
+/** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
+export function renderInlineWorkflowScript(
+  recipe: { id: string; tasks?: CatalogTask[] },
+  context: Record<string, unknown>,
+): string {
+  const tasks = (recipe.tasks ?? []).map(toWorkflowTask);
   const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
 const recipeTasks = ${JSON.stringify(tasks)};
 const input = { ...args, tasks: recipeTasks };
@@ -136,6 +205,10 @@ if (!input || !input.localRunId) return { state: "failed", error: "missing execu
 const outputs = {};
 const completed = new Set();
 const skipped = new Set();
+const DEFAULT_QUESTION = "The workflow needs a human decision.";
+const BOUNDARY_FIELDS = ["questionId", "contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
+const boundaryContract = (n) => ({ question: n.question ?? n.prompt ?? DEFAULT_QUESTION,
+  ...Object.fromEntries(BOUNDARY_FIELDS.map((f) => [f, n[f] ?? null])) });
 const condition = (task) => {
   if (task.when === "always") return true;
   if (task.when === "appetite_supports_fanout") return ["Core", "Complete"].includes(input.context?.appetite);
@@ -165,7 +238,7 @@ while (completed.size + skipped.size < input.tasks.length) {
   const results = await parallel(ready.map((task) => () => executeTask(task)));
   for (let index = 0; index < ready.length; index += 1) {
     const result = results[index];
-    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, question: result.needsInput.question ?? result.needsInput.prompt ?? "The workflow needs a human decision.", questionId: result.needsInput.questionId ?? null };
+    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
     completed.add(ready[index].id);
   }
 }

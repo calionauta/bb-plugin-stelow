@@ -9,6 +9,7 @@
  * hiccuped.
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
+import { expiredQuestionId } from "../../lib/question-answer-recording.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -40,7 +41,7 @@ function openExpiredQuestionIds(
         "SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC",
       )
       .all(cardId) as Array<{ id: string }>
-  ).map((row) => `expired:${row.id}`);
+  ).map((row) => expiredQuestionId(row.id));
 }
 function pendingAsks(
   deps: QuestionInboxDeps,

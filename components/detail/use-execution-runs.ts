@@ -8,6 +8,10 @@ export type ExecutionRun = {
   normalizedStatus: ExecutionRunState;
   recipeId: string;
   stage: string;
+  // Present when the run is waiting on a person. Carrying the run's own
+  // words lets the card show the actual question instead of a status label
+  // the reader has to open a trail to decode.
+  boundaryQuestion?: string | null;
 };
 
 export function useExecutionRuns(cardId: string, focusRunId: string | null) {

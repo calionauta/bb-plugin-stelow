@@ -173,6 +173,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pull request via the provider or BB's native flow.
   The viewer is restricted to commits recorded in that
   card’s publication history, so it never becomes an arbitrary Git browser.
+- **Interface Contrast contracts.** Validated decision receipts distinguish
+  agent-authored evidence from human authority, preserve Shape and Scope Map
+  versions, and carry explicit disposition routes. Scope X-ray is a read-only
+  server projection of approved nodes, dependency edges, provenance, and
+  freshness. Scope-map challenges name
+  their destination and stale artifact set. Native `needs_input` boundaries
+  preserve contract ID, boundary ID, versions, and answer schema so a stale
+  answer cannot silently resume a run. Refactors with more than one delivery
+  scope require an approved Scope Map before execution; one-scope refactors stay
+  lightweight.
+- **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
+  `stelow-product-scope-mapping` method as one focused technique. It writes the
+  readable `explore-scope-map.md` artifact first and may include validated
+  `scope-map.json` evidence. The result stays a draft until an approval receipt
+  exists; Explore never creates a second Build stage or execution lifecycle.
+  See the [Interface Contrast and Scope Map guide](docs/interface-contrast.md).
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
@@ -320,7 +336,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
   Every step may carry its own primary action, so configuration
-  surfaces where it is explained. Inbox teaches with a ghost sample
+  surfaces where it is explained. Setup also checks the optional BB
+  Workflows integration: it reports whether the built-in plugin is
+  installed, enabled, and ready, explains the native-execution benefit,
+  and offers an explicit install or enable action without hiding the
+  sequential fallback. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
 - **Sidebar badge.** Unresolved actions and unread completions; it always
   agrees with the Inbox's primary **Needs attention** list. A completion is
@@ -337,13 +357,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), asks BB for the installed plugin's compatible update status, and offers an explicit confirmation before BB applies it. The update verdict renders as one tone-coded status box directly under the plugin title (`role="status"`) instead of a bare line: current, available, checking, not-BB-managed, and unreachable each name their state and the path forward. The box owns the whole update flow — verdict, the "Update plugin…" apply action (confirm/cancel in place), the reload warning, and the freshness check — so nothing cross-references a button living elsewhere. A failed fresh check keeps the last known verdict (`applyFailedCheck`) instead of erasing it — a transient registry blip never hides a real candidate — and the apply is timeboxed so the reload severs the RPC channel into an honest info-tone "reloading" message (`role="status"`, never red, never a stuck button) while genuine failures keep the error tone (`role="alert"`). The shared amber "↑" badge (`UpdateBadge`) marks update-available everywhere: sidebar accessory, About tab, About header, and as the status box's leading mark. Copy branches on install source (`isPathInstall`, unit-tested): path installs get the checkout pull + rebuild + reload path, every other source gets a no-checkout variant that never sends store users to a terminal. Installs BB cannot update (local checkouts) additionally learn the newest GitHub release from a fail-soft lookup (`lib/github-release.mjs`, supplement-only while BB offers no candidate), with a link and the checkout pull + rebuild + reload path — "Check update" re-reads both sources. Versions read as tags (`v0.20.0`), never raw commit shas; the confirmation names the installed and candidate versions, a "Last checked … · Check update" line forces a fresh check on demand, and update notices render with the verdict instead of below the description. The plugin section reads as three cards — Status (verdict, notices, freshness), Contents (what the plugin gives, skills pin beside the content it describes, team pointer), Resources & maintenance (repo link, Reset onboarding) — so version, freshness, and skills never scatter. A post-update read that fails during reload says the plugin is reloading instead of reporting a false failure. Mount-time reads share one in-flight check with a one-minute reuse window, so the sidebar and About never double-hit upstream resolution. Neither path mutates a running workflow before that confirmation. It also offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), asks BB for the installed plugin's compatible update status, and offers an explicit confirmation before BB applies it. The update verdict renders as one tone-coded status box directly under the plugin title (`role="status"`) instead of a bare line: current, available, checking, not-BB-managed, and unreachable each name their state and the path forward. The box owns the whole update flow — verdict, the "Update plugin…" apply action (confirm/cancel in place), the reload warning, and the freshness check — so nothing cross-references a button living elsewhere. A failed fresh check keeps the last known verdict (`applyFailedCheck`) instead of erasing it — a transient registry blip never hides a real candidate — and the apply is timeboxed so the reload severs the RPC channel into an honest info-tone "reloading" message (`role="status"`, never red, never a stuck button) while genuine failures keep the error tone (`role="alert"`). The shared amber "↑" badge (`UpdateBadge`) marks update-available everywhere: sidebar accessory, About tab, About header, and as the status box's leading mark. Copy branches on install source (`isPathInstall`, unit-tested): path installs get the checkout pull + rebuild + reload path, every other source gets a no-checkout variant that never sends store users to a terminal. Installs BB cannot update (local checkouts) additionally learn the newest GitHub release from a fail-soft lookup (`lib/github-release.mjs`, supplement-only while BB offers no candidate), with a link and the checkout pull + rebuild + reload path — "Check update" re-reads both sources. The line always names the RUNNING build next to the published tag ("Running v0.50.0; v0.51.0 is published on GitHub"): naming only the published tag read as a claim about the install, so a checkout behind the release looked up to date. One comparison decides it (`updateComparison` in `lib/plugin-update.mjs`): current, behind, ahead, or unknown — an unparseable version or a failed lookup is unknown, never "up to date". Versions read as tags (`v0.20.0`), never raw commit shas; the confirmation names the installed and candidate versions, a "Last checked … · Check update" line forces a fresh check on demand, and update notices render with the verdict instead of below the description. The plugin section reads as three cards — Status (verdict, notices, freshness), Contents (what the plugin gives, skills pin beside the content it describes, team pointer), Resources & maintenance (repo link, Reset onboarding) — so version, freshness, and skills never scatter. A post-update read that fails during reload says the plugin is reloading instead of reporting a false failure. Mount-time reads share one in-flight check with a one-minute reuse window, so the sidebar and About never double-hit upstream resolution. Neither path mutates a running workflow before that confirmation. It also offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version. The plugin section also carries a one-line
   team pointer (experimental): single-user bb, one bb per teammate,
   GitHub as the team room, linking the site team section and
   `docs/team-playbook.md`.
+- **BB Workflows status.** The About tab and first-visit setup identify the
+  built-in Workflows plugin as installed, disabled, starting, or ready. The
+  English explanation names durable native execution, resume, cancellation,
+  structured outputs, and safe fan-out; explicit install or enable actions
+  are shown only when the host needs them, while the sequential fallback stays
+  visible.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -432,6 +458,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way.
+  **Answering is also programmatic**: `bb stelow answer --card <card_id>
+  --question <question_id> --answer <text>` (repeat pairs; one
+  `--question` may take several `--answer` values for a multi-select)
+  applies the card form's exact rules — atomic per door, contract consumed,
+  outcome written to the trail, worker resumed — so a scripted run or a test
+  can clear a wait without a browser. A recovery question is addressed as
+  `expired:<id>`; live and recovery questions are answered in separate calls
+  because each door answers its own set atomically. An unknown flag refuses
+  rather than being ignored, so a typo cannot answer the wrong question.
   A group may declare its question contract (`--contract <id>`, validated
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave
@@ -1315,7 +1350,7 @@ Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0
 
 - **Shared stage catalog.** The board, state template, artifact ordering, playbooks, question contracts, and route projections read the generated upstream `stage-catalog.json`; the plugin no longer keeps a hand-maintained list of the 17 Build stages. A pinned sync preserves the last good catalog when an older upstream pin does not contain it.
 - **Capability-negotiated execution.** Host-neutral execution adapters normalize run state and negotiate required capabilities before starting a recipe. Missing capabilities produce a named refusal or an explicit coordinator-owned sequential route; permission requirements are never silently weakened. The coordinator route is not presented as a native run and has no fabricated run ID, resume handle, or cancel semantics. The optional BB Workflows binding reports its real capability limits, including no per-call permission control, while the card remains the owner of human input and resume.
-- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential until file-claim and parent-merge safety is proven.
+- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. A run that deliberately STOPS to name a decision is `needs_input`, not `failed`: the card shows "Waiting for you" and quotes the run's own question, so a wait is never a spinner with nothing behind it. Artifact rejections name the fields that failed, not just the file — "malformed: contrast.json" costs a run and tells the worker nothing it can act on. The host also reads the recipe script's OWN return value: a workflow finishing successfully only means the script ran, and a script that produced no task outputs is a failure rather than a pass — otherwise a recipe that did nothing surfaced three layers down as a missing file. Scope-map approval is a host decision, not agent prose: `approveScopeMap` stamps `status: approved` with a receipt and an approver, refusing a map that violates its contract, one already approved, or an approval nobody can attribute. The approved map's Shape version is mirrored into `state.md` so X-ray freshness is a live signal instead of a permanent `unknown`. Every `bb stelow answer` refusal names its exit: which id space a recovery question lives in, and exactly which questions are still open in an incomplete batch. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential except for the approved native pilot: disjoint scopes with satisfied claims fan out only when file-claims and isolated-workspace capabilities both report true, the batch fits the concurrency bound, every child returns a per-scope receipt (claim verification, files touched, artifact manifest), and the parent merge passes post-merge verification — any gate failure falls back sequentially with no partial fan-out, overlapping scopes never fan out, and `native_pilot_allowed=false` rolls everything back (see [docs/native-workflows.md](./docs/native-workflows.md)).
 
 ## Cross-cutting rules (apply to every feature above)
 

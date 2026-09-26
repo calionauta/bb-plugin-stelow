@@ -34,7 +34,8 @@ export type ResearchWorkerPromptInput = {
 export type ExploreWorkerPromptInput = {
   displayName: string;
   prompt: string;
-  stage: { id: string; label: string; skill: string };
+  /** The catalog entry: `primaryArtifact` names the file this stage delivers. */
+  stage: { id: string; label: string; skill: string; primaryArtifact?: string };
   stateDirText: string;
   workspaceRoot: string;
   instructions: string;
@@ -223,22 +224,27 @@ there are no gates here, so a decision that would be a gate in the pipeline reso
 }
 
 function exploreArtifactStep(input: ExploreWorkerPromptInput): string {
-  return `Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${input.stage.id}.md (create it; overwrite any existing content \
+  const { stage, workspaceRoot } = input;
+  // The catalog names the deliverable, so a technique that ships its own file
+  // (a scope map, a contrast) lands under its own name and the panel, the
+  // artifact registry, and `bb stelow verify` all read the same path.
+  const primaryArtifact = stage.primaryArtifact ?? `explore-${stage.id}.md`;
+  return `Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/${primaryArtifact} (create it; overwrite any existing content \
 with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it \
 back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: run \
 \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
 
 Step 4 — register the artifact so it renders on the card: append one block to <state-dir>/state.md (create the artifacts: section if missing; paths \
-relative to the workspace root ${input.workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
+relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
     artifacts:
       - stage: explore
         kind: document
-        path: <explore-${input.stage.id}.md path relative to ${input.workspaceRoot}>
-        label: ${input.stage.label}
+        path: <${primaryArtifact} path relative to ${workspaceRoot}>
+        label: ${stage.label}
 
-Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${input.workspaceRoot}>" \
-display="${input.stage.label}"}\` on its own line — bb renders these as clickable chips. Then emit \`::stelow-quality{path="<same relative path>"}\` on its \
+Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" \
+display="${stage.label}"}\` on its own line — bb renders these as clickable chips. Then emit \`::stelow-quality{path="<same relative path>"}\` on its \
 own line — bb revalidates the file live and renders verified / hypothesis / needs-work / unverified.`;
 }
 

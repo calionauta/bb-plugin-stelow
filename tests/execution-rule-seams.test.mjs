@@ -44,7 +44,48 @@ const CARD = { id: "card-1", worker_thread_id: "thread-1", stage: "critique" };
 
 // --- boundary rule ---------------------------------------------------------
 // A run that reports it needs input owns exactly one card question, and the run
-// is only marked as having sent it once that question is really there.
+// is only marked as having sent it once that question is really there. The
+// boundary it opens has to be answerable: the contract fields below are what
+// `lib/interface-contrast` validates, and a payload without them is refused.
+const BOUNDARY = {
+  question: "Approve the critique?",
+  questionId: null,
+  contractId: "critique-confirm-1",
+  kind: "confirmation",
+  shapeVersion: "v1",
+  scopeMapVersion: null,
+};
+{
+  const db = ledger();
+  createExecutionRun(db, { ...RUN, runId: "run-1", now: 100 });
+  const asked = [];
+  const deps = {
+    db,
+    randomId: () => "boundary-1",
+    logComment: (cardId, targetId, body) => asked.push([cardId, targetId, body]),
+    notify: { sendToCard: (card, text) => asked.push(["thread", card.id, text]) },
+    fetchPendingQuestions: async () => [],
+  };
+  await reconcileBoundary(deps, getExecutionRun(db, "local-1"), CARD, BOUNDARY);
+  const run = getExecutionRun(db, "local-1");
+  assert.equal(run.normalizedStatus, "needs_input");
+  assert.equal(run.boundaryId, "boundary-1");
+  assert.equal(run.boundaryContract.contractId, "critique-confirm-1", "the answered contract travels with the run");
+  assert.equal(run.needsInputSentAt, null, "no question exists yet, so the sent marker stays unset");
+  assert.match(asked.at(-1)[2], /\[Stelow boundary boundary-1\]/);
+
+  // Negative control: the pending question carrying the marker is what flips
+  // needsInputSentAt. Without it, the claim that the question was sent is a
+  // guess — and a run would then never be re-asked.
+  await reconcileBoundary(deps, run, CARD, BOUNDARY);
+  assert.match(asked.at(-1)[2], /Create the pending card question/);
+  await reconcileBoundary({ ...deps, fetchPendingQuestions: async () => [{ question: "x [Stelow boundary boundary-1]" }] },
+    getExecutionRun(db, "local-1"), CARD, BOUNDARY);
+  assert.notEqual(getExecutionRun(db, "local-1").needsInputSentAt, null);
+}
+
+// A boundary nobody can answer fails the run instead of parking it: the card
+// would wait on a question with no contract, and nothing could ever close it.
 {
   const db = ledger();
   createExecutionRun(db, { ...RUN, runId: "run-1", now: 100 });
@@ -61,19 +102,14 @@ const CARD = { id: "card-1", worker_thread_id: "thread-1", stage: "critique" };
     questionId: null,
   });
   const run = getExecutionRun(db, "local-1");
-  assert.equal(run.normalizedStatus, "needs_input");
-  assert.equal(run.boundaryId, "boundary-1");
-  assert.equal(run.needsInputSentAt, null, "no question exists yet, so the sent marker stays unset");
-  assert.match(asked.at(-1)[2], /\[Stelow boundary boundary-1\]/);
-
-  // Negative control: the pending question carrying the marker is what flips
-  // needsInputSentAt. Without it, the claim that the question was sent is a
-  // guess — and a run would then never be re-asked.
-  await reconcileBoundary(deps, run, CARD, { question: "Approve?", questionId: null });
-  assert.match(asked.at(-1)[2], /Create the pending card question/);
-  await reconcileBoundary({ ...deps, fetchPendingQuestions: async () => [{ question: "x [Stelow boundary boundary-1]" }] },
-    getExecutionRun(db, "local-1"), CARD, { question: "Approve?", questionId: null });
-  assert.notEqual(getExecutionRun(db, "local-1").needsInputSentAt, null);
+  assert.equal(run.normalizedStatus, "failed");
+  assert.equal(run.errorCode, "invalid-native-boundary");
+  assert.match(asked.at(-1)[2], /invalid human boundary/, "the card is told which boundary was refused");
+  assert.equal(
+    asked.filter(([first]) => first === "thread").length,
+    0,
+    "no question is opened for a dead contract — nothing can ever answer it",
+  );
 }
 
 // --- artifact rule ---------------------------------------------------------

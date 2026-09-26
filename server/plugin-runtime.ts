@@ -28,12 +28,17 @@ import { createHostSurfaces } from "./runtime/wiring/host-surfaces.js";
 import { registerStelowRpc } from "./runtime/wiring/rpc-surfaces.js";
 import { registerStelowCommand } from "./runtime/wiring/cli-surfaces.js";
 import { deferred } from "./runtime/wiring/deferred.js";
+import type { AnswerBoundaryPort } from "./runtime/question-answers.js";
 import type { GithubAutomation } from "./github-issues.js";
 
 export default async function plugin(bb: BbPluginApi) {
   const core = createRuntimeCore(bb);
-  const gates = createGateSurfaces(core);
-  const execution = createExecutionSurfaces({ core, gates });
+  // The answer doors need the execution layer's boundary port, and the execution
+  // layer needs the gates' question contract. That is a construction order, not
+  // a cycle, so the port is a seam both layers can see.
+  const boundary = deferred<AnswerBoundaryPort>();
+  const gates = createGateSurfaces({ core, boundary });
+  const execution = createExecutionSurfaces({ core, gates, boundary });
   // The host layer builds the issue automation, and the board's status column
   // reads it — so it is not built yet when the card layer is wired. The seam
   // names that order: the card layer gets a reader, the host layer a binder.

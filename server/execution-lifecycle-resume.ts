@@ -7,17 +7,18 @@
  * exactly as open as it found it, or the card waits forever on a question
  * nobody can re-ask.
  */
-import { join } from "node:path";
 import {
   createExecutionRun,
   getExecutionRun,
   markExecutionResumeRequested,
   resetExecutionBoundary,
+  resumeArtifactRoot,
   transitionExecutionRun,
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
 import { formatBatchContinuation } from "../lib/question-batch.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
+import { boundaryAnswerError } from "./execution-boundary.js";
 import type {
   AnswerDecision,
   LifecycleRuleDeps,
@@ -26,7 +27,7 @@ import type {
 
 export type ResumeDeps = Pick<
   LifecycleRuleDeps,
-  "db" | "bb" | "randomId" | "getCard" | "logComment" | "native" | "publishCard"
+  "db" | "bb" | "randomId" | "getCard" | "logComment" | "native" | "publishCard" | "boundaryVersions"
 > & {
   /** The card's live runs, narrowed: only the boundary rule reads them. */
   listRuns: (cardId: string) => ExecutionRun[];
@@ -48,6 +49,11 @@ export async function resumeAfterAnswers(
   run: ExecutionRun,
   decisions: AnswerDecision[],
 ): Promise<string | null> {
+  // The contract is checked against the card's CURRENT shape before anything is
+  // prepared: an answer to a boundary that has since moved on resumes nothing,
+  // and the run stays open on the question that is actually current.
+  const answerError = await boundaryAnswerRefusal(deps, run, decisions);
+  if (answerError) return answerError;
   let prepared: PreparedResume | { error: string };
   try {
     prepared = await prepareResume(deps, run, decisions);
@@ -61,6 +67,22 @@ export async function resumeAfterAnswers(
   } catch (error) {
     return failResume(deps, run, prepared.childId, error);
   }
+}
+
+async function boundaryAnswerRefusal(
+  deps: ResumeDeps,
+  run: ExecutionRun,
+  decisions: AnswerDecision[],
+): Promise<string | null> {
+  const boundaryDecision = decisions.find((decision) =>
+    decision.question.includes(`[Stelow boundary ${run.boundaryId}]`),
+  );
+  const currentVersions = await deps.boundaryVersions(run);
+  return boundaryAnswerError(
+    run.boundaryContract,
+    currentVersions,
+    boundaryDecision?.answers.join(", ") ?? "",
+  );
 }
 
 /**
@@ -104,7 +126,7 @@ async function prepareResume(
   const parsed = parseResumeArgs(run.argsText);
   if (!parsed) return { error: "The native run arguments are incomplete." };
   const childId = `${run.id}-resume-${deps.randomId("run")}`;
-  const childRoot = join(run.artifactRoot, "resume", childId);
+  const childRoot = resumeArtifactRoot(run.artifactRoot);
   const args: ResumeArgs = {
     recipeId: parsed.recipeId,
     localRunId: childId,

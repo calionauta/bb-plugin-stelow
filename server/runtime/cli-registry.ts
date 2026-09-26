@@ -22,6 +22,13 @@ export const stelowCliCommands: CliCommand[] = [
     "(repeat --question groups to ask several at once; write all content in English)",
   ),
   command(
+    "answer",
+    "Answer a card's pending questions programmatically (same rules as answering on the card)",
+    "bb stelow answer --card <card_id> --question <question_id> --answer <text>",
+    "[--question <question_id> --answer <text>]... [--json]",
+    "(repeat pairs; every open question must be answered in one call)",
+  ),
+  command(
     "seed",
     "Seed state.md, transitions.md, stelow.json",
     "bb stelow seed --project <proj_id> --name <name>",

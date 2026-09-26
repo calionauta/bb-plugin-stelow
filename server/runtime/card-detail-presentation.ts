@@ -12,6 +12,7 @@ import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
+import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
   Attachment,
@@ -62,6 +63,7 @@ export type DetailParts = {
     reviewMode: string;
     reviewGates: string[];
   };
+  scopeXray: ScopeXray | null;
 };
 
 export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
@@ -95,6 +97,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
       sequence: STAGE_SEQUENCE,
     }),
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
+    scopeXray: parts.scopeXray,
     artifacts: parts.artifacts,
     workerHistory: parts.workerHistory,
     executionRuns: deps.executionLifecycle.detailList(card.id),

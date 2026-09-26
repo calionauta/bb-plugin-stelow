@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceBetween as sharedSourceBetween } from "./helpers/source-slice.mjs";
 import {
   acknowledgeSharedOnboarding,
   onboardingInitialDialogState,
@@ -23,11 +24,7 @@ const component = readFileSync(join(root, "components/settings/preset-onboarding
 const about = readFileSync(join(root, "components/settings/about-panel.tsx"), "utf8");
 
 function sourceBetween(start, end) {
-  const startIndex = app.indexOf(start);
-  const endIndex = app.indexOf(end, startIndex + start.length);
-  assert.notEqual(startIndex, -1, `source contains ${start}`);
-  assert.notEqual(endIndex, -1, `source contains ${end}`);
-  return app.slice(startIndex, endIndex);
+  return sharedSourceBetween(app, start, end);
 }
 
 function storage(failingKey) {

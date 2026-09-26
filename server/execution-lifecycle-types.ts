@@ -6,6 +6,8 @@
  * publish are three copies to keep in step.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ExecutionRun } from "../lib/execution-run-ledger.mjs";
+import type { BoundaryVersions } from "./execution-boundary.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
 
@@ -28,6 +30,12 @@ export type LifecycleDeps = {
   getCard: (cardId: string) => WorkerCard | undefined;
   logComment: (cardId: string, targetId: string, body: string) => void;
   native: ExecutionNative;
+  /**
+   * The shape versions the card's state is at RIGHT NOW. A boundary answer is
+   * checked against these before the run resumes: answering a scope map that has
+   * since moved on is not an answer, it is a stale decision.
+   */
+  boundaryVersions: (run: ExecutionRun) => Promise<BoundaryVersions | null>;
 };
 
 /** What every rule adds to the host slice: the card-state publish. */

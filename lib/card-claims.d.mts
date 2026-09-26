@@ -72,3 +72,23 @@ export declare function lapsedScopeClaims(db: Db, args: {
   files?: string[];
   nowMs?: number;
 }): boolean;
+export declare function scopeClaimTag(batchId: unknown, scopeId: unknown): string | null;
+export declare function acquireScopeClaims(db: Db, args: {
+  cardId: string;
+  batchId?: string | null;
+  scopeId: string;
+  files: unknown[];
+  effectiveCheckout?: string | null;
+  workspacePath?: string | null;
+  checkoutPath?: string | null;
+  worktreePath?: string | null;
+  sourcePath?: string | null;
+  ttlMs?: number;
+  nowMs?: number;
+}): {
+  ok: boolean;
+  code: "ACQUIRED" | "CONFLICT" | "CLAIM_REQUIRED";
+  acquired: Array<{ file: string; fencing: number; holder: string }>;
+  conflicts: Array<{ file: string; heldBy: string; heldScope: string | null; holder: string; expiresAt: number }>;
+  park: Array<{ file: string; stderr: string; dedupeKey: string; visibility: string }>;
+};

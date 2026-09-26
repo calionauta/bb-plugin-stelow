@@ -13,6 +13,7 @@ import {
   liveClaimsForWorkspace,
 } from "../../lib/card-claims.mjs";
 import { workflowStateRelativeDir } from "../../lib/workflow-state-identity.mjs";
+import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
 import { assembleDetail } from "./card-detail-presentation.js";
@@ -75,6 +76,7 @@ export type CardDetailDeps = {
     sourcePath: string,
     card: WorkerCard,
   ) => Promise<string | null>;
+  scopeXray: (stateDir: string | null) => Promise<ScopeXray | null>;
   fileTimestamp: (
     file: { modifiedAtMs?: unknown } | null,
     fallback: string,
@@ -135,10 +137,11 @@ async function loadDetailInputs(
     deps.stalenessForQuestions(cardId, [...pending, ...expiredQuestions]),
   ]);
   const stageSkips = await readStageSkips(deps, card, workspace.path);
+  const scopeXray = await readScopeXray(deps, card, workspace.path);
   return {
     card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
-    workerHistory, questionStaleness, stageSkips,
+    workerHistory, questionStaleness, stageSkips, scopeXray,
   };
 }
 
@@ -374,5 +377,24 @@ async function readStageSkips(
     return typeof content === "string" ? parseWorkflowConfig(content) : fallback;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * The approved scope map, drawn. A build card with no map, or no state dir to
+ * read one from, projects null — the panel says there is no map instead of
+ * rendering an empty graph that looks like an empty plan.
+ */
+async function readScopeXray(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+) {
+  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
+  try {
+    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
+    return await deps.scopeXray(stateDir);
+  } catch {
+    return null;
   }
 }

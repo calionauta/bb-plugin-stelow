@@ -14,6 +14,7 @@ import {
   transitionExecutionRun,
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
+import { boundaryRunPatch } from "./execution-boundary.js";
 import type { CardNotifier, ReconcileBoundary } from "./execution-reconcile-deps.js";
 import type { WorkerCard } from "./workers-types.js";
 
@@ -44,17 +45,29 @@ export async function reconcileBoundary(
 ): Promise<void> {
   if (run.normalizedStatus !== "needs_input") {
     const boundaryId = deps.randomId("boundary");
+    const boundaryPatch = boundaryRunPatch(boundary, boundaryId);
+    if (boundaryPatch.issues.length) {
+      transitionExecutionRun(deps.db, run.id, "failed", {
+        nativeStatus: run.nativeStatus,
+        errorCode: "invalid-native-boundary",
+      });
+      deps.logComment(
+        card.id,
+        run.id,
+        `Native ${run.recipeId} returned an invalid human boundary: ${boundaryPatch.issues.join("; ")}.`,
+      );
+      return;
+    }
     run = transitionExecutionRun(deps.db, run.id, "needs_input", {
       nativeStatus: run.nativeStatus,
-      boundaryId,
-      boundaryQuestion: boundary.question,
+      ...boundaryPatch.patch,
     });
     deps.logComment(
       card.id,
       run.id,
-      `Native ${run.recipeId} run needs input. Boundary: ${boundary.question}`,
+      `Native ${run.recipeId} run needs input. Boundary: ${boundaryPatch.patch.boundaryQuestion}`,
     );
-    notifyBoundaryOpen(deps.notify, card, run.recipeId, boundaryId, boundary.question);
+    notifyBoundaryOpen(deps.notify, card, run.recipeId, boundaryId, boundaryPatch.patch.boundaryQuestion);
   } else if (!run.needsInputSentAt) {
     notifyBoundaryMissing(deps.notify, card, run.recipeId, run.boundaryId);
   }

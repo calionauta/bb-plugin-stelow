@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { BB_NATIVE_CAPABILITIES } from "../lib/bb-workflow-capabilities.mjs";
 import { EXECUTION_CAPABILITIES, assertCapabilities } from "../lib/execution-adapter.mjs";
 import { requiredOutputPaths, safeArtifactPath, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
-import { resolveExecutionRoute } from "../lib/execution-route.mjs";
+import { evaluateScopeBatchPilot, resolveExecutionRoute } from "../lib/execution-route.mjs";
 import { renderInlineWorkflowScript } from "../server/bb-workflow-bridge.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,15 +84,54 @@ function sample(schema) {
     return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, sample(child)]));
   }
   if (schema.type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
+  if (schema.type === "number") return schema.const ?? 0;
   if (schema.type === "string") return "pilot evidence";
   if (schema.type === "boolean") return true;
   assert.fail(`matrix cannot synthesize unsupported schema type: ${schema.type}`);
 }
 
 function validContents(recipe) {
+  const scopeMap = {
+    schemaVersion: 1,
+    mapId: "map-pilot",
+    status: "approved",
+    shapeVersion: "v1",
+    provenance: ["simulation:pilot"],
+    approval: { receiptId: "approval-pilot", approvedBy: "simulation" },
+    openDecisions: [],
+    scopes: [{
+      id: "scope-1",
+      title: "Pilot scope",
+      outcome: "Pilot outcome",
+      capabilities: ["pilot"],
+      inScope: ["pilot behavior"],
+      outOfScope: [],
+      dependsOn: [],
+      status: "current",
+    }],
+  };
+  const contrast = {
+    schemaVersion: 1,
+    receiptId: "contrast-pilot",
+    route: "interface-refinement",
+    briefStatus: "generation-ready",
+    authority: "agent",
+    disposition: "continue",
+    shapeVersion: "v1",
+    scopeMapVersion: "map-pilot",
+    decisionQuestion: "Which pilot interface should be selected?",
+    primaryDimension: "focus",
+    fixedConstraints: [{ name: "safety", value: "preserve warning", source: "simulation" }],
+    criteria: ["scan cost", "accessibility"],
+    evidence: [{ source: "simulation", reference: "pilot", claim: "split view is testable" }],
+    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+    nextAction: "Record the pilot selection.",
+  };
   return Object.fromEntries(recipe.tasks.map((task) => [
     task.output,
-    task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
+    task.output === "scope-map.json" ? JSON.stringify(scopeMap)
+      : ["interfaces/contrast.json", "interfaces/selection-receipt.json"].includes(task.output) ? JSON.stringify(contrast)
+        : task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
   ]));
 }
 
@@ -104,16 +143,37 @@ function assertArtifactMatrix(recipe) {
     ok: true,
     missing: [],
     malformed: [],
+    issues: [],
     paths,
   }, `${recipe.id} valid artifact contract passes`);
   for (const path of paths) {
     const omitted = { ...contents };
     delete omitted[path];
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: omitted, context: artifactContext }), { ok: false, missing: [path], malformed: [], paths }, `${recipe.id} rejects omitted ${path}`);
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: " " }, context: artifactContext }), { ok: false, missing: [path], malformed: [], paths }, `${recipe.id} rejects blank ${path}`);
+    // `issues` is the field-level diagnosis that used to be missing: a
+    // rejection that names only the file costs the worker a whole run.
+    const issue = (text) => [text];
+    const empty = { ok: false, missing: [path], malformed: [], issues: issue(`${path} is missing or empty`), paths };
+    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: omitted, context: artifactContext }), empty, `${recipe.id} rejects omitted ${path}`);
+    const blank = { ...empty };
+    const blankRun = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: " " }, context: artifactContext });
+    assert.deepEqual(blankRun, blank, `${recipe.id} rejects blank ${path}`);
     if (!path.endsWith(".json")) continue;
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{not-json" }, context: artifactContext }), { ok: false, missing: [], malformed: [path], paths }, `${recipe.id} rejects malformed JSON ${path}`);
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{}" }, context: artifactContext }), { ok: false, missing: [], malformed: [path], paths }, `${recipe.id} rejects schema-invalid ${path}`);
+    const notJson = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{not-json" }, context: artifactContext });
+    assert.equal(notJson.ok, false, `${recipe.id} rejects malformed JSON ${path}`);
+    assert.deepEqual(
+      { missing: notJson.missing, malformed: notJson.malformed },
+      { missing: [], malformed: [path] },
+      `${recipe.id} rejects malformed JSON ${path}`,
+    );
+    assert.match(notJson.issues[0], /is not valid JSON/, `${recipe.id} says why the JSON failed`);
+    const schemaInvalid = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{}" }, context: artifactContext });
+    assert.equal(schemaInvalid.ok, false, `${recipe.id} rejects schema-invalid ${path}`);
+    assert.deepEqual(
+      { missing: schemaInvalid.missing, malformed: schemaInvalid.malformed },
+      { missing: [], malformed: [path] },
+      `${recipe.id} rejects schema-invalid ${path}`,
+    );
+    assert.ok(schemaInvalid.issues.length > 0, `${recipe.id} names the problem, not just the file`);
   }
 }
 
@@ -136,7 +196,11 @@ function assertRoute(recipe, row) {
 exactKeys(manifest, ["schema_version", "validated_at", "host", "evidence", "recipes", "waivers"], "manifest");
 assert.equal(manifest.schema_version, 1, "matrix schema version is pinned");
 assert.match(manifest.validated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "validation time is explicit");
-assert.deepEqual(manifest.host, { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" }, "real host probe is explicit");
+assert.deepEqual(
+  manifest.host,
+  { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" },
+  "real host probe is explicit",
+);
 for (const identity of manifest.evidence) {
   exactKeys(identity, ["path", "sha256"], `evidence ${identity.path}`);
   assert.equal(isAbsolute(identity.path), false, "evidence path is repository-relative");
@@ -145,7 +209,11 @@ for (const identity of manifest.evidence) {
 }
 const evidencePaths = new Set(manifest.evidence.map((identity) => identity.path));
 for (const path of ["data/stelow-recipe-catalog.json", "skills/stelow-workflow-orchestrator/recipe-catalog.json", "server/bb-workflow-bridge.ts", "lib/execution-artifacts.mjs", "lib/execution-route.mjs", "lib/bb-workflow-capabilities.mjs"]) assert.equal(evidencePaths.has(path), true, `matrix pins ${path}`);
-assert.equal(sha256("data/stelow-recipe-catalog.json"), sha256("skills/stelow-workflow-orchestrator/recipe-catalog.json"), "source and generated catalogs are byte-identical");
+assert.equal(
+  sha256("data/stelow-recipe-catalog.json"),
+  sha256("skills/stelow-workflow-orchestrator/recipe-catalog.json"),
+  "source and generated catalogs are byte-identical",
+);
 const catalogIds = sortedUnique(recipes.map((recipe) => recipe.id), "catalog recipe ids");
 const matrixIds = sortedUnique(manifest.recipes.map((row) => row.id), "matrix recipe ids");
 assert.deepEqual(matrixIds, catalogIds, "matrix covers every generated recipe exactly once");
@@ -154,15 +222,27 @@ for (const recipe of recipes) {
   const row = rows.get(recipe.id);
   exactKeys(row, ["id", "classification", "expected_route", "probe", "execution_claim", "source_sha256", "permission_profile", "failure_policies", "human_boundaries", "outputs", ...(recipe.write_policy === "artifact" ? [] : ["waiver_id"])], `${recipe.id} row`);
   assert.equal(row.id, recipe.id, `${recipe.id} row id matches catalog`);
-  assert.equal(row.classification, recipe.write_policy === "artifact" ? "low-risk-artifact" : "workspace-writer", `${recipe.id} classification is derived from write policy`);
+  assert.equal(
+    row.classification,
+    recipe.write_policy === "artifact" ? "low-risk-artifact" : "workspace-writer",
+    `${recipe.id} classification is derived from write policy`,
+  );
   assert.equal(row.probe, "host-validation+artifact-contract", `${recipe.id} records both real-host and contract probes`);
   assert.equal(row.execution_claim, recipe.write_policy === "artifact" ? "validation-only" : "waived", `${recipe.id} does not overclaim execution`);
   assert.match(row.source_sha256, /^[a-f0-9]{64}$/, `${recipe.id} records the exact host-validated source`);
   const renderedSource = renderInlineWorkflowScript(recipe, { localRunId: "exec_matrix" }).replace(/\n$/, "");
   assert.equal(createHash("sha256").update(renderedSource).digest("hex"), row.source_sha256, `${recipe.id} source hash matches the current renderer`);
   assert.equal(row.permission_profile, recipe.permission_profile, `${recipe.id} records inherited permissions`);
-  assert.deepEqual(sortedUnique(row.failure_policies, `${recipe.id} failure policies`), [...new Set(recipe.tasks.map((task) => task.failure_policy))].sort(), `${recipe.id} failure matrix is exact`);
-  assert.deepEqual(row.human_boundaries, recipe.tasks.filter((task) => task.human_boundary !== "none").map((task) => task.id), `${recipe.id} human-wait matrix is exact`);
+  assert.deepEqual(
+    sortedUnique(row.failure_policies, `${recipe.id} failure policies`),
+    [...new Set(recipe.tasks.map((task) => task.failure_policy))].sort(),
+    `${recipe.id} failure matrix is exact`,
+  );
+  assert.deepEqual(
+    row.human_boundaries,
+    recipe.tasks.filter((task) => task.human_boundary !== "none").map((task) => task.id),
+    `${recipe.id} human-wait matrix is exact`,
+  );
   assert.deepEqual(row.outputs, recipe.tasks.map((task) => task.output), `${recipe.id} artifact matrix is exact`);
   assert.equal(recipe.fallback.mode, "sequential", `${recipe.id} has a sequential fallback`);
   assert.equal(recipe.fallback.preserves.includes("artifact"), true, `${recipe.id} fallback preserves artifacts`);
@@ -184,5 +264,36 @@ assert.deepEqual(waiver, {
   preserves: ["artifact", "claims", "parent-verification"],
 }, "scope-batch waiver is explicit and complete");
 assert.equal(rows.get("scope-batch").waiver_id, waiver.id, "scope-batch matrix row references its waiver");
+
+// One-flag rollback pin: the recorded waiver value keeps scope-batch
+// coordinator-sequential, and the pilot evaluator honors the same flag
+// for a batch that would otherwise admit.
+assert.equal(waiver.native_pilot_allowed, false, "the scope-batch waiver ships with the pilot off");
+assert.equal(waiver.required_route, "coordinator-sequential", "flag off requires coordinator-sequential");
+{
+  const disjoint = [
+    { scopeId: "scope-a", targetFiles: ["src/a.ts"] },
+    { scopeId: "scope-b", targetFiles: ["src/b.ts"] },
+  ];
+  const capable = { "file-claims": true, "isolated-workspace": true };
+  const rolledBack = evaluateScopeBatchPilot({
+    scopes: disjoint,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: waiver.native_pilot_allowed,
+  });
+  assert.equal(rolledBack.mode, waiver.required_route, "waiver flag off restores sequential in the pilot evaluator");
+  assert.equal(rolledBack.code, "PILOT_DISABLED", "rollback names the disabled pilot");
+  const overlapping = evaluateScopeBatchPilot({
+    scopes: [
+      { scopeId: "scope-a", targetFiles: ["src/shared.ts"] },
+      { scopeId: "scope-b", targetFiles: ["src/shared.ts"] },
+    ],
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: true,
+  });
+  assert.equal(overlapping.mode, "coordinator-sequential", "overlapping scopes never fan out, flag or not");
+}
 
 console.log(`recipe pilot matrix test ok: ${recipes.length} recipes, ${manifest.waivers.length} contextual waiver`);

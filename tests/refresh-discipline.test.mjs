@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceBetween } from "./helpers/source-slice.mjs";
 
 // Refresh discipline: every host wrapper that mutates tracking or claims
 // must publish card-state (and board-changed) so claimed indicators,
@@ -23,11 +24,7 @@ const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 
 /** The text of one named command family, failing loudly if it is gone. */
 function command(text, name) {
-  const start = text.indexOf(`function create${name}Command(`);
-  assert.notEqual(start, -1, `the ${name} command family exists`);
-  const end = text.indexOf("\n}\n", start);
-  assert.ok(end > start, `the ${name} command family closes`);
-  return text.slice(start, end);
+  return sourceBetween(text, `function create${name}Command(`, "\n}\n");
 }
 
 function assertRefresh(label, body) {

@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { scopeFingerprint } from "../lib/scope-fingerprint.mjs";
 import { parseScopeArgs } from "../lib/scope-command.mjs";
 import {
   sanitizeEvidenceRecord,
@@ -13,6 +12,8 @@ import { isSpecTechFile, plansRelDir } from "../lib/tracking-paths.mjs";
 import { mergePlannedTasks } from "../lib/spec-scope-reader.mjs";
 import { workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
 import { array, record, text, type LooseRecord } from "./runtime/values.js";
+import { scopeDoneGate, scopeStartGate } from "./scope-batch-gates.js";
+import type { ScopeBatchDb } from "./scope-batch.js";
 
 export type ScopeStatus =
   | "draft"
@@ -232,6 +233,14 @@ interface ScopeCommandDeps<TCard extends ScopeCliCard> {
     actor: "worker";
     evidence: string;
   }) => void;
+  /**
+   * Scope-batch coordination hooks. Absent in unit harnesses and legacy
+   * callers: without a database the command passes through untouched.
+   * When present and the card holds batch-namespaced claims, `start`
+   * admits + claims before the helper runs and `done` proves + releases
+   * after it succeeds.
+   */
+  db?: ScopeBatchDb;
 }
 
 const SCOPE_TRANSITIONS = {
@@ -283,6 +292,28 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
   }
   if (context.guard) return { exitCode: 1, stderr: context.guard };
   const { card, rootPath, stateDir } = context;
+  // Scope-batch start gate (admission + spawn): dormant unless the card
+  // holds batch-namespaced claims. A refused batch never reaches the
+  // helper, so no partial dispatch can happen.
+  if (card && parsed.op === "start" && deps.db) {
+    try {
+      const gate = scopeStartGate(deps.db, {
+        cardId: card.id,
+        scopeId: parsed.scopeId!,
+        workspacePath: rootPath,
+        scopes: loadCardScopes(rootPath, card.id),
+      });
+      if (!gate.ok) {
+        const conflicts = "conflicts" in gate && gate.conflicts
+          ? ` ${JSON.stringify(gate.conflicts).slice(0, 500)}`
+          : "";
+        return { exitCode: 1, stderr: `${gate.code}: ${gate.reason}${conflicts}` };
+      }
+    } catch {
+      // Gate infrastructure failures fail open: a broken registry must
+      // never park a worker behind a scope it could run.
+    }
+  }
   const result = await deps.runHelper(
     ["scope", ...parsed.passthrough!],
     rootPath,
@@ -294,6 +325,23 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
       stderr: result.stderr || "scope transition failed",
       stdout: result.stdout,
     };
+  }
+  // Scope-batch done gate (pre-write proof + cleanup): dormant unless the
+  // card holds batch-namespaced claims. The completing scope must still
+  // hold live claims on its target files, then releases exactly its own.
+  if (card && parsed.op === "done" && deps.db) {
+    try {
+      const finishing = loadCardScopes(rootPath, card.id).find((scope) => scope.id === parsed.scopeId!);
+      const gate = scopeDoneGate(deps.db, {
+        cardId: card.id,
+        scopeId: parsed.scopeId!,
+        workspacePath: rootPath,
+        targetFiles: finishing?.targetFiles ?? [],
+      });
+      if (!gate.ok) return { exitCode: 1, stdout: result.stdout, stderr: `${gate.code}: ${gate.reason}` };
+    } catch {
+      // Release failures never undo a committed helper transition.
+    }
   }
   if (card) {
     try {
@@ -316,40 +364,3 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
   return { exitCode: 0, stdout: result.stdout };
 }
 
-interface ScopeProgressCard {
-  id: string;
-}
-
-interface ScopeProgressDeps<TCard extends ScopeProgressCard> {
-  getCard: (cardId: string) => TCard | undefined;
-  cardWorkspace: (card: TCard) => Promise<{ path?: string } | null>;
-  publish: (cardId: string) => void;
-}
-
-export function createScopeProgressSync<TCard extends ScopeProgressCard>(
-  deps: ScopeProgressDeps<TCard>,
-) {
-  const prints = new Map<string, string>();
-  async function sync(cardId: string): Promise<void> {
-    try {
-      const card = deps.getCard(cardId);
-      if (!card) {
-        prints.delete(cardId);
-        return;
-      }
-      const workspace = await deps.cardWorkspace(card);
-      const print = workspace?.path
-        ? scopeFingerprint(loadCardScopes(workspace.path, card.id))
-        : "";
-      const previous = prints.get(cardId);
-      prints.set(cardId, print);
-      if (previous !== undefined && previous !== print) deps.publish(cardId);
-    } catch {
-      // Advisory watch: the next reconcile tick retries.
-    }
-  }
-  function prune(liveIds: ReadonlySet<string>): void {
-    for (const id of prints.keys()) if (!liveIds.has(id)) prints.delete(id);
-  }
-  return { sync, prune };
-}

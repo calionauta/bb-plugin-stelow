@@ -6,7 +6,7 @@ import type { WorkerCard } from "../workers.js";
 import { createCardStore } from "../cards.js";
 import { createInboxServer } from "../inbox.js";
 import { createPresetServer } from "../presets.js";
-import { createScopeProgressSync } from "../scopes.js";
+import { createScopeProgressSync } from "../scope-progress-sync.js";
 import { createCliDispatch, type CliRunContext, type CliResult } from "./cli-dispatch.js";
 import { stelowCliCommands } from "./cli-registry.js";
 import { startReconciler, type Scheduler } from "./reconciler.js";

@@ -16,7 +16,7 @@ import type {
 } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
-type PreflightDeps = Pick<AdvanceDeps, "runHelper" | "native" | "reworkNote" | "recordExecutionEntry">;
+type PreflightDeps = Pick<AdvanceDeps, "runHelper" | "native" | "reworkNote" | "recordExecutionEntry" | "scopeMapApproved">;
 
 export type PreflightInput = {
   card: WorkerCard;
@@ -95,6 +95,7 @@ async function syncExecutionScopes(
   const spec = latestSpecTech(rootPath, card.id)?.content ?? null;
   const registry = buildRegistry(scopes, { defaultKind: "scope" });
   const pending = scopes.filter((scope) => scope.status === "pending");
+  const hasScopeMap = await deps.scopeMapApproved(stateDir);
   const gate = advanceExecutionGates({
     kind: card.kind,
     stage: "execution",
@@ -103,6 +104,8 @@ async function syncExecutionScopes(
     cycles: dependencyCycles(registry),
     hasUnstartablePending: pending.length > 0
       && !pending.some((scope) => canStart(registry, scope.id, isDoneStatus)),
+    intent: card.intent,
+    hasScopeMap,
   });
   return { syncedCount, refusal: gate.refusal, note: gateNote(syncedCount, gate.note) };
 }

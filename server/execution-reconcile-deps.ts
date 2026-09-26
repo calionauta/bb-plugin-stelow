@@ -14,7 +14,12 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 export type ReconcilePendingQuestion = { question: string };
 export type ReconcileResult = { run: ExecutionRun | null; error: string | null };
-export type ReconcileBoundary = { question: string; questionId: string | null };
+/**
+ * The host's boundary payload, not just its question: the contract the human
+ * answers is validated before the run parks, so an unanswerable boundary fails
+ * the run instead of opening a question nobody can settle.
+ */
+export type ReconcileBoundary = Record<string, unknown> & { question: string; questionId: string | null };
 
 /** The only lifecycle call the reconciler makes: stop what it no longer owns. */
 export type ReconcileStopper = {

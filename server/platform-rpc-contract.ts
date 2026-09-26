@@ -2,6 +2,24 @@ import { z } from "zod";
 import { PREVIEW_STATES } from "../lib/preview-session.mjs";
 import { githubReleaseSchema, pluginUpdateSchema } from "./contracts.js";
 
+/**
+ * Whether durable native execution is possible at all. The workflow dependency
+ * is a host plugin, not a Stelow setting, so the card cannot fix it — the
+ * About tab reports it and the install/enable verbs act on the user's explicit
+ * request, never on their own.
+ */
+const workflowDependencyStatusSchema = z.object({
+  id: z.literal("workflows"),
+  name: z.literal("BB Workflows"),
+  installed: z.boolean(),
+  enabled: z.boolean(),
+  running: z.boolean(),
+  available: z.boolean(),
+  version: z.string().nullable(),
+  action: z.enum(["install", "enable"]).nullable(),
+  detail: z.string(),
+});
+
 export const platformRpcContract = {
   listPresets: {
     experimental_description: "Agent presets: provider, model, reasoning, permission, environment",
@@ -180,6 +198,21 @@ export const platformRpcContract = {
     output: z.object({
       tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })),
     }),
+  },
+  workflowDependencyStatus: {
+    experimental_description: "Report whether BB Workflows is installed, enabled, and available for Stelow execution",
+    input: z.object({}).strict(),
+    output: workflowDependencyStatusSchema,
+  },
+  installWorkflowDependency: {
+    experimental_description: "Install the built-in BB Workflows plugin on explicit user request",
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
+  },
+  enableWorkflowDependency: {
+    experimental_description: "Enable the installed BB Workflows plugin on explicit user request",
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
   },
   installTool: {
     experimental_description: "Install one optional host tool with the official installer",

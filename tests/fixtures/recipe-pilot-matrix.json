@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-09-23T23:58:41Z",
+  "validated_at": "2026-09-25T00:00:00Z",
   "host": {
     "name": "bb",
     "version": "0.43.3",
@@ -9,27 +9,27 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
-      "sha256": "a42118398d5743db086cea53dafce52febfa4cf6c38ccf9bc8bc846ac5fc30e6"
+      "sha256": "028f7b2cada9b6a3a71ae39020099fa22eb19305be71a409cea2556d651fe746"
     },
     {
       "path": "lib/execution-artifacts.mjs",
-      "sha256": "2641d0fa958d6b3fca60d7ee8189097cea62a96261ab5298aa5c77fdc44050b7"
+      "sha256": "40ee97c3705cd9172fdf242b8f840e17dee42e821edb66b98eededc67b292984"
     },
     {
       "path": "lib/execution-route.mjs",
-      "sha256": "f810832bd4c7b74faf40fff34966877488d63cbadec589b43207f8aff8dfd7b8"
+      "sha256": "f5eb41f66b6c4a1a5182da0722d1dad07f5f5feb7eacf76b1252e35645924725"
     },
     {
       "path": "lib/bb-workflow-capabilities.mjs",
-      "sha256": "1f677e8733489ad414e0376ed435e725385b8ca9b539bd2a5353c326cb085d10"
+      "sha256": "5142fbe383d970742690b5cb54d7a180b9926969121c16ac820e1639ee2c97fa"
     }
   ],
   "recipes": [
@@ -39,7 +39,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "1582d8402f01a98abb63c4cf0962bc27c3cab40ff4af1df66eaf8e6e7efb67b5",
+      "source_sha256": "264dacf17e2eef88b49a24cfcb6fa85156270fe0b17dc7a98e08b7fda3cc0c34",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -51,7 +51,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "cf97293f089f4c574d3bd3bcc31dd90b7aad36c74caa9b8ba4e351d35cc465e0",
+      "source_sha256": "6144840ec29a295c6865d6cf8fd5018b28c89335b01e69e496ec78aac23be85b",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -63,11 +63,23 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "9ba6c8a4469f50a7fa78f6e0c6234ac411476abfa669c5dfa73ab62dbe166c6a",
+      "source_sha256": "600b06da2df8fbbbec27fda3b4a90432c4a65e4f336efe348ccd019fbb93a43b",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
       "outputs": ["interfaces/alternatives.json", "interfaces/alternatives-verification.json", "interfaces/interfaces.md"]
+    },
+    {
+      "id": "interface-contrast",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "b9e0288f7d20c63a98eaba8b6212375c2a67a92bc5006175b49b281659299dc5",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": ["contrast"],
+      "outputs": ["interfaces/contrast.json", "interfaces/interfaces.md"]
     },
     {
       "id": "plan-critique",
@@ -75,7 +87,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "cb924f3c2dc446a5029f702ee18c685e6ccbd3a5bd2e72e52116ae43f7ca2522",
+      "source_sha256": "df2e4f4ed9f68b7532019af3891c9bfbc41af873dac0f8cffd9a8bb8dafab204",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -87,7 +99,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "2554f46497b0f0eb1ae50ce4fcaa2ce44edd024c2c7135e920207fde495d73b4",
+      "source_sha256": "546250dfafbfddb78f39151907997e75a4668665246e77d5c4af5e89c384e023",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -99,7 +111,7 @@
       "expected_route": "coordinator-sequential",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "waived",
-      "source_sha256": "0e598cb3b0bb5e3c59795824603f294f5c2441f49d7d9c16fb65dcd1e93ca0a4",
+      "source_sha256": "71e71c6431c74a7cc959a17b05a226221ca5483a63fddc4d41c5274595ffd681",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": ["gap-escalation"],
@@ -107,12 +119,24 @@
       "waiver_id": "workspace-writing-scope-batch"
     },
     {
+      "id": "scope-map",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "0d75d7954a055598e7af4f570b137ce935ad8355aceb091182674ca3ffd94e89",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": [],
+      "outputs": ["scope-map.json"]
+    },
+    {
       "id": "setup-recon",
       "classification": "low-risk-artifact",
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "4a995e3d547005f31facfb9b1043af233a98c5d39dd12bf70905de4b5c4d38c5",
+      "source_sha256": "99ba04b988020367a95f02dc658eae7f141999891216d465d511079383986282",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -124,7 +148,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "6bcecf2a169dc507520886adf2ca217114d783705473a314c3faa191c6706ce4",
+      "source_sha256": "30c3c17cab6a768d4765edd118c062023bf153aef3359cb3d8736015b9c9e09c",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -136,7 +160,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "95fbc7e4fdebd3139d1b9979641e1dcc81e99aea9fd26dae7d12bb52a3fbe870",
+      "source_sha256": "73fe795d8acb4c1b61073c5ae9a4cf16e3c76ab0d2e966b516d356bd2c93e301",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -148,7 +172,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "b52f4db42fec33db0429965a904046ccde804e1a98d340a3d99bf361937d98bf",
+      "source_sha256": "239cb66350f0aebbda10224a4ec257e9ef92a94642900909bc7511af475e9900",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -160,7 +184,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "db7e317236736834ef89e089cc2cd4f17322a42bab9d665dd86afd3056f9e346",
+      "source_sha256": "93b23a039918e90bf429345aa377ad0fba8bcefed9bae69663f91ff45ff7647e",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -172,7 +196,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "b98afee7169de3d39ea0ac107326a3d0e42aa0dc16255837a8e5a5fc3ee404ff",
+      "source_sha256": "42e2bca352bbd656da0caabde9c54d8cd424e28ffa79e0a5b71530266cc223f2",
       "permission_profile": "inherit",
       "failure_policies": ["fail", "skip-with-reason"],
       "human_boundaries": [],

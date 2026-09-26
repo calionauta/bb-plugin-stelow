@@ -25,7 +25,7 @@ import { cardAttachments } from "../card-files.js";
 import { seedWorkflow } from "../workflow-seeding.js";
 import { createQuestionContractsGate } from "../question-contracts-gate.js";
 import { createCritiqueGapState } from "../critique-gap-state.js";
-import { createQuestionAnswers } from "../question-answers.js";
+import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader } from "../question-answers.js";
 import { createGapSummary } from "../gap-summary.js";
 import { createQualitySeal } from "../quality-seal.js";
 import { createCardAdvance, createGateHandlers } from "../card-gates.js";
@@ -46,8 +46,20 @@ import {
   TURN_DISCIPLINE,
 } from "../plugin-protocols.js";
 import type { RuntimeCore } from "../runtime-core.js";
+import type { Deferred } from "./deferred.js";
 
 export type GateSurfaces = ReturnType<typeof createGateSurfaces>;
+
+export type GateSurfaceDeps = {
+  core: RuntimeCore;
+  /**
+   * The execution layer's boundary port, not built yet: an answer that is this
+   * run's own native boundary resumes the run instead of the worker thread, and
+   * the run lives one layer up. Read as undefined until it is bound, which is
+   * the order the composition root wires.
+   */
+  boundary: Deferred<AnswerBoundaryPort>;
+};
 
 /** The protocol clauses the reseed prompt quotes into a restarted card. */
 const RESEED_PROTOCOLS = {
@@ -63,10 +75,11 @@ const RESEED_PROTOCOLS = {
   splitProtocol: SPLIT_PROTOCOL,
 } as const;
 
-export function createGateSurfaces(core: RuntimeCore) {
+export function createGateSurfaces(deps: GateSurfaceDeps) {
+  const { core } = deps;
   const questionContractsGate = buildQuestionContractsGate(core);
   const critiqueGapState = buildCritiqueGapState(core);
-  const answers = buildQuestionAnswers(core);
+  const answers = buildQuestionAnswers(core, deps.boundary);
   return {
     questionContractsGate,
     critiqueGapState,
@@ -104,7 +117,10 @@ function buildCritiqueGapState(core: RuntimeCore) {
 }
 
 /** The two answer entry points: live asks, and the expired ones. */
-function buildQuestionAnswers(core: RuntimeCore) {
+function buildQuestionAnswers(
+  core: RuntimeCore,
+  boundary: BoundaryPortReader,
+) {
   const { bb, db, getCard, updateCard, questions } = core;
   const ERRORS = core.ERRORS;
   return createQuestionAnswers({
@@ -127,6 +143,7 @@ function buildQuestionAnswers(core: RuntimeCore) {
     logCardComment: core.ledger.logCardComment,
     updateCard,
     hasOpenQuestions: questions.hasOpenQuestions,
+    boundary,
   });
 }
 

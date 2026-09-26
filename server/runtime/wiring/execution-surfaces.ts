@@ -13,9 +13,11 @@
  * reads a card's artifacts, so it can be built before either exists.
  */
 import { createExecutionNative } from "../../execution-native.js";
+import { createBoundaryVersionReader } from "../../execution-boundary.js";
 import { createExecutionLifecycle } from "../../execution-lifecycle.js";
 import { createExecutionReconcile } from "../../execution-reconcile.js";
 import { createExecutionAdvance } from "../../execution-advance.js";
+import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
 import { createResearchTrackSync } from "../research-track-sync.js";
 import { createBuildThreadSync } from "../build-thread-sync.js";
@@ -25,26 +27,40 @@ import { isDoneStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
+import type { AnswerBoundaryPort } from "../question-answers.js";
 import type { RuntimeCore } from "../runtime-core.js";
 import type { GateSurfaces } from "./gate-surfaces.js";
+import type { Deferred } from "./deferred.js";
 
 export type ExecutionSurfaces = ReturnType<typeof createExecutionSurfaces>;
 
 export type ExecutionSurfaceDeps = {
   core: RuntimeCore;
   gates: GateSurfaces;
+  /**
+   * Where the answer doors read the boundary port from. This layer binds it as
+   * soon as the lifecycle exists, which is what lets an answer that names a
+   * run's boundary resume the run rather than the worker thread.
+   */
+  boundary: Deferred<AnswerBoundaryPort>;
 };
 
 export function createExecutionSurfaces(deps: ExecutionSurfaceDeps) {
-  const { core, gates } = deps;
+  const { core, gates, boundary } = deps;
   const executionNative = buildNative(core);
+  const scopeMaps = createScopeMapReader(core.bb);
   const executionLifecycle = buildLifecycle(core, executionNative);
+  boundary.bind({
+    routeAnswerContinuation: executionLifecycle.routeAnswerContinuation,
+    resumeAfterAnswers: executionLifecycle.resumeAfterAnswers,
+  });
   const executionReconcile = buildReconcile(core, executionNative, executionLifecycle);
   return {
     executionNative,
     executionLifecycle,
     executionReconcile,
-    executionAdvance: buildAdvance(core, gates, executionNative),
+    executionAdvance: buildAdvance(core, gates, executionNative, scopeMaps.scopeMapApproved),
+    scopeMaps,
     worktreeCleanup: buildWorktreeCleanup(core),
     ...buildThreadSync(core),
   };
@@ -70,7 +86,7 @@ function buildLifecycle(
   core: RuntimeCore,
   native: ReturnType<typeof buildNative>,
 ) {
-  const { bb, db, randomId, getCard } = core;
+  const { bb, db, randomId, getCard, cardWorkspace } = core;
   return createExecutionLifecycle({
     db,
     bb,
@@ -79,6 +95,16 @@ function buildLifecycle(
     logComment: (cardId, targetId, body) =>
       core.ledger.logCardComment(cardId, "card", targetId, "agent", body),
     native,
+    // A boundary answer is only an answer if the card's shape has not moved
+    // since the question was asked; the reader compares the run's contract
+    // against what the card holds now.
+    boundaryVersions: createBoundaryVersionReader({
+      bb,
+      getCard,
+      cardWorkspace,
+      stateDir: (card, rootPath) =>
+        core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    }),
   });
 }
 
@@ -114,6 +140,7 @@ function buildAdvance(
   core: RuntimeCore,
   gates: GateSurfaces,
   native: ReturnType<typeof buildNative>,
+  scopeMapApproved: (stateDir: string | null) => Promise<boolean>,
 ) {
   const { bb, getCard, cardWorkspace, updateCard, presetServer, workers } = core;
   const ERRORS = core.ERRORS;
@@ -129,6 +156,9 @@ function buildAdvance(
     projectRoot: (projectId) => core.projectRoot(bb, projectId),
     stateDir: (card, rootPath) =>
       core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    // A broad refactor may not enter execution on scope blocks alone: it needs
+    // a recorded, approved map of what it delivers.
+    scopeMapApproved,
     ensureArtifacts: (rootPath, stateDir, requireOwnedState) =>
       core.ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
     questionGate: gates.questionContractsGate,

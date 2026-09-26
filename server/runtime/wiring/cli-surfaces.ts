@@ -33,11 +33,17 @@ export type CliSurfaceDeps = {
 /** Register `bb stelow` on the host, wired against the assembled surfaces. */
 export function registerStelowCommand(deps: CliSurfaceDeps): void {
   const runInspection = createInspectionCommand(inspectionDeps(deps));
-  const run = createStelowCliRun({
-    ...cliDeps(deps),
-    runInspection,
-    scopeCommand: scopeCommand(deps),
-  });
+  const run = createStelowCliRun(
+    {
+      ...cliDeps(deps),
+      runInspection,
+      scopeCommand: scopeCommand(deps),
+    },
+    {
+      answerQuestions: deps.gates.answerQuestions,
+      answerExpiredQuestions: deps.gates.answerExpiredQuestions,
+    },
+  );
   registerStelowCli(deps.bb, (argv, context) => run(argv, context));
 }
 
@@ -250,6 +256,9 @@ function scopeCommand(deps: CliSurfaceDeps): ScopeCommand {
     recordTrackableEvent: (event) => {
       recordTrackableEvent(core.db, event);
     },
+    // The scope-batch gates are dormant without a database: unit harnesses and
+    // any caller that has no batch ledger pass through untouched.
+    db: core.db,
   };
   return (argv, context) => runScopeCommand(argv, context, scopeDeps);
 }

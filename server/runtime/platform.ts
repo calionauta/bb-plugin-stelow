@@ -6,6 +6,10 @@ import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { loadAboutLogo } from "../../lib/about-logo.mjs";
+import {
+  createWorkflowDependencyHandlers,
+  runHostBbCli,
+} from "./workflow-dependency.js";
 import type { rpcContract } from "../rpc-contract.js";
 
 export type PluginUpdateState = {
@@ -338,6 +342,7 @@ async function listProviderModels(deps: PlatformDeps) {
 }
 
 export function createPlatformHandlers(deps: PlatformDeps) {
+  const workflowDependency = createWorkflowDependencyHandlers({ runBbCli: runHostBbCli });
   return {
     buildInfo: () => buildInfo(deps),
     applyPluginUpdate: () => applyPluginUpdate(deps),
@@ -349,6 +354,9 @@ export function createPlatformHandlers(deps: PlatformDeps) {
     listProviderModels: () => listProviderModels(deps),
     toolStatus: () => toolStatus(deps),
     installTool: ({ id }: { id: string }) => installTool(deps, id),
+    workflowDependencyStatus: () => workflowDependency.workflowDependencyStatus(),
+    installWorkflowDependency: () => workflowDependency.installWorkflowDependency(),
+    enableWorkflowDependency: () => workflowDependency.enableWorkflowDependency(),
     previewState: ({ cardId, appOrigin }: { cardId: string; appOrigin?: string | null }) =>
       deps.preview.view(cardId, appOrigin ?? null),
     previewStart: ({ cardId }: { cardId: string }) => deps.preview.start(cardId),

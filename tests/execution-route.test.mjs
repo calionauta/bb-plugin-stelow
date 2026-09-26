@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { BB_NATIVE_CAPABILITIES } from "../lib/bb-workflow-capabilities.mjs";
 import { EXECUTION_CAPABILITIES } from "../lib/execution-adapter.mjs";
-import { resolveExecutionRoute } from "../lib/execution-route.mjs";
+import {
+  NATIVE_SCOPE_BATCH_PILOT_ALLOWED,
+  collectScopeBatchPilotReceipts,
+  evaluateScopeBatchPilot,
+  resolveExecutionRoute,
+  verifyScopeBatchPilotReceipt,
+} from "../lib/execution-route.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
 
 const recipe = { id: "analysis", write_policy: "artifact", fallback: { mode: "sequential", preserves: ["artifact"] } };
@@ -61,5 +67,170 @@ assert.equal(resolveExecutionRoute({ recipe: { ...recipe, fallback: { mode: "unk
 assert.equal(resolveExecutionRoute({ recipe: { ...recipe, write_policy: "workspace" }, requiredCapabilities: [], nativeCapabilities, nativeAvailable: true }).mode, "coordinator-sequential");
 assert.equal(resolveExecutionRoute({ recipe: { ...recipe, id: "scope-batch" }, requiredCapabilities: [], nativeCapabilities, nativeAvailable: true }).mode, "coordinator-sequential");
 assert.equal(resolveExecutionRoute({ recipe: { ...recipe, fallback: undefined }, requiredCapabilities: [], nativeCapabilities, nativeAvailable: true }).mode, "refused");
+
+// Scope-batch native pilot: the default recipe route above stays
+// coordinator-sequential. Native fan-out is allowed ONLY for disjoint
+// scopes with satisfied claims under the pilot flag and proven
+// file-claims + isolated-workspace capabilities.
+const pilotScopes = [
+  { scopeId: "scope-a", targetFiles: ["src/a.ts"] },
+  { scopeId: "scope-b", targetFiles: ["src/b.ts"] },
+];
+const pilotCapabilities = { "file-claims": true, "isolated-workspace": true };
+
+assert.equal(NATIVE_SCOPE_BATCH_PILOT_ALLOWED, false, "the pilot flag ships off: rollback is the default");
+
+{
+  const admitted = evaluateScopeBatchPilot({
+    scopes: pilotScopes,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: pilotCapabilities,
+    nativePilotAllowed: true,
+  });
+  assert.equal(admitted.mode, "native", "disjoint satisfied-claims batch fans out under bounded concurrency");
+  assert.deepEqual(
+    admitted.gates,
+    { pilot: true, capability: true, admission: true, disjointness: true, concurrency: true },
+    "every pilot gate passes on the happy path",
+  );
+  assert.equal(typeof admitted.timeoutMs, "number", "admitted pilot names its per-scope timeout");
+}
+
+for (const failing of [
+  {
+    name: "flag off rolls back",
+    input: {
+      scopes: pilotScopes,
+      satisfiedScopeIds: ["scope-a", "scope-b"],
+      nativeCapabilities: pilotCapabilities,
+      nativePilotAllowed: false,
+    },
+    code: "PILOT_DISABLED",
+  },
+  {
+    name: "missing file-claims capability",
+    input: {
+      scopes: pilotScopes,
+      satisfiedScopeIds: ["scope-a", "scope-b"],
+      nativeCapabilities: { "file-claims": false, "isolated-workspace": true },
+      nativePilotAllowed: true,
+    },
+    code: "PILOT_CAPABILITY_GATE",
+  },
+  {
+    name: "missing isolated-workspace capability",
+    input: {
+      scopes: pilotScopes,
+      satisfiedScopeIds: ["scope-a", "scope-b"],
+      nativeCapabilities: { "file-claims": true, "isolated-workspace": false },
+      nativePilotAllowed: true,
+    },
+    code: "PILOT_CAPABILITY_GATE",
+  },
+  {
+    name: "overlapping scopes never fan out",
+    input: {
+      scopes: [
+        { scopeId: "scope-a", targetFiles: ["src/shared.ts"] },
+        { scopeId: "scope-b", targetFiles: ["src/shared.ts"] },
+      ],
+      satisfiedScopeIds: ["scope-a", "scope-b"],
+      nativeCapabilities: pilotCapabilities,
+      nativePilotAllowed: true,
+    },
+    code: "PARTITION_OVERLAP",
+  },
+  {
+    name: "unsatisfied claim rejects the batch",
+    input: {
+      scopes: pilotScopes,
+      satisfiedScopeIds: ["scope-a"],
+      nativeCapabilities: pilotCapabilities,
+      nativePilotAllowed: true,
+    },
+    code: "PILOT_ADMISSION_GATE",
+  },
+  {
+    name: "concurrency bound rejects the batch",
+    input: {
+      scopes: pilotScopes,
+      satisfiedScopeIds: ["scope-a", "scope-b"],
+      nativeCapabilities: pilotCapabilities,
+      nativePilotAllowed: true,
+      maxConcurrency: 1,
+    },
+    code: "PILOT_CONCURRENCY_BOUND",
+  },
+]) {
+  const route = evaluateScopeBatchPilot(failing.input);
+  assert.equal(route.mode, "coordinator-sequential", `pilot gate failure falls back: ${failing.name}`);
+  assert.equal(route.code, failing.code, `fallback names its gate: ${failing.name}`);
+}
+
+// Live capability report still fails the capability gate: both pilot
+// requirements are false, so the default host can never fan out.
+{
+  const live = evaluateScopeBatchPilot({
+    scopes: pilotScopes,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: BB_NATIVE_CAPABILITIES,
+    nativePilotAllowed: true,
+  });
+  assert.equal(live.mode, "coordinator-sequential", "live host capabilities force sequential");
+  assert.equal(live.code, "PILOT_CAPABILITY_GATE", "live fallback names the capability gate");
+  assert.deepEqual(
+    live.missingCapabilities,
+    ["file-claims", "isolated-workspace"],
+    "live fallback reports both missing safety capabilities",
+  );
+}
+
+// Receipt gate: claim verification, files touched, and artifact
+// manifest are all required before a child is merge-eligible.
+{
+  const ok = verifyScopeBatchPilotReceipt(
+    { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] },
+    ["src/a.ts"],
+  );
+  assert.equal(ok.ok, true, "a complete receipt verifies");
+  for (const [name, receipt] of [
+    ["unverified claim", { scopeId: "scope-a", claimVerified: false, filesTouched: ["src/a.ts"], artifacts: ["a.md"] }],
+    ["no files", { scopeId: "scope-a", claimVerified: true, filesTouched: [], artifacts: ["a.md"] }],
+    ["unclaimed file", { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/other.ts"], artifacts: ["a.md"] }],
+    ["no artifacts", { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: [] }],
+  ]) {
+    const refused = verifyScopeBatchPilotReceipt(receipt, ["src/a.ts"]);
+    assert.equal(refused.ok, false, `receipt gate refuses: ${name}`);
+  }
+}
+
+// Receipt collection: receipts land per scope and stay disjoint;
+// a missing, duplicate, or overlapping receipt refuses the merge.
+{
+  const complete = collectScopeBatchPilotReceipts(
+    [
+      { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] },
+      { scopeId: "scope-b", claimVerified: true, filesTouched: ["src/b.ts"], artifacts: ["b.md"] },
+    ],
+    { "scope-a": ["src/a.ts"], "scope-b": ["src/b.ts"] },
+  );
+  assert.equal(complete.ok, true, "per-scope receipts collect");
+  assert.deepEqual(Object.keys(complete.receiptsByScope).sort(), ["scope-a", "scope-b"], "artifacts land per scope");
+  const missing = collectScopeBatchPilotReceipts(
+    [{ scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] }],
+    { "scope-a": ["src/a.ts"], "scope-b": ["src/b.ts"] },
+  );
+  assert.equal(missing.ok, false, "a missing receipt refuses collection");
+  assert.equal(missing.code, "RECEIPT_MISSING", "missing receipt names its code");
+  const overlapping = collectScopeBatchPilotReceipts(
+    [
+      { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] },
+      { scopeId: "scope-b", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["b.md"] },
+    ],
+    { "scope-a": ["src/a.ts"], "scope-b": ["src/a.ts", "src/b.ts"] },
+  );
+  assert.equal(overlapping.ok, false, "overlapping writes refuse collection");
+  assert.equal(overlapping.code, "RECEIPT_WRITE_OVERLAP", "write overlap names its code");
+}
 
 console.log("execution route test ok: native, coordinator-sequential, and explicit refusal");

@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.51.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.2...v0.51.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* a native run that did nothing is not a successful run ([#102](https://github.com/calionauta/bb-plugin-stelow/issues/102)) ([7e843ed](https://github.com/calionauta/bb-plugin-stelow/commit/7e843ed5241ec4cc63e6ace025c5153fd9b51ef8))
+
+## [0.51.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.1...v0.51.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* a run that asks a question is not a failed run ([#100](https://github.com/calionauta/bb-plugin-stelow/issues/100)) ([ba0f58d](https://github.com/calionauta/bb-plugin-stelow/commit/ba0f58d5028914b439361f49f96847cb9f7b1e5f))
+
+## [0.51.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.0...v0.51.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* name the running build next to the published tag in About ([#98](https://github.com/calionauta/bb-plugin-stelow/issues/98)) ([595f1a4](https://github.com/calionauta/bb-plugin-stelow/commit/595f1a4d22f754259e877e294d8c1562a06e942f))
+
+## [0.51.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.50.0...v0.51.0) (2026-09-26)
+
+
+### Features
+
+* add Interface Contrast and Scope Map contracts ([#94](https://github.com/calionauta/bb-plugin-stelow/issues/94)) ([ee42633](https://github.com/calionauta/bb-plugin-stelow/commit/ee42633f81012379009a87657d87dacf02e19605))
+* decision router seams, scope-batch safety contract, gated fan-out, and programmatic answers ([#97](https://github.com/calionauta/bb-plugin-stelow/issues/97)) ([b7bc503](https://github.com/calionauta/bb-plugin-stelow/commit/b7bc50355475a5f3da2bd5621541dd8de5fb3207))
+
+
+### Bug Fixes
+
+* send the build card request and protocol to the worker ([#95](https://github.com/calionauta/bb-plugin-stelow/issues/95)) ([56fde6e](https://github.com/calionauta/bb-plugin-stelow/commit/56fde6e4f4c706fee8be27e70e0c2773309b0390))
+
+## [0.50.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.49.1...v0.50.0) (2026-09-24)
+
+
+### Features
+
+* surface BB Workflows setup status ([#87](https://github.com/calionauta/bb-plugin-stelow/issues/87)) ([7e5d621](https://github.com/calionauta/bb-plugin-stelow/commit/7e5d6214024d0e5b4a52c605cd7de436d1171153))
+
 ## [0.49.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.49.0...v0.49.1) (2026-09-24)
 
 

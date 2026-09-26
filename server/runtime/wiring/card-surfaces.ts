@@ -22,9 +22,10 @@ import { createCardsServer } from "../../cards.js";
 import { githubIssuesEnabled, type GithubAutomation } from "../../github-issues.js";
 import { githubUnavailableStatus } from "../../github-status.js";
 import { createWorkspacesRecovery } from "../../workspaces-recovery.js";
+import { cancelScopeBatchRun } from "../../scope-batch.js";
 import { createCardDetailHandler } from "../card-detail.js";
 import { createCardMutationHandlers } from "../card-mutations.js";
-import { createCardLifecycleHandlers } from "../card-lifecycle.js";
+import { cancelCardScopeBatches, createCardLifecycleHandlers } from "../card-lifecycle.js";
 import { createCardOperationsHandlers } from "../card-operations.js";
 import { createCardPromotion } from "../card-promotion.js";
 import { createResearchTrackHandlers } from "../research-track-handlers.js";
@@ -63,7 +64,7 @@ export function createCardSurfaces(deps: CardSurfaceDeps) {
     workspacesRecovery,
     cardDetail: buildCardDetail(core, execution),
     cardMutations: buildCardMutations(core),
-    cardLifecycle: buildCardLifecycle(core),
+    cardLifecycle: buildCardLifecycle(core, execution),
     cardOperations: buildCardOperations(core),
     promoteCard: buildPromotion(core, workspacesRecovery),
     researchTrack: buildResearchTrack(core, cards),
@@ -162,6 +163,7 @@ function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
       card.dir_hash
         ? core.workflowStateDir(bb, sourcePath, card.id, card.dir_hash)
         : Promise.resolve(null),
+    scopeXray: execution.scopeMaps.scopeXray,
     fileTimestamp,
     auditReceiptNote,
     cardNotFound: core.ERRORS.cardNotFound,
@@ -188,7 +190,7 @@ function buildCardMutations(core: RuntimeCore) {
 }
 
 /** The lifecycle: archive, unarchive, and the discard confirmation behind them. */
-function buildCardLifecycle(core: RuntimeCore) {
+function buildCardLifecycle(core: RuntimeCore, execution: ExecutionSurfaces) {
   const { bb, db, getCard, cardWorkspace, presetServer } = core;
   return createCardLifecycleHandlers({
     db,
@@ -197,6 +199,10 @@ function buildCardLifecycle(core: RuntimeCore) {
     cardWorkspace,
     workflowStateDir: core.workflowStateDir,
     workers: core.workers,
+    stopOwnedRuns: execution.executionLifecycle.stopOwned,
+    cancelScopeBatches: cancelCardScopeBatches(db, (batchId, cardId, reason) => {
+      cancelScopeBatchRun(db, { batchId, cardId, reason });
+    }),
     updateCard: core.updateCard,
     releaseClaims: core.claims.releaseCardClaimsAndNotify,
     removeCardPreset: presetServer.removeCardPreset,

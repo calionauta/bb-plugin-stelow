@@ -8,6 +8,10 @@ const about = readFileSync(new URL("../components/settings/about-panel.tsx", imp
 const actions = readFileSync(new URL("../components/settings/plugin-update-actions.ts", import.meta.url), "utf8");
 const tools = readFileSync(new URL("../components/settings/host-tools-section.tsx", import.meta.url), "utf8");
 const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
+const workflow = readFileSync(new URL("../components/settings/workflow-dependency-card.tsx", import.meta.url), "utf8");
+const onboarding = readFileSync(new URL("../components/settings/preset-onboarding.tsx", import.meta.url), "utf8");
+const dependency = readFileSync(new URL("../server/runtime/workflow-dependency.ts", import.meta.url), "utf8");
+const contract = readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8");
 
 test("app mounts About through the focused settings module", () => {
   assert.match(app, /<StelowPanelRoute\b/, "the app shell mounts the extracted panel route");
@@ -36,6 +40,26 @@ test("About preserves its team pointer, width, and destructive confirmation", ()
   assert.match(about, /see the experimental team playbook/);
   assert.match(about, /Clear onboarding state so every track shows its setup dialog again/);
   assert.match(about, /Show the first-visit setup dialogs again/);
+});
+
+test("BB Workflows status and explicit setup are wired into About and onboarding", () => {
+  assert.match(workflow, /BB Workflows integration/);
+  assert.match(workflow, /Install BB Workflows/);
+  assert.match(workflow, /Enable BB Workflows/);
+  assert.match(workflow, /Native execution is available for eligible Stelow recipes/);
+  assert.match(onboarding, /<WorkflowDependencyCard compact \/>/);
+  assert.match(about, /<WorkflowDependencyCard \/>/);
+  assert.match(dependency, /"plugin", "install", "builtin:workflows"/, "install goes through the host CLI, on request only");
+  assert.match(dependency, /"plugin", "enable", "workflows"/, "enable goes through the host CLI, on request only");
+  assert.match(dependency, /workflowDependencyStatus/, "the status is one decision over one CLI answer");
+  assert.match(contract, /workflowDependencyStatus: \{/, "the dependency status is a contracted RPC");
+  assert.match(contract, /installWorkflowDependency: \{/, "install is a contracted RPC");
+  assert.match(contract, /enableWorkflowDependency: \{/, "enable is a contracted RPC");
+  assert.doesNotMatch(
+    [workflow, onboarding, about].join("\n"),
+    /WorkflowDependencyCard[^>]*onInstall|fetch\(|child_process/,
+    "the card asks through the contract; it never shells out itself",
+  );
 });
 
 test("tool rows preserve exclusive install and resilient presentation", () => {

@@ -39,7 +39,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reconciler = readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8");
-const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
+// The watch owns its own module now: it answers "did the scopes move", which is
+// a different question from "what are this card's scopes".
+const scopeModule = readFileSync(join(root, "server/scope-progress-sync.ts"), "utf8");
 assert.match(scopeModule, /const prints = new Map<string, string>\(\);/, "one print per live card, closure lifetime");
 assert.match(scopeModule, /async function sync\(cardId: string\)/, "the watch is one named helper");
 assert.match(

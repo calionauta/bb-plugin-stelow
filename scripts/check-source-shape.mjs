@@ -61,6 +61,15 @@ function isSource(file) {
   return sourceExtensions.has(extname(file));
 }
 
+// BB workflow scripts under .bb/workflows/ are prompt artifacts, not source:
+// each long line is one prompt's own text, and the only way to shorten it is to
+// cut the prompt in half with a concatenation, which is exactly what makes a
+// prompt unreviewable. They are excluded by path, visibly here, so the
+// exemption is one line to find and never a silent skip.
+function isPromptArtifact(file) {
+  return file.startsWith(".bb/workflows/") && extname(file) === ".js";
+}
+
 function changedFiles(base) {
   const tracked = git("diff", "--name-only", "--diff-filter=ACMRT", base, "--").trim().split("\n");
   const untracked = git("status", "--porcelain", "--untracked-files=all")
@@ -111,7 +120,8 @@ function main() {
   const base = comparisonBase();
   assertCommit(base, "comparison base");
   const requestedFiles = explicitFiles();
-  const candidates = requestedFiles.length > 0 ? requestedFiles.filter(isSource) : changedFiles(base);
+  const candidates = (requestedFiles.length > 0 ? requestedFiles.filter(isSource) : changedFiles(base))
+    .filter((file) => !isPromptArtifact(file));
   const violations = candidates.flatMap((file) => inspectFile(file, base));
   report(candidates.length, base, violations);
 }

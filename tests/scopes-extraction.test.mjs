@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createScopeProgressSync, loadCardScopes, runScopeCommand } from "../server/scopes.ts";
+import { loadCardScopes, runScopeCommand } from "../server/scopes.ts";
+import { createScopeProgressSync } from "../server/scope-progress-sync.ts";
 import { z } from "zod";
 
 const root = mkdtempSync(join(tmpdir(), "stelow-scopes-"));
