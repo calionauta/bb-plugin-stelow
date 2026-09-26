@@ -27,7 +27,7 @@ const fileBaseline = new Map([
 
 // The debt this branch is working through, in the two named areas (GitHub
 // automation and the decision API) plus the rest of the tree the diff-scoped
-// gate never sees. All 56 oversized functions are pinned, so this map is the
+// gate never sees. Every oversized function above is pinned, so this map is the
 // whole census: a rename, a deletion, or growth in any of them fails here and
 // has to be recorded deliberately. Keys are the census identifiers.
 const functionBaseline = new Map([

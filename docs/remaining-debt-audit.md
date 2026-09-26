@@ -5,21 +5,34 @@ areas named by the branch and produces the ordered repair list that the later
 phases execute. It fixes nothing in the measured areas; the only code change it
 ships is the shape-gate repair described under *Gate repairs*.
 
-Every number below was measured on this branch (`refactor/app-slices-1-11`) with
+The numbers in the per-area tables are the **pre-split record**: each measured area
+is labelled with what actually shipped, and the tables are kept as the
+before-picture rather than rewritten. The figures in *Status* lines and in
+*Phase 2 result* / *Phase 3 result* are current. The gate figures quoted inline
+were re-measured on this branch (`refactor/app-slices-1-11`) with
 `node scripts/check-source-budgets.mjs` and a TypeScript AST census that mirrors
 that gate's traversal. Master values come from `git show origin/master:<path>`.
 The two must agree, or the census does not describe the same shapes the gate
 measures.
 
 The adversarial review of this phase re-measured every symbol and line range in
-the tables and corrected four of them, listed under *Review corrections*.
+the tables and corrected four of them, listed under *Review corrections*. Two
+later adversarial reviews — one of the phase that closed R4's last clause, one
+of its own corrections — re-derived every number in *Phase 3 result* from the
+tree. Between them they rejected fourteen claims in this file: a wrong file
+count, two miscounted duplications, three stale diffstats, a symbol reported as
+deleted that is alive at 7 lines, a pair of guards wrongly described as live
+that are dead like the one beside them, a line count no commit ever had, and
+five sentences that were stale, self-contradicting, or less accurate than the
+review found them. All are corrected above; the *Review corrections* list
+records what the first review found, not what the file now says.
 
 ## How to read the deltas
 
 `check-source-budgets.mjs` scores two different references, and both matter:
 
 - **New violations** are scoped to the *merge-base* with `origin/master`,
-  currently `1f968be` — 200 commits behind the branch tip.
+  currently `1f968be` — 207 commits behind the branch tip.
 - **Inherited debt** is scored against the *target tip* of `origin/master`,
   currently `12c6664`.
 
@@ -108,9 +121,13 @@ agrees with itself, and `FEATURES.md` records the rule.
 
 ## 2. Decision API area
 
-All three files are **byte-identical to `origin/master`**. This area has
-received zero branch effort; every number below is a starting point, not a
-partially-reduced ratchet.
+**Status: repaired (R4 landed).** The measurements below are kept as the
+pre-split record; what shipped is measured in "Phase 3 result" at the end of
+the section.
+
+The area received **zero** branch effort when this audit was written — all
+three files were byte-identical to `origin/master` — so every number below is a
+starting point, not a partially-reduced ratchet.
 
 | Symbol | Lines | Range | master | HEAD | delta |
 | --- | --- | --- | --- | --- | --- |
@@ -142,10 +159,121 @@ Unlike the GitHub area, the decision API *is* behavior-covered:
 `decision-routers.test.mjs` all run it. The split is unblocked on tests; it is
 merely not started.
 
+### Phase 3 result (re-derived from the shipped tree)
+
+The split landed as `73c4741` and turned the area into **twelve
+`server/decision-*.ts` files, nine of them new**; the largest is
+`server/decision-store.ts` at 226 lines. Every file the phase below touched is
+now well under the 400-line ceiling, and — the part R4 asked for explicitly —
+nothing was left *adjacent* to one:
+
+| Symbol | Before | After |
+| --- | --- | --- |
+| `server/decision-api.ts` (file) | 400 (zero headroom) | 70 |
+| `createDecisionApi` | 319 | 34 |
+| `setDecisionPoint` | 84 | 7, now a method in `decisionPointHandlers` |
+| `server/decision-api-seams.ts` (file) | 340 | 57 |
+| `createDecisionApiSeams` | 271 | 15 |
+| `vetAutoContinue` | 55 | 19 |
+| `seedFromPreset` | 49 | 45 |
+
+`server/decision-api-contract.ts` is untouched at 108, as the audit expected.
+
+The test gap the GitHub area had does not exist here, and the split did not
+create one: `tests/decision-seam-runtime.test.mjs` drives
+`createAutoContinueVeto` and `tests/decision-seed-runtime.test.mjs` drives
+`createDecisionSeed`, each over a real point store, so both advisory seams stay
+behavior-covered through the split.
+
+R4's last clause was that `seedFromPreset` be moved *away* from the 50-line
+ceiling rather than left next to it. It sat at 49 — one line of headroom, and
+the census could not report it because the gate flags `lines > 50`. `73c4741`
+left that clause open, and closing it surfaced two real findings:
+
+- **Duplicated resolution tail.** `seedFromApi` and `seedFromPreset` each ended
+  with the same six lines — resolve, log on acceptance, return — differing only
+  in the label naming the judge. The whole call site measured 7 lines on the api
+  side and 16 on the preset side, the difference being that the preset call
+  spent ten lines on `resolveSeedIntent({…})` to wrap a seven-line `apiAnswers`
+  literal where the api side passed `result.answers` straight through.
+  Extracted to `applySeedIntent` in `server/decision-seed.ts`, which drops the
+  two call sites to 19 and 45 lines. `routeAt` was already computed once in
+  `seedBuildIntent` and fed to both paths, so this did not fix a live drift —
+  what it removes is the chance that a future edit applies the threshold at one
+  call site and not the other.
+- **The threshold was never tested on either path.** Every seed assertion that
+  existed before this phase used a confidence of 0.9 or 0.95 against the
+  harness default `routeAt` of 0.6, so nothing could tell a threshold that is
+  *enforced* from one merely passed along. Reverting to that test file and
+  zeroing `routeAt` leaves the suite green. Four scenarios now pin the tail, in
+  a new `tests/decision-seed-runtime.test.mjs`: a preset verdict and an api
+  verdict below the point's `routeAt` both fail soft to `unknown` and neither
+  announces itself as seeded; a below-threshold api answer stays silent rather
+  than warning; and — because every accepted seed in the file was a `feature` —
+  a `bugfix` verdict from the preset judge and an `investigate` answer from the
+  api route each seed the choice they named, and the trail names it at info.
+
+  Each of those scenarios dies on its own mutation, and each mutation was run
+  against the shipped test: zeroing `routeAt` on the preset path only, zeroing
+  it on the api path only, returning a hardcoded `"feature"` for every accepted
+  answer, raising the trail from info to warn, dropping the intent from the
+  trail message, and deleting the trail log altogether. Two of them were found
+  by review rather than by the first draft of these tests — a tail that forced
+  every accepted seed to `"feature"`, which is the tail's entire output, and a
+  trail raised to warn, both left the whole decision suite green until the
+  non-feature verdicts and the level-aware count went in.
+
+The new tests needed their own file. Adding them to
+`tests/decision-seam-runtime.test.mjs` pushed it past the 400-line ceiling, and
+the budget gate correctly refused it rather than being handed a new baseline
+entry. The two advisory seams are now tested separately —
+`decision-seam-runtime.test.mjs` (209 lines) keeps the auto-continue veto,
+`decision-seed-runtime.test.mjs` (263) takes the triage seed.
+
+Extracting the tail also broke a pin in `tests/decision-routers.test.mjs`, on
+the literal `triage intent seeded from Decision API`. That pin is a copy pin —
+it passes on broken logic and breaks on a good refactor, the two things a pin
+must not do — and the behavior it claimed is asserted on real captured log
+lines in the seed runtime test for *both* judges. It was removed rather than
+satisfied by keeping the wording hostage to the source shape. Removing the
+source string costs no coverage: with the new block deleted entirely, losing
+the api trail or losing the preset trail still fails the suite.
+
+**Known, deliberately not fixed here.** `seedFromPreset` still guards
+`!("choice" in parsed)` before reading `parsed.choice`, and that branch is
+unreachable: in `kind: "choice"` mode `parsePresetJudgeOutput` returns
+`ok: true` only alongside a validated string `choice`, so the sibling error
+string `"verdict shape mismatch"` is dead. Verified against fourteen judge
+outputs (fenced, unfenced, malformed JSON, unknown choice, missing key, array,
+`null`, `"str"`, criteria-shaped, non-numeric and missing confidence, empty
+fence, two-block) — every rejection comes back as `ok: false`, and the only
+`ok: true` return in that mode is the one that carries `choice`.
+
+The guard survives because it is TypeScript's only narrowing on the parser's
+un-narrowed `PresetJudgeChoice | PresetJudgeCriteria` union: deleting it fails
+`tsc` with `Property 'choice' does not exist`. Killing it properly means an
+`@overload` pair on `parsePresetJudgeOutput` so `kind: "choice"` returns only
+the choice shape — roughly ten lines in one small `.mjs`, and a reasonable
+follow-up, but it edits a shared `lib/` contract with its own suite and has no
+size pressure behind it, so it was left out of a phase whose subject was a
+line-count repair rather than smuggled in beside it.
+
+The same dead guard exists twice more, at `server/decisions/scored-batch-judge.ts:83`
+and `server/decisions/artifact-criteria-judge.ts:108`, where `!("verdicts" in
+parsed)` is structurally identical: in `kind: "criteria"` the only `ok: true`
+return also always carries `verdicts`, so the sibling `"judge verdict shape
+mismatch"` string is dead there too. No test anywhere references either string.
+One `@overload` on `parsePresetJudgeOutput` retires all three, which is the
+argument for doing it once rather than three times.
+
 ## 3. Budget-checker delta
 
-`scripts/check-source-budgets.mjs` is 311 lines with no function over 50, and it
-passes: 267 changed owned files, 13 inherited entries, 0 violations. Three
+**Status: unchanged by the later phases; still open as R6.** The measurements
+below are the pre-split record. `scripts/check-source-budgets.mjs` was 311 lines
+with no function over 50, and it passed then: 267 changed owned files, 13
+inherited entries, 0 violations. As of this phase it still passes, at **300
+changed owned files, 7 inherited entries, 0 violations** — the inherited count
+fell because R1–R4 removed the entries the branch had been carrying. Three
 defects shape how much trust the later phases can put in it.
 
 **Split comparison bases.** `comparisonBases()` returns
@@ -174,17 +302,18 @@ but it is the reason the gate is the slowest script in `quality:shape`.
 
 ## 4. origin/master delta
 
-`200` commits ahead, `6` behind, measured at `1409058`. The merge-base is
-`1f968be`; against it the branch changed `295` files, `+36899/-9415`. Both
-figures drift as the branch grows, so re-derive them rather than trusting this
-line:
+`207` commits ahead, `6` behind, `327` files changed against the merge-base,
+`+41798/-11179`, measured at `HEAD` and therefore *not* counting the phase that
+closed R4's last clause. Both figures drift as the branch grows — so does the
+insertion count as soon as that phase is committed — which is why they are
+worth re-deriving rather than reading:
 
 ```bash
 git rev-list --left-right --count origin/master...HEAD
 git diff --shortstat "$(git merge-base origin/master HEAD)" HEAD
 ```
 
-The 6 missing commits are not workflow-only — they touch owned source, so every
+The 6 missing commits are mostly workflow-only, but one of them is not, so every
 later phase re-measures against a base that moves:
 
 | Commit | Owned source it changes |
@@ -194,9 +323,9 @@ later phase re-measures against a base that moves:
 | `940a7f4` docs: document workflow and decision boundaries | docs only |
 | `50e751b`, `599f7ac`, `12c6664` | `.bb/workflows/*` only |
 
-`7e5d621` is the one that matters for the gates: it edits `server.ts` and three
-`components/settings/*` files, all inside the owned roots the budget gate
-traverses.
+`7e5d621` is the one that matters for the gates: it edits `server.ts`, three
+`components/settings/*` files, and a test — all five inside the owned roots the
+budget gate traverses. The other five commits touch no owned root.
 
 ## Ordered repair list
 
@@ -212,17 +341,30 @@ prerequisite: R2 cannot be done honestly without it.
    with R3: the seam is 58 lines and holds no logic.
 3. ~~**R3 — Split `server/github-issues.ts` (942 lines).**~~ **DONE.** Ten
    slices, the largest 293 lines; see "Phase 2 result" above.
-4. **R4 — Decision API, starting with the zero-headroom file.** Split
-   `server/decision-api.ts` (exactly 400 lines, invisible to the gate) before
-   anything else in the area, then `createDecisionApi` (319) and
-   `setDecisionPoint` (84), then `server/decision-api-seams.ts` (340) and
-   `createDecisionApiSeams` (271). Move `seedFromPreset` (49) away from the
-   50-line ceiling rather than leaving it adjacent. Tests already exist.
-5. **R5 — Reconcile with `origin/master` before R3 and R4 finish.** The 6
-   missing commits edit owned source, and `inheritedBaseline` embeds master's
+4. **R4 — Decision API, starting with the zero-headroom file.** **DONE, in two
+   parts, and the credit is split.** `73c4741` did the structural split:
+   `server/decision-api.ts` 400 → 70 (it no longer sits *at* a ceiling,
+   invisible to the gate), `createDecisionApi` 319 → 34, `setDecisionPoint` 84
+   → 7 as a method in `decisionPointHandlers`, `server/decision-api-seams.ts`
+   340 → 57, `createDecisionApiSeams` 271 → 15, and `vetAutoContinue` 55 → 19. The later
+   phase did only what `73c4741` left open — R4's final clause, moving
+   `seedFromPreset` off the 50-line line rather than leaving it at 49 beside it
+   — and in doing so found and fixed a threshold that no test enforced on either
+   path. See "Phase 3 result" above.
+5. **R5 — Reconcile with `origin/master`.** The 6 missing commits include
+   `7e5d621`, which edits owned source (`server.ts` and three
+   `components/settings/*` files), and `inheritedBaseline` embeds master's own
    line counts, so master's advance invalidates the deepEqual for reasons that
-   have nothing to do with the branch. Do this as its own reviewed merge; never
-   rebase or widen a recorded range to make it quiet.
+   have nothing to do with the branch. The other five are release, docs, and
+   workflow-only. Do this as its own reviewed merge; never rebase or widen a
+   recorded range to make it quiet. R1–R4 are now landed *ahead* of this
+   reconciliation rather than gated on it — the splits did not depend on it —
+   so R5 is the whole of what remains **of the two areas this audit measured**.
+   It is deliberately not done from this branch's own phase work: it is a merge,
+   and a phase that merges cannot also claim an honest before/after for the
+   merge itself. The tree-wide debt the audit deliberately did not measure is
+   untouched by all of this and still pinned — 4 oversized files and 47
+   oversized functions, listed in `tests/debt-baseline.test.mjs`.
 6. **R6 — Only then, consider the budget-checker defects in section 3.** The
    split bases (R6a) and the `bestFunction` full-tree fallback (R6b) are real
    but neither blocks a split. Fixing them changes what the gate reports, so it
@@ -240,9 +382,10 @@ Four claims did not survive:
 - The factory holds 91 nested functions, 88 of them under 50 lines — not "25
   nested functions, 22 under 50". The conclusion is unchanged: only the shell and
   the three named inner functions are oversized.
-- The branch is 200 commits ahead, not 199, and the section 4 diffstat was stale
-  in both directions. It now names the commit it was measured at and the
-  commands that re-derive it, because the figure changes with every phase.
+- The branch was 200 commits ahead at the time, not 199, and the section 4
+  diffstat was stale in both directions. It now names the commit it was measured
+  at and the commands that re-derive it, because the figure changes with every
+  phase. (It has since moved again — section 4 is the current figure.)
 - `server/decision-api-contract.ts` (108 lines) is the third file the section 2
   sentence claims are byte-identical to master but was missing from the table.
 
@@ -257,9 +400,10 @@ Two defects in the census itself were found the same way and fixed:
   gate could see. `syntheticNodeKinds` in `tests/debt-baseline.test.mjs` is the
   control: it fails if the census ever narrows again.
 - The census pinned 32 of the 56 oversized functions, so growth in the other 24
-  was bounded only by the total count. All 56 are pinned now; growing
-  `lib/question-batch.mjs:parseAskGroups` from 80 to 110 lines fails the test
-  with its own name, where before it passed.
+  was bounded only by the total count. All 56 were pinned then, and every one
+  still is; growing `lib/question-batch.mjs:parseAskGroups` from 80 to 110 lines
+  fails the test with its own name, where before it passed. The set has since
+  shrunk to 47 as R1–R4 landed, and the total is separately ratcheted at 51.
 
 The remaining inherited set outside these two areas
 (`lib/preview-runtime.mjs`, `lib/trackable-evidence.mjs`,

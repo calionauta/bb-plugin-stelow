@@ -185,7 +185,10 @@ const seamBody = decisionSeed.slice(seamAt, seamEnd);
 assert.ok(seamBody.includes("return \"unknown\""), "disabled triage seeds stay unknown");
 assert.ok(seamBody.includes('normalizePointMode(point?.mode, "rules")'), "unconfigured points default to rules — a fallback flip to api fails here");
 assert.ok(decisionSeed.includes("resolveSeedIntent({"), "seeding resolves through the lib cascade");
-assert.ok(decisionSeed.includes("triage intent seeded from Decision API"), "api seeds leave a log trail with the outcome");
+// The seeded/fallback log trail is asserted on real captured log lines in
+// decision-seed-runtime.test.mjs, not on a literal surviving in the source:
+// both judges now name themselves as an argument, so a string pin would only
+// constrain the wording of a log line whose absence no pin here can detect.
 assert.ok(decisionSeed.includes("triage intent router fell back to built-in rules"), "api failures log the fallback instead of failing silently");
 assert.ok(decisionSeed.includes("isDecisionApiDisabled(process.env)"), "the seam consults the kill switch first");
 assert.ok(decisionSeed.includes("provider: call.provider"), "the seam forwards the configured provider");

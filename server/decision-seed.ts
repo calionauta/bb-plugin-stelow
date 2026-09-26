@@ -45,6 +45,38 @@ function warnFallback(bb: BbPluginApi, error: string): string {
   return "unknown";
 }
 
+/** The answer map both judges hand to the resolver, taken from the resolver's
+ *  own inferred signature so neither call site restates the shape. Every field
+ *  of it is optional — the cascade tolerates a malformed map by design — so it
+ *  documents the contract rather than enforcing it. */
+type SeedAnswers = Parameters<typeof resolveSeedIntent>[0]["apiAnswers"];
+
+/**
+ * The tail both judges share: resolve the answer against the point's routeAt,
+ * announce it when — and only when — the threshold accepted it, and return the
+ * intent. The threshold has to be applied identically whichever judge produced
+ * the answer, so it lives here rather than at the two call sites.
+ *
+ * A rejected answer is not a failure: it falls back to the built-in rules
+ * silently, which is why this logs on acceptance alone, at info. The `source`
+ * argument is the judge that answered — it carries no logic, it only names
+ * which of the two produced a seed worth keeping a record of.
+ */
+function applySeedIntent(
+  ctx: DecisionSeedDeps,
+  apiAnswers: SeedAnswers,
+  routeAt: number,
+  source: string,
+): string {
+  const resolved = resolveSeedIntent({ apiAnswers, routeAt });
+  if (resolved.source === "api") {
+    ctx.bb.log.info(
+      `triage intent seeded from ${source}: ${resolved.intent} (confidence ${resolved.confidence})`,
+    );
+  }
+  return resolved.intent;
+}
+
 async function seedFromApi(
   ctx: DecisionSeedDeps,
   promptText: string,
@@ -62,13 +94,7 @@ async function seedFromApi(
     questions: triageIntentQuestions(),
   });
   if (!result.ok) return warnFallback(ctx.bb, result.error ?? "call failed");
-  const resolved = resolveSeedIntent({ apiAnswers: result.answers, routeAt });
-  if (resolved.source === "api") {
-    ctx.bb.log.info(
-      `triage intent seeded from Decision API: ${resolved.intent} (confidence ${resolved.confidence})`,
-    );
-  }
-  return resolved.intent;
+  return applySeedIntent(ctx, result.answers, routeAt, "Decision API");
 }
 
 async function seedFromPreset(
@@ -103,8 +129,9 @@ async function seedFromPreset(
       ctx.bb,
       parsed.ok ? "verdict shape mismatch" : parsed.error,
     );
-  const resolved = resolveSeedIntent({
-    apiAnswers: {
+  return applySeedIntent(
+    ctx,
+    {
       intent: {
         type: "choice",
         choice: parsed.choice,
@@ -112,13 +139,8 @@ async function seedFromPreset(
       },
     },
     routeAt,
-  });
-  if (resolved.source === "api") {
-    ctx.bb.log.info(
-      `triage intent seeded from preset judge (${presetId}): ${resolved.intent} (confidence ${resolved.confidence})`,
-    );
-  }
-  return resolved.intent;
+    `preset judge (${presetId})`,
+  );
 }
 
 async function seedBuildIntent(

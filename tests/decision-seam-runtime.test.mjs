@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createAutoContinueVeto } from "../server/decision-auto-continue.ts";
 import { createDecisionRoute } from "../server/decision-route.ts";
-import { createDecisionSeed } from "../server/decision-seed.ts";
 import {
   clearDecisionEnv,
   decisionHarness,
@@ -11,9 +10,11 @@ import {
   warnedAbout,
 } from "./fixtures/decision-harness.mjs";
 
-// Executable tests for the two seams that ask a judge: the auto-continue
-// veto and the triage intent seed. Both are advisory, so the guard that
-// matters is the one that keeps them from acting on a bad answer.
+// Executable tests for the auto-continue veto: the seam that may stop a
+// worker turn from being resumed. It is advisory and veto-only, so the guard
+// that matters is the one that keeps it from spending a resume decision on a
+// bad answer — the heuristic has to stand on every failure.
+// The triage intent seed is tested alongside it in decision-seed-runtime.test.mjs.
 
 const saved = savedEnv();
 
@@ -199,137 +200,10 @@ try {
     delete process.env.STELOW_DECISION_API;
   }
 
-  // --- triage intent seeding: fail-soft to unknown on every path ---------
-  {
-    const { bb, logs, store } = decisionHarness();
-    const route = createDecisionRoute({ configRow: store.configRow });
-    const keylessRoute = {
-      provider: "classifier",
-      endpoint: null,
-      apiKey: null,
-      model: null,
-    };
-    const neverApi = async () => {
-      throw new Error("this point must not reach the api route");
-    };
-    const seedWith = (impl, judge) =>
-      createDecisionSeed({
-        bb,
-        route,
-        pointRow: store.pointRow,
-        parsedThresholds: store.parsedThresholds,
-        evaluateCall: impl,
-        judgeViaPreset:
-          judge ?? (async () => ({ ok: true, text: "unused", error: null })),
-      });
-
-    store.savePoint("triage-intent", pointWrite({ route: keylessRoute }), () => 1);
-    const failed = seedWith(async () => ({ ok: false, error: "upstream 500" }));
-    assert.equal(
-      await failed.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-    );
-    assert.ok(
-      warnedAbout(logs, "fell back to built-in rules"),
-      "a failed seed names the fallback it took",
-    );
-
-    const confident = seedWith(async () => ({
-      ok: true,
-      answers: { intent: { type: "choice", choice: "feature", confidence: 0.95 } },
-    }));
-    assert.equal(
-      await confident.seedBuildIntent("add dark mode", "project"),
-      "feature",
-    );
-    assert.ok(
-      logs.some(([, line]) => line.includes("seeded from Decision API")),
-    );
-
-    store.savePoint(
-      "triage-intent",
-      pointWrite({ mode: "rules", route: keylessRoute }),
-      () => 1,
-    );
-    const rules = seedWith(neverApi);
-    assert.equal(
-      await rules.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-      "rules mode never calls out",
-    );
-
-    store.savePoint(
-      "triage-intent",
-      pointWrite({ mode: "preset", route: keylessRoute, presetId: "judge" }),
-      () => 1,
-    );
-    const garbage = seedWith(neverApi, async () => ({
-      ok: true,
-      text: "no verdict here",
-      error: null,
-    }));
-    assert.equal(
-      await garbage.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-    );
-    assert.ok(
-      warnedAbout(logs, "no fenced verdict block"),
-      "an unparsable judge answer names why the seed fell back",
-    );
-
-    const judge = seedWith(neverApi, async () => ({
-      ok: true,
-      text: '```json\n{"choice":"feature","confidence":0.9}\n```',
-      error: null,
-    }));
-    assert.equal(
-      await judge.seedBuildIntent("add dark mode", "project"),
-      "feature",
-    );
-    assert.ok(
-      logs.some(([, line]) => line.includes("seeded from preset judge (judge)")),
-    );
-
-    const refused = seedWith(neverApi, async () => ({
-      ok: false,
-      text: null,
-      error: "judge thread timed out",
-    }));
-    assert.equal(
-      await refused.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-    );
-    assert.ok(
-      warnedAbout(logs, "judge thread timed out"),
-      "a failed judge names its own error in the fallback line",
-    );
-
-    process.env.STELOW_DECISION_API = "0";
-    const disabled = seedWith(neverApi, async () => {
-      throw new Error("the kill switch must block seeding before any judge");
-    });
-    assert.equal(
-      await disabled.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-    );
-    delete process.env.STELOW_DECISION_API;
-
-    // The seam documents that every path fails soft to "unknown", so a
-    // collaborator that REJECTS has to land there too — a bare `return
-    // promise` inside the try would let it escape into card creation.
-    const rejecting = seedWith(neverApi, async () => {
-      throw new Error("judge bridge is down");
-    });
-    assert.equal(
-      await rejecting.seedBuildIntent("add dark mode", "project"),
-      "unknown",
-      "a rejecting judge fails soft instead of throwing into card creation",
-    );
-  }
 } finally {
   restoreEnv(saved);
 }
 
 console.log(
-  "decision seam runtime test ok: veto gates, seed fail-soft, preset judging",
+  "decision veto runtime test ok: the router may only hold the heuristic back",
 );
