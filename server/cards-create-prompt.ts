@@ -101,5 +101,9 @@ export function buildBuildPrompt(
     INSTRUCTIONS: context.instructions ? `Preset instructions:\n${context.instructions}\n` : "",
     REQUEST: context.prompt,
   };
-  return BUILD_INITIAL_PROMPT.replace(/%([A-Z_]+)%/g, (name) => values[name] ?? "");
+  // The replacer receives (match, capture, offset, string): reading the first
+  // argument as the token name looks up "%STATE_DIR%" and silently renders
+  // every clause empty, which ships a worker with no request body, no intent,
+  // and no protocol at all. The name comes from the capture group.
+  return BUILD_INITIAL_PROMPT.replace(/%([A-Z_]+)%/g, (_token, name: string) => values[name] ?? "");
 }
