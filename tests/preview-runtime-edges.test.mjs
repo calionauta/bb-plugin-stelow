@@ -1,14 +1,16 @@
 // The edges of the preview lifecycle that the happy-path test cannot reach:
 // a host that cannot spawn at all, a process that errors after spawning, a
-// Connect that is missing or unpaired, a SIGTERM the server ignores, and a
-// session that failed and is started again. Each one used to be an unhandled
-// throw or a silently stuck panel, and each is a promise the runtime makes to
-// the user: a refusal names its reason, a preview never counts as live unless
-// a process is really there, and nothing is claimed that did not happen.
+// Connect that is missing or unpaired, a SIGTERM the server ignores, a dev
+// server that exits and takes its share with it, and a session that failed and
+// is started again. Each one used to be an unhandled throw or a silently stuck
+// panel, and each is a promise the runtime makes to the user: a refusal names
+// its reason, a preview never counts as live unless a process is really there,
+// and nothing is claimed that did not happen.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createPreviewRuntime } from "../lib/preview-runtime.mjs";
 import { PREVIEW_KILL_GRACE_MS, createProcessSupervisor } from "../lib/preview-process.mjs";
+import { previewView } from "../lib/preview-lifecycle.mjs";
 import { createSessionStore } from "../lib/preview-session-store.mjs";
 
 const VITE = JSON.stringify({ dependencies: { vite: "^9" }, scripts: { dev: "vite" } });
@@ -250,6 +252,86 @@ function harness({ spawn, connect, files = { "/app/package.json": VITE }, paired
   assert.equal(store.all().length, 0, "dispose leaves nothing holding a port");
 }
 
+// --- A dev server that exits drops its share, however it exited. ------------
+// Connect is told to drop the tunnel for a port nothing is listening on any
+// more. A clean exit deletes the session; a crash keeps it, failed, so the log
+// stays openable — and neither leaves a share behind. Dropping this call is
+// invisible in the panel and permanent in Connect.
+{
+  for (const code of [0, 1]) {
+    const child = new FakeChild();
+    const { runtime, connects } = harness({ spawn: () => child });
+    await runtime.start({ checkout: "/app", hostId: "host_a" });
+    child.stdout.emit("data", "  ➜  Local:   http://localhost:5173/\n");
+    await settle();
+    connects.length = 0;
+    child.end(code);
+    await settle();
+    const unexposed = connects.filter((args) => args[0] === "unexpose");
+    assert.deepEqual(
+      unexposed,
+      [["unexpose", "5173"]],
+      `a dev server exiting with ${code} releases the shared port`,
+    );
+    const view = await runtime.view({ checkout: "/app", hostId: "host_a" });
+    if (code === 0) {
+      assert.equal(
+        view.state,
+        "stopped",
+        "a clean exit leaves no failed session behind — the panel offers a start again",
+      );
+    } else {
+      assert.equal(view.state, "failed", "a crash keeps the session so the log stays openable");
+      assert.match(view.error, /exited with code 1/);
+    }
+  }
+}
+
+// --- A stop is not a crash: the process is signalled and the port released. --
+{
+  const child = new FakeChild();
+  const { runtime, connects } = harness({ spawn: () => child });
+  await runtime.start({ checkout: "/app", hostId: "host_a" });
+  child.stdout.emit("data", "  ➜  Local:   http://localhost:5173/\n");
+  await settle();
+  connects.length = 0;
+  const stopped = await runtime.stop({ checkout: "/app", hostId: "host_a" });
+  assert.deepEqual(stopped, { ok: true, error: null });
+  assert.deepEqual(child.signals, ["SIGTERM"], "a stop signals the process it owns");
+  assert.deepEqual(
+    connects.filter((args) => args[0] === "unexpose"),
+    [["unexpose", "5173"]],
+    "a stop releases the shared port, not just the process",
+  );
+  assert.equal(
+    (await runtime.view({ checkout: "/app", hostId: "host_a" })).state,
+    "stopped",
+    "a stopped preview is gone, so the panel offers a start rather than a stop",
+  );
+}
+
+// --- The view answers for the live session, not the first one it finds. -----
+// One checkout can hold a stopped session and a running one at once — a restart
+// that raced, or an app directory under a checkout that is still up. Handing
+// the panel the stopped one would show a dead server as live, which is the one
+// thing the state honesty rule forbids.
+{
+  const detection = { framework: "vite", evidence: "package.json", command: "vite", portFlag: "flag" };
+  const store = createSessionStore();
+  const live = { key: "host_a:/app", state: "running", port: 5173, detection, declared: null, share: null };
+  const dead = { key: "host_a:/app/web", state: "stopped", port: 5174, detection, declared: null, share: null, error: "gone" };
+  // Insertion order puts the stopped session first: a view that took
+  // candidates[0] would answer for the dead one and pass every other check in
+  // this file.
+  store.set(dead);
+  store.set(live);
+  const view = await previewView({ store, connect: { isPaired: async () => false } }, { hostId: "host_a", checkout: "/app" });
+  assert.equal(view.port, 5173, "the live session answers the view, not the stopped one");
+  assert.equal(view.state, "running");
+  store.clear();
+}
+
 console.log(
-  "preview runtime edges ok: spawn refusal, post-spawn error, restart, unpaired share, missing Connect, kill escalation, store identity",
+  "preview runtime edges ok: spawn refusal, post-spawn error, restart, unpaired share, missing Connect, "
+  + "kill escalation, share release, stop shape, live view, store identity",
 );

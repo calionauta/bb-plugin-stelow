@@ -192,6 +192,23 @@ const CARD = { id: "card-1", worker_thread_id: "thread-1", stage: "critique" };
   assert.deepEqual(woke, ["card-1"], "a row that moved republishes its card");
   await reconcileOne({ ...real, native: { adapterFor: () => ({ status: async () => ({ state: "running" }) }) } }, "local-9");
   assert.deepEqual(woke, ["card-1"], "a row that did not move republishes nothing");
+
+  // A run the host never started ages out instead of waiting forever. A queued
+  // row with no runId is the one state no host round trip can resolve, so the
+  // clock is the only exit it has — and it must fail the run, not leave a card
+  // waiting on a worker that was never launched.
+  const stalled = ledger();
+  createExecutionRun(stalled, { ...RUN, id: "local-8", runId: null, now: 0 });
+  const stalledDeps = { ...deps, db: stalled, now: () => 120_000, publishCard: () => {} };
+  const aged = await reconcileOne(stalledDeps, "local-8");
+  assert.equal(aged.run.normalizedStatus, "failed");
+  assert.equal(aged.run.errorCode, "native-start-timeout");
+  assert.deepEqual(dispatched, [["boundary", "Approve?"]], "an unstarted run never reaches the host at all");
+
+  const inside = ledger();
+  createExecutionRun(inside, { ...RUN, id: "local-7", runId: null, now: 0 });
+  const waiting = await reconcileOne({ ...stalledDeps, db: inside, now: () => 1_000 }, "local-7");
+  assert.equal(waiting.run.normalizedStatus, "queued", "inside the grace window the run waits");
 }
 
 // --- stop rule -------------------------------------------------------------
@@ -255,5 +272,5 @@ const CARD = { id: "card-1", worker_thread_id: "thread-1", stage: "critique" };
 }
 
 console.log(
-  "execution rule seams ok: boundary, artifacts, one-run, stop, answer routing, shared vocabulary",
+  "execution rule seams ok: boundary, artifacts, one-run, start timeout, stop, answer routing, shared vocabulary",
 );

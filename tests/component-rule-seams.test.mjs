@@ -148,7 +148,8 @@ const noop = () => {};
   const ok = rpcDouble({ setDefaultPreset: { error: null } });
   const done = [];
   await runPresetAction(ok, { id: "p1", name: "Fast" }, "setDefaultPreset", noop, (m) => done.push(m), async () => {});
-  assert.deepEqual(done.at(-1), "Fast is now the default.", "a successful call reports the outcome in words");}
+  assert.deepEqual(done.at(-1), "Fast is now the default.", "a successful call reports the outcome in words");
+}
 
 // A nameless preset never reaches the server; a named one carries the form's
 // own fields, with the two the manager does not manage pinned to null rather
@@ -216,9 +217,15 @@ const noop = () => {};
 
 // The routing props are assembled once, so the two sections cannot disagree.
 {
+  // Every input is a distinct sentinel. An empty band table or a null preset id
+  // would be indistinguishable from the literal the assembler is accused of
+  // hard-coding, so the "comes from the inputs" claim below would be vacuous.
+  const bandRow = { band: "triage", presetId: "p-band" };
   const assignments = {
-    bands: [], setBands: noop, generationPreset: null, setGenerationPreset: noop,
-    reliablePreset: null, setReliablePreset: noop, reviewerPreset: null, setReviewerPreset: noop,
+    bands: [bandRow], setBands: noop,
+    generationPreset: "p-generation", setGenerationPreset: noop,
+    reliablePreset: "p-reliable", setReliablePreset: noop,
+    reviewerPreset: "p-reviewer", setReviewerPreset: noop,
   };
   const crud = { busy: false, setBusy: noop, setMessage: noop };
   const rpc = rpcDouble();
@@ -233,7 +240,10 @@ const noop = () => {};
     "the same inputs give the same wiring",
   );
   assert.equal(built.busy, false);
-  assert.deepEqual(built.bands, assignments.bands);
+  assert.deepEqual(built.bands, [bandRow]);
+  assert.equal(built.reliablePreset, "p-reliable");
+  assert.equal(built.generationPreset, "p-generation");
+  assert.equal(built.reviewerPreset, "p-reviewer");
   for (const key of ["onBandsChange", "onMessage", "onBusyChange", "onReliableChange", "onGenerationChange", "onReviewerChange"]) {
     assert.equal(typeof built[key], "function", `${key} is wired, not dropped`);
   }

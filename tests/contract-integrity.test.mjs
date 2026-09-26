@@ -2,10 +2,11 @@
 // lib/strategy-contracts.mjs, and lib/explore-contracts.mjs.
 //
 // The slices are pure data, so a split is only honest if the data still means
-// what the DSL and the vendored methodology say it means. Three properties are
+// what the DSL and the vendored methodology say it means. Five properties are
 // checked here, and each one fails if the split drops, renames, or typos an
-// entry: a cited `ref` must exist on disk, ids must be unique, and every
-// `kind` must be one the interpreter dispatches. Each assertion below is
+// entry: a cited `ref` must exist on disk, ids must be unique, every `kind`
+// must be one the interpreter dispatches, no check may be one that cannot fail,
+// and the word floors are the ones the split started from. Each assertion below is
 // re-run here against a deliberately broken copy, so a green run cannot come
 // from a check that never fires.
 import assert from "node:assert/strict";
@@ -76,6 +77,56 @@ for (const contract of ALL_CONTRACTS) {
   assert.ok(floors.every((floor) => floor > 0), `${contract.id} has a non-positive word floor`);
 }
 
+// 4. No check that cannot fail. A `contains` with no needles, or a
+//    `table-rows` with no floor, passes every document and reads as depth
+//    coverage in review. The guided() factory is where one crept in.
+for (const contract of ALL_CONTRACTS) {
+  for (const check of everyCheck(contract)) {
+    if (check.kind === "contains") {
+      assert.ok(
+        Array.isArray(check.needles) && check.needles.length > 0,
+        `${contract.id} has a contains check with no needle to look for`,
+      );
+    }
+    if (check.kind === "table-rows") {
+      assert.ok(
+        typeof check.min === "number" && check.min > 0,
+        `${contract.id} has a table-rows check with no floor to clear`,
+      );
+    }
+  }
+}
+
+// 5. The word floors themselves, as they stood before the data moved into
+//    these three files. The checks above only prove a floor EXISTS; a number
+//    that drifted by 300 words would pass all of them and quietly refuse
+//    documents that used to pass. Read from the pre-split
+//    lib/artifact-contracts.mjs, not from the slices.
+const STRATEGY_FLOORS = [
+  ["job-to-be-done", [500]],
+  ["business-models", [600]],
+  ["evolutionary", [600]],
+  ["promotions", [600]],
+  ["market-analysis", [800, 500]],
+  ["marketplace", [600]],
+  ["open-source", [600]],
+  ["opportunity-mapping", [1200]],
+  ["paywall", [600, 600]],
+  ["pricing", [600]],
+  ["ads", [500]],
+  ["discovery", [600]],
+  ["product-health", [500]],
+  ["trust-building", [500]],
+];
+assert.deepEqual(
+  STRATEGY_CONTRACTS.map((contract) => [
+    contract.id,
+    (contract.variants ?? [contract]).map((group) => group.minWords),
+  ]),
+  STRATEGY_FLOORS,
+  "the strategy word floors are the ones the methodology was calibrated against",
+);
+
 // Negative controls: each check above must fail on a contract that breaks it.
 const validExplore = EXPLORE_CONTRACTS.find((entry) => entry.id === "shape-up");
 
@@ -135,5 +186,6 @@ assert.equal(
 );
 
 console.log(
-  `contract integrity ok: ${ALL_CONTRACTS.length} contracts cite live refs, unique ids, dispatched kinds`,
+  `contract integrity ok: ${ALL_CONTRACTS.length} contracts cite live refs, unique ids, dispatched kinds, `
+  + `no unfailable check, ${STRATEGY_FLOORS.length} strategy floors pinned`,
 );

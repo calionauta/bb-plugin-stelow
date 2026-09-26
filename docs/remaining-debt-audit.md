@@ -41,7 +41,11 @@ line range that swept in a different rule, a sentence contradicted by its own
 table, a parser with two `ok: true` returns rather than three, two counts
 credited to the wrong gate, a commit distance read off the wrong reference, two
 drifted figures in a *Status* line this preamble calls current, and a card count
-that moves while other threads run.
+that moves while other threads run. A further review, of the *Functions* phase
+that split the eleven symbols section 1 names, checked behaviour parity and test
+value by mutating the shipped rules rather than by re-reading the phase report;
+it found one silent data drift and three claims that could not fail, all now
+repaired, and is listed under *Review corrections (the Functions phase)*.
 
 ## How to read the deltas
 
@@ -922,3 +926,106 @@ insertions(+), 11179 deletions(-)`, both re-derived.
 Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
 `npm run architecture` clean (712 modules, 1675 dependencies),
 `npm run test:source-shape` green, `npm run test:source-budgets` green.
+
+## Review corrections (the Functions phase)
+
+The Functions phase split `server/execution-{reconcile,native,lifecycle,advance}.ts`
+into rule modules, `lib/preview-runtime.mjs` into five, `lib/artifact-contracts.mjs`
+into three data slices, and two component hooks into per-concern modules. This
+review checked the phase's central claim — *the behaviour came across intact* —
+by re-deriving it instead of reading it, and checked the phase's tests by
+inverting the rules they guard.
+
+**Parity, measured.** The three data slices were imported and compared against
+the pre-split `lib/artifact-contracts.mjs` from `2363431^`: `EXPLORE_CONTRACTS`,
+`JTBD_CONTRACTS`, `contractForBuildArtifact`, `contractForExplore`,
+`contractForStrategy` and `contractForSubstep` compare equal after JSON
+normalisation; `STRATEGY_CONTRACTS` had one entry that did not. The `guided()`
+factory the split introduced emitted `{ kind: "contains", needles: [] }` for
+`job-to-be-done`, whose terms list is empty — a check `checkContains` answers
+`null` for, so validation is unchanged, but the contract now claims a check it
+does not make. `guided()` omits the check when there are no terms, which
+restores exact equality with the pre-split table, and `tests/contract-integrity`
+refuses any `contains` with no needle or `table-rows` with no floor.
+
+The `preview-connect` bridge is a real extraction rather than a behaviour
+change: its `exposeUrl` is the old
+`session.share = parsed ? parseShareExpose(parsed) : null` over
+`runConnect(["expose", port]).catch(() => null)`, and its `unexpose` is the old
+`unexpose(session)` line for line. The four exports `d6ef6b2` made private
+(`parseCli`, `syncExecutionScopes`, `recordExecution`, and the `recordExecution`
+closure on the preflight factory) have no consumer anywhere in the tree, and its
+`{ ok: false, stdout: "", error: kindRefusal }` to `refuse(kindRefusal)` change
+is the same object.
+
+**Test value, measured.** Thirty-two rules were inverted one at a time, each
+against the phase's own test band rather than a single file, and thirty-two
+mutations reached the shipped text (six more never matched it and were
+discarded). Twenty-two failed a test. Ten did not; one of those ten was a
+mutation that means the same thing as the code it replaced and is discarded
+with the rest, which leaves nine real escapes, six of them repaired below and
+three accounted for after the table.
+
+| Escape | The rule it hid | Repair |
+| --- | --- | --- |
+| the 60s arm deleted | `server/execution-reconcile-run.ts:55` — a queued row with no `runId` has no host round trip that could resolve it, so the clock is its only exit | aged-out and inside-the-window cases in `tests/execution-rule-seams` |
+| `settle`'s unexpose deleted | `lib/preview-lifecycle.mjs:48` — a dev server that exits leaves a Connect tunnel on a dead port: invisible in the panel, permanent in Connect | clean-exit and crash cases in `tests/preview-runtime-edges` |
+| `previewView`'s live preference deleted | `lib/preview-lifecycle.mjs:159` — one checkout can hold a stopped session and a running one at once, and answering for the stopped one shows a dead server as live | a store seeded stopped-first, live-second |
+| `presetManagerRouting`'s bands and role presets hard-coded | four of the assembler's thirteen props had `[]` or `null` fixtures, so the hard-coded literal the test accuses it of was indistinguishable from the input | a distinct sentinel per prop |
+| the `ads` floor moved 500 to 900 | `lib/strategy-contracts.mjs` — the integrity test proved a floor *exists*, never which number it is, and a number that moves between files is the exact drift the split risks | the fourteen-entry floor table in `tests/contract-integrity`, read off the pre-split file |
+| the `job-to-be-done` vacuous check restored | the no-op above | the unfailable-check rule |
+
+The three escapes left standing are named here so the next reader does not
+rediscover them as findings. `stopPreviews` clears `session.error` on a session
+it has already deleted from the store, and `settle` returns early for exactly
+that reason, so no caller can read it. Dropping `needsInputSentAt` from
+`runKey` changed no outcome, because a row only carries that marker once the
+pending question it names already exists — which is the publish the card got
+when the question was created. And `toggleRule`'s `if (!current) return` is
+belt-and-braces: with it removed the `current.id` read throws inside the same
+`try`, the catch toasts, and the rpc double records no call, so the test's
+"an unknown rule id is not saved" claim holds either way. The guard is kept
+because a toast is not the answer to a no-op.
+
+**Inherited, not introduced, and left alone.** The
+`Model must name a version` refusal at `server/decision-config-rpcs.ts:77` is
+unreachable: `normalizeDecisionApiModel` falls back to `defaultModelFor`, which
+falls back to `DECISION_API_DEFAULT_MODEL`, so `nextModel` is never falsy — even
+for `classifier`, whose `defaultModel` is the empty string. The same line reads
+`server/decision-api.ts:196` at `c4f4bb1`, before the split, so this phase moved
+it rather than wrote it.
+
+**Evidence at the tip.** The census this preamble promises is current now reads
+`3 oversized file(s) and 37 oversized function(s), 7 inherited entries` — eight
+functions fewer than the 45 the *Phase 7 result* section measured at `625f31b`.
+Section 1's eleven-row table is left as the pre-split record; the seven rows
+that no longer describe a `server/execution-*` symbol are the ones `eb1de27`
+replaced.
+
+**The real CLI, on the surface the phase split.** `bb 0.43.3`, against this
+checkout, which is a workflow root: `bb stelow status --json` exits 0 and lists
+`sw-card_ahrsgllj` at stage `audit`, status `in-progress`, scopes `scope-1`
+pending. `bb stelow advance --dry-run --json audit` exits **1** with
+`state.md is missing for the Stelow workflow. Reseed the workflow.` — the
+schema's exit 1 for a bad state, carrying the helper's own stderr verbatim,
+which is the `result.stderr || "stelow advance failed"` refusal in
+`server/execution-advance-cli.ts` behaving as the split left it.
+`bb stelow doctor --project proj_a6wdkdcfkk --json` refuses the same way, and
+`bb stelow schema` still publishes the `advance` contract (flags `--dry-run`,
+`--json`; env `STELOW_STATE`, `STELOW_STATEDIR`, `STELOW_TRANSITIONS`,
+`STELOW_LOCK_TTL_SEC`) — the surface the split did not change.
+
+A full gated advance with artifacts is **not** reachable on this host: no
+project under `/home/deploy/repos` is a stelow workflow root right now
+(`doctor` refuses each of them for the missing `state.md`), and getting one
+means seeding a workflow, which is the *E2E* phase's job and not this review's.
+So the card id, stage, and refusal above are this phase's E2E record. Nothing
+here is inferred from a report.
+
+Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run lint` green, `npm run architecture` clean, `npm run deadcode` clean,
+`npm run duplicates` clean, and `npm run quality:shape` — which is
+`tests/source-shape` plus `tests/debt-baseline`, `tests/source-budgets` and
+`tests/budget-lineage` — green. Every repair above was proved by inverting the
+rule it guards and watching the named test fail, then restoring it and watching
+it pass; the seven post-repair re-runs are in the commit message.
