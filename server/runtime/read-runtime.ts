@@ -21,6 +21,7 @@ import { createAskArtifacts } from "./ask-artifacts.js";
 import { createPendingQuestions } from "./pending-questions.js";
 import { createPreviewHost } from "./preview-host.js";
 import { createTrackProjection, strategyRounds } from "./track-projection.js";
+import { listNestedFiles } from "./board-read.js";
 import { roundFileName, roundTimestamp } from "../../lib/research-rounds.mjs";
 import { workspaceRelative } from "./card-files.js";
 import { join } from "./root-paths.js";
@@ -147,6 +148,9 @@ function createResearchArtifacts(deps: ReadRuntimeDeps) {
     strategyRounds,
     joinPath: join,
     workspaceRelative,
+    // One walk of the round directory — the same walk the board uses, so a
+    // substep nested one level down is found here exactly as it is there.
+    roundFiles: async (dir: string) => listNestedFiles(deps.bb.sdk.files, dir).catch(() => []),
     errors: { workspaceUnavailable: ERRORS.workspaceUnavailable },
   });
 }
