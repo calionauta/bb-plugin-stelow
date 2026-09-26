@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.51.3",
+  "version": "0.51.5",
   "type": "module",
   "engines": {
     "bb": ">=0.43",
@@ -55,7 +55,7 @@
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/question-batch.test.mjs && node tests/question-form.test.mjs",
     "test:question-presence": "node tests/question-presence.test.mjs",
-    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs && node tests/answer-door-contract.test.mjs",
+    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs && node tests/question-form-artifact-provenance.test.mjs && node tests/question-decision-surface.test.mjs && node tests/answer-door-contract.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs && node tests/github-issue-create.test.mjs && node tests/github-issue-comments.test.mjs",
     "test:github-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-github-issue-flow.test.mjs tests/server-github-automation.test.mjs tests/server-github-discussion.test.mjs",
     "test:automation": "node tests/automation-rules.test.mjs",

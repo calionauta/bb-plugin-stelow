@@ -34,6 +34,9 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // line. "baseline N" is the gate's own wording for debt the pre-branch tree
 // already carried; "recorded N" is debt the ledger holds.
 const inheritedBaseline = [
+  "components/conversation/question-batch.tsx: 486 lines (recorded 486)",
+  "components/conversation/question-batch.tsx:useBatchSelection#1: 53 lines (baseline 53)",
+  "components/conversation/question-batch.tsx:BatchOptionRow#1: 63 lines (recorded 63)",
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 53 lines (baseline 53)",

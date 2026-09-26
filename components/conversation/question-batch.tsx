@@ -17,7 +17,24 @@ import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 export type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 export type ArtifactViewerMode = "review" | "comment";
 export type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
-export type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; staleness?: QuestionStalenessNotice | null };
+export type BatchOption = {
+  label: string;
+  description: string;
+  preview: string | null;
+  artifact: AskArtifact | null;
+  // True when the document came from a sibling rather than this option.
+  artifactInherited?: boolean;
+};
+
+export type BatchItem = {
+  id: string;
+  title: string;
+  prompt: string;
+  multiple: boolean;
+  kind?: "standard" | "split";
+  options: BatchOption[];
+  staleness?: QuestionStalenessNotice | null;
+};
 // Structural view of a timed-out question: the section maps it into a
 // BatchItem, so the card never imports the detail contract for this.
 export type ExpiredQuestionItem = { id: string; question: string; multiple: boolean; kind?: "standard" | "split"; options: BatchItem["options"]; staleness?: QuestionStalenessNotice | null };
@@ -34,13 +51,39 @@ function artifactViewerModeForOption(label: string): ArtifactViewerMode {
 // viewer where a file opener exists (card), and degrades to a plain
 // filename where it doesn't (thread) — never a dead button pretending
 // to open, never one shared button after the options.
+// A preview exists so the reader can judge an option WITHOUT opening
+// anything. Hiding it behind a disclosure defeats that: on a real card the
+// previews were 27-104 characters, so clicking "Preview" revealed two lines
+// that said no more than the label beside it — two clicks for less
+// information. A preview short enough to read at a glance is shown; only a
+// genuinely long one earns a disclosure.
+const AUTO_REVEAL_PREVIEW_CHARS = 280;
+
+// One class for both disclosures (preview and touched paths) so a keyboard
+// focus ring reads identically wherever a disclosure appears.
+const DISCLOSURE_SUMMARY_CLASS = [
+  "inline-flex min-h-11 cursor-pointer items-center gap-1.5",
+  "text-xs font-medium hover:underline",
+  "focus-visible:outline focus-visible:outline-2",
+].join(" ");
+
 function OptionPreview({ preview }: { preview: string | null }) {
   if (!preview) return null;
+  const text = preview.trim();
+  const body = <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{text}</pre>;
+  if (text.length <= AUTO_REVEAL_PREVIEW_CHARS) {
+    return (
+      <div className="ml-1 border-l-2 border-muted pl-2">
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">What this looks like</p>
+        {body}
+      </div>
+    );
+  }
   return (
     <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
       <details className="group">
         <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
-        <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{preview}</pre>
+        {body}
       </details>
     </div>
   );
@@ -50,18 +93,45 @@ function OptionPreview({ preview }: { preview: string | null }) {
 // removed document, a moved checkout with the touched paths — and points at
 // the existing exits (re-open the doc, request changes, regress the stage).
 // It never blocks answering and adds no new actions of its own.
+// Advisory only: names what moved since a question was asked — a revised or
+// removed document, a moved checkout with the touched paths — and points at
+// the existing exits (re-open the doc, request changes, regress the stage).
+// It never blocks answering and adds no new actions of its own.
+//
+// The file paths are what made this unusable: on a real card the notice
+// listed seven paths and pushed the actual question off the screen. The
+// reader needs the WARNING first and the paths only if they are auditing
+// which files moved, so the paths collapse behind a summary that still shows
+// the count. "What this means" is stated before "what changed", because the
+// first thing a person has to decide is whether it matters.
 function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) {
   if (!staleness.docRevised && !staleness.docRemoved && !staleness.checkoutMoved) return null;
+  const paths = staleness.touchedPaths;
   return (
     <div className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200" role="note" aria-label="Evidence changed since asked">
       <p className="font-semibold">Something changed since this question was asked</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4">
-        {staleness.docRevised ? <li>A linked document was revised — open the current version from the options below before answering.</li> : null}
-        {staleness.docRemoved ? <li>A linked document can no longer be opened at its recorded path.</li> : null}
-        {staleness.checkoutMoved ? <li>{staleness.commitCount > 0
-          ? `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed since${staleness.touchedPaths.length > 0 ? `, touching ${staleness.touchedPaths.join(", ")}` : ""}. The plan may assume code that changed.`
-          : "The checkout moved since this question was asked. The plan may assume code that changed."}</li> : null}
-      </ul>
+      <p className="mt-1">
+        {staleness.docRemoved
+          ? "A document this question relies on can no longer be opened."
+          : staleness.docRevised
+            ? "A document this question relies on was revised."
+            : `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed.`}
+        {" "}Check the linked document before answering if your choice depends on it.
+      </p>
+      {paths.length > 0 ? (
+        <details className="mt-1">
+          <summary
+            className={DISCLOSURE_SUMMARY_CLASS}
+
+          >
+            <DisclosureChevron />
+            {paths.length} file{paths.length === 1 ? "" : "s"} touched
+          </summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-[11px]">
+            {paths.map((path) => <li key={path} className="break-all">{path}</li>)}
+          </ul>
+        </details>
+      ) : null}
       <p className="mt-1 text-amber-900/70 dark:text-amber-200/70">If the plan no longer matches the code, request changes or return it to an earlier stage from Workflow progress.</p>
     </div>
   );
@@ -171,6 +241,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
   onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
 }) {
   const artifact = option.artifact;
+  const artifactInherited = option.artifactInherited === true;
   return (
     <div className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
       <div className={`flex min-h-11 items-stretch overflow-hidden rounded-md border ${active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"}`}>
@@ -190,14 +261,30 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
             // it, and borrows the shared outline treatment so it
             // harmonizes with the amber panel and the primary
             // accents instead of introducing a third color.
+            //
+            // The label names the FILE. "Open document" alone made the
+            // reader guess what they were about to open, and a filename
+            // buried in a hover-only title is not a label. When the
+            // document was inherited from a sibling it says so, because
+            // the same brief on four rows otherwise reads as four pieces
+            // of evidence about four different options.
             <Button
               variant="outline"
               size="sm"
               onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
-              title={`Open document: ${artifact.display}`}
-              aria-label={`Open document ${artifact.display}`}
-              className="mr-2 min-h-11 shrink-0 gap-1 self-center"
-            >Open document<span aria-hidden>↗</span></Button>
+              title={artifactInherited
+                ? `${artifact.display} — the brief shared by every option, not this option's own document`
+                : `${artifact.display} — this option's own document`}
+              aria-label={artifactInherited
+                ? `Open the shared brief ${artifact.display}, the same document every option links to`
+                : `Open this option's document ${artifact.display}`}
+              className="mr-2 min-h-11 max-w-[16rem] shrink-0 gap-1 self-center"
+            >
+              <span className="truncate">
+                {artifactInherited ? "Shared brief" : "Open"}: {artifact.display}
+              </span>
+              <span aria-hidden>↗</span>
+            </Button>
           ) : (
             <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
           )
