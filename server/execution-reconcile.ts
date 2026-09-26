@@ -11,6 +11,7 @@ import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { nativeNeedsInput } from "./bb-workflow-bridge.js";
 import { requiredOutputPaths, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
 import { resolveInterfaceContrastRoute } from "../lib/interface-contrast.mjs";
+import { humanStopRequest, humanStopMessage } from "../lib/execution-human-stop.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
 import { boundaryRunPatch } from "./execution-boundary.js";
 import type { ExecutionLifecycle } from "./execution-lifecycle.js";
@@ -147,15 +148,18 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
       .catch(() => false);
   }
 
-  function failArtifacts(card: WorkerCard, run: ExecutionRun, missing: string[], malformed: string[]): void {
+  function failArtifacts(card: WorkerCard, run: ExecutionRun, missing: string[], malformed: string[], issues: string[] = []): void {
     transitionExecutionRun(deps.db, run.id, "failed", {
       errorCode: missing.length > 0 ? "artifact-missing" : "artifact-malformed",
     });
     const evidence = `Missing: ${missing.join(", ") || "none"}. Malformed: ${malformed.join(", ") || "none"}.`;
-    deps.logComment(card.id, run.id, `Native ${run.recipeId} failed artifact validation. ${evidence}`);
+    // Name the FIELDS, not just the file: "malformed: contrast.json" costs a
+    // whole run and tells the worker nothing it can act on.
+    const detail = issues.length > 0 ? ` Problems: ${issues.join("; ")}.` : "";
+    deps.logComment(card.id, run.id, `Native ${run.recipeId} failed artifact validation. ${evidence}${detail}`);
     sendToCard(
       card,
-      `The native ${run.recipeId} run finished but its required artifacts are not valid. Do not advance the card. ${evidence}`,
+      `The native ${run.recipeId} run finished but its required artifacts are not valid. Do not advance the card. ${evidence}${detail}`,
     );
   }
 
@@ -203,15 +207,66 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
     }
   }
 
+  function humanStopFrom(contents: Record<string, string>) {
+    for (const [path, text] of Object.entries(contents)) {
+      if (!path.endsWith(".json") || typeof text !== "string" || !text.trim()) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        continue;
+      }
+      const stop = humanStopRequest(path, parsed);
+      if (stop.stop) return stop;
+    }
+    return null;
+  }
+
+  /**
+   * A run that named a decision is `needs_input`, not `failed`. Recording the
+   * question on the card is what makes the wait honest: the person can see
+   * what is being asked instead of watching a spinner.
+   */
+  async function recordHumanStop(card: WorkerCard, run: ExecutionRun, stop: { question: string; route: string }): Promise<void> {
+    const boundaryId = `human-stop:${run.id}`;
+    transitionExecutionRun(deps.db, run.id, "needs_input", {
+      nativeStatus: run.nativeStatus,
+      boundaryId,
+      boundaryQuestion: stop.question,
+    });
+    deps.logComment(
+      card.id,
+      run.id,
+      `Native ${run.recipeId} stopped to ask a decision (${stop.route}); it is waiting, not failed. Question: ${stop.question}`,
+    );
+    sendToCard(
+      card,
+      [
+        humanStopMessage(stop),
+        `Ask it on the card with the structured question tool, include the marker [Stelow boundary ${boundaryId}] in the question text, then stop.`,
+        "Do not resume the run yourself and do not advance the card.",
+      ].join(" "),
+    );
+  }
+
   async function reconcileArtifacts(card: WorkerCard, run: ExecutionRun): Promise<void> {
     const recipe = recipeById(run.recipeId);
     if (!recipe) return;
     const context = record(record(JSON.parse(run.argsText)).context);
     const paths = requiredOutputPaths(recipe, context);
     const contents = await readArtifactContents(run, paths);
+    // A run that stopped to NAME a decision did the right thing. Checking
+    // this before artifact validation keeps a deliberate stop from being
+    // recorded as a malformed artifact, which parked the card in "Working"
+    // with the question nowhere on screen.
+    const stop = humanStopFrom(contents);
+    if (stop) {
+      await recordHumanStop(card, run, stop);
+      return;
+    }
     const validation = validateExecutionArtifacts({ recipe, contents, context });
     if (!validation.ok) {
-      failArtifacts(card, run, validation.missing, validation.malformed);
+      failArtifacts(card, run, validation.missing, validation.malformed, validation.issues);
       return;
     }
     const route = interfaceRouteNote(run.recipeId, contents);

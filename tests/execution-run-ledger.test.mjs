@@ -31,9 +31,32 @@ assert.equal(second.normalizedStatus, "queued");
 const detailRun = projectExecutionRun(second);
 const detailRunKeys = [
   "adapter", "boundaryContract", "cardId", "completedAt", "completionEventId", "createdAt", "errorCode", "id", "nativeStatus",
-  "normalizedStatus", "originThreadId", "previewDirective", "recipeId", "resumeOf", "runId", "sourceHash", "stage",
-  "startedAt", "workspaceId",
+  "boundaryQuestion", "normalizedStatus", "originThreadId", "previewDirective", "recipeId", "resumeOf", "runId",
+  "sourceHash", "stage", "startedAt", "workspaceId",
 ].sort();
 assert.deepEqual(Object.keys(detailRun).sort(), detailRunKeys, "card detail receives only the public execution-run projection");
 assert.equal("sourceText" in detailRun, false, "internal ledger source stays out of card detail");
+
+// A needs_input run's question must reach the card. A wait the person cannot
+// read is a phantom wait: the ledger used to persist the question and the
+// public projection dropped it, so the surface could only say "Needs input".
+// A fresh run: the one above already reached a terminal state.
+const waitingRun = createExecutionRun(db, { ...base, id: "local-waiting", recipeId: "interface-contrast", stage: "interface", runId: "run-waiting", now: 100 });
+transitionExecutionRun(db, waitingRun.id, "running", { nativeStatus: "running", now: 101 });
+const waiting = transitionExecutionRun(db, waitingRun.id, "needs_input", {
+  boundaryId: "human-stop:local-1",
+  boundaryQuestion: "Should the Scope Map extend the Scope stage, or be a new concept?",
+  now: 102,
+});
+assert.equal(waiting.normalizedStatus, "needs_input");
+assert.equal(
+  projectExecutionRun(waiting).boundaryQuestion,
+  "Should the Scope Map extend the Scope stage, or be a new concept?",
+  "the question survives the public projection so the card can show what is being asked",
+);
+assert.equal(
+  projectExecutionRun(getExecutionRun(db, waitingRun.id)).boundaryQuestion,
+  "Should the Scope Map extend the Scope stage, or be a new concept?",
+  "the question is readable straight off the persisted row",
+);
 console.log("execution run ledger test ok: ownership, transitions, completion dedupe, terminal cancel, public projection");

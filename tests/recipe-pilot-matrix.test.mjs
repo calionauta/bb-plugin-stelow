@@ -134,16 +134,37 @@ function assertArtifactMatrix(recipe) {
     ok: true,
     missing: [],
     malformed: [],
+    issues: [],
     paths,
   }, `${recipe.id} valid artifact contract passes`);
   for (const path of paths) {
     const omitted = { ...contents };
     delete omitted[path];
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: omitted, context: artifactContext }), { ok: false, missing: [path], malformed: [], paths }, `${recipe.id} rejects omitted ${path}`);
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: " " }, context: artifactContext }), { ok: false, missing: [path], malformed: [], paths }, `${recipe.id} rejects blank ${path}`);
+    // `issues` is the field-level diagnosis that used to be missing: a
+    // rejection that names only the file costs the worker a whole run.
+    const issue = (text) => [text];
+    const empty = { ok: false, missing: [path], malformed: [], issues: issue(`${path} is missing or empty`), paths };
+    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: omitted, context: artifactContext }), empty, `${recipe.id} rejects omitted ${path}`);
+    const blank = { ...empty };
+    const blankRun = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: " " }, context: artifactContext });
+    assert.deepEqual(blankRun, blank, `${recipe.id} rejects blank ${path}`);
     if (!path.endsWith(".json")) continue;
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{not-json" }, context: artifactContext }), { ok: false, missing: [], malformed: [path], paths }, `${recipe.id} rejects malformed JSON ${path}`);
-    assert.deepEqual(validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{}" }, context: artifactContext }), { ok: false, missing: [], malformed: [path], paths }, `${recipe.id} rejects schema-invalid ${path}`);
+    const notJson = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{not-json" }, context: artifactContext });
+    assert.equal(notJson.ok, false, `${recipe.id} rejects malformed JSON ${path}`);
+    assert.deepEqual(
+      { missing: notJson.missing, malformed: notJson.malformed },
+      { missing: [], malformed: [path] },
+      `${recipe.id} rejects malformed JSON ${path}`,
+    );
+    assert.match(notJson.issues[0], /is not valid JSON/, `${recipe.id} says why the JSON failed`);
+    const schemaInvalid = validateExecutionArtifacts({ recipe, contents: { ...contents, [path]: "{}" }, context: artifactContext });
+    assert.equal(schemaInvalid.ok, false, `${recipe.id} rejects schema-invalid ${path}`);
+    assert.deepEqual(
+      { missing: schemaInvalid.missing, malformed: schemaInvalid.malformed },
+      { missing: [], malformed: [path] },
+      `${recipe.id} rejects schema-invalid ${path}`,
+    );
+    assert.ok(schemaInvalid.issues.length > 0, `${recipe.id} names the problem, not just the file`);
   }
 }
 
