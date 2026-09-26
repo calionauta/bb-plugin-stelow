@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.52.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.8...v0.52.0) (2026-09-26)
+
+
+### Bug Fixes
+
+* the card reads the state dir it lists on the board ([#117](https://github.com/calionauta/bb-plugin-stelow/issues/117)) ([53f709b](https://github.com/calionauta/bb-plugin-stelow/commit/53f709bb51ed51a0120f0cb9e8967485e1274088))
+
 ## [0.51.8](https://github.com/calionauta/bb-plugin-stelow/compare/v0.51.7...v0.51.8) (2026-09-26)
 
 
