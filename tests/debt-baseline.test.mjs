@@ -31,27 +31,27 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // What the gate reports today, verbatim, in the order the gate prints. Each
 // entry has to name why it is inherited — a baseline it still has, a proven
 // move, or a record in the ledger — so a waiver can be checked by reading the
-// line. The "baseline" wording is the gate's own for anything the ledger
-// records, however new the code is.
+// line. "baseline N" is the gate's own wording for debt the pre-branch tree
+// already carried; "recorded N" is debt the ledger holds.
 const inheritedBaseline = [
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 53 lines (baseline 53)",
-  "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (baseline 67)",
-  "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (baseline 68)",
-  "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (baseline 78)",
-  "lib/scope-batch-cancel.mjs:cancelBatch#1: 76 lines (baseline 76)",
-  "lib/scope-batch-cleanup.mjs:finishScope#1: 51 lines (baseline 51)",
-  "lib/scope-map.mjs:validateScopeMap#1: 54 lines (baseline 54)",
-  "lib/scope-merge.mjs:mergeScopesAtomically#1: 71 lines (baseline 71)",
-  "lib/scope-retry.mjs:claimScopeRetry#1: 61 lines (baseline 61)",
+  "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
+  "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
+  "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (recorded 78)",
+  "lib/scope-batch-cancel.mjs:cancelBatch#1: 76 lines (recorded 76)",
+  "lib/scope-batch-cleanup.mjs:finishScope#1: 51 lines (recorded 51)",
+  "lib/scope-map.mjs:validateScopeMap#1: 54 lines (recorded 54)",
+  "lib/scope-merge.mjs:mergeScopesAtomically#1: 71 lines (recorded 71)",
+  "lib/scope-retry.mjs:claimScopeRetry#1: 61 lines (recorded 61)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
   "server/bb-workflow-bridge.ts:renderInlineWorkflowScript#1: 54 lines (baseline 57)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
   "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (recorded 69)",
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
   "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
-  "server/scopes.ts:runScopeCommand#1: 87 lines (baseline 87)",
+  "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
   "tests/server-cards.test.mjs:callback#4: 82 lines (baseline 84)",
 ];
 
@@ -206,11 +206,22 @@ for (const [key, lines] of functionBaseline) {
   );
 }
 
-const budget = spawnSync(process.execPath, ["scripts/check-source-budgets.mjs"], {
-  cwd: repositoryRoot,
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
+// The gate's default base is origin/master, and the fork this line started from
+// is a fixed ancestor of it: a merge commit would otherwise move the diff base
+// forward, empty the inherited set, and let this list rot into a rubber stamp.
+// Pinning the fork point keeps the recorded set describing the debt this line
+// actually carries, so it changes only when that debt does.
+const FORK_POINT = process.env.STELOW_FORK_POINT || "1f968bea0d108e254262158f08afc118ce4976ea";
+
+const budget = spawnSync(
+  process.execPath,
+  ["scripts/check-source-budgets.mjs", "--base", FORK_POINT],
+  {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  },
+);
 if (budget.status === 0) {
   const reported = budget.stdout.split("\n")
     .map((line) => line.trim())
@@ -228,13 +239,17 @@ if (budget.status === 0) {
 // The census above cannot see line length, and the shape gate only ran in CI
 // (`quality:shape`), so a single over-long line reached a green local `npm test`
 // and only failed the merge. Running it here makes a phase unable to end with
-// the shape gate red. It shares this script's diff-scoped base, so a file that
-// is not a changed line is still never reported.
-const shape = spawnSync(process.execPath, ["scripts/check-source-shape.mjs"], {
-  cwd: repositoryRoot,
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
+// the shape gate red. Same pinned fork point as the budget gate, so the line it
+// reports is about this line's work and not about where master happens to be.
+const shape = spawnSync(
+  process.execPath,
+  ["scripts/check-source-shape.mjs", "--base", FORK_POINT],
+  {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  },
+);
 if (shape.status === 0) {
   const line = shape.stdout.trim();
   assert.match(
