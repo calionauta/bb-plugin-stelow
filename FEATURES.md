@@ -189,6 +189,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `scope-map.json` evidence. The result stays a draft until an approval receipt
   exists; Explore never creates a second Build stage or execution lifecycle.
   See the [Interface Contrast and Scope Map guide](docs/interface-contrast.md).
+- **One deliverable filename per technique, read by everything.** The Explore
+  deliverable is named once in the catalog (`primaryArtifact`) and resolved by
+  one function, because four surfaces used to disagree about it: the prompt that
+  tells the worker what to write honoured the declared name, while the card's
+  declared capability, the review CLI's subject and the quality seal all assumed
+  `explore-<id>.md`. For `scope-mapping`, which declares
+  `explore-scope-map.md`, the worker wrote that name and the seal looked for a
+  name that never existed — so the quality seal for that technique was silently
+  dead, and declaring a `primaryArtifact` was exactly what killed it. The prompt
+  now asks the same resolver the checks ask, so a technique cannot switch its own
+  verification off by naming its own file.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
