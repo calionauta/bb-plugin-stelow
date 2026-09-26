@@ -8,7 +8,7 @@ ships is the shape-gate repair described under *Gate repairs*.
 The numbers in the per-area tables are the **pre-split record**: each measured area
 is labelled with what actually shipped, and the tables are kept as the
 before-picture rather than rewritten. The figures in *Status* lines and in
-*Phase 2 result* / *Phase 3 result* are current. The gate figures quoted inline
+*Phase 2 result*, *Phase 3 result*, and *Phase 4 result* are current. The gate figures quoted inline
 were re-measured on this branch (`refactor/app-slices-1-11`) with
 `node scripts/check-source-budgets.mjs` and a TypeScript AST census that mirrors
 that gate's traversal. Master values come from `git show origin/master:<path>`.
@@ -16,30 +16,36 @@ The two must agree, or the census does not describe the same shapes the gate
 measures.
 
 The adversarial review of this phase re-measured every symbol and line range in
-the tables and corrected four of them, listed under *Review corrections*. Two
-later adversarial reviews — one of the phase that closed R4's last clause, one
-of its own corrections — re-derived every number in *Phase 3 result* from the
-tree. Between them they rejected fourteen claims in this file: a wrong file
-count, two miscounted duplications, three stale diffstats, a symbol reported as
-deleted that is alive at 7 lines, a pair of guards wrongly described as live
-that are dead like the one beside them, a line count no commit ever had, and
-five sentences that were stale, self-contradicting, or less accurate than the
-review found them. All are corrected above; the *Review corrections* list
-records what the first review found, not what the file now says.
+the tables and corrected four of them, listed under *Review corrections*. Three
+later adversarial reviews — of the phase that closed R4's last clause, of its
+own corrections, and of the phase that repaired the budget gate — re-derived
+every number in *Phase 3 result* and *Phase 4 result* from the tree. Between
+them they rejected seventeen claims in this file: a wrong file count, two
+miscounted duplications, three stale diffstats, a symbol reported as deleted that
+is alive at 7 lines, a pair of guards wrongly described as live that are dead
+like the one beside them, a line count no commit ever had, five sentences that
+were stale, self-contradicting, or less accurate than the review found them, and
+three in section 3 — the full-tree fallback was filed as a cost rather than as
+the correctness defect it was, `baseline 104` was presented as that function's
+own master line count, and the section 4 count was a commit behind. All are
+corrected above; the *Review corrections* list records what the first review
+found, not what the file now says.
 
 ## How to read the deltas
 
 `check-source-budgets.mjs` scores two different references, and both matter:
 
 - **New violations** are scoped to the *merge-base* with `origin/master`,
-  currently `1f968be` — 207 commits behind the branch tip.
+  currently `1f968be` — 208 commits behind the branch tip.
 - **Inherited debt** is scored against the *target tip* of `origin/master`,
   currently `12c6664`.
 
 So "baseline" in the tables is the master value the gate subtracts, and a
 negative delta is real progress that the gate already accepts. Progress is
-recorded as a ratchet in `tests/debt-baseline.test.mjs`; a split must lower
-those entries deliberately.
+recorded as a ratchet in `scripts/source-debt.json`, the ledger the gate and
+`tests/debt-baseline.test.mjs` both read; a split must lower those entries
+deliberately. The fork's own line is no longer a third base: it was never
+evidence about the branch's present debt, and dropping it is part of R6.
 
 ## 1. GitHub automation area
 
@@ -268,44 +274,103 @@ argument for doing it once rather than three times.
 
 ## 3. Budget-checker delta
 
-**Status: unchanged by the later phases; still open as R6.** The measurements
-below are the pre-split record. `scripts/check-source-budgets.mjs` was 311 lines
-with no function over 50, and it passed then: 267 changed owned files, 13
-inherited entries, 0 violations. As of this phase it still passes, at **300
-changed owned files, 7 inherited entries, 0 violations** — the inherited count
-fell because R1–R4 removed the entries the branch had been carrying. Three
-defects shape how much trust the later phases can put in it.
+**Status: repaired (R6 landed).** The measurements below are the pre-split
+record. `scripts/check-source-budgets.mjs` was 311 lines with no function over
+50, and it passed then: 267 changed owned files, 13 inherited entries, 0
+violations. It is now 302 lines beside a 75-line `scripts/budget-lineage.mjs`
+and still passes, at **303 changed owned files, 7 inherited entries, 0
+violations**. Three defects shaped how much
+trust the later phases could put in it; all three are gone.
 
-**Split comparison bases.** `comparisonBases()` returns
-`{ diff: mergeBase, debt: target, branchBase: mergeBase }`. New violations are
-therefore scoped to `1f968be` while inherited debt is scored against `12c6664`.
-A file that master has since shrunk is still measured against the newer tip,
-while a file the branch merely touched is measured against a 199-commit-stale
-merge-base. The two directions of the ratchet disagree by the width of the
-branch.
+**The similarity fallback could waive anything.** `bestFunction` filtered
+candidates by label, and when a label was absent it compared the function
+against *every* baseline function with a lexical score, waiving the finding at a
+floor of 0.15. `pathAffinity` called two same-named functions in different files
+"the same logical path", so a name collision scored 1.0 on its own. Measured on
+this branch before the repair, three of the seven inherited entries had **no
+lineage at all** and were waived that way — their files do not exist on
+`origin/master` or at the merge-base:
 
-**The baseline test is coupled to master's tip.**
+| Entry | Matched against | Similarity | Shared run |
+| --- | --- | --- | --- |
+| `cli-bundle-writer.ts:writeBundle` | `server.ts:plugin/run/exportRunBundle` (104 lines) | 0.240 | 43 tokens |
+| `cli-review-subject.ts:deliverableSubject` | `server.ts:plugin/qualitySeal` (66 lines) | 0.299 | 18 tokens |
+| `cli-split.ts:reportSplit` | `server.ts:plugin/fanOutResearch` (59 lines) | 0.244 | 42 tokens |
+
+`docs/runtime-architecture.md` named `deliverableSubject` as the caveat and
+called it the only one; all three were affected, and the reason the file gives
+for it — that its ancestor "was named differently on master" — was wrong, since
+there is no ancestor on master at all. Two of the three were *bigger* than the
+function that waived them and were accepted only because the old rule allowed a
+token-shrink to stand in for the line growth it had actually committed.
+
+**Split comparison bases.** `comparisonBases()` returned
+`{ diff: mergeBase, debt: target, branchBase: mergeBase }`, so a file the branch
+merely touched could be measured against a 199-commit-stale copy of itself. The
+fork's line is gone: two bases remain, and both are on the requested ref.
+
+**The baseline test was coupled to master's tip.**
 `tests/debt-baseline.test.mjs` deepEquals the gate's `inherited` output against
-`inheritedBaseline`, and those strings embed master's own line counts — for
-example `cli-bundle-writer.ts:writeBundle#1: 68 lines (baseline 104)`. Any
-advance of `origin/master` that touches an oversized file breaks the test with
-no code change on the branch. This is deliberate ("the inherited debt set
-changed; a split or a new violation must be recorded here") but it means the
-branch cannot go green without reconciling master first.
+`inheritedBaseline`, and those strings embedded master's own line counts — for
+example `cli-bundle-writer.ts:writeBundle#1: 68 lines (baseline 104)`, a number
+that had nothing to do with the file. Any advance of `origin/master` that
+touched an oversized file broke the test with no code change on the branch.
 
-**Unmatched labels cost a full-tree scan.** `bestFunction` first filters
-candidates by label and, when the label is absent, falls back to comparing
-against *every* baseline function with a lexical similarity score. On this
-branch that is a few hundred functions per unmatched record, recomputed for
-each oversized function of each changed file. It is correct and deterministic,
-but it is the reason the gate is the slowest script in `quality:shape`.
+### Phase 4 result (R6)
+
+Inheritance now needs evidence, in one of three named forms, and every report
+names which one applied:
+
+- **Same file.** The symbol exists in the baseline ref at the same path. Real
+  descent, and the cheapest case: an index lookup, no scoring.
+- **Proven move.** A candidate in another file whose body shares a run of at
+  least 20 consecutive tokens with the current one (`lineageTokens` in
+  `scripts/budget-lineage.mjs`). The code travelled, so the debt travelled with
+  it. `server/runtime/workflow-seeding.ts:seedWorkflow` is this case: 72 lines,
+  a 64-token run out of `server.ts`.
+- **A record.** `scripts/source-debt.json` holds the key and a ceiling for
+  branch debt whose ancestor the gate cannot see. This is where the three
+  entries above now live, at the size they actually are.
+
+Similarity no longer appears in any of it: the multiset and bigram scorers,
+`pathAffinity`'s use as proof, and the full-tree fallback are deleted, which is
+also why the gate got faster (6.5s against 9.6s on the same tree — it is no
+longer the slowest script in `quality:shape`).
+
+A move that *grows* is a violation again, and a record is a ceiling rather than
+a licence: recorded debt one line over its entry is reported. So is a new
+function that reuses a name, a new function whose body is a verbatim copy, and a
+new oversized file written in the same shape as an old one. The last of those
+used to be waivable by a whole-file similarity score, the same way the function
+fallback was.
+
+The ledger is the census's old tables, moved out of
+`tests/debt-baseline.test.mjs` so there is one record instead of two that can
+drift. The test now reads it, keeps every ratchet, and replaces the total-count
+guard (51) with a stronger one: every oversized symbol in the tree has to be
+recorded, and a recorded one that stopped being oversized still has to be
+dropped. It also checks that a recorded ceiling is actually over its budget.
+
+`tests/source-budgets.test.mjs` is the new gate-level suite — nine scenarios on a
+throwaway repository, run against the real checker: inherited debt, grown debt,
+a same-size rewrite, a name collision with no lineage, a copied body under a new
+name, a committed relocation, a recorded entry and a record that outgrew itself,
+plus the two file cases. `tests/budget-lineage.test.mjs` pins the run threshold
+from both sides, 19 tokens a coincidence and 20 a move.
+
+Six of those nine scenarios are new guard rather than regression pin: run
+against the checker as it was, the suite fails at the name collision, which the
+old gate reported as `inherited lib/collide.mjs:alphaHandler#1: 55 lines
+(baseline 55)` and exited 0 on. Dropping `lineageTokens` to 2, ignoring the
+ledger, dropping the growth requirement, and dropping the recorded ceiling each
+break the scenario that names them.
 
 ## 4. origin/master delta
 
-`207` commits ahead, `6` behind, `327` files changed against the merge-base,
-`+41798/-11179`, measured at `HEAD` and therefore *not* counting the phase that
-closed R4's last clause. Both figures drift as the branch grows — so does the
-insertion count as soon as that phase is committed — which is why they are
+`208` commits ahead, `6` behind, `328` files changed against the merge-base,
+`+42104/-11179`, measured at `1ee4ecc` and therefore *not* counting the phase
+that repaired the budget gate. Both figures drift as the branch grows — so does
+the insertion count as soon as that phase is committed — which is why they are
 worth re-deriving rather than reading:
 
 ```bash
@@ -365,11 +430,14 @@ prerequisite: R2 cannot be done honestly without it.
    merge itself. The tree-wide debt the audit deliberately did not measure is
    untouched by all of this and still pinned — 4 oversized files and 47
    oversized functions, listed in `tests/debt-baseline.test.mjs`.
-6. **R6 — Only then, consider the budget-checker defects in section 3.** The
-   split bases (R6a) and the `bestFunction` full-tree fallback (R6b) are real
-   but neither blocks a split. Fixing them changes what the gate reports, so it
-   belongs after the repair list has been executed against the current gate, not
-   during.
+6. ~~**R6 — Only then, consider the budget-checker defects in section 3.**~~
+   **DONE.** The split bases and the full-tree fallback are both gone: a
+   finding is inherited only through same-file descent, a run-proven move, or a
+   ceiling recorded in `scripts/source-debt.json`, and each report says which.
+   The gate went from 9.6s to 6.5s on the same tree, the recorded set is the
+   same seven entries with the reason corrected on three of them, and the
+   similarity scorers are deleted rather than tightened. See "Phase 4 result"
+   above.
 
 ## Review corrections
 

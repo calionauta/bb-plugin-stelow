@@ -147,7 +147,10 @@ registration, CLI help, and preview disposal. The full suite also checks every
 RPC method has a handler and exercises representative success, refusal, and
 disposal paths. `tests/debt-baseline.test.mjs` pins the whole-tree size census
 and the exact inherited set below; it fails when a number grows, when a new
-oversized file appears, and when the gate starts or stops reporting an entry.
+oversized file appears, when an oversized symbol is not recorded, and when the
+gate starts or stops reporting an entry. The ceilings themselves live in
+`scripts/source-debt.json`, which the gate reads as well: one record, edited in
+the diff, rather than a table here and a matching one in the test.
 
 The shape gate compares changed source with `origin/master` and applies the
 same boundary to the budget gate. It reports inherited debt separately only
@@ -161,22 +164,23 @@ constant, because a fallback parked beside the wiring is how a shape drifts
 into a second copy.
 
 The budget check reports no file or function over its limit among the changed
-sources. Everything it still reports is inherited, and the gate prints it with
-the baseline it matched so the number can be checked. The full inherited set is
-seven entries across seven files:
+sources. Everything it still reports is inherited, and each line names why, so
+the waiver can be checked by reading it. The full inherited set is seven entries
+across seven files:
 
-| File | Entry | Lines (baseline) |
-| --- | --- | --- |
-| `server/runtime/cli/cli-bundle-writer.ts` | `writeBundle` | 68 (104) |
-| `server/runtime/cli/cli-review-subject.ts` | `deliverableSubject` | 69 (66) |
-| `server/runtime/cli/cli-split.ts` | `reportSplit` | 61 (59) |
-| `server/runtime/workflow-seeding.ts` | `seedWorkflow` | 72 (74) |
-| `components/creation/create-build-dialog.tsx` | `useCreateBuildSubmit` | 65 (65) |
-| `lib/trackable-evidence.mjs` | `evidenceConditions` | 74 (74) |
-| `tests/server-cards.test.mjs` | `callback#4` | 82 (84) |
+| File | Entry | Lines | Why it is inherited |
+| --- | --- | --- | --- |
+| `server/runtime/cli/cli-bundle-writer.ts` | `writeBundle` | 68 | recorded at 68 |
+| `server/runtime/cli/cli-review-subject.ts` | `deliverableSubject` | 69 | recorded at 69 |
+| `server/runtime/cli/cli-split.ts` | `reportSplit` | 61 | recorded at 61 |
+| `server/runtime/workflow-seeding.ts` | `seedWorkflow` | 72 | moved from `server.ts` (74) |
+| `components/creation/create-build-dialog.tsx` | `useCreateBuildSubmit` | 65 | baseline 65 |
+| `lib/trackable-evidence.mjs` | `evidenceConditions` | 74 | baseline 74 |
+| `tests/server-cards.test.mjs` | `callback#4` | 82 | baseline 84 |
 
-Those predate the extraction. `reportSplit` shows the caveat below in practice:
-it is accepted as inherited while two lines over its matched baseline.
+Those predate the extraction. Only the first three have no ancestor anywhere in
+the base tree — their files are branch-new — which is why they are recorded
+rather than matched: see the caveat below.
 
 ### Debt the gate cannot see
 
@@ -199,15 +203,20 @@ tests. What remains:
   116, `GithubDoneDraftDialog` at 89, `GithubCompletionDialog` at 60), the
   server-side twin of the area this branch just split.
 
-One caveat, because the gate is a heuristic and not a lineage record: when a
-function has no same-named baseline it is matched to the most similar function
-in the base tree, and that match alone can waive it. `deliverableSubject` in
-`server/runtime/cli/cli-review-subject.ts` is currently waived that way — its
-real ancestor was named differently on `master`, and the match it scored
-against is an unrelated function. So "inherited" means "not worse than something
-comparable", not "provably relocated and shrunk", and a change that grows one of
-these may still be accepted. New capabilities must use an explicit seam rather
-than growing an existing file.
+The caveat the gate used to carry is gone, and it was worse than a caveat. When
+a function had no same-named baseline, it was matched to the most *similar*
+function in the base tree and that match alone could waive it; two same-named
+functions in different files counted as the same logical path. Measured before
+the repair, three of the seven entries above were waived that way with no
+ancestor at all, and two of them were larger than the unrelated function that
+waived them. "Inherited" now means one of three things: the same symbol in the
+same file in the base tree, a symbol whose body provably moved there (a run of
+20 identical tokens, `scripts/budget-lineage.mjs`), or a ceiling recorded in
+`scripts/source-debt.json`. Anything else is reported. So a new function that
+reuses an old name, or copies an old body, is new debt; a move that grows is
+new debt; and recorded debt one line over its entry is new debt. New
+capabilities must still use an explicit seam rather than growing an existing
+file — the gate now says so instead of waiving it.
 
 ## Portable blueprint evidence
 

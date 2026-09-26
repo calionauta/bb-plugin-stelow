@@ -85,11 +85,14 @@ try {
     join(repositoryRoot, "scripts/check-source-shape.mjs"),
     join(fixtureRoot, "scripts/check-source-shape.mjs"),
   );
-  copyFileSync(
-    join(repositoryRoot, "scripts/check-source-budgets.mjs"),
-    join(fixtureRoot, "scripts/check-source-budgets.mjs"),
-  );
-  git("add", "scripts/check-source-shape.mjs", "scripts/check-source-budgets.mjs");
+  for (const script of ["check-source-budgets.mjs", "budget-lineage.mjs"]) {
+    copyFileSync(join(repositoryRoot, "scripts", script), join(fixtureRoot, "scripts", script));
+  }
+  // The budget gate reads the debt ledger next to itself, and this fixture's
+  // debt is inherited through lineage rather than recorded, so it gets an empty
+  // one. tests/source-budgets.test.mjs is where a recorded entry is exercised.
+  writeFileSync(join(fixtureRoot, "scripts/source-debt.json"), '{"files":{},"functions":{}}\n');
+  git("add", "scripts/check-source-budgets.mjs", "scripts/budget-lineage.mjs", "scripts/source-debt.json");
   git("commit", "-m", "activate source shape gate");
 
   const clean = runChecker();

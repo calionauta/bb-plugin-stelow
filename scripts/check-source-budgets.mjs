@@ -2,17 +2,18 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { censusKey, pathAffinity, provesMove, tokenList } from "./budget-lineage.mjs";
 
 const roots = ["server/", "components/", "hooks/", "lib/", "scripts/", "tests/"];
 const entrypoints = new Set(["server.ts", "app.tsx"]);
 const extensions = new Set([".js", ".mjs", ".ts", ".tsx"]);
 const maxFileLines = 400;
 const maxFunctionLines = 50;
-const relocationSimilarity = 0.4;
-const functionSimilarityFloor = 0.15;
+const debtLedger = fileURLToPath(new URL("source-debt.json", import.meta.url));
 const args = process.argv.slice(2);
-let trackedSourceFiles;
+const tokenCache = new Map();
 
 function git(...command) {
   return execFileSync("git", command, {
@@ -55,21 +56,19 @@ function sourceAt(ref, file) {
   }
 }
 
+// Two bases, both on the requested ref: the merge base scopes which files the
+// gate reads at all, the ref tip is the only tree debt is compared against. The
+// fork's own line is deliberately not a third base — a 199-commit-stale copy of
+// a file is not evidence about the branch's present debt.
 function comparisonBases() {
   const requested = optionValue("--base") || process.env.SOURCE_SHAPE_BASE || "origin/master";
   git("rev-parse", "--verify", `${requested}^{commit}`);
   const target = git("rev-parse", requested).trim();
   if (target === "HEAD") {
     const parent = git("rev-parse", "HEAD^").trim();
-    return { diff: parent, debt: parent, branchBase: parent };
+    return { diff: parent, debt: parent };
   }
-  const mergeBase = git("merge-base", target, "HEAD").trim();
-  return { diff: mergeBase, debt: target, branchBase: mergeBase };
-}
-
-function trackedFiles() {
-  trackedSourceFiles ??= new Set(git("ls-files").trim().split("\n"));
-  return trackedSourceFiles;
+  return { diff: git("merge-base", target, "HEAD").trim(), debt: target };
 }
 
 function untrackedFiles() {
@@ -129,136 +128,130 @@ function functionRecords(file, source) {
   return records;
 }
 
-function lexicalFeatures(text) {
-  const tokens = text.match(/[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`|\S/g) ?? [];
-  const unigrams = new Map();
-  const significant = [];
-  for (const token of tokens) {
-    if (token === "\\") continue;
-    significant.push(token);
-    unigrams.set(token, (unigrams.get(token) ?? 0) + 1);
+// Recorded debt is the one waiver that needs no ancestor: the key and its
+// ceiling are in the ledger, where a reviewer sees them in the diff. Fail fast
+// when it is missing, because a silently absent ledger would report every
+// recorded symbol as a fresh violation.
+function readDebtLedger() {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(debtLedger, "utf8"));
+  } catch (error) {
+    throw new Error(`debt ledger is unreadable: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const bigrams = new Map();
-  for (let index = 1; index < significant.length; index += 1) {
-    const token = `${significant[index - 1]}__${significant[index]}`;
-    bigrams.set(token, (bigrams.get(token) ?? 0) + 1);
+  return { files: parsed.files ?? {}, functions: parsed.functions ?? {} };
+}
+
+function indexBaseline(records) {
+  const byFile = new Map();
+  const byLabel = new Map();
+  for (const record of records) {
+    if (!byFile.has(record.file)) byFile.set(record.file, []);
+    byFile.get(record.file).push(record);
+    if (!byLabel.has(record.label)) byLabel.set(record.label, []);
+    byLabel.get(record.label).push(record);
   }
-  return { unigrams, bigrams };
+  return { byFile, byLabel };
 }
 
-function multisetScore(left, right, includeBigrams) {
-  let overlap = 0;
-  let total = 0;
-  for (const [token, count] of left) {
-    total += count;
-    if (includeBigrams) overlap += Math.min(count, right.get(token) ?? 0);
-  }
-  for (const count of right.values()) total += count;
-  return total === 0 ? 1 : (2 * overlap) / total;
+// Token lists are cached by their text: the same baseline function is compared
+// against many candidates, and a moved file is compared against every baseline
+// file in the tree.
+function tokensOf(text) {
+  if (!tokenCache.has(text)) tokenCache.set(text, tokenList(text));
+  return tokenCache.get(text);
 }
 
-function featureCount(text) {
-  return [...lexicalFeatures(text).unigrams.values()]
-    .reduce((total, count) => total + count, 0);
+// Candidates are the same file and the same name, and nothing else: those are
+// the only two ways a function can be recognised before its content is read.
+function lineageCandidates(record, index) {
+  const candidates = new Map();
+  for (const candidate of index.byFile.get(record.file) ?? []) candidates.set(candidate, true);
+  for (const candidate of index.byLabel.get(record.label) ?? []) candidates.set(candidate, true);
+  return [...candidates.keys()];
 }
 
-function functionSimilarity(current, baseline) {
-  const currentFeatures = lexicalFeatures(current.text);
-  const baselineFeatures = lexicalFeatures(baseline.text);
-  return (
-    multisetScore(currentFeatures.unigrams, baselineFeatures.unigrams, false) * 0.25
-    + multisetScore(currentFeatures.bigrams, baselineFeatures.bigrams, true) * 0.75
-  );
+function lineageKind(record, candidate) {
+  if (record.file === candidate.file) return "same-file";
+  return provesMove(tokensOf(record.text), tokensOf(candidate.text)) ? "relocated" : null;
 }
 
-function pathAffinity(current, baseline) {
-  let shared = 0;
-  const length = Math.min(current.path.length, baseline.path.length);
-  for (let index = 0; index < length; index += 1) {
-    if (current.path[index] !== baseline.path[index]) break;
-    shared += 1;
-  }
-  return shared / Math.max(current.path.length, baseline.path.length);
+function outranks(score, candidate, incumbent) {
+  if (score !== incumbent.score) return score > incumbent.score;
+  if (candidate.lines !== incumbent.record.lines) return candidate.lines > incumbent.record.lines;
+  return candidate.file < incumbent.record.file;
 }
 
-function bestFunction(current, baseline) {
+// The proven ancestor, preferring identity in the same file over a proven move,
+// then the longest shared path, then the largest baseline. Similarity plays no
+// part: two candidates that are not proven are not candidates at all.
+function bestLineage(record, index) {
   let best = null;
-  const candidates = baseline.filter((record) => record.label === current.label);
-  if (candidates.length === 0) {
-    for (const record of baseline) {
-      const similarity = functionSimilarity(current, record);
-      if (!best || similarity > best.similarity) best = { record, similarity, score: similarity };
-    }
-  }
-  for (const candidate of candidates) {
-    const similarity = functionSimilarity(current, candidate);
-    const score = pathAffinity(current, candidate) * 0.35 + similarity * 0.65;
-    if (!best || score > best.score) best = { record: candidate, similarity, score };
+  for (const candidate of lineageCandidates(record, index)) {
+    const kind = lineageKind(record, candidate);
+    if (kind === null) continue;
+    const score = (kind === "same-file" ? 2 : 0) + pathAffinity(record.path, candidate.path);
+    if (best === null || outranks(score, candidate, best)) best = { kind, record: candidate, score };
   }
   return best;
 }
 
-function sourceSimilarity(source, baseline) {
-  const current = lexicalFeatures(source);
-  const previous = lexicalFeatures(baseline);
-  return (
-    multisetScore(current.unigrams, previous.unigrams, false) * 0.25
-    + multisetScore(current.bigrams, previous.bigrams, true) * 0.75
-  );
+function findingMessage(label, lines, detail) {
+  return `${label}: ${lines} lines (${detail})`;
 }
 
-function bestSource(file, source, baselineSources) {
-  let best = null;
-  for (const [baseFile, baseSource] of baselineSources) {
-    if (baseFile === file) continue;
-    const similarity = sourceSimilarity(source, baseSource);
-    if (!best || similarity > best.similarity) best = { file: baseFile, similarity, lines: sourceLines(baseSource) };
-
+function functionFinding(record, index, ledger) {
+  if (record.lines <= maxFunctionLines) return null;
+  const label = `${record.file}:${record.path.join("/")}#${record.ordinal}`;
+  // Proven lineage first: it says where the debt came from. The ledger is the
+  // floor under it, for branch debt whose ancestor this gate cannot see.
+  const match = bestLineage(record, index);
+  if (match !== null && match.record.lines > maxFunctionLines && record.lines <= match.record.lines) {
+    const detail = match.kind === "relocated"
+      ? `relocated from ${match.record.file}: ${match.record.lines}`
+      : `baseline ${match.record.lines}`;
+    return { message: findingMessage(label, record.lines, detail), inherited: true };
   }
-  return best;
+  const recorded = ledger.functions[censusKey(record)];
+  if (recorded !== undefined) {
+    return { message: findingMessage(label, record.lines, `recorded ${recorded}`), inherited: record.lines <= recorded };
+  }
+  return { message: findingMessage(label, record.lines, "no function baseline"), inherited: false };
 }
 
-function fileFinding(file, source, baselineSources) {
+function fileFinding(file, source, baselineSources, ledger) {
   const lines = sourceLines(source);
   if (lines <= maxFileLines) return null;
+  const recorded = ledger.files[file];
+  if (recorded !== undefined) {
+    return { message: findingMessage(file, lines, `recorded ${recorded}`), inherited: lines <= recorded };
+  }
   const previous = baselineSources.get(file);
   if (previous !== null && previous !== undefined) {
     const oldLines = sourceLines(previous);
-    const message = `${file}: ${lines} lines (baseline ${oldLines})`;
-    return { message, inherited: oldLines > maxFileLines && lines <= oldLines };
+    return {
+      message: findingMessage(file, lines, `baseline ${oldLines}`),
+      inherited: oldLines > maxFileLines && lines <= oldLines,
+    };
   }
-  const match = bestSource(file, source, baselineSources);
-  const inherited = match && match.similarity >= relocationSimilarity && match.lines > maxFileLines;
-  return {
-    message: `${file}: ${lines} lines (${inherited ? `relocated from ${match.file}` : "no file baseline"})`,
-    inherited,
-    baselineFile: match?.file,
-  };
+  const moved = relocatedSource(file, source, baselineSources);
+  if (moved === null) return { message: findingMessage(file, lines, "no file baseline"), inherited: false };
+  return { message: findingMessage(file, lines, `relocated from ${moved.file}`), inherited: lines <= moved.lines };
 }
 
-function functionFinding(record, baselineFunctions) {
-  if (record.lines <= maxFunctionLines) return null;
-  const match = bestFunction(record, baselineFunctions);
-  if (!match) return violationFinding(record, 0);
-  const sameLogicalPath = pathAffinity(record, match.record) === 1;
-  const noLineGrowth = record.lines <= match.record.lines;
-  const noFeatureGrowth = featureCount(record.text) <= featureCount(match.record.text);
-  const inherited = match.record.lines > maxFunctionLines && (
-    sameLogicalPath && noLineGrowth
-    || match.similarity >= functionSimilarityFloor && (noLineGrowth || noFeatureGrowth)
-    || sameLogicalPath && noFeatureGrowth
-  );
-  return {
-    message: `${record.file}:${record.path.join("/")}#${record.ordinal}: `
-      + `${record.lines} lines (baseline ${inherited ? match.record.lines : 0})`,
-    inherited,
-  };
-}
-
-function violationFinding(record, baseline) {
-  const message = `${record.file}:${record.path.join("/")}#${record.ordinal}: `
-    + `${record.lines} lines (baseline ${baseline})`;
-  return { message, inherited: false };
+// A file that moved is proven the same way a function is: by a long shared run
+// of tokens, and only ever from a baseline file that was itself over budget.
+function relocatedSource(file, source, baselineSources) {
+  let best = null;
+  for (const [baseFile, baseSource] of baselineSources) {
+    if (baseFile === file || baseSource === null) continue;
+    const lines = sourceLines(baseSource);
+    if (lines <= maxFileLines) continue;
+    if (best !== null && lines <= best.lines) continue;
+    if (!provesMove(tokensOf(source), tokensOf(baseSource))) continue;
+    best = { file: baseFile, lines };
+  }
+  return best;
 }
 
 function reportFinding(finding, inherited, violations) {
@@ -266,32 +259,30 @@ function reportFinding(finding, inherited, violations) {
   (finding.inherited ? inherited : violations).push(finding.message);
 }
 
+function baselineFunctions(baselineSources) {
+  const records = [];
+  for (const [file, source] of baselineSources) {
+    if (source !== null) records.push(...functionRecords(file, source));
+  }
+  return records;
+}
+
 function main() {
   assertKnownArguments();
   const bases = comparisonBases();
+  const ledger = readDebtLedger();
   const files = changedFiles(bases.diff);
-  const sources = new Map();
-  for (const file of files) sources.set(file, readFileSync(file, "utf8"));
+  const sources = new Map(files.map((file) => [file, readFileSync(file, "utf8")]));
   const baselineSources = new Map(
     baselineFiles(bases.debt).map((file) => [file, sourceAt(bases.debt, file)]),
   );
-  const baselineFunctions = [];
-  for (const [file, source] of baselineSources) {
-    if (source !== null) baselineFunctions.push(...functionRecords(file, source));
-  }
+  const index = indexBaseline(baselineFunctions(baselineSources));
   const inherited = [];
   const violations = [];
   for (const [file, source] of sources) {
-    const fileResult = fileFinding(file, source, baselineSources);
-    reportFinding(fileResult, inherited, violations);
-    const branchSource = fileResult?.baselineFile
-      ? sourceAt(bases.branchBase, fileResult.baselineFile)
-      : null;
-    const functions = branchSource === null
-      ? baselineFunctions
-      : [...baselineFunctions, ...functionRecords(fileResult.baselineFile, branchSource)];
+    reportFinding(fileFinding(file, source, baselineSources, ledger), inherited, violations);
     for (const record of functionRecords(file, source)) {
-      reportFinding(functionFinding(record, functions), inherited, violations);
+      reportFinding(functionFinding(record, index, ledger), inherited, violations);
     }
   }
   console.log(
