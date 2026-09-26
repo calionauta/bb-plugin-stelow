@@ -785,6 +785,41 @@ the three guards and the three strings go together. The overload is the whole
 fix: three deletions and a signature, in one pure `lib/` module whose suite is
 `tests/preset-judge.test.mjs`.
 
+**Retired** (the *Guards* phase, re-deriving deadness from the parser again
+before touching it: `ok: true` returns still at `:106` and `:112`, both still
+total). The overload went into `lib/preset-judge.d.mts` only, one declaration
+per `kind`, matching the house precedent in `lib/workflow-config.d.mts` — a
+`.d.mts` overload pair over an unchecked `.mjs` implementation. Nothing changed
+at runtime: the same three objects come back for the same inputs.
+
+One correction to the row above: the pair does not belong in the `.mjs`. A
+JSDoc `@overload` there would be the first in the tree, `tsconfig` compiles no
+JavaScript, and the signature the compiler reads is the declaration file. The
+`.mjs` was not touched at all.
+
+The five negative controls that prove the change is type-level and sound:
+
+| Mutation | Result |
+| --- | --- |
+| both overloads widened back to the three-way union | `tsc` fails at **5** sites (3 files) — the overload is what retired the guards, not the deletion |
+| choice mode returns `ok: true` with no `choice` | caught |
+| criteria mode coerces a non-array `verdicts` to `[]` | caught by the new refusal-message pin (no prior test read that message) |
+| new branch keyed on `summary`, skipping the per-mode check | caught by the generated shape sweep |
+| a guard re-added, string and all | caught (`tsc` stays green — the pin is the only witness) |
+| a guard re-added without the string | caught |
+
+The type-level claim is also reproduced by hand, cheaply: restore either guard
+without touching the declaration file and `tsc` is silent, which is exactly why
+the source pins in `tests/decision-judges.test.mjs` exist and why they are the
+*only* thing standing between the tree and a re-added lie.
+
+The runtime claim is a generated sweep in `tests/preset-judge.test.mjs`: 94
+inputs (7 payload keys x 6 value kinds, plus the 5 top-level shapes JSON can
+produce, in both modes) asserting that every result either refuses with a named
+error or carries its mode's key — the property the three guards were defending,
+checked where it is actually decided. That suite is the module's; the call-site
+pins are theirs.
+
 ### 3. The upstream blueprint
 
 `/home/deploy/repos/stelow/docs/host-plugin-blueprint.md`, 673 lines, on `main`

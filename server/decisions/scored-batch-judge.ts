@@ -80,9 +80,7 @@ async function judgeWithPreset(
   });
   if (!judged.ok || !judged.text) return failure(judged.error ?? "judge failed");
   const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
-  if (!parsed.ok || !("verdicts" in parsed)) {
-    return failure(parsed.ok ? "judge verdict shape mismatch" : parsed.error);
-  }
+  if (!parsed.ok) return failure(parsed.error);
   return {
     ok: true,
     findings: resolveScoredVerdicts({

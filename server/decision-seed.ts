@@ -124,11 +124,7 @@ async function seedFromPreset(
     text: judged.text,
     validChoices: Object.keys(TRIAGE_INTENT_CRITERIA),
   });
-  if (!parsed.ok || !("choice" in parsed))
-    return warnFallback(
-      ctx.bb,
-      parsed.ok ? "verdict shape mismatch" : parsed.error,
-    );
+  if (!parsed.ok) return warnFallback(ctx.bb, parsed.error);
   return applySeedIntent(
     ctx,
     {

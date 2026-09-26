@@ -105,9 +105,7 @@ export function createArtifactCriteriaJudge(judgeViaPreset: Judge) {
     if (!judged.ok || !judged.text) return failure(judged.error ?? "judge failed");
 
     const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
-    if (!parsed.ok || !("verdicts" in parsed)) {
-      return failure(parsed.ok ? "judge verdict shape mismatch" : parsed.error);
-    }
+    if (!parsed.ok) return failure(parsed.error);
     if (parsed.verdicts.length === 0) {
       return failure("judge verdicts match no known criteria");
     }

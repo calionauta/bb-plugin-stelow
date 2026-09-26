@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPresetJudgeRunner } from "../server/decisions/preset-judge-runner.ts";
 import { createArtifactCriteriaJudge } from "../server/decisions/artifact-criteria-judge.ts";
 import { createScoredBatchJudge } from "../server/decisions/scored-batch-judge.ts";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const preset = {
   id: "judge",
@@ -282,4 +287,35 @@ const batchBase = {
   ]);
 }
 
-console.log("decision judges test ok: cleanup, refusal, confidence, and ordering");
+// Retired: each judge call site used to re-narrow the parser's union with a
+// shape guard and a string naming a mismatch the parser cannot produce — the
+// parser checks its mode's payload before every ok:true return, and
+// lib/preset-judge.d.mts now says so per kind. A guard that cannot fail is
+// debt, and its string is a lie a reader cannot disprove. These pins catch
+// the regression only they can: re-adding either string, or narrowing the
+// mode's key away from the plain ok check, which would hide a real payload
+// change behind a second refusal path.
+for (const file of [
+  "decision-seed.ts",
+  join("decisions", "scored-batch-judge.ts"),
+  join("decisions", "artifact-criteria-judge.ts"),
+]) {
+  const source = readFileSync(join(root, "server", file), "utf8");
+  const label = file.split("/").pop();
+  assert.ok(
+    !source.includes("verdict shape mismatch"),
+    `${label} carries no shape-mismatch refusal: the parser cannot return that shape`,
+  );
+  assert.doesNotMatch(
+    source,
+    /"verdicts" in parsed|"choice" in parsed/,
+    `${label} narrows on ok alone, with no second narrowing on the payload key`,
+  );
+  assert.match(
+    source,
+    /!parsed\.ok\)/,
+    `${label} still refuses when the parser refuses`,
+  );
+}
+
+console.log("decision judges test ok: cleanup, refusal, confidence, ordering, and no shape guard");
