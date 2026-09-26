@@ -1803,3 +1803,159 @@ modules and 1740 dependencies; `npm run quality:shape` green with 7 inherited
 budget entries and no new ones; `npm run duplicates` at 0 exact clones; lint
 at 1 inherited warning. `FEATURES.md` does not move: nothing user-facing
 changed.
+
+## Final audit corrections (the synthesis pass)
+
+This is the workflow's last phase: run every gate, inspect both checkouts and
+the E2E card, report residuals. It changed no source. What it found is that the
+E2E evidence above is real, and that **none of it exercised this branch.**
+
+### The E2E ran against master's bundle, not this one
+
+This is the substantive finding, and no section above states it. The running
+plugin is served from a *different checkout*:
+
+```
+$ bb plugin reload stelow
+stelow@0.51.2  running
+  source: path:/home/deploy/.bb/plugins/environment-git-worktree/
+          host-data/worktrees/thr_cegycg7mxt-1/bb-plugin-stelow
+```
+
+That worktree is on `master` at `2ae7e8c`, version 0.51.2. This checkout is
+`refactor/app-slices-1-11` at `8b531a3`, version 0.49.2. `npm run build:reload`
+on this checkout exits 0 and **still** reloads the master worktree, so the
+branch's `dist/` was never the thing answering a card.
+
+The gap is not a version skew, it is a different codebase. `origin/master` has
+**zero** files under `server/runtime/`; this branch has 120. Every module the
+workflow's own analysis cites by line number is branch-only — `server/
+execution-advance-cli.ts`, `server/runtime/cli-inspection.ts`,
+`server/runtime/helper-script.ts`, `server/runtime/wiring/rpc-surfaces.ts`,
+`server/runtime/disposable-spawn.ts`, `lib/preview-lifecycle.mjs` — and
+`server/execution-advance.ts` on master is the single unsplit file the
+*Functions* phase split. A bundle grep settles it: `dist/server.js` here
+contains `execution-advance-cli`, `preview-lifecycle`, `disposable-spawn` and
+`rpc-surfaces`; the running master's `dist/server.js` contains **0** of the
+four. The `playbook` output agrees from the other side — it resolves
+`transitions` from this checkout's `skills/` but `entry` and `router` from the
+master worktree.
+
+Consequence, stated precisely so the record is not over- or under-read: the
+card `card_y6dnitl6` is real, its state dir is real, its runs and receipts are
+real, and the refusals it hit are real behaviour of *some* Stelow. But the
+branch's line citations cannot be evidenced by those observations, because the
+code that produced them does not contain those lines. The branch's splits are
+evidenced by the 356-suite node run and nothing else. Reading the E2E sections
+as behavioural proof of this branch's refactor is the error; they are proof
+that the host, the CLI and the workflow state machine work, which is a
+different and still useful claim.
+
+Two things in the record are therefore *source readings*, not observations, and
+should be read as such. The `STELOW_STATE`/`STELOW_STATEDIR` dead-end is
+verified here directly and holds: `server/runtime/helper-script.ts:35,36,40`
+only *writes* both into the child's environment, and nothing in `server/` or
+`lib/` reads either. The `advance` refusal it explains is real on both lines,
+but the branch's `execution-advance-cli.ts:92` was not the code that emitted it.
+
+**The E2E timeline also shows which build was live during the runs.** The card
+ran 11:55–12:27Z; master's last release before the current build is
+`2ae7e8c` at 13:10Z, and the master `dist/server.js` mtime is 13:11:46Z. The
+build answering the card was therefore 0.51.1 (`bdce809`), not the 0.51.2
+observed now. Every exit code below was re-run against 0.51.2 and reproduces
+except the one corrected next, which was never a version drift.
+
+### Correction: `verify` exits 2, and the table's 0 is simply wrong
+
+The E2E table records `bb stelow verify --card card_y6dnitl6` as exit **0**
+with `Build verification requires --tests`, and then claims the exit codes
+"all three still hold verbatim". Re-run against 0.51.2 it exits **2**. This is
+not drift: master's source has returned `{ exitCode: 2, stderr: ... }` for that
+refusal since `7397e40`, and the same line is present unchanged at `0.51.1`
+(`bdce809:server.ts:7648`) — the build the card actually ran against. The
+recorded `0` never held. The rest of the table re-ran verbatim: `advance
+--dry-run --json audit` exit 1 and `doctor --project proj_a6wdkdcfkk --json`
+exit 1, both with `state.md is missing for the Stelow workflow. Reseed the
+workflow.`; `schema` exit 0; `playbook --card card_y6dnitl6` exit 0;
+`manifest --card card_y6dnitl6` exit 0 with `Stelow-Artifacts: 7`; `done
+--card card_y6dnitl6` exit 1 with its recorded sentence verbatim; `help answer`
+exit 0. `status --json` exits 0 with 41 workflows and the card at
+`context`/`in-progress`. One card counts as observed, `card_y6dnitl6`, with
+`artifacts: []` — the board defect below, live.
+
+The general lesson repeats the one the guards review already wrote down: a
+table whose cells each look plausible is the cheapest place to carry a false
+claim, and the sibling exit codes reproducing is not evidence for the one that
+did not.
+
+### The two deferred residuals, re-verified and still real
+
+Neither moved, and both reproductions still hold on this branch's source.
+
+- **The `board` artifact list is empty, and the test cannot catch it.**
+  `server/runtime/board-read.ts:47` lists the state directory through
+  `listPaths` with `includeDirectories: false` and never descends, and
+  `findArtifacts` (`:104-131`) contains no `state.md` exclusion — zero matches
+  for `state.md` or `STATE_BOOK`, where `lib/artifact-manifest.mjs:43` does
+  classify it as bookkeeping. The fixture that should catch it,
+  `tests/runtime-seams.test.mjs:163-170`, still returns a flat
+  `[`${dir}/spec-product.md`, `${dir}/notes.md`, `${dir}/run.sh`]`, so it
+  describes no layout a production workflow has and would pass with the
+  recursion absent. Live: `board` returns `artifacts: []` for this card while
+  `manifest` counts 7. Still needs its own `fix:` + `test:` pair.
+- **The advance preamble is still duplicated.** `server/execution-advance-cli.ts`
+  resolves the card, takes the workspace, derives the state dir and runs the
+  artifact guard itself (`:59-77`, deps renamed to `stateDir`/`ensureArtifacts`),
+  where `server/runtime/cli-helper-passthrough.ts:30`'s `helperContext` is the
+  shared copy. The blueprint's "next place to start" is unchanged.
+
+### Gates on this pass, re-run from scratch
+
+`npm run typecheck` exit 0. `npm test` exit 0 — 356 passing lines, zero `not
+ok`, ending on the same census line the sections above quote, which is the
+check that this pass's two corrections are the only new information. `npm run
+architecture` exit 0, "no dependency violations found (747 modules, 1740
+dependencies cruised)". `npm run quality:shape` exit 0, "source shape ok: 372
+source file(s) from `1f968bea`, no changed line over 160 characters", with 7
+inherited budget entries and no new ones. `npm run test:source-shape` exit 0
+and `npm run test:source-budgets` exit 0 (both also run inside `npm test`).
+`npm run quality:report` exit 0, carrying lint at 1 warning — inherited, since
+the same `renderInlineWorkflowScript` signature is at `origin/master:123` —
+`knip` at 19 unused files that are all entry points or workflow DSL, and
+`jscpd` at 0 exact clones across 725 files. `npm run security:production` exit
+0, "found 0 vulnerabilities". `npm run build:reload` exit 0. `git diff
+--check` exit 0 on a clean tree.
+
+**One gate needed a corrected method, and the naive version lies.** Workflow
+validation fails all 17 files under `.bb/workflows/` twice over: `node --check`
+rejects them because `package.json` sets `"type": "module"` and top-level
+`return` is illegal in ESM, and `import()` rejects them for the same reason.
+Both are harness artifacts — bb evaluates a workflow body as a function, so
+top-level `return` is legal by design. Compiling each file as an
+`AsyncFunction` body, which is bb's actual model, passes **17 of 17**. Worth
+recording because the wrong tool reports a total failure on a healthy tree, and
+a reader who trusted it would file seventeen phantom breakages.
+
+**Checkouts.** This one: `refactor/app-slices-1-11` at `8b531a3`, identical to
+`origin/refactor/app-slices-1-11`, clean tree, zero untracked files, 234 ahead
+and 14 behind `origin/master` with no rebase or merge performed. The 206 files
+under `.stelow/` are preserved and gitignored. `skills/` and `data/stelow` are
+untouched across the entire workflow — zero commits reach either path, as
+AGENTS.md requires. `FEATURES.md` is likewise untouched, correctly: no
+user-facing behaviour changed, and every phase was a refactor, a guard
+retirement, or a document. Upstream: `/home/deploy/repos/stelow` on `main`,
+clean, in sync with `origin/main`, nothing unpushed, with all five blueprint
+commits (`4ce9d69`, `40cd2a6`, `bd48115`, `27d701e`, `f659470`) confirmed as
+ancestors of `origin/main`; the three anchors the sections above cite still
+resolve (§9 at `:386`, §14 at `:682`, "Splitting one oversized module into
+feature slices" at `:736`, "Secure subprocess and delegated execution" at
+`:765`); the longest line those commits add is 79 characters; and upstream
+`typecheck`, `verify:execution` and `validate:stages` are all exit 0.
+
+**The one genuine blocker, restated as a blocker rather than a caveat.** A
+gated advance with artifacts has still never executed on this host, and it
+cannot while the installed plugin path resolves to the master worktree — not
+because the state machine refuses, but because the branch's code is not loaded
+to be asked. Repointing the installed plugin at this checkout is the
+prerequisite, and it is an environment change, not a code change, so it is
+named here rather than attempted.
