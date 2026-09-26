@@ -9,11 +9,11 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -75,7 +75,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "b9e0288f7d20c63a98eaba8b6212375c2a67a92bc5006175b49b281659299dc5",
+      "source_sha256": "0ad8747350aba3437fccdad7f8042eae5504c144947f25d57795fea63b65ed8c",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": ["contrast"],
