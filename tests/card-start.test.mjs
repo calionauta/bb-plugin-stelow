@@ -58,7 +58,21 @@ const researchDialog = readFileSync(join(root, "components", "creation", "create
 const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 const githubImport = readFileSync(join(root, "components", "github", "github-import-tab.tsx"), "utf8");
 const githubAuto = readFileSync(join(root, "components", "github", "github-automation-tab.tsx"), "utf8");
-const githubState = readFileSync(join(root, "components", "github", "github-dialog-state.ts"), "utf8");
+// The dialog's state is three modules — one hook per tab, one for the tab
+// choreography they share — plus the shapes they agree on. Read together, they
+// are the whole dialog state the pins below describe.
+const githubState = [
+  "github-dialog-state.ts",
+  "github-dialog-tabs.ts",
+  "github-dialog-types.ts",
+  "github-import-tab-state.ts",
+  "github-import-query.ts",
+  "github-import-submit.ts",
+  "github-automation-tab-state.ts",
+  "github-automation-rules.ts",
+  "github-automation-form.ts",
+  "github-automation-transients.ts",
+].map((file) => readFileSync(join(root, "components", "github", file), "utf8")).join("\n");
 const githubChrome = readFileSync(join(root, "components", "github", "github-dialog-chrome.tsx"), "utf8");
 const startCheck = readFileSync(join(root, "components", "start-immediately-check.tsx"), "utf8");
 const heroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
@@ -134,12 +148,16 @@ assert.doesNotMatch(app, /rpc\.call\("createExploreCard",/, "no local explore su
 assert.match(exploreDialog, /function resetOnOpen\(\) \{\s*\n\s*setStage\(null\);\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "every open resets stage, start, and error");
 assert.match(githubState, /rpc\.call\("importGithubIssue", \{[^}]*start: importStart/, "import submit passes the choice");
 assert.match(githubImport, /<IsolatedWorktreeCheck checked=\{importIsolated\} onChange=\{setImportIsolated\} \/>/, "import offers the shared isolated toggle");
-assert.match(githubState, /isolated: importIsolated \}\)/, "import submit passes isolation");
+assert.match(githubState, /isolated: importIsolated/, "import submit passes isolation");
 assert.doesNotMatch(githubImport, /separate copy/, "the toggle copy lives in one component, never pasted in the dialog");
 const disclosure = readFileSync(join(root, "components", "disclosure.tsx"), "utf8");
 assert.match(disclosure, /export function DisclosureChevron/, "the chevron lives in one shared module");
 assert.match(disclosure, /export function DetailsDisclosure/, "progressive disclosure is one convention, not ad-hoc details");
-const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+const managerShell = [
+  "preset-manager-shell.tsx",
+  "preset-manager-routing-section.tsx",
+  "preset-manager-api-sections.tsx",
+].map((file) => readFileSync(join(root, "components/settings", file), "utf8")).join("\n");
 assert.match(managerShell, /import \{ DisclosureSection \} from "\.\.\/disclosure"/, "the manager shell reads the shared disclosure section");
 assert.doesNotMatch(app, /function DisclosureChevron\(/, "no local chevron copy survives in the panel");
 assert.match(disclosure, /export function DisclosureSection/, "the section lives in the shared disclosure module");
@@ -155,7 +173,7 @@ assert.match(
   "parked isolated imports pin their preset for the later Start",
 );
 assert.match(server, /pinCardPreset,/, "the runtime injects the tested preset pin into GitHub import");
-assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
+assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: values\.automationStart/s, "rule creation passes the choice");
 assert.match(githubState, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
 assert.match(githubState, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
 assert.match(githubServer, /seenKeys: seenAutomationKeys\(db, row\.id\)/, "the tick consults the backlog guard before matching");
@@ -245,9 +263,10 @@ assert.match(
 // re-anchors on every open, and every rule RPC carries the picked id.
 assert.match(githubAuto, /label="Project for new rules"/, "the Auto tab offers a project picker");
 assert.match(githubAuto, /setRuleProjectId\(id\); setRulePreview\(null\); void refreshAutomationRules\(id\)/, "picking a project reloads its rules at once");
-assert.match(githubState, /const target = activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "opening re-anchors to the board project, else the first");
-assert.match(githubState, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProjectId/, "saves carry the picked project");
-assert.match(githubState, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
+assert.match(githubState, /const target = anchorAutomationProject\(activeProjectId, projects\);/, "opening re-anchors through the one named rule");
+assert.match(githubState, /return activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "and that rule is the board project, else the first, else nothing");
+assert.match(githubState, /rpc\.call\("saveAutomationRule", \{\s*\n\s*projectId: values\.ruleProjectId/, "saves carry the picked project");
+assert.match(githubState, /rpc\.call\("previewAutomationRule", \{\s*\n\s*projectId: ruleProjectId/, "previews carry the picked project");
 assert.match(githubState, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
 assert.doesNotMatch(githubState, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
 assert.match(githubChrome, /Add rule to <span/, "the save names its project — carried-over labels can never land silently");
@@ -270,11 +289,12 @@ assert.ok((githubFilters.match(/h-11/g) ?? []).length >= 3, "shared inputs, sele
 // An emptied set clears instead of erroring; the field explains the next
 // step.
 assert.match(githubImport, /onChange=\{\(next\) => \{ setImportLabels\(next\); void listGithubIssues\(next\); \}\}/, "import chip edits re-search with the new set");
-assert.match(githubState, /async function listGithubIssues\(explicit\?: string\[\]\)/, "the search accepts the explicit set, not just state");
+assert.match(githubState, /listGithubIssues = \(explicit\?: string\[\]\)/, "the search accepts the explicit set, not just state");
 // Narrowing and preselect live in lib (tested): the hook delegates.
 assert.match(githubState, /filterImportCandidates<GithubCandidate>\(importCandidates/, "narrowing delegates to the tested lib helper");
 assert.match(githubState, /setImportSelected\(preselectFreshIssues\(result\.issues\)\)/, "preselect delegates to the tested lib helper");
-assert.match(githubState, /setImportCandidates\(\[\]\);\n\s*setImportSelected\(\{\}\);\n\s*return;/, "emptying the chips clears stale results without a fetch");
+const emptyChips = /if \(labels\.length === 0\) \{\s*\n\s*sinks\.clearCandidates\(\);\s*\n\s*return;/;
+assert.match(githubState, emptyChips, "emptying the chips clears stale results without a fetch");
 assert.match(githubAuto, /onChange=\{\(next\) => \{ setAutomationLabels\(next\); setRulePreview\(null\); \}\}/, "auto chip edits invalidate the stale preview");
 
 // The auto tab's scope picker is the same shared select in required mode:

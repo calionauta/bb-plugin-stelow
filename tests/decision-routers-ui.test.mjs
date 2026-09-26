@@ -21,17 +21,19 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+const managerApiSections = readFileSync(join(root, "components/settings/preset-manager-api-sections.tsx"), "utf8");
 const decisionEntry = readFileSync(join(root, "components/settings/decision-api.tsx"), "utf8");
 const decisionApiUi = readFileSync(join(root, "components/settings/decision-api-section.tsx"), "utf8");
 const decisionRouterUi = readFileSync(join(root, "components/settings/decision-router-row.tsx"), "utf8");
 const decisionRoutersUi = readFileSync(join(root, "components/settings/decision-routers-section.tsx"), "utf8");
 
 // --- progressive disclosure: the two blocks hide behind their own control --
-assert.match(managerShell, /title="Decision API"/, "the settings block hides behind a disclosure");
-assert.match(managerShell, /title="Decision routers"/, "the routers hide behind a disclosure");
+assert.match(managerApiSections, /title="Decision API"/, "the settings block hides behind a disclosure");
+assert.match(managerApiSections, /title="Decision routers"/, "the routers hide behind a disclosure");
+assert.match(managerShell, /<PresetManagerApiSections rpc=\{rpc\} \/>/, "the shell owns one API-sections call site, not two disclosures");
 
 // --- the settings boundary stays split, so the shell imports one file per job
-assert.match(managerShell, /from "\.\/decision-api"/, "settings consume the extracted decision boundary");
+assert.match(managerApiSections, /from "\.\/decision-api"/, "settings consume the extracted decision boundary");
 assert.match(decisionEntry, /export \{ DecisionApiSection \} from "\.\/decision-api-section"/, "the settings section keeps one stable entry");
 assert.match(decisionEntry, /export \{ DecisionRoutersSection \} from "\.\/decision-routers-section"/, "the routers section keeps one stable entry");
 assert.match(decisionApiUi, /export function DecisionApiSection\(/, "the settings section owns the API controls");
