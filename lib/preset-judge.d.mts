@@ -23,8 +23,17 @@ export interface PresetJudgeFailure {
   error: string;
 }
 
+// One overload per kind: the parser checks its mode's payload before every
+// ok:true return, so an ok:true result always carries the mode's key. The
+// mode is keyed in the signature, which is what lets a call site drop its
+// shape-mismatch guard instead of re-narrowing an un-narrowed union.
 export declare function parsePresetJudgeOutput(options: {
-  kind: "choice" | "criteria";
+  kind: "choice";
   text?: string | null;
   validChoices?: string[] | null;
-}): PresetJudgeChoice | PresetJudgeCriteria | PresetJudgeFailure;
+}): PresetJudgeChoice | PresetJudgeFailure;
+export declare function parsePresetJudgeOutput(options: {
+  kind: "criteria";
+  text?: string | null;
+  validChoices?: string[] | null;
+}): PresetJudgeCriteria | PresetJudgeFailure;

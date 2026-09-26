@@ -54,7 +54,9 @@ console.log("question form artifact provenance test ok: an inherited brief is ma
 // The rendered control is where the reader actually learns what a row opens.
 // A filename hidden in a hover-only `title` is not a label, and four rows
 // saying "Open document" over one shared file read as a broken button.
-const batch = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
+// The option row was split out of the stepper into the module that renders the
+// options, so the control is pinned where it now lives.
+const batch = readFileSync(join(root, "components", "conversation", "batch-options.tsx"), "utf8");
 assert.match(
   batch,
   /artifactInherited \? "Shared brief" : "Open"\}?: \{artifact\.display\}/,

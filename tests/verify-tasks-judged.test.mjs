@@ -91,14 +91,15 @@ assert.equal(
 
 // Server wiring: verify-first is authoritative (exit-code verdicts with
 // full confidence), the judge covers only the remainder, and the rollup is
-// the deterministic resolver — removing any of these fails here.
+// the deterministic resolver — removing any of these fails here. The verb owns
+// that wiring now, in the CLI family that runs it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
 assert.ok(server.includes('verdict: ran.ok ? "met" : "unmet"'), "verify commands resolve deterministically from the exit code");
-assert.ok(server.includes("confidence: 1, verdict: ran.ok"), "command verdicts carry full confidence (authoritative over the judge)");
+assert.ok(server.includes("confidence: 1,"), "command verdicts carry full confidence (authoritative over the judge)");
 assert.match(server, /const judgedTasks = doneTasks\.filter\(\(task\) => task\.verify === null\)/, "only command-less tasks reach the judge");
-assert.match(server, /if \(judgedTasks\.length === 0\) \{/, "a fully-declared board skips the judge entirely");
-assert.ok(server.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFindings })"), "scopes roll up through the deterministic resolver");
+assert.match(server, /if \(judgedTasks\.length === 0\) return commandFindings;/, "a fully-declared board skips the judge entirely");
+assert.ok(server.includes("resolveScopeVerdicts({ scopes, taskFindings: findings })"), "scopes roll up through the deterministic resolver");
 const verifiedShortcut =
   /taskFindings\.filter\(\(finding\) => finding\.verdict === "met"\)\.length === taskFindings\.length \? "verified"/;
 assert.ok(!verifiedShortcut.test(server), "no shortcut ever seals verified from task findings");

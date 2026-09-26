@@ -22,7 +22,6 @@ import {
 import { runScopeCommand } from "../server/scopes.ts";
 
 const root = join(fileURLToPath(new URL("..", import.meta.url)));
-const serverSource = readFileSync(join(root, "server.ts"), "utf8");
 const scopesSource = readFileSync(join(root, "server/scopes.ts"), "utf8");
 const coordinatorSource = readFileSync(join(root, "server/scope-batch.ts"), "utf8");
 
@@ -153,11 +152,21 @@ assert.doesNotMatch(coordinatorSource, /Promise\.all/, "no fan-out in the scope-
   assert.equal(cancelled.releasedClaims.length, 2, "every scope claim releases");
 }
 
-// Production triggers: cancelCard sweeps batch claims, and the scope CLI
-// carries the database into the extracted command module.
-assert.match(serverSource, /cancelScopeBatchRun\(db, \{ batchId, cardId/, "cancelCard sweeps scope batches on archive");
-assert.match(serverSource, /batchIdsForCard\(db, cardId\)/, "cancelCard discovers the card batches");
-assert.match(serverSource, /return runScopeCommand\(argv, ctx, \{[\s\S]*?db,\s*\n/, "the scope CLI passes the database to runScopeCommand");
+// Production triggers: the card lifecycle sweeps batch claims, and the scope
+// CLI carries the database into the extracted command module. Each trigger
+// lives in its own owner now — the lifecycle slice and the CLI wiring.
+const lifecycleSource = readFileSync(join(root, "server/runtime/card-lifecycle.ts"), "utf8");
+const cliWiringSource = readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8");
+assert.match(lifecycleSource, /batchIdsForCard\(db, cardId\)/, "the card lifecycle discovers the card batches");
+assert.match(lifecycleSource, /cancelBatch\(batchId, cardId, reason\)/, "every batch is cancelled on the card lifecycle's way out");
+assert.match(lifecycleSource, /deps\.cancelScopeBatches\(cardId, "card-archived"\)/, "archiving sweeps scope batches");
+assert.match(lifecycleSource, /deps\.cancelScopeBatches\(cardId, "card-deleted"\)/, "deleting sweeps scope batches");
+const scopeDbWiring = /db: core\.db,\s*\n\s*\};\s*\n\s*return \(argv, context\) => runScopeCommand/;
+assert.match(
+  cliWiringSource,
+  scopeDbWiring,
+  "the scope CLI passes the database to runScopeCommand",
+);
 assert.match(scopesSource, /scopeStartGate\(deps\.db/, "scope start passes through the admission gate");
 assert.match(scopesSource, /scopeDoneGate\(deps\.db/, "scope done passes through the proof gate");
 {

@@ -47,14 +47,23 @@ assert.equal(db.prepare("SELECT COUNT(*) AS n FROM github_issue_comments").get()
 // card detail component fetches it on open, and the section only renders for
 // linked cards.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const contract = readFileSync(join(root, "server/github-issues.ts"), "utf8");
+const contract = readFileSync(join(root, "server/github-rpc-contract.ts"), "utf8");
+const comments = readFileSync(join(root, "server/github-comments.ts"), "utf8");
 const discussion = readFileSync(join(root, "components/github/github-linked-discussion.tsx"), "utf8");
 assert.match(contract, /getLinkedDiscussion: \{/, "the discussion RPC is contracted");
-assert.match(contract, /async getLinkedDiscussion\(\{ cardId/, "the discussion RPC is implemented");
+assert.match(
+  comments,
+  /getLinkedDiscussion: \(input: \{ cardId: string \}\) => getLinkedDiscussion\(ctx, client, input\)/,
+  "the discussion RPC is wired to the comments slice",
+);
 assert.match(discussion, /rpc\.call\("getLinkedDiscussion"/, "card detail fetches the mirror on open");
 assert.match(discussion, /Linked discussion/, "the section names itself");
 assert.match(contract, /postIssueComment: \{/, "the post RPC is contracted");
-assert.match(contract, /async postIssueComment\(\{ cardId, body/, "the post RPC is implemented");
+assert.match(
+  comments,
+  /postIssueComment: \(input: \{ cardId: string; body: string \}\) => postIssueComment\(ctx, client, input\)/,
+  "the post RPC is wired to the comments slice",
+);
 assert.match(contract, /canCreate: z\.boolean\(\),\n\s+repos: z\.array\(z\.string\(\)\)/, "eligibility travels with the mirror");
 assert.match(discussion, /rpc\.call\("postIssueComment"/, "the composer posts through the RPC");
 assert.match(discussion, /Write to the issue/, "the composer names its target");

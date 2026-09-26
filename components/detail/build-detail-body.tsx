@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../server";
@@ -18,9 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import { useDetailComment } from "../conversation/use-detail-comment";
-import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { GithubCompletionDialog } from "../github/github-completion-dialog";
 import { GithubDoneDraftDialog } from "../github/github-done-draft-dialog";
 import { CardDetailHeader } from "../manage/card-detail-header";
@@ -29,42 +27,15 @@ import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
 import { BuildDetailContent } from "./build-detail-content";
 import { BuildLifecycleDialogs } from "./build-lifecycle-dialogs";
 import { useInboxEventFocus, type InboxEventItem } from "./inbox-event-banner";
+import type {
+  BuildCard,
+  BuildDetail,
+  BuildDetailBodyProps,
+  BuildDetailView,
+  ViewerFile,
+} from "./build-detail-view";
 import { useBuildDetailLifecycle } from "./use-build-detail-lifecycle";
 import { useExecutionRuns } from "./use-execution-runs";
-
-type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
-type RpcResult = Awaited<ReturnType<Rpc["call"]>>;
-type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
-type BuildDetail = Extract<
-  RpcResult,
-  { card: unknown; comments: unknown; pendingQuestions: unknown }
->;
-type ViewerFile = {
-  display: string;
-  path: string;
-  target: WorkspaceFileTarget | HostFileTarget | null;
-  mode?: ArtifactViewerMode;
-  // The option whose control opened this file, so the viewer can show that
-  // option's section instead of the document's first line.
-  optionLabel?: string;
-} | null;
-
-type PresetDialogRenderer = (state: {
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-  onChanged: () => void;
-}) => ReactNode;
-
-type BuildDetailBodyProps = {
-  cardId: string;
-  inboxEventId: string | null;
-  executionRunId: string | null;
-  onClose: () => void;
-  onBack?: () => void;
-  intentLabels: Record<string, string>;
-  onOpenRecoveryAudit: (cardId: string) => void;
-  renderPresetDialog: PresetDialogRenderer;
-};
 
 function useBuildDetailData(cardId: string, inboxEventId: string | null) {
   const rpc = useRpc<typeof rpcContract>();
@@ -190,13 +161,6 @@ function useBuildInteractions(
     intentLabels,
   };
 }
-
-export type BuildDetailView = ReturnType<typeof useBuildDetailData> &
-  ReturnType<typeof useBuildInteractions> &
-  ReturnType<typeof useAdvanceCard> & {
-    execution: ReturnType<typeof useExecutionRuns>;
-    focusRunId: string | null;
-  } & Pick<BuildDetailBodyProps, "renderPresetDialog">;
 
 export function BuildDetailBody(props: BuildDetailBodyProps) {
   const { cardId, inboxEventId, renderPresetDialog } = props;

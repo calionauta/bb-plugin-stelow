@@ -56,61 +56,111 @@ function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<t
   );
 }
 
-export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
+/** What a person can do with a run: open its transcript, or stop it. */
+function RunActions({
+  card,
+  run,
+  active,
+  stopping,
+  onCancel,
+}: {
+  card: ExecutionRunsSectionProps["card"];
+  run: ExecutionRun;
+  active: boolean;
+  stopping: boolean;
+  onCancel: ExecutionRunsSectionProps["onCancel"];
+}) {
   const navigate = useBbNavigate();
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        className="min-h-11 cursor-pointer rounded-md border px-3 text-xs hover:bg-muted"
+        onClick={() => goToExecutionRun(navigate, card, run)}
+      >
+        Open
+      </button>
+      {active ? (
+        <button
+          type="button"
+          className="min-h-11 cursor-pointer rounded-md border px-3 text-xs text-destructive hover:bg-muted"
+          disabled={stopping}
+          onClick={() => void onCancel(run.id)}
+        >
+          {stopping ? "Stopping…" : "Stop"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One run's row. Extracted from the section so the section reads as a list and
+ * this reads as a card: the tone, the focus anchor, and the two actions are
+ * decided once, here, instead of inside a mapping callback.
+ */
+function ExecutionRunRow({
+  card,
+  run,
+  focusRunId,
+  stoppingRunId,
+  onCancel,
+}: {
+  card: ExecutionRunsSectionProps["card"];
+  run: ExecutionRun;
+  focusRunId: string | null;
+  stoppingRunId: string | null;
+  onCancel: ExecutionRunsSectionProps["onCancel"];
+}) {
+  const focusId = executionRunFocus({
+    localRunId: run.id,
+    status: run.normalizedStatus,
+    hasQuestion: run.normalizedStatus === "needs_input",
+  });
+  const waiting = waitingForYou(run);
+  return (
+    <div
+      id={focusId ?? undefined}
+      tabIndex={focusRunId === run.id ? -1 : undefined}
+      className={waiting
+        ? "flex min-h-11 items-start justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+        : "flex min-h-11 items-center justify-between gap-3 rounded-md border bg-background/60 px-3 py-2"}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium">{run.recipeId}</p>
+        <RunSummary run={run} waiting={waiting} />
+      </div>
+      <RunActions
+        card={card}
+        run={run}
+        active={["queued", "running", "needs_input"].includes(run.normalizedStatus)}
+        stopping={stoppingRunId === run.id}
+        onCancel={onCancel}
+      />
+    </div>
+  );
+}
+
+export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
+  const active = runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length;
   if (runs.length === 0) return null;
   return (
     <section aria-label="Execution runs" className="rounded-lg border bg-card/60 p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Execution runs</h2>
-        <span className="text-xs text-muted-foreground">
-          {runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length} active
-        </span>
+        <span className="text-xs text-muted-foreground">{active} active</span>
       </div>
       <div className="space-y-2">
-        {runs.map((run) => {
-          const focusId = executionRunFocus({
-            localRunId: run.id,
-            status: run.normalizedStatus,
-            hasQuestion: run.normalizedStatus === "needs_input",
-          });
-          const active = ["queued", "running", "needs_input"].includes(run.normalizedStatus);
-          const waiting = waitingForYou(run);
-          return (
-            <div
-              id={focusId ?? undefined}
-              tabIndex={focusRunId === run.id ? -1 : undefined}
-              key={run.id}
-              className={waiting
-                ? "flex min-h-11 items-start justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
-                : "flex min-h-11 items-center justify-between gap-3 rounded-md border bg-background/60 px-3 py-2"}
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{run.recipeId}</p>
-                <RunSummary run={run} waiting={waiting} />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  className="min-h-11 cursor-pointer rounded-md border px-3 text-xs hover:bg-muted"
-                  onClick={() => goToExecutionRun(navigate, card, run)}
-                >
-                  Open
-                </button>
-                {active ? (
-                  <button
-                    type="button"
-                    className="min-h-11 cursor-pointer rounded-md border px-3 text-xs text-destructive hover:bg-muted"
-                    disabled={stoppingRunId === run.id}
-                    onClick={() => void onCancel(run.id)}
-                  >
-                    {stoppingRunId === run.id ? "Stopping…" : "Stop"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
+        {runs.map((run) => (
+          <ExecutionRunRow
+            key={run.id}
+            card={card}
+            run={run}
+            focusRunId={focusRunId}
+            stoppingRunId={stoppingRunId}
+            onCancel={onCancel}
+          />
+        ))}
       </div>
     </section>
   );

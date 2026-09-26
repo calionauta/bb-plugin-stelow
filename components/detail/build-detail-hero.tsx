@@ -1,7 +1,7 @@
 import { selectBuildReviewArtifact } from "../../lib/build-review-target.mjs";
 import { Button } from "@/components/ui/button";
 import { fileLinkTarget } from "../artifacts/artifact-inventory";
-import type { BuildDetailView } from "./build-detail-body";
+import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
 import { HERO_STYLE, heroFor } from "./detail-hero";

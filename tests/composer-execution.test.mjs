@@ -93,10 +93,16 @@ assert.equal(fallback.executionInputSources.providerId, "explicit", "missing pro
 // track, through one shared helper per layer — never pasted per site.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
+  readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),
 ].join("\n");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
@@ -114,11 +120,23 @@ for (const method of ["createCard", "createResearchCard", "createExploreCard"]) 
 }
 assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
 assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-const directExplicitSources = /executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g;
+const directExplicitSources = new RegExp(
+  "executionInputSources: \\{\\s*"
+    + 'providerId: "explicit"(?: as const)?,\\s*'
+    + 'model: "explicit"(?: as const)?,\\s*'
+    + 'reasoningLevel: "explicit"(?: as const)?,\\s*'
+    + 'permissionMode: "explicit"(?: as const)?,?\\s*\\}',
+  "g",
+);
 assert.equal(
   (server.match(directExplicitSources) ?? []).length,
-  4,
-  "restart/reseed/review/gate-pre-review keep hardcoded explicit sources",
+  3,
+  "restart/review/gate-pre-review keep hardcoded explicit sources",
+);
+assert.match(
+  server,
+  /executionInputSources: explicitSources\(\)/,
+  "the reseed spawn declares explicit sources through its own helper",
 );
 assert.match(
   drafting,
@@ -130,7 +148,7 @@ assert.match(
   /executionArgs\(params, true\)/,
   "only the draft burst marks preset execution sources as explicit",
 );
-assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
+assert.match(server, /createCardOverride\(cardId, base, override\)/, "a divergent choice is delegated to the preset slice");
 assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 
 // Ordering: card_presets references cards, so the pin must land after the
@@ -143,7 +161,7 @@ const createWindow = cardsCreate.slice(createAt);
 const cardsInsertAt = cardsPersist.indexOf("INSERT INTO cards (");
 const pinAt = cardsPersist.indexOf("pinnedId");
 assert.ok(cardsInsertAt >= 0 && pinAt >= 0, "creation persists the card and its override");
-assert.ok(createWindow.includes("DELETE FROM presets WHERE id = ?"), "a failed spawn cleans the staged override row");
+assert.ok(createWindow.includes("deps.removeCardPreset(cardId)"), "a failed spawn delegates cleanup to the preset slice");
 
 assert.match(composerHelper, /export function composerExecutionOf\(/, "the creation module extracts the composer choice through one helper");
 assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 0, "no submit left in the panel forwards inline");

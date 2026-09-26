@@ -59,13 +59,11 @@ const batch = gapsToTriageBatch([{ description: "Missing rate-limit test" }]);
 assert.deepEqual(Object.keys(batch.questions), ["gap:gap-1"], "one atomic Score per gap, keyed once");
 assert.equal(batch.questions["gap:gap-1"].type, "score", "genuineness is a Score judgment");
 
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const gapAt = server.indexOf('if (argv[0] === "gap-triage") {');
-assert.ok(gapAt >= 0, "the gap-triage branch exists");
-const gapEnd = server.indexOf('if (argv[0] === "draft") {', gapAt);
-assert.ok(gapEnd > gapAt, "the gap-triage branch is bounded");
-const gapBody = server.slice(gapAt, gapEnd);
-assert.ok(gapBody.includes("if (gapState.failures.length > 0) return { exitCode: 1"), "deterministic registry failures refuse before any judge runs");
+// The verb is its own CLI family now; the read-only guarantee is checked
+// against the whole module, which is the whole command body.
+const gapBody = readFileSync(join(root, "server/runtime/cli/cli-gap-triage.ts"), "utf8");
+assert.match(gapBody, /if \(argv\[0\] !== "gap-triage"\) return null;/, "the gap-triage branch exists");
+assert.ok(gapBody.includes("if (gapState.failures.length > 0)"), "deterministic registry failures refuse before any judge runs");
 assert.ok(gapBody.includes("routing stays deterministic"), "the report states routing is untouched");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(gapBody), "gap-triage makes zero database writes (reads only)");
 assert.ok(!gapBody.includes("realtime.publish"), "gap-triage publishes nothing");

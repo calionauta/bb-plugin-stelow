@@ -99,7 +99,16 @@ function validContents(recipe) {
     provenance: ["simulation:pilot"],
     approval: { receiptId: "approval-pilot", approvedBy: "simulation" },
     openDecisions: [],
-    scopes: [{ id: "scope-1", title: "Pilot scope", outcome: "Pilot outcome", capabilities: ["pilot"], inScope: ["pilot behavior"], outOfScope: [], dependsOn: [], status: "current" }],
+    scopes: [{
+      id: "scope-1",
+      title: "Pilot scope",
+      outcome: "Pilot outcome",
+      capabilities: ["pilot"],
+      inScope: ["pilot behavior"],
+      outOfScope: [],
+      dependsOn: [],
+      status: "current",
+    }],
   };
   const contrast = {
     schemaVersion: 1,
@@ -187,7 +196,11 @@ function assertRoute(recipe, row) {
 exactKeys(manifest, ["schema_version", "validated_at", "host", "evidence", "recipes", "waivers"], "manifest");
 assert.equal(manifest.schema_version, 1, "matrix schema version is pinned");
 assert.match(manifest.validated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "validation time is explicit");
-assert.deepEqual(manifest.host, { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" }, "real host probe is explicit");
+assert.deepEqual(
+  manifest.host,
+  { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" },
+  "real host probe is explicit",
+);
 for (const identity of manifest.evidence) {
   exactKeys(identity, ["path", "sha256"], `evidence ${identity.path}`);
   assert.equal(isAbsolute(identity.path), false, "evidence path is repository-relative");
@@ -196,7 +209,11 @@ for (const identity of manifest.evidence) {
 }
 const evidencePaths = new Set(manifest.evidence.map((identity) => identity.path));
 for (const path of ["data/stelow-recipe-catalog.json", "skills/stelow-workflow-orchestrator/recipe-catalog.json", "server/bb-workflow-bridge.ts", "lib/execution-artifacts.mjs", "lib/execution-route.mjs", "lib/bb-workflow-capabilities.mjs"]) assert.equal(evidencePaths.has(path), true, `matrix pins ${path}`);
-assert.equal(sha256("data/stelow-recipe-catalog.json"), sha256("skills/stelow-workflow-orchestrator/recipe-catalog.json"), "source and generated catalogs are byte-identical");
+assert.equal(
+  sha256("data/stelow-recipe-catalog.json"),
+  sha256("skills/stelow-workflow-orchestrator/recipe-catalog.json"),
+  "source and generated catalogs are byte-identical",
+);
 const catalogIds = sortedUnique(recipes.map((recipe) => recipe.id), "catalog recipe ids");
 const matrixIds = sortedUnique(manifest.recipes.map((row) => row.id), "matrix recipe ids");
 assert.deepEqual(matrixIds, catalogIds, "matrix covers every generated recipe exactly once");
@@ -205,15 +222,27 @@ for (const recipe of recipes) {
   const row = rows.get(recipe.id);
   exactKeys(row, ["id", "classification", "expected_route", "probe", "execution_claim", "source_sha256", "permission_profile", "failure_policies", "human_boundaries", "outputs", ...(recipe.write_policy === "artifact" ? [] : ["waiver_id"])], `${recipe.id} row`);
   assert.equal(row.id, recipe.id, `${recipe.id} row id matches catalog`);
-  assert.equal(row.classification, recipe.write_policy === "artifact" ? "low-risk-artifact" : "workspace-writer", `${recipe.id} classification is derived from write policy`);
+  assert.equal(
+    row.classification,
+    recipe.write_policy === "artifact" ? "low-risk-artifact" : "workspace-writer",
+    `${recipe.id} classification is derived from write policy`,
+  );
   assert.equal(row.probe, "host-validation+artifact-contract", `${recipe.id} records both real-host and contract probes`);
   assert.equal(row.execution_claim, recipe.write_policy === "artifact" ? "validation-only" : "waived", `${recipe.id} does not overclaim execution`);
   assert.match(row.source_sha256, /^[a-f0-9]{64}$/, `${recipe.id} records the exact host-validated source`);
   const renderedSource = renderInlineWorkflowScript(recipe, { localRunId: "exec_matrix" }).replace(/\n$/, "");
   assert.equal(createHash("sha256").update(renderedSource).digest("hex"), row.source_sha256, `${recipe.id} source hash matches the current renderer`);
   assert.equal(row.permission_profile, recipe.permission_profile, `${recipe.id} records inherited permissions`);
-  assert.deepEqual(sortedUnique(row.failure_policies, `${recipe.id} failure policies`), [...new Set(recipe.tasks.map((task) => task.failure_policy))].sort(), `${recipe.id} failure matrix is exact`);
-  assert.deepEqual(row.human_boundaries, recipe.tasks.filter((task) => task.human_boundary !== "none").map((task) => task.id), `${recipe.id} human-wait matrix is exact`);
+  assert.deepEqual(
+    sortedUnique(row.failure_policies, `${recipe.id} failure policies`),
+    [...new Set(recipe.tasks.map((task) => task.failure_policy))].sort(),
+    `${recipe.id} failure matrix is exact`,
+  );
+  assert.deepEqual(
+    row.human_boundaries,
+    recipe.tasks.filter((task) => task.human_boundary !== "none").map((task) => task.id),
+    `${recipe.id} human-wait matrix is exact`,
+  );
   assert.deepEqual(row.outputs, recipe.tasks.map((task) => task.output), `${recipe.id} artifact matrix is exact`);
   assert.equal(recipe.fallback.mode, "sequential", `${recipe.id} has a sequential fallback`);
   assert.equal(recipe.fallback.preserves.includes("artifact"), true, `${recipe.id} fallback preserves artifacts`);

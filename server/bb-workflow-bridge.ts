@@ -158,9 +158,26 @@ function workflowAgentSchema(schema: Record<string, unknown>): Record<string, un
   return stripWorkflowSchemaMetadata(schema) as Record<string, unknown>;
 }
 
-/** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
-export function renderInlineWorkflowScript(recipe: { id: string; tasks?: Array<{ id: string; skill?: string; output?: string; depends_on?: string[]; when?: string; requirements?: string[]; failure_policy?: string; human_boundary?: string; output_schema_contract?: Record<string, unknown> }> }, context: Record<string, unknown>): string {
-  const tasks = (recipe.tasks ?? []).map((task) => ({
+/** One catalog task as the recipe catalog declares it. */
+type CatalogTask = {
+  id: string;
+  skill?: string;
+  output?: string;
+  depends_on?: string[];
+  when?: string;
+  requirements?: string[];
+  failure_policy?: string;
+  human_boundary?: string;
+  output_schema_contract?: Record<string, unknown>;
+};
+
+/**
+ * One catalog task as the workflow's own task shape. The catalog is snake_case
+ * and nullable-by-omission; the generated script is camelCase and explicit, so
+ * the translation happens once here instead of inside the template.
+ */
+function toWorkflowTask(task: CatalogTask) {
+  return {
     id: task.id,
     skill: task.skill ?? null,
     output: task.output ?? null,
@@ -169,8 +186,18 @@ export function renderInlineWorkflowScript(recipe: { id: string; tasks?: Array<{
     requirements: task.requirements ?? [],
     failurePolicy: task.failure_policy ?? "fail",
     humanBoundary: task.human_boundary ?? "none",
-    outputSchema: workflowAgentSchema(task.output_schema_contract ?? { type: "object", additionalProperties: true }),
-  }));
+    outputSchema: workflowAgentSchema(
+      task.output_schema_contract ?? { type: "object", additionalProperties: true },
+    ),
+  };
+}
+
+/** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
+export function renderInlineWorkflowScript(
+  recipe: { id: string; tasks?: CatalogTask[] },
+  context: Record<string, unknown>,
+): string {
+  const tasks = (recipe.tasks ?? []).map(toWorkflowTask);
   const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
 const recipeTasks = ${JSON.stringify(tasks)};
 const input = { ...args, tasks: recipeTasks };
@@ -178,6 +205,10 @@ if (!input || !input.localRunId) return { state: "failed", error: "missing execu
 const outputs = {};
 const completed = new Set();
 const skipped = new Set();
+const DEFAULT_QUESTION = "The workflow needs a human decision.";
+const BOUNDARY_FIELDS = ["questionId", "contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
+const boundaryContract = (n) => ({ question: n.question ?? n.prompt ?? DEFAULT_QUESTION,
+  ...Object.fromEntries(BOUNDARY_FIELDS.map((f) => [f, n[f] ?? null])) });
 const condition = (task) => {
   if (task.when === "always") return true;
   if (task.when === "appetite_supports_fanout") return ["Core", "Complete"].includes(input.context?.appetite);
@@ -207,7 +238,7 @@ while (completed.size + skipped.size < input.tasks.length) {
   const results = await parallel(ready.map((task) => () => executeTask(task)));
   for (let index = 0; index < ready.length; index += 1) {
     const result = results[index];
-    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, question: result.needsInput.question ?? result.needsInput.prompt ?? "The workflow needs a human decision.", questionId: result.needsInput.questionId ?? null, contractId: result.needsInput.contractId ?? null, boundaryId: result.needsInput.boundaryId ?? null, kind: result.needsInput.kind ?? null, shapeVersion: result.needsInput.shapeVersion ?? null, scopeMapVersion: result.needsInput.scopeMapVersion ?? null, answerSchema: result.needsInput.answerSchema ?? null };
+    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
     completed.add(ready[index].id);
   }
 }

@@ -44,9 +44,13 @@ assert.equal(gateEvidenceGate({ ...bareAtPlanGate, groups: [] }).allowed, false,
 
 // Host wiring: refused before anything persists, on slug truth — decided
 // inside the shared dispatcher (precedence pinned in ask-gate.test.mjs).
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/ask-artifacts.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
+].join("\n");
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (evidence gate inside)");
-assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
+assert.match(serverSource, /stage: gateCard \? await deps\.cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
 assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate asks recover their manifest evidence for per-option review");
 // Every option resolves through one path, so an approval can never render
 // without the document its siblings were given. The old ".every(option =>
@@ -66,7 +70,12 @@ assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifa
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
 const questionFormSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/question-form.mjs"), "utf8");
 const reviewTargetSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/build-review-target.mjs"), "utf8");
-const conversationSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/question-batch.tsx"), "utf8");
+// The option rows and their per-option document control were split out of the
+// stepper, so the conversation surface is the stepper plus that module.
+const conversationSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/question-batch.tsx"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/batch-options.tsx"), "utf8"),
+].join("\n");
 const viewerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/artifact-viewer-dialog.tsx"), "utf8");
 assert.match(reviewTargetSource, /function questionArtifact/, "the hero reads question-attached evidence");
 assert.match(reviewTargetSource, /questionArtifact\(detail\) \?\? stageArtifact\(detail, card\)/, "the pending document wins over the manifest guess");

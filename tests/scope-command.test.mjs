@@ -34,21 +34,32 @@ assert.ok(parseScopeArgs(["done", "--scope", "scope-1", "--json", "--json"]).err
 // Topology pins (wiring only): server delegates the command to the extracted
 // module with the dependencies it owns; behavior is covered against the module.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-helper-passthrough.ts"), "utf8"),
+].join("\n");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
-const start = server.indexOf('if (argv[0] === "scope") {');
-assert.ok(start >= 0, "the scope branch exists");
-const end = server.indexOf('if (argv[0] === "lock") {', start);
-assert.ok(end > start, "the scope branch sits beside the helper wrappers");
-const branch = server.slice(start, end);
-assert.match(branch, /return runScopeCommand\(argv, ctx, \{/, "the server delegates scope transitions");
-assert.match(branch, /runHelper,/, "the delegated command receives the shared helper runner");
-assert.match(branch, /recordTrackableEvent:/, "the delegated command receives the durable trail writer");
+const cliRegistry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8");
+const helperFamily = readFileSync(join(root, "server/runtime/cli/cli-helper-passthrough.ts"), "utf8");
+assert.match(helperFamily, /argv\[0\] === "scope" \? deps\.scopeCommand\(argv, ctx\) : null/, "the scope branch exists");
+// The delegated command's dependencies are wired once, at the composition root.
+assert.match(server, /scopeCommand: scopeCommand\(deps\),/, "the CLI wiring hands the dispatcher the scope command it built");
+assert.match(server, /return \(argv, context\) => runScopeCommand\(argv, context, scopeDeps\);/, "the wiring delegates scope transitions");
+assert.match(
+  server,
+  /runHelper,\n\s*recordTrackableEvent: \(event\) => \{/,
+  "the delegated command receives the shared helper runner and the trail writer",
+);
 assert.match(
   scopeModule,
   /export async function runScopeCommand(?:<[^>]+>)?\(/,
   "the extracted module owns the command behavior",
 );
-assert.match(server, /\{ name: "scope", summary: "Validated scope transitions/, "the command is registered with its usage");
+assert.match(
+  cliRegistry,
+  /"scope",[\s\S]*?Validated scope transitions/,
+  "the command is registered with its usage",
+);
 
 console.log("scope command test ok: parsing, extraction wiring, registration");

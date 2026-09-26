@@ -9,7 +9,16 @@ const map = {
   provenance: ["simulation:advance"],
   approval: { receiptId: "approval-1", approvedBy: "simulation" },
   openDecisions: [],
-  scopes: [{ id: "scope-1", title: "One", outcome: "One outcome", capabilities: ["core"], inScope: ["one behavior"], outOfScope: [], dependsOn: [], status: "current" }],
+  scopes: [{
+    id: "scope-1",
+    title: "One",
+    outcome: "One outcome",
+    capabilities: ["core"],
+    inScope: ["one behavior"],
+    outOfScope: [],
+    dependsOn: [],
+    status: "current",
+  }],
 };
 const base = {
   stage: "scope",

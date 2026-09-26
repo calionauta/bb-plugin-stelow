@@ -1,0 +1,1961 @@
+# Remaining debt audit
+
+Phase 1 of the remaining-debt resolution branch. This report measures the four
+areas named by the branch and produces the ordered repair list that the later
+phases execute. It fixes nothing in the measured areas; the only code change it
+ships is the shape-gate repair described under *Gate repairs*.
+
+The numbers in the per-area tables are the **pre-split record**: each measured area
+is labelled with what actually shipped, and the tables are kept as the
+before-picture rather than rewritten. The figures in *Status* lines and in
+*Phase 2 result*, *Phase 3 result*, and *Phase 4 result* are current. The gate figures quoted inline
+were re-measured on this branch (`refactor/app-slices-1-11`) with
+`node scripts/check-source-budgets.mjs` and a TypeScript AST census that mirrors
+that gate's traversal. Master values come from `git show origin/master:<path>`.
+The two must agree, or the census does not describe the same shapes the gate
+measures.
+
+The adversarial review of this phase re-measured every symbol and line range in
+the tables and corrected four of them, listed under *Review corrections*. Three
+later adversarial reviews — of the phase that closed R4's last clause, of its
+own corrections, and of the phase that repaired the budget gate — re-derived
+every number in *Phase 3 result* and *Phase 4 result* from the tree. Between
+them they rejected seventeen claims in this file: a wrong file count, two
+miscounted duplications, three stale diffstats, a symbol reported as deleted that
+is alive at 7 lines, a pair of guards wrongly described as live that are dead
+like the one beside them, a line count no commit ever had, five sentences that
+were stale, self-contradicting, or less accurate than the review found them, and
+three in section 3 — the full-tree fallback was filed as a cost rather than as
+the correctness defect it was, `baseline 104` was presented as that function's
+own master line count, and the section 4 count was a commit behind. A final
+adversarial review re-derived both result tables from the tree and rejected one
+more: `setDecisionPoint` was reported as 7 lines after the split when
+`server/decision-point-rpcs.ts:55-62` is 8. Every other figure in the two result
+tables, all eleven GitHub file counts, all twelve decision file counts, and the
+43-test claim (14 + 13 + 16) matched. All are corrected above; the *Review
+corrections* list records what the first review found, not what the file now
+says. One further adversarial review, of the *Phase 7 result* audit itself,
+rejected eleven more claims and is listed under *Review corrections (this
+phase)*: a primitive that is not vendored, three miscounted inner functions, a
+line range that swept in a different rule, a sentence contradicted by its own
+table, a parser with two `ok: true` returns rather than three, two counts
+credited to the wrong gate, a commit distance read off the wrong reference, two
+drifted figures in a *Status* line this preamble calls current, and a card count
+that moves while other threads run. A further review, of the *Functions* phase
+that split the eleven symbols section 1 names, checked behaviour parity and test
+value by mutating the shipped rules rather than by re-reading the phase report;
+it found one silent data drift and three claims that could not fail, all now
+repaired, and is listed under *Review corrections (the Functions phase)*.
+
+## How to read the deltas
+
+`check-source-budgets.mjs` scores two different references, and both matter:
+
+- **New violations** are scoped to the *merge-base* with `origin/master`,
+  `1f968be` — stable for the life of the branch, since the fork's own history
+  does not move it. The two counts beside it do move: `origin/master` advances
+  with every release merge, so read them from
+  `git rev-list --count $(git merge-base origin/master HEAD)..origin/master`
+  rather than from this file.
+- **Inherited debt** is scored against the *target tip* of `origin/master`,
+  which is `2ae7e8c` (`chore(master): release 0.51.2 (#101)`) as of this
+  review and was `bdce8094` (`0.51.1`) when the figures in the sections below
+  were measured. That SHA is the one `check-source-budgets.mjs` prints as
+  `debt baseline`, so the gate's own output is the authority and this
+  sentence is a reading of it, not a substitute. `12c6664` is a real ancestor
+  of the tip, never the tip.
+
+So "baseline" in the tables is the master value the gate subtracts, and a
+negative delta is real progress that the gate already accepts. Progress is
+recorded as a ratchet in `scripts/source-debt.json`, the ledger the gate and
+`tests/debt-baseline.test.mjs` both read; a split must lower those entries
+deliberately. The fork's own line is no longer a third base: it was never
+evidence about the branch's present debt, and dropping it is part of R6.
+
+## 1. GitHub automation area
+
+**Status: repaired (R1, R2, R3 landed).** The measurements below are kept as
+the pre-split record; what shipped is measured in
+"Phase 2 result" at the end of the section.
+
+`server/github-issues.ts` was the largest owned file in the tree and the only
+oversized file under `server/`. The branch had changed it by 23 added and 23
+removed lines, net zero.
+
+| Symbol | Lines | Range | master | HEAD | delta |
+| --- | --- | --- | --- | --- | --- |
+| `server/github-issues.ts` (file) | 942 | 1-942 | 942 | 942 | 0 |
+| `runGithubMigrations` | 64 | 152-215 | 64 | 64 | 0 |
+| `createGithubAutomation` | 701 | 242-942 | 709 | 701 | **-8** |
+| `runSingleAutomationRule` | 53 | 480-532 | 53 | 53 | 0 |
+| `listGithubCandidates` | 58 | 646-703 | 58 | 58 | 0 |
+| `postGithubCompletion` | 59 | 740-798 | 59 | 59 | 0 |
+| `useGithubDialogState` | 229 | `components/github/github-dialog-state.ts` 125-353 | 229 | 229 | 0 |
+| `GithubDoneDraftDialog` | 89 | `components/github/github-done-draft-dialog.tsx` 16-104 | 89 | 89 | 0 |
+| `GithubCompletionDialog` | 60 | `components/github/github-completion-dialog.tsx` 24-83 | 60 | 60 | 0 |
+| `LinkedDiscussionSection` | 116 | `components/github/github-linked-discussion.tsx` 20-135 | 116 | 116 | 0 |
+
+Eight of nine symbols have not moved. The single -8 on the factory is the whole
+of 199 commits of effort in this area.
+
+**The split is blocked by a test gap, not by size.** The three oversized inner
+functions of the factory have no behavior test:
+
+- `runSingleAutomationRule`, `listGithubCandidates`, `postGithubCompletion`
+  appear in `tests/` **only** in `tests/debt-baseline.test.mjs`, which is the
+  size ratchet and asserts nothing about behavior.
+- The only other test naming `createGithubAutomation` is
+  `tests/server-composition-root.test.mjs:67`, and it asserts the factory is
+  *not called* in the composition root — a wiring pin, not behavior.
+- `tests/card-start.test.mjs` matches the client-side strings
+  `rpc.call("previewAutomationRule"…)` and `rpc.call("importGithubIssue"…)`.
+  Those are UI call sites, not server behavior.
+
+`server/github-issues.ts` is otherwise the best-factored file in the branch:
+the factory holds 91 nested functions and 88 of them are already under 50 lines,
+and the seams for labels, claims, intent, issue creation, comments, lists, and
+release already live in `lib/github-*.mjs`. Only the factory shell and the three
+named inner functions are oversized.
+
+### Phase 2 result (re-derived from the shipped tree)
+
+The area is now eleven `server/github-*.ts` files. `server/github-issues.ts` is
+the seam and nothing else; every file is under the 400-line ceiling and every
+function under the 50-line one, so the five entries the baseline pinned for this
+area are gone rather than replaced.
+
+| File | Lines | Owns |
+| --- | --- | --- |
+| `server/github-issues.ts` | 58 | the seam: client, warn-once, handler map, both schedulers |
+| `server/github-automation-context.ts` | 92 | deps shape, kill switch, warn-once |
+| `server/github-client.ts` | 117 | the typed `github` plugin RPC bridge, status, pickers |
+| `server/github-status.ts` | 25 | the shared unavailable-status shape |
+| `server/github-migrations.ts` | 91 | tables, column ALTERs, the label backfill |
+| `server/github-issue-flow.ts` | 293 | candidates, the shared import path, issue creation |
+| `server/github-automation-rules.ts` | 232 | rule row shape, backlog guard, the tick |
+| `server/github-rule-rpcs.ts` | 210 | the five rule RPCs |
+| `server/github-comments.ts` | 140 | the issue-comment mirror and the gated post |
+| `server/github-completion.ts` | 96 | the completion write-back and its body |
+| `server/github-rpc-contract.ts` | 165 | the wire shapes |
+
+R1 landed as 43 behavior tests over `tests/helpers/github-harness.mjs` (a real
+database plus a fake `github` plugin behind the real RPC seam), in three files
+by area. The three functions the audit named — the tick, the candidate listing,
+and the write-back — are covered by the tests that fail when their behavior is
+inverted; the negative controls are listed in the phase report.
+
+R3 also surfaced one real defect the old shape hid: the dedupe read liveness by
+card existence (`liveImportedKeys`) but the claim only by `card_id IS NULL`, so
+a link whose card was gone was offered as importable by the candidate list and
+refused as in-flight by the import path — forever. `lib/github-claims.mjs` now
+agrees with itself, and `FEATURES.md` records the rule.
+
+## 2. Decision API area
+
+**Status: repaired (R4 landed).** The measurements below are kept as the
+pre-split record; what shipped is measured in "Phase 3 result" at the end of
+the section.
+
+The area received **zero** branch effort when this audit was written — all
+three files were byte-identical to `origin/master` — so every number below is a
+starting point, not a partially-reduced ratchet.
+
+| Symbol | Lines | Range | master | HEAD | delta |
+| --- | --- | --- | --- | --- | --- |
+| `server/decision-api-contract.ts` (file) | 108 | 1-108 | 108 | 108 | 0 |
+| `server/decision-api.ts` (file) | **400** | 1-400 | 400 | 400 | 0 |
+| `createDecisionApi` | 319 | 82-400 | 319 | 319 | 0 |
+| `setDecisionPoint` | 84 | 289-372 | 84 | 84 | 0 |
+| `server/decision-api-seams.ts` (file) | 340 | 1-340 | 340 | 340 | 0 |
+| `createDecisionApiSeams` | 271 | 70-340 | 271 | 271 | 0 |
+| `vetAutoContinue` | 55 | 199-253 | 55 | 55 | 0 |
+| `seedFromPreset` | 49 | 114-162 | 49 | 49 | 0 |
+
+`server/decision-api.ts` is the highest-risk item in the audit for a reason the
+gate cannot report: it sits at **exactly** the 400-line ceiling. The gate flags
+`lines > maxFileLines`, so this file is legal today and invisible to the
+budget report, and it is absent from `fileBaseline` in
+`tests/debt-baseline.test.mjs` because it is not oversized. It has **zero
+headroom** — the first added line makes it a violation with no baseline to fall
+back on, on a file that has never been split.
+
+`seedFromPreset` at 49 is one line under the 50-line function ceiling and
+`createDecisionApiSeams` at 340 is 60 lines under the file ceiling, so both are
+one small edit away from crossing. Any repair here should move them away from
+the boundary rather than settle next to it.
+
+Unlike the GitHub area, the decision API *is* behavior-covered:
+`tests/decision-api.test.mjs`, `decision-api-factory.test.mjs`,
+`decision-judges.test.mjs`, `decision-point-route.test.mjs`, and
+`decision-routers.test.mjs` all run it. The split is unblocked on tests; it is
+merely not started.
+
+### Phase 3 result (re-derived from the shipped tree)
+
+The split landed as `73c4741` and turned the area into **twelve
+`server/decision-*.ts` files, nine of them new**; the largest is
+`server/decision-store.ts` at 226 lines. Every file the phase below touched is
+now well under the 400-line ceiling, and — the part R4 asked for explicitly —
+nothing was left *adjacent* to one:
+
+| Symbol | Before | After |
+| --- | --- | --- |
+| `server/decision-api.ts` (file) | 400 (zero headroom) | 70 |
+| `createDecisionApi` | 319 | 34 |
+| `setDecisionPoint` | 84 | 8, now a method in `decisionPointHandlers` |
+| `server/decision-api-seams.ts` (file) | 340 | 57 |
+| `createDecisionApiSeams` | 271 | 15 |
+| `vetAutoContinue` | 55 | 19 |
+| `seedFromPreset` | 49 | 45 |
+
+`server/decision-api-contract.ts` is untouched at 108, as the audit expected.
+
+The test gap the GitHub area had does not exist here, and the split did not
+create one: `tests/decision-seam-runtime.test.mjs` drives
+`createAutoContinueVeto` and `tests/decision-seed-runtime.test.mjs` drives
+`createDecisionSeed`, each over a real point store, so both advisory seams stay
+behavior-covered through the split.
+
+R4's last clause was that `seedFromPreset` be moved *away* from the 50-line
+ceiling rather than left next to it. It sat at 49 — one line of headroom, and
+the census could not report it because the gate flags `lines > 50`. `73c4741`
+left that clause open, and closing it surfaced two real findings:
+
+- **Duplicated resolution tail.** `seedFromApi` and `seedFromPreset` each ended
+  with the same six lines — resolve, log on acceptance, return — differing only
+  in the label naming the judge. The whole call site measured 7 lines on the api
+  side and 16 on the preset side, the difference being that the preset call
+  spent ten lines on `resolveSeedIntent({…})` to wrap a seven-line `apiAnswers`
+  literal where the api side passed `result.answers` straight through.
+  Extracted to `applySeedIntent` in `server/decision-seed.ts`, which drops the
+  two call sites to 19 and 45 lines. `routeAt` was already computed once in
+  `seedBuildIntent` and fed to both paths, so this did not fix a live drift —
+  what it removes is the chance that a future edit applies the threshold at one
+  call site and not the other.
+- **The threshold was never tested on either path.** Every seed assertion that
+  existed before this phase used a confidence of 0.9 or 0.95 against the
+  harness default `routeAt` of 0.6, so nothing could tell a threshold that is
+  *enforced* from one merely passed along. Reverting to that test file and
+  zeroing `routeAt` leaves the suite green. Four scenarios now pin the tail, in
+  a new `tests/decision-seed-runtime.test.mjs`: a preset verdict and an api
+  verdict below the point's `routeAt` both fail soft to `unknown` and neither
+  announces itself as seeded; a below-threshold api answer stays silent rather
+  than warning; and — because every accepted seed in the file was a `feature` —
+  a `bugfix` verdict from the preset judge and an `investigate` answer from the
+  api route each seed the choice they named, and the trail names it at info.
+
+  Each of those scenarios dies on its own mutation, and each mutation was run
+  against the shipped test: zeroing `routeAt` on the preset path only, zeroing
+  it on the api path only, returning a hardcoded `"feature"` for every accepted
+  answer, raising the trail from info to warn, dropping the intent from the
+  trail message, and deleting the trail log altogether. Two of them were found
+  by review rather than by the first draft of these tests — a tail that forced
+  every accepted seed to `"feature"`, which is the tail's entire output, and a
+  trail raised to warn, both left the whole decision suite green until the
+  non-feature verdicts and the level-aware count went in.
+
+The new tests needed their own file. Adding them to
+`tests/decision-seam-runtime.test.mjs` pushed it past the 400-line ceiling, and
+the budget gate correctly refused it rather than being handed a new baseline
+entry. The two advisory seams are now tested separately —
+`decision-seam-runtime.test.mjs` (209 lines) keeps the auto-continue veto,
+`decision-seed-runtime.test.mjs` (263) takes the triage seed.
+
+Extracting the tail also broke a pin in `tests/decision-routers.test.mjs`, on
+the literal `triage intent seeded from Decision API`. That pin is a copy pin —
+it passes on broken logic and breaks on a good refactor, the two things a pin
+must not do — and the behavior it claimed is asserted on real captured log
+lines in the seed runtime test for *both* judges. It was removed rather than
+satisfied by keeping the wording hostage to the source shape. Removing the
+source string costs no coverage: with the new block deleted entirely, losing
+the api trail or losing the preset trail still fails the suite.
+
+**Known, deliberately not fixed here.** `seedFromPreset` still guards
+`!("choice" in parsed)` before reading `parsed.choice`, and that branch is
+unreachable: in `kind: "choice"` mode `parsePresetJudgeOutput` returns
+`ok: true` only alongside a validated string `choice`, so the sibling error
+string `"verdict shape mismatch"` is dead. Verified against fourteen judge
+outputs (fenced, unfenced, malformed JSON, unknown choice, missing key, array,
+`null`, `"str"`, criteria-shaped, non-numeric and missing confidence, empty
+fence, two-block) — every rejection comes back as `ok: false`, and the only
+`ok: true` return in that mode is the one that carries `choice`.
+
+The guard survives because it is TypeScript's only narrowing on the parser's
+un-narrowed `PresetJudgeChoice | PresetJudgeCriteria` union: deleting it fails
+`tsc` with `Property 'choice' does not exist`. Killing it properly means an
+`@overload` pair on `parsePresetJudgeOutput` so `kind: "choice"` returns only
+the choice shape — roughly ten lines in one small `.mjs`, and a reasonable
+follow-up, but it edits a shared `lib/` contract with its own suite and has no
+size pressure behind it, so it was left out of a phase whose subject was a
+line-count repair rather than smuggled in beside it.
+
+The same dead guard exists twice more, at `server/decisions/scored-batch-judge.ts:83`
+and `server/decisions/artifact-criteria-judge.ts:108`, where `!("verdicts" in
+parsed)` is structurally identical: in `kind: "criteria"` the only `ok: true`
+return also always carries `verdicts`, so the sibling `"judge verdict shape
+mismatch"` string is dead there too. No test anywhere references either string.
+One `@overload` on `parsePresetJudgeOutput` retires all three, which is the
+argument for doing it once rather than three times.
+
+## 3. Budget-checker delta
+
+**Status: repaired (R6 landed).** The measurements below are the pre-split
+record. `scripts/check-source-budgets.mjs` was 311 lines with no function over
+50, and it passed then: 267 changed owned files, 13 inherited entries, 0
+violations. It is now 316 lines beside a 75-line `scripts/budget-lineage.mjs`
+and still passes, at **317 changed owned files, 7 inherited entries, 0
+violations** (re-measured at `a35e973`; the changed-file count rises with every
+phase that touches an owned root, the other two do not move). Three defects
+shaped how much
+trust the later phases could put in it; all three are gone.
+
+**The similarity fallback could waive anything.** `bestFunction` filtered
+candidates by label, and when a label was absent it compared the function
+against *every* baseline function with a lexical score, waiving the finding at a
+floor of 0.15. `pathAffinity` called two same-named functions in different files
+"the same logical path", so a name collision scored 1.0 on its own. Measured on
+this branch before the repair, three of the seven inherited entries had **no
+lineage at all** and were waived that way — their files do not exist on
+`origin/master` or at the merge-base:
+
+| Entry | Matched against | Similarity | Shared run |
+| --- | --- | --- | --- |
+| `cli-bundle-writer.ts:writeBundle` | `server.ts:plugin/run/exportRunBundle` (104 lines) | 0.240 | 43 tokens |
+| `cli-review-subject.ts:deliverableSubject` | `server.ts:plugin/qualitySeal` (66 lines) | 0.299 | 18 tokens |
+| `cli-split.ts:reportSplit` | `server.ts:plugin/fanOutResearch` (59 lines) | 0.244 | 42 tokens |
+
+`docs/runtime-architecture.md` named `deliverableSubject` as the caveat and
+called it the only one; all three were affected, and the reason the file gives
+for it — that its ancestor "was named differently on master" — was wrong, since
+there is no ancestor on master at all. Two of the three were *bigger* than the
+function that waived them and were accepted only because the old rule allowed a
+token-shrink to stand in for the line growth it had actually committed.
+
+**Split comparison bases.** `comparisonBases()` returned
+`{ diff: mergeBase, debt: target, branchBase: mergeBase }`, so a file the branch
+merely touched could be measured against a 199-commit-stale copy of itself. The
+fork's line is gone: two bases remain, and both are on the requested ref.
+
+**The baseline test was coupled to master's tip.**
+`tests/debt-baseline.test.mjs` deepEquals the gate's `inherited` output against
+`inheritedBaseline`, and those strings embedded master's own line counts — for
+example `cli-bundle-writer.ts:writeBundle#1: 68 lines (baseline 104)`, a number
+that had nothing to do with the file. Any advance of `origin/master` that
+touched an oversized file broke the test with no code change on the branch.
+
+### Phase 4 result (R6)
+
+Inheritance now needs evidence, in one of three named forms, and every report
+names which one applied:
+
+- **Same file.** The symbol exists in the baseline ref at the same path. Real
+  descent, and the cheapest case: an index lookup, no scoring.
+- **Proven move.** A candidate in another file whose body shares a run of at
+  least 20 consecutive tokens with the current one (`lineageTokens` in
+  `scripts/budget-lineage.mjs`). The code travelled, so the debt travelled with
+  it. `server/runtime/workflow-seeding.ts:seedWorkflow` is this case: 72 lines,
+  a 64-token run out of `server.ts`.
+- **A record.** `scripts/source-debt.json` holds the key and a ceiling for
+  branch debt whose ancestor the gate cannot see. This is where the three
+  entries above now live, at the size they actually are.
+
+Similarity no longer appears in any of it: the multiset and bigram scorers,
+`pathAffinity`'s use as proof, and the full-tree fallback are deleted, which is
+also why the gate got faster (6.5s against 9.6s on the same tree — it is no
+longer the slowest script in `quality:shape`).
+
+A move that *grows* is a violation again, and a record is a ceiling rather than
+a licence: recorded debt one line over its entry is reported. So is a new
+function that reuses a name, a new function whose body is a verbatim copy, and a
+new oversized file written in the same shape as an old one. The last of those
+used to be waivable by a whole-file similarity score, the same way the function
+fallback was.
+
+The ledger is the census's old tables, moved out of
+`tests/debt-baseline.test.mjs` so there is one record instead of two that can
+drift. The test now reads it, keeps every ratchet, and replaces the total-count
+guard (51) with a stronger one: every oversized symbol in the tree has to be
+recorded, and a recorded one that stopped being oversized still has to be
+dropped. It also checks that a recorded ceiling is actually over its budget.
+
+`tests/source-budgets.test.mjs` is the new gate-level suite — eleven scenarios on a
+throwaway repository, run against the real checker: inherited debt, grown debt,
+a same-size rewrite, a name collision with no lineage, a copied body under a new
+name, a new function added beside inherited debt, a repeated label in a new
+scope, a committed relocation, a recorded entry and a record that outgrew itself,
+plus the two file cases. `tests/budget-lineage.test.mjs` pins the run threshold
+from both sides, 19 tokens a coincidence and 20 a move.
+
+Six of those nine scenarios are new guard rather than regression pin: run
+against the checker as it was, the suite fails at the name collision, which the
+old gate reported as `inherited lib/collide.mjs:alphaHandler#1: 55 lines
+(baseline 55)` and exited 0 on. Dropping `lineageTokens` to 2, ignoring the
+ledger, dropping the growth requirement, and dropping the recorded ceiling each
+break the scenario that names them.
+
+## 4. origin/master delta
+
+`208` commits ahead, `6` behind, `328` files changed against the merge-base,
+`+42104/-11179`, measured at `1ee4ecc` and therefore *not* counting the phase
+that repaired the budget gate. Both figures drift as the branch grows — so does
+the insertion count as soon as that phase is committed — which is why they are
+worth re-deriving rather than reading:
+
+```bash
+git rev-list --left-right --count origin/master...HEAD
+git diff --shortstat "$(git merge-base origin/master HEAD)" HEAD
+```
+
+The 6 missing commits are mostly workflow-only, but one of them is not, so every
+later phase re-measures against a base that moves:
+
+| Commit | Owned source it changes |
+| --- | --- |
+| `7e5d621` feat: surface BB Workflows setup status | `server.ts`, `components/settings/about-panel.tsx`, `components/settings/preset-onboarding.tsx`, `components/settings/workflow-dependency-card.tsx`, `tests/about-ui-contract.test.mjs` |
+| `e0b1148` chore(master): release 0.50.0 | `package.json`, `package-lock.json`, docs |
+| `940a7f4` docs: document workflow and decision boundaries | docs only |
+| `50e751b`, `599f7ac`, `12c6664` | `.bb/workflows/*` only |
+
+`7e5d621` is the one that matters for the gates: it edits `server.ts`, three
+`components/settings/*` files, and a test — all five inside the owned roots the
+budget gate traverses. The other five commits touch no owned root.
+
+## Ordered repair list
+
+Ordered by dependency, then by risk. R1 is first because it is a hard
+prerequisite: R2 cannot be done honestly without it.
+
+1. ~~**R1 — Give the three oversized GitHub inner functions behavior tests,
+   and extract them while doing so.**~~ **DONE.** 43 tests in three files by
+   area; the three named functions are covered and their negative controls
+   were executed. The seams went to `server/` slices rather than `lib/`,
+   because these are host-wired paths, not pure decisions.
+2. ~~**R2 — Collapse `createGithubAutomation` (701 lines, 242-942).**~~ **DONE**
+   with R3: the seam is 58 lines and holds no logic.
+3. ~~**R3 — Split `server/github-issues.ts` (942 lines).**~~ **DONE.** Ten
+   slices, the largest 293 lines; see "Phase 2 result" above.
+4. **R4 — Decision API, starting with the zero-headroom file.** **DONE, in two
+   parts, and the credit is split.** `73c4741` did the structural split:
+   `server/decision-api.ts` 400 → 70 (it no longer sits *at* a ceiling,
+   invisible to the gate), `createDecisionApi` 319 → 34, `setDecisionPoint` 84
+   → 8 as a method in `decisionPointHandlers`, `server/decision-api-seams.ts`
+   340 → 57, `createDecisionApiSeams` 271 → 15, and `vetAutoContinue` 55 → 19. The later
+   phase did only what `73c4741` left open — R4's final clause, moving
+   `seedFromPreset` off the 50-line line rather than leaving it at 49 beside it
+   — and in doing so found and fixed a threshold that no test enforced on either
+   path. See "Phase 3 result" above.
+5. **R5 — Reconcile with `origin/master`.** The 6 missing commits include
+   `7e5d621`, which edits owned source (`server.ts` and three
+   `components/settings/*` files), and `inheritedBaseline` embeds master's own
+   line counts, so master's advance invalidates the deepEqual for reasons that
+   have nothing to do with the branch. The other five are release, docs, and
+   workflow-only. Do this as its own reviewed merge; never rebase or widen a
+   recorded range to make it quiet. R1–R4 are now landed *ahead* of this
+   reconciliation rather than gated on it — the splits did not depend on it —
+   so R5 is the whole of what remains **of the two areas this audit measured**.
+   It is deliberately not done from this branch's own phase work: it is a merge,
+   and a phase that merges cannot also claim an honest before/after for the
+   merge itself. The tree-wide debt the audit deliberately did not measure is
+   untouched by all of this and still pinned — as of Phase 5, 3 oversized files
+   and 47 oversized functions, listed in `tests/debt-baseline.test.mjs`.
+6. ~~**R6 — Only then, consider the budget-checker defects in section 3.**~~
+   **DONE.** The split bases and the full-tree fallback are both gone: a
+   finding is inherited only through same-file descent, a run-proven move, or a
+   ceiling recorded in `scripts/source-debt.json`, and each report says which.
+   The gate went from 9.6s to 6.5s on the same tree, the recorded set is the
+   same seven entries with the reason corrected on three of them, and the
+   similarity scorers are deleted rather than tightened. See "Phase 4 result"
+   above.
+
+## Review corrections
+
+The adversarial review of this phase re-derived every symbol length, line range,
+and branch count from `origin/master` and HEAD rather than from the tables above.
+Four claims did not survive:
+
+- `LinkedDiscussionSection` is 116 lines on master and on HEAD, not 135. The
+  `20-135` range in the same row had been copied into both count columns.
+- The factory holds 91 nested functions, 88 of them under 50 lines — not "25
+  nested functions, 22 under 50". The conclusion is unchanged: only the shell and
+  the three named inner functions are oversized.
+- The branch was 200 commits ahead at the time, not 199, and the section 4
+  diffstat was stale in both directions. It now names the commit it was measured
+  at and the commands that re-derive it, because the figure changes with every
+  phase. (It has since moved again — section 4 is the current figure.)
+- `server/decision-api-contract.ts` (108 lines) is the third file the section 2
+  sentence claims are byte-identical to master but was missing from the table.
+
+Two defects in the census itself were found the same way and fixed:
+
+- The census copied the budget checker's traversal *narrower* than the gate
+  copies it: it counted function declarations, expressions, arrows, and methods,
+  but not class constructors, getters, setters, or the `default` label the gate
+  gives a default-exported arrow. On a synthetic source holding one of each, the
+  gate found four oversized members and the census found one. Because the census
+  is the only gate that reads untouched files, that gap was a class of debt no
+  gate could see. `syntheticNodeKinds` in `tests/debt-baseline.test.mjs` is the
+  control: it fails if the census ever narrows again.
+- The census pinned 32 of the 56 oversized functions, so growth in the other 24
+  was bounded only by the total count. All 56 were pinned then, and every one
+  still is; growing `lib/question-batch.mjs:parseAskGroups` from 80 to 110 lines
+  fails the test with its own name, where before it passed. The set has since
+  shrunk to 47 as R1–R4 landed, and the total is separately ratcheted at 51.
+
+The remaining inherited set outside these two areas
+(`lib/preview-runtime.mjs`, `lib/trackable-evidence.mjs`,
+`server/execution-*.ts`, `server/runtime/**`, `components/panels/inbox-panel.tsx`,
+`components/settings/preset-manager-shell.tsx`, `components/creation/create-build-dialog.tsx`,
+`components/ui/dialog.tsx`, `app.tsx`, `tests/server-cards.test.mjs`) is
+unchanged by this audit and stays pinned in `tests/debt-baseline.test.mjs`.
+
+## Gate repairs shipped by this phase
+
+The branch was **red on a CI gate** when the audit started:
+`.bb/workflows/resolve-remaining-debt.js:94` was 171 characters, over the
+160-character limit, and `npm run quality:shape` is step 4 of `.github/workflows/ci.yml`.
+Nothing local caught it because `scripts/check-source-shape.mjs` ran only through
+`quality:shape` and in CI — never inside `npm test`.
+
+Two changes, both bounded:
+
+- The workflow line was split and its repeated agent options hoisted into one
+  `agentOptions` object. No prompt text or agent behavior changed.
+- `tests/debt-baseline.test.mjs` now also runs `scripts/check-source-shape.mjs`
+  and fails on a non-zero exit, so a phase can no longer end with the shape gate
+  red while `npm test` is green. It shares that script's existing diff-scoped
+  base, so a file with no changed lines is still never reported. Verified with a
+  negative control: injecting a 171-character line into `server/github-status.ts`
+  fails the test, and the file restores clean.
+
+## A hole the phase's own review found in the repaired gate
+
+The repair above was reviewed against the repository rather than its report, and
+the gate it shipped still had a waiver that did not need any similarity at all.
+
+`lineageCandidates` fed **every** function in the same file to the matcher, and
+`lineageKind` answered `same-file` on the file alone, without comparing names or
+paths. Any oversized function was therefore inherited by any larger oversized
+function sharing its file, and `bestLineage` picked the largest, so the waiver
+was granted to the new function for being *shorter* than its neighbour — the
+inverse of the growth rule the phase had just added. Two vectors reached it:
+
+- a brand new function, unrelated name and body, added to a file that already
+  carried inherited debt;
+- the same through the name arm, since a `callback` nested in a new scope shares
+  its label with a top-level `callback` the file already inherited.
+
+Measured on this branch, before the repair: a new 53-line function beside the
+recorded 57-line `lib/card-checks.mjs:groupCardChecks` was reported
+`inherited lib/card-checks.mjs:injectedProbe#1: 53 lines (baseline 57)` and the
+gate exited 0. After, it is `over budget … (no function baseline)` and exits 1.
+
+`isSameSymbol` now carries the rule the comment claimed: same file *and* the same
+nested path, which is what `censusKey` means by a symbol. The check sits in
+`lineageKind` rather than only in the candidate list, so the name arm is filtered
+too — a repeated label in another scope is not a same-file match.
+
+What this did **not** change: the inherited set on this branch is byte-identical
+before and after (7 entries, same files, same lines, same reasons), and the
+whole-tree census still reports 4 oversized files and 47 oversized functions.
+No real debt was relying on the loose rule. The ledger was checked against
+`origin/master` while reviewing it: 46 of its 47 function ceilings equal their
+master line count exactly, one (`tests/server-cards.test.mjs:callback#4`, 82) is
+honestly *below* its master's 84, and the remaining four are branch-created
+symbols in `server/runtime/**` with no master ancestor, which is what the record
+is for. No ceiling was inflated, and there are no stale entries.
+
+## Phase 5 result (the tree-wide debt, first file)
+
+R1–R4 and R6 measured two named areas; the census in `tests/debt-baseline.test.mjs`
+is the only record of the debt outside them. This phase takes the first of those
+files, and the only one that is pure owned logic rather than a vendored UI
+primitive or a test file.
+
+**`lib/artifact-contracts.mjs` 428 → 17 lines, one oversized file closed.** The
+file was three datasets sharing a lookup helper, so it is now three slices by
+area, with the old path kept as a re-export facade so no consumer moved:
+
+| Slice | Lines | Holds |
+|---|---|---|
+| `lib/jtbd-contracts.mjs` | 163 | `JTBD_CONTRACTS` (10 composite substeps), `contractForSubstep` |
+| `lib/strategy-contracts.mjs` | 132 | `STRATEGY_CONTRACTS` (14 research primaries), `contractForStrategy` |
+| `lib/explore-contracts.mjs` | 165 | `EXPLORE_CONTRACTS` (8 stages), `contractForExplore`, `contractForBuildArtifact` |
+| `lib/artifact-contract-lookup.mjs` | 10 | the shared `findByKey` |
+| `lib/artifact-contracts.mjs` | 17 | the re-export facade only |
+
+No function in the split is over the 50-line budget (the longest is
+`contractForBuildArtifact`, 22 lines), so the ledger's function list is unchanged
+by this phase. The file entry `"lib/artifact-contracts.mjs": 428` is deleted from
+`scripts/source-debt.json`; the census now reports **3 oversized files and 47
+oversized functions**, down from 4 and 47.
+
+Two data facts the split surfaced, both fixed here rather than carried:
+
+- the check-DSL comment documented `{ kind: "min-words", min }`, a kind the
+  interpreter never dispatched — the floor is the `minWords` field. The DSL is
+  now documented on the interpreter that owns it, and the `.d.mts` union no
+  longer names a kind that cannot run.
+- a kind the interpreter does not know was silently ignored, so a typo made a
+  check a no-op that passed the document. The `if/else` chain is now a
+  `CHECKS_BY_KIND` map — one entry per kind, `CHECK_KINDS` exported from it — and
+  an unknown kind throws instead of passing.
+
+**`tests/contract-integrity.test.mjs` (new, 32 contracts).** The split is only
+honest if the data still means what the DSL and the vendored methodology say, so
+the test asserts three properties over all 32 entries: every `ref` names a file
+that exists on disk (previously only `ref.startsWith("skills/")` was checked),
+ids are unique per list (a duplicate would shadow an entry, since every lookup
+returns the first match), and every `kind` is dispatched. It also asserts an
+unknown kind throws. Four negative controls were executed, each reverting clean
+afterwards: a typo in a ref path, a duplicated strategy id, an undispatched
+`table-rowz` kind, and a Build rule pointing at a renamed stage — all four
+failed the test as intended.
+
+Gates on this phase: `npm test` green (exit 0, 236 test files wired),
+`npm run typecheck` green, `npm run architecture` clean (702 modules, 1665
+dependencies), `tests/source-shape`, `tests/source-budgets`,
+`tests/budget-lineage`, and `tests/debt-baseline` green.
+
+## Phase 6 result (the tree-wide debt, the biggest function)
+
+The census's largest single entry was a factory, not a file:
+`lib/preview-runtime.mjs:createPreviewRuntime` at 264 lines, with a nested
+`start` at 77. It held the whole preview lifecycle — workspace probe, session
+store, process supervision, Connect, and the five operations — in one closure.
+Each of those is a rule with a name, so each became its own module and the
+factory became wiring.
+
+| Module | Lines | Owns |
+|---|---|---|
+| `lib/preview-session-store.mjs` | 38 | identity is the checkout (host + path), never the card; `starting` holds a port |
+| `lib/preview-app-root.mjs` | 61 | where the app is, probed from the host; root first, then one level down |
+| `lib/preview-process.mjs` | 139 | spawn, bounded starting, the log, SIGTERM-then-SIGKILL, stop-vs-crash |
+| `lib/preview-connect.mjs` | 37 | exposure is a bonus, never a gate; every call fail-soft |
+| `lib/preview-lifecycle.mjs` | 175 | the five operations as functions over an injected context |
+| `lib/preview-runtime.mjs` | 73 | `createPreviewRuntime`, now 22 lines of wiring |
+
+`createPreviewRuntime` 264 → 22 lines and `start` 77 → 20; both ledger entries are
+deleted, so the census now reports **3 oversized files and 45 oversized
+functions** (from 4 and 47). Every function introduced is under the 50-line
+budget; the longest is `createAppRootResolver` at 41. `lib/preview-runtime.mjs`
+itself went 333 → 73 lines.
+
+Two rules the split forced into the open, both kept as explicit contracts rather
+than implicit nesting:
+
+- `killGraceMs` and `logLimit` became parameters with production defaults
+  (`PREVIEW_KILL_GRACE_MS`, `PREVIEW_LOG_LIMIT`), so a test can drive the
+  SIGTERM→SIGKILL escalation in 40 ms without changing what a host runs. The
+  test asserts the default is still five seconds, so the seam cannot quietly
+  become the test's value.
+
+**`tests/preview-runtime-edges.test.mjs` (new, 255 lines).** The existing
+`tests/preview-runtime.test.mjs` still passes unchanged — that is the evidence
+the split moved no behavior — and the new file covers what it could not reach: a
+host that throws on spawn (the refusal names the host's own error, and a failed
+spawn never consumes one of the three preview slots), a process that errors
+after spawning, a failed session that is started again, a share retry on an
+unpaired host, a `runConnect` that throws because the CLI is not installed (the
+preview still runs at loopback and stop still releases it), the SIGTERM→SIGKILL
+escalation and its negative (an exited process is not signalled at all), and the
+store's identity rule asserted directly — a subdirectory app belongs to its
+checkout, a sibling does not, and the same path on another host is a different
+checkout. Four negative controls were executed and each failed the test: dropping
+the SIGKILL escalation, ignoring the host in the store key, letting a spawn
+throw escape into the caller, and inventing a share URL for an unpaired host.
+
+Gates on this phase: `npm test` green (exit 0, 237 test files wired),
+`npm run typecheck` green, `npm run architecture` clean (712 modules, 1675
+dependencies), `tests/source-shape`, `tests/source-budgets`,
+`tests/budget-lineage`, and `tests/debt-baseline` green.
+
+
+## Phase 7 result (the audit phase of `resolve-final-debt-and-e2e`)
+
+The tree-wide debt R1–R6 left behind is now measured as it stands, not as the
+ledger records it: every figure below is a fresh TypeScript AST census over all
+771 owned files, using the same traversal `tests/debt-baseline.test.mjs` uses
+(function declarations, expressions, arrows, methods, constructors, getters,
+setters, and default-export labels). The test's own line at this commit reads
+`3 oversized file(s) and 45 oversized function(s), 7 inherited entries`, and only
+the last of those three numbers is the budget gate's: `check-source-budgets.mjs`
+prints the inherited set and the violations, and never counts the whole tree.
+
+**3 oversized files** — all three recorded at their exact current size in
+`scripts/source-debt.json`, none grown: `components/ui/dialog.tsx` 541,
+`components/ui/icon.tsx` 450, `tests/kanban-layout.test.mjs` 401. One is a
+vendored shadcn primitive — `/* shadcn/ui-derived */` heads `dialog.tsx` — one is
+a test fixture, and the third is neither: `icon.tsx` is an owned barrel, 140
+lines of `@hugeicons/core-free-icons` imports, a 130-line inlined `Palette`
+glyph the free set does not ship, a 147-entry `ICON_MAP`, and a 16-line `Icon`
+component. So two of the three are data, and the third is a fixture; nothing here
+is a decomposition candidate, and this phase touched none of them.
+
+### 1. The remaining owned server functions over 50 lines
+
+Eleven, and they are exactly the eleven `server/` entries in
+`scripts/source-debt.json` — no unrecorded server debt. The `master` column is
+`git show origin/master:<file>` measured with the same traversal, so a branch
+that merely moved a file cannot hide growth here.
+
+| Symbol | Lines | Range | master | shape |
+| --- | --- | --- | --- | --- |
+"inner" counts named function declarations written directly in the factory body;
+arrows in the returned object literal are counted separately, since they are the
+surface, not the rules.
+
+| `server/execution-reconcile.ts:createExecutionReconcile` | 261 | 54-314 | 261 | 12 inner, all under 50, plus a 1-line returned arrow |
+| `server/execution-native.ts:createExecutionNative` | 249 | 142-390 | 249 | 6 inner, `prepareStart` 69 also over |
+| `server/execution-lifecycle.ts:createExecutionLifecycle` | 223 | 46-268 | 223 | 10 inner, `resumeAfterAnswers` 53 also over, plus 3 returned arrows |
+| `server/execution-advance.ts:createExecutionAdvance` | 203 | 44-246 | 203 | 8 inner, all under 50 |
+| `server/runtime/workflow-seeding.ts:seedWorkflow` | 72 | 210-281 | no ancestor | 0 inner; flat |
+| `server/runtime/cli/cli-review-subject.ts:deliverableSubject` | 69 | 111-179 | no ancestor | 7 fail-soft callbacks, one 5 lines |
+| `server/execution-native.ts:createExecutionNative/prepareStart` | 69 | 225-293 | 69 | nested in the factory above |
+| `server/runtime/cli/cli-bundle-writer.ts:writeBundle` | 68 | 223-290 | no ancestor | 1 one-line callback |
+| `server/runtime/cli/cli-split.ts:reportSplit` | 61 | 282-342 | no ancestor | 2 one-line callbacks |
+| `server/bb-workflow-bridge.ts:renderInlineWorkflowScript` | 57 | 120-176 | 57 | 1 callback, 11 lines |
+| `server/execution-lifecycle.ts:createExecutionLifecycle/resumeAfterAnswers` | 53 | 199-251 | 53 | nested in the factory above |
+
+Seven of the eleven are byte-for-byte their master line count: **the four
+`execution-*` factories and their two nested functions have not moved on this
+branch at all**, which is the honest headline of this section. The other four are
+the branch-created `server/runtime/**` symbols the ledger records rather than
+inherits, and they are the three the *Phase 4 result* section describes as having
+been waived by the old similarity fallback before R6 gave them records.
+
+**Safe boundaries, per file.** Each of the four factories is already a
+dependency-injected closure whose inner functions are individually small, so the
+split is a move of named rules out of one closure into sibling modules with the
+deps object as the only parameter — the shape R1 and R4 already shipped twice.
+The inner census gives the seams:
+
+- `createExecutionReconcile` (316-line file): `reconcileOne` 41 (209-249),
+  `reconcileBoundary` 38 (66-103), `reconcileStageEntries` 28, `reconcileArtifacts`
+  24, `requestRegistration` 20, `registrationRecorded` 18, `reconcileSimpleState`
+  18, `reconcileRuns` 15, `failArtifacts` 11, `reconcile` 10, `sendToCard` 8,
+  `readArtifactContents` 7. The registration trio (`requestRegistration` +
+  `registrationRecorded` + `failArtifacts`, 113-163) is one rule and belongs in
+  one module — 105-111 is `readArtifactContents`, a different rule — and the four
+  `reconcile*` steps are one each. The file at 316 lines has
+  84 lines of headroom, so a module per rule cannot be added here — the siblings
+  have to be new files.
+- `createExecutionNative` (393-line file, 7 lines of headroom): `prepareStart` 69
+  (225-293) is itself over budget and is the one symbol that must be split even
+  if the shell is not; `startNativeStageForCard` 48, `resolveStageExecutionRoute`
+  42, `launchNativeRun` 39, `recordCoordinatorSequentialRoute` 26, `adapterFor` 11.
+- `createExecutionLifecycle` (270-line file): `resumeAfterAnswers` 53 (199-251) is
+  over budget on its own; `failResume` 31, `routeAnswerContinuation` 24,
+  `prepareResume` 23, `startExecutionRun` 19, `stopOwned` 15, `cancelExecutionRun`
+  13, `cancelRemoteRun` 9, `keepsCardRunning` 6, `publishCard` 3.
+- `createExecutionAdvance` (248-line file): `advanceCli` 40, `dispatchAdvance` 35,
+  `syncExecutionScopes` 31, `prepareAdvance` 30, `advanceCard` 27, `parseCli` 12,
+  `applyBand` 9, `recordExecution` 8.
+
+Each of the four `server/runtime/**` symbols and `renderInlineWorkflowScript` is
+one straight-line rule with no *named* inner function — no decomposition seam
+exists inside any of them, only the fail-soft `.catch` arrows the table counts, so
+each is a candidate for a whole-file move out of its parent rather than a split.
+No file forces that move: the largest is `cli-bundle-writer.ts` at 358 lines, 42
+short of the ceiling, and the smallest is `bb-workflow-bridge.ts` at 176. The move
+is forced by the 50-line function ceiling alone, which no argument of relocation
+satisfies.
+
+The 34 oversized functions outside `server/` are unchanged by this phase and stay
+pinned; the two named in this workflow's *Functions* phase
+(`useGithubDialogState` 229 and `PresetManagerDialog` 223) are the two largest
+components, and both are single oversized functions rather than factory shells.
+
+### 2. The three dead guards
+
+The *Phase 3 result* section named them by file and line; this phase re-derived
+deadness from the parser rather than from the report, and all three hold.
+
+`lib/preset-judge.mjs:parsePresetJudgeOutput` has exactly **two** `ok: true`
+returns — `:106` and `:112`, one per mode — and both mode branches are total:
+criteria mode returns `{ ok: true, verdicts }` after a check that guarantees
+`verdicts` is an array, and choice mode returns `{ ok: true, choice, confidence }`
+after a check that guarantees `choice` is a string inside `validChoices`. (The
+file's third `ok: true` is `:36`, in `parseJsonBlock`, and carries
+`{ value }` — a different function and a different shape, which is where a count
+of three comes from.) So in both modes the `ok: true` shape is the only one, and
+these guards can never be false:
+
+| Site | Guard | Dead string | Kind |
+| --- | --- | --- | --- |
+| `server/decision-seed.ts:127` (`seedFromPreset`) | `!("choice" in parsed)` | `"verdict shape mismatch"` | choice |
+| `server/decisions/scored-batch-judge.ts:83` | `!("verdicts" in parsed)` | `"judge verdict shape mismatch"` | criteria |
+| `server/decisions/artifact-criteria-judge.ts:108` | `!("verdicts" in parsed)` | `"judge verdict shape mismatch"` | criteria |
+
+No test in the tree references either string. Each guard is also the only
+TypeScript narrowing on the parser's un-narrowed return union, so deleting one
+fails `tsc`; retiring all three needs one `@overload` pair on
+`parsePresetJudgeOutput` in `lib/preset-judge.mjs` plus its `.d.mts`, after which
+the three guards and the three strings go together. The overload is the whole
+fix: three deletions and a signature, in one pure `lib/` module whose suite is
+`tests/preset-judge.test.mjs`.
+
+**Retired** (the *Guards* phase, re-deriving deadness from the parser again
+before touching it: `ok: true` returns still at `:106` and `:112`, both still
+total). The overload went into `lib/preset-judge.d.mts` only, one declaration
+per `kind`, matching the house precedent in `lib/workflow-config.d.mts` — a
+`.d.mts` overload pair over an unchecked `.mjs` implementation. Nothing changed
+at runtime: the same three objects come back for the same inputs.
+
+One correction to the row above: the pair does not belong in the `.mjs`. A
+JSDoc `@overload` there would be the first in the tree, `tsconfig` compiles no
+JavaScript, and the signature the compiler reads is the declaration file. The
+`.mjs` was not touched at all.
+
+The five negative controls that prove the change is type-level and sound:
+
+| Mutation | Result |
+| --- | --- |
+| both overloads widened back to the three-way union | `tsc` fails at **5** sites (3 files) — the overload is what retired the guards, not the deletion |
+| choice mode returns `ok: true` with no `choice` | caught |
+| criteria mode coerces a non-array `verdicts` to `[]` | caught by the new refusal-message pin (no prior test read that message) |
+| new branch keyed on `summary`, skipping the per-mode check | caught by the generated shape sweep |
+| a guard re-added, string and all | caught (`tsc` stays green — the pin is the only witness) |
+| a guard re-added without the string | caught |
+
+The type-level claim is also reproduced by hand, cheaply: restore either guard
+without touching the declaration file and `tsc` is silent, which is exactly why
+the source pins in `tests/decision-judges.test.mjs` exist and why they are the
+*only* thing standing between the tree and a re-added lie.
+
+The runtime claim is a generated sweep in `tests/preset-judge.test.mjs`: 94
+inputs (7 payload keys x 6 value kinds, plus the 5 top-level shapes JSON can
+produce, in both modes) asserting that every result either refuses with a named
+error or carries its mode's key — the property the three guards were defending,
+checked where it is actually decided. That suite is the module's; the call-site
+pins are theirs.
+
+### 3. The upstream blueprint
+
+`/home/deploy/repos/stelow/docs/host-plugin-blueprint.md`, 673 lines, on `main`
+at `8671c78`, working tree clean at the time of this measurement. The two
+sections that own this workflow's lessons already exist and are where the
+*Blueprint* phase must write: **§9 Anti-patterns** (each entry is a mistake paid
+for once — a narrowing guard kept alive by an un-narrowed parser is one, and
+nothing of that shape is listed yet) and **§14 Host runtime composition and
+lifecycle slices** (which already states that extraction is a migration and not
+a relabeling, and which names `bb-plugin-stelow` as its reference evidence). A
+second copy exists at
+`/home/deploy/repos/stelow-blueprint-repair-20260924/docs/host-plugin-blueprint.md`;
+the `stelow` checkout is the upstream one named by `AGENTS.md` and is the one to
+commit in.
+
+§9 was written by the *Guards* phase, not the *Blueprint* phase: retiring the
+three guards changed the public typing of a portable `lib/` module, and §9 is
+where the anti-pattern belongs (entry committed in `stelow` at `bd48115`).
+§14 is untouched and still open for the slice phases.
+
+### 4. The real `bb stelow` CLI
+
+`bb 0.43.3` on this host. `bb stelow help` lists 29 subcommands, and `bb stelow
+schema` publishes machine-readable contracts for ten of them (`advance`, `ask`,
+`audit-trail`, `config`, `doctor`, `lock`, `scope`, `seed`, `status`,
+`sync-scopes`) with their env vars, flags, output, and exit codes. The syntax
+the *E2E* phase needs, taken from `bb stelow help <subcommand>` rather than
+inferred:
+
+```
+bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>
+bb stelow status [--project <proj_id>] [--json]
+bb stelow doctor [--project <proj_id>] [--json]
+bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]...
+bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>
+bb stelow done [--card <card_id>]
+bb stelow playbook [--card <card_id>]
+```
+
+Two facts the E2E phase must not rediscover the hard way. There is **no
+`answer` subcommand**: a pending question is answered through the plugin's RPC
+surface, not the CLI, so `ask` is a one-way probe from the shell. And the
+`bb-plugin-stelow` checkout is **not a stelow workflow root** — `bb stelow
+doctor --project proj_a6wdkdcfkk --json` answers `state.md is missing for the
+Stelow workflow. Reseed the workflow.`, while `bb stelow status --json` still
+lists the project's cards: 40 at this review, up from the 39 the audit measured
+an hour earlier, because every thread that seeds a card here moves it and the
+count is a live figure, not a fixed one. A card under test is therefore created
+by `seed` against its own project id and root, and the plugin checkout's own
+cards are the fixture to read, not the card to drive.
+
+The `ask` line above is the one place the block is edited rather than quoted:
+`bb stelow help ask` continues past `--artifact <path>...` with "(repeat
+`--question` groups to ask several at once; write all content in English)". The
+other six lines are verbatim.
+
+### 5. One bounded repair this phase had to make
+
+The branch was **red on the shape gate** when the phase started, and not on any
+code this audit measured: commit `625f31b` added
+`.bb/workflows/resolve-final-debt-and-e2e.js` with six phase goals on single
+lines of 237, 423, 260, 372, 375, and 274 characters, and
+`tests/debt-baseline.test.mjs` (which runs the shape gate) failed on all six.
+Nothing local had caught it because the gate is step 4 of `.github/workflows/ci.yml`.
+
+The repair is the same one the *Gate repairs* section of this file shipped for
+the previous workflow, and it is deliberately that narrow: each goal became a
+template literal wrapped one clause per line, and the three identical agent
+option objects became one `agentOptions` const, matching
+`.bb/workflows/resolve-remaining-debt.js`. Verified rather than asserted — the
+six goal strings are compared word by word against `625f31b`, the commit that
+added them, and every sequence is identical (212, 390, 233, 339, 354, and 244
+characters each, before and after), and the rewritten file parses and runs to the
+same six phases in the same order with `agent` and `phase` stubbed: 20 stubbed
+calls, the same 20 in the same order from both revisions. The gate's own report
+is the negative control: re-running it against `625f31b`'s copy of the file
+names those six lines at 237, 423, 260, 372, 375, and 274 characters and exits 1
+— and `tests/debt-baseline.test.mjs` fails with it, which is the wiring this
+file's *Gate repairs* section added. No prompt wording, phase order, label,
+provider, or model changed.
+
+Gates on this phase: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run architecture` clean (712 modules, 1675 dependencies),
+`npm run test:source-shape` green, `npm run test:source-budgets` green.
+
+### Review corrections (this phase)
+
+The adversarial review of the audit re-derived every figure above from the tree,
+`origin/master`, and the live CLI rather than from the phase's own report, and
+rejected eleven claims. The corrections are in place; the rest of the phase
+survived unchanged, including all eleven server symbol lengths and line ranges,
+all eleven `master` values, the three guard sites, both the blueprint and the CLI
+sections, and the whole of section 5.
+
+- `icon.tsx` was called a vendored shadcn primitive. It is not: the
+  `shadcn/ui-derived` marker is on `dialog.tsx` and on no other file in the
+  tree, and `icon.tsx` is an owned barrel of hugeicons imports, one inlined
+  glyph, a 147-entry map, and a 16-line component. That also made the
+  cross-reference to *Review corrections* — which argues nothing about
+  primitives — dangling.
+- `createExecutionNative` was given 5 inner functions and
+  `createExecutionLifecycle` 11. They have 6 and 10 named declarations
+  respectively, plus 3 arrows in the lifecycle's returned object. Neither count
+  was right under any reading, and the second moved in the opposite direction
+  from the first. The table now states the counting convention.
+- `deliverableSubject` was given 6 callbacks. It has 7.
+- The registration trio in `createExecutionReconcile` was placed at 105-163.
+  It is 113-163; 105-111 is `readArtifactContents`.
+- The four `server/runtime/**` symbols and `renderInlineWorkflowScript` were
+  called "flat functions with no inner seams" one paragraph after the same
+  section's table counted 1, 7, 2, and 1 callbacks inside them. They have no
+  *named* inner function, which is the claim that survives, and it is now said
+  that way with the file sizes given instead of "not near the ceiling" — the
+  largest is 358 lines, 42 short of it.
+- `parsePresetJudgeOutput` was credited with three `ok: true` returns. It has
+  two, `:106` and `:112`; the third in the file is `parseJsonBlock`'s, and
+  carries a different shape. The deadness argument is unaffected — it only ever
+  needed one `ok: true` shape per mode — and the phase's own commit message
+  stated it correctly.
+- "The gate's own output" was credited with `3 oversized file(s) and 45
+  oversized function(s)`. `check-source-budgets.mjs` prints neither; it is
+  diff-scoped. Those two numbers are the whole-tree census in
+  `tests/debt-baseline.test.mjs`, and only the third number in that line is the
+  gate's. In a file about which gate sees what, that mattered.
+- The merge-base was described as "208 commits behind the branch tip". It is 8
+  commits behind; 208 was the *ahead* count section 4 measures at `1ee4ecc`, so
+  a number from one reference had been reused as a count against another.
+- Two figures in section 3's *Status* line, which this file's preamble promises
+  is current, had drifted: the budget checker is 316 lines rather than 302, and
+  the gate now walks 317 changed owned files rather than 303. The line now names
+  the commit it was measured at and says which of the three numbers moves.
+- The E2E section's "39 existing cards" is 40 now, because other threads seed
+  cards into this project between runs. The figure is labelled as live rather
+  than restated as a constant, and the `ask` syntax line is marked as the one
+  edited line in a block the section calls verbatim.
+
+Two claims were checked and held rather than corrected: that the four
+`execution-*` files and `bb-workflow-bridge.ts` are byte-identical to
+`origin/master` (md5 on all five), and that the section 4 diffstat is exact at
+the commit it names — `git rev-list --left-right --count origin/master...1ee4ecc`
+is `6 208` and the shortstat at `1ee4ecc` is `328 files changed, 42104
+insertions(+), 11179 deletions(-)`, both re-derived.
+
+Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run architecture` clean (712 modules, 1675 dependencies),
+`npm run test:source-shape` green, `npm run test:source-budgets` green.
+
+## Review corrections (the Functions phase)
+
+The Functions phase split `server/execution-{reconcile,native,lifecycle,advance}.ts`
+into rule modules, `lib/preview-runtime.mjs` into five, `lib/artifact-contracts.mjs`
+into three data slices, and two component hooks into per-concern modules. This
+review checked the phase's central claim — *the behaviour came across intact* —
+by re-deriving it instead of reading it, and checked the phase's tests by
+inverting the rules they guard.
+
+**Parity, measured.** The three data slices were imported and compared against
+the pre-split `lib/artifact-contracts.mjs` from `2363431^`: `EXPLORE_CONTRACTS`,
+`JTBD_CONTRACTS`, `contractForBuildArtifact`, `contractForExplore`,
+`contractForStrategy` and `contractForSubstep` compare equal after JSON
+normalisation; `STRATEGY_CONTRACTS` had one entry that did not. The `guided()`
+factory the split introduced emitted `{ kind: "contains", needles: [] }` for
+`job-to-be-done`, whose terms list is empty — a check `checkContains` answers
+`null` for, so validation is unchanged, but the contract now claims a check it
+does not make. `guided()` omits the check when there are no terms, which
+restores exact equality with the pre-split table, and `tests/contract-integrity`
+refuses any `contains` with no needle or `table-rows` with no floor.
+
+The `preview-connect` bridge is a real extraction rather than a behaviour
+change: its `exposeUrl` is the old
+`session.share = parsed ? parseShareExpose(parsed) : null` over
+`runConnect(["expose", port]).catch(() => null)`, and its `unexpose` is the old
+`unexpose(session)` line for line. The four exports `d6ef6b2` made private
+(`parseCli`, `syncExecutionScopes`, `recordExecution`, and the `recordExecution`
+closure on the preflight factory) have no consumer anywhere in the tree, and its
+`{ ok: false, stdout: "", error: kindRefusal }` to `refuse(kindRefusal)` change
+is the same object.
+
+**Test value, measured.** Thirty-two rules were inverted one at a time, each
+against the phase's own test band rather than a single file, and thirty-two
+mutations reached the shipped text (six more never matched it and were
+discarded). Twenty-two failed a test. Ten did not; one of those ten was a
+mutation that means the same thing as the code it replaced and is discarded
+with the rest, which leaves nine real escapes, six of them repaired below and
+three accounted for after the table.
+
+| Escape | The rule it hid | Repair |
+| --- | --- | --- |
+| the 60s arm deleted | `server/execution-reconcile-run.ts:55` — a queued row with no `runId` has no host round trip that could resolve it, so the clock is its only exit | aged-out and inside-the-window cases in `tests/execution-rule-seams` |
+| `settle`'s unexpose deleted | `lib/preview-lifecycle.mjs:48` — a dev server that exits leaves a Connect tunnel on a dead port: invisible in the panel, permanent in Connect | clean-exit and crash cases in `tests/preview-runtime-edges` |
+| `previewView`'s live preference deleted | `lib/preview-lifecycle.mjs:159` — one checkout can hold a stopped session and a running one at once, and answering for the stopped one shows a dead server as live | a store seeded stopped-first, live-second |
+| `presetManagerRouting`'s bands and role presets hard-coded | four of the assembler's thirteen props had `[]` or `null` fixtures, so the hard-coded literal the test accuses it of was indistinguishable from the input | a distinct sentinel per prop |
+| the `ads` floor moved 500 to 900 | `lib/strategy-contracts.mjs` — the integrity test proved a floor *exists*, never which number it is, and a number that moves between files is the exact drift the split risks | the fourteen-entry floor table in `tests/contract-integrity`, read off the pre-split file |
+| the `job-to-be-done` vacuous check restored | the no-op above | the unfailable-check rule |
+
+The three escapes left standing are named here so the next reader does not
+rediscover them as findings. `stopPreviews` clears `session.error` on a session
+it has already deleted from the store, and `settle` returns early for exactly
+that reason, so no caller can read it. Dropping `needsInputSentAt` from
+`runKey` changed no outcome, because a row only carries that marker once the
+pending question it names already exists — which is the publish the card got
+when the question was created. And `toggleRule`'s `if (!current) return` is
+belt-and-braces: with it removed the `current.id` read throws inside the same
+`try`, the catch toasts, and the rpc double records no call, so the test's
+"an unknown rule id is not saved" claim holds either way. The guard is kept
+because a toast is not the answer to a no-op.
+
+**Inherited, not introduced, and left alone.** The
+`Model must name a version` refusal at `server/decision-config-rpcs.ts:77` is
+unreachable: `normalizeDecisionApiModel` falls back to `defaultModelFor`, which
+falls back to `DECISION_API_DEFAULT_MODEL`, so `nextModel` is never falsy — even
+for `classifier`, whose `defaultModel` is the empty string. The same line reads
+`server/decision-api.ts:196` at `c4f4bb1`, before the split, so this phase moved
+it rather than wrote it.
+
+**Evidence at the tip.** The census this preamble promises is current now reads
+`3 oversized file(s) and 37 oversized function(s), 7 inherited entries` — eight
+functions fewer than the 45 the *Phase 7 result* section measured at `625f31b`.
+Section 1's eleven-row table is left as the pre-split record; the seven rows
+that no longer describe a `server/execution-*` symbol are the ones `eb1de27`
+replaced.
+
+**The real CLI, on the surface the phase split.** `bb 0.43.3`, against this
+checkout, which is a workflow root: `bb stelow status --json` exits 0 and lists
+`sw-card_ahrsgllj` at stage `audit`, status `in-progress`, scopes `scope-1`
+pending. `bb stelow advance --dry-run --json audit` exits **1** with
+`state.md is missing for the Stelow workflow. Reseed the workflow.` — the
+schema's exit 1 for a bad state, carrying the helper's own stderr verbatim,
+which is the `result.stderr || "advance failed"` refusal in
+`server/execution-advance-cli.ts:92` behaving as the split left it.
+`bb stelow doctor --project proj_a6wdkdcfkk --json` refuses the same way, and
+`bb stelow schema` still publishes the `advance` contract (flags `--dry-run`,
+`--json`; env `STELOW_STATE`, `STELOW_STATEDIR`, `STELOW_TRANSITIONS`,
+`STELOW_LOCK_TTL_SEC`) — the surface the split did not change.
+
+A full gated advance with artifacts is **not** reachable on this host: no
+project under `/home/deploy/repos` is a stelow workflow root right now
+(`doctor` refuses each of them for the missing `state.md`), and getting one
+means seeding a workflow, which is the *E2E* phase's job and not this review's.
+So the card id, stage, and refusal above are this phase's E2E record. Nothing
+here is inferred from a report.
+
+Gates on this review: `npm test` green (exit 0), `npm run typecheck` green,
+`npm run lint` green, `npm run architecture` clean, `npm run deadcode` clean,
+`npm run duplicates` clean, and `npm run quality:shape` — which is
+`tests/source-shape` plus `tests/debt-baseline`, `tests/source-budgets` and
+`tests/budget-lineage` — green. Every repair above was proved by inverting the
+rule it guards and watching the named test fail, then restoring it and watching
+it pass; the seven post-repair re-runs are in the commit message.
+
+## Review corrections (the Guards phase, adversarial pass)
+
+A fresh pass over the two guards phases, re-deriving their claims from the
+source rather than reading them. The load-bearing claims hold; three things
+about them did not, and all three are fixed here.
+
+**What was re-derived and holds.** Behaviour parity for the contract split was
+re-measured independently: the three slices plus the barrel were imported
+against the pre-split `lib/artifact-contracts.mjs` at `2363431^` and compared
+over 236 probes — every declared id plus near-misses, and eleven build paths
+against ten document bodies. **236 equal, 0 unequal**, so all seven exports now
+compare equal (the *Functions* phase measured six of seven, before the
+`guided()` repair). The fourteen strategy word floors pinned in
+`tests/contract-integrity.test.mjs` were read back off the pre-split file and
+match the table exactly. The `guided()` repair was a real defect, not a
+cosmetic one: `checkContains` maps an empty needle list to an empty `missing`,
+so the pre-fix `job-to-be-done` contract carried a check that could not fail.
+All six negative controls in the table at §2 were re-run and all six still bite:
+both overloads widened to the union fails `tsc` at 5 sites; a choice-mode
+`ok: true` with no `choice`, a criteria-mode coercion of a non-array
+`verdicts`, and a `summary`-keyed branch are each caught; and a guard re-added
+with its string, and one re-added without it, are both caught. The claim that a
+restored guard is invisible to `tsc` was re-checked directly: with a guard back
+in place `tsc` exits 0, so the source pins in `tests/decision-judges.test.mjs`
+really are the only witness. The three escapes the phases left standing were
+each re-checked and are genuinely dead: `normalizeDecisionApiModel` returns
+either the trimmed text or a fallback that is never falsy
+(`DECISION_API_DEFAULT_MODEL = "jev-latest"`), so the *Model must name a
+version* refusal has no reachable input.
+
+**Correction 1 — the sweep's reach was overstated.** The *Guards* commit's
+negative-control list claims a new parser branch "keyed on an unenumerated
+field is caught by the sweep". A generated sweep cannot do that: an unenumerated
+field is by construction not exercised. A branch keyed on `summary` is caught;
+one keyed on `rationale` passes the whole suite. The table in §2 already said
+`summary`, so the doc was right and the commit message was not — but the same
+overclaim had reached the test's own header comment, where the next reader
+would meet it. The comment now states the bounded property (a branch keyed on
+one of the seven enumerated keys fails here) and says plainly that the parser's
+per-mode check, not the sweep, carries the guarantee.
+
+**Correction 2 — rule 4 was a partial rule wearing a total name.** The suite
+header promises that every one of the five properties has a negative control so
+a green run cannot come from a check that never fires. Rules 1–3 had one; the
+two rules the *Functions* phase added did not, so the promise held for three of
+five. Both do fire — proved by inverting each, not assumed — but neither had
+the control its file promises. Controls added for both: one per
+failability predicate, so weakening any predicate to a constant `true` is caught,
+and a one-floor-300-words-drifted copy of the floors table, so rule 5's
+sensitivity to exactly the drift it exists to catch is on the record.
+
+**Correction 3 — rule 4 could not see four kinds of its own hole.** The rule
+refused an unfailable `contains` or `table-rows`, and read as "no check that
+cannot fail" while passing three kinds that carry the same defect: a
+`section-items` or `field-blocks` with a zero floor, a `headings` with neither
+floor nor ceiling, and a `named-headings` or `table-columns` with an empty
+name list all pass every document, exactly as an empty `contains` did. Rule 4 is
+now a kind→constraint table over all eight dispatched kinds, and a kind the
+table does not know is **refused** rather than skipped, so widening the DSL
+cannot quietly leave a kind unguarded. `gap-registry` is the single exemption,
+with its reason stated: a document is allowed to have no gaps, so "no registry"
+is a pass by design.
+
+Before/after, on the same mutated contract (`shape-up` carrying
+`{ kind: "section-items", min: 0 }`): the old rule reported **0** violations and
+the suite passed; the new rule refuses with *"shape-up has a section-items check
+that cannot fail"*. Two further controls: weakening one predicate to
+`() => true` fails on that predicate's control, and a kind with no rule is
+refused by name.
+
+### The E2E record, against the real `bb stelow` CLI
+
+`bb 0.43.3`. Everything below is a command and its real output, not a report.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `bb stelow status --json` | 0 | 40 cards; `sw-card_ahrsgllj` at `audit`, `in-progress` |
+| `bb stelow advance --dry-run --json audit` | 1 | `state.md is missing for the Stelow workflow. Reseed the workflow.` |
+| `bb stelow doctor --project proj_a6wdkdcfkk --json` | 1 | the same refusal, the helper's stderr verbatim |
+| `bb stelow schema` | 0 | publishes the `advance` contract; flags `--dry-run`, `--json`; exit 1 for a bad state |
+
+The advance refusal is the schema's own exit 1 for a bad state, carrying the
+helper's stderr, which is the `result.stderr || "advance failed"`
+refusal in `server/execution-advance-cli.ts:92` behaving as the split left it. All
+four reproduce the *Functions* phase's record exactly, except the card's scope
+count, which is a live figure.
+
+**A seeded workflow root was created for a full gated advance, and the advance
+is still unreachable from the shell.** `bb stelow seed --project
+proj_ptzx3fbse4 --name "e2e guards phase verification" --intent refactor` exits
+0 and writes
+`.stelow/2026-09-26/sw-sw_e2e-guards-phase-verification/state.md` carrying
+`current_stage: triage`; the card is then visible in `status --json` with
+`dirHash: sw-sw_e2e-guards-phase-verification`. But `doctor` and `advance` still
+refuse on that root, and the reason is the resolution path, not the data:
+`server/runtime/cli-inspection.ts:215` derives `stateDir` from
+`context.threadId`'s card, so a shell run has no card, `stateDir` is `null`, and
+`ensureProjectArtifacts` reads the state at the *project root* — where a seeded
+workflow has none. Setting `STELOW_STATEDIR` to the card's state dir changes
+nothing, and the reason is worth recording: the schema lists `STELOW_STATE` and
+`STELOW_STATEDIR` under `advance`'s `env`, but nothing in `server/` or `lib/`
+ever *reads* them — `server/runtime/helper-script.ts:35-40` only *writes* them
+into the vendored helper's environment. They document the helper's interface,
+and following the schema as an operator's guide sends you nowhere.
+
+So the gated advance is reachable only from inside the card's own thread, where
+`context.threadId` resolves `dir_hash` to the seeded state dir. That path is
+established from the code and the seeded `dirHash`, and is **not** claimed here
+as executed: a full gated advance with artifacts remains unverified on this
+host, and that is the honest state of the E2E surface this phase leaves behind.
+`gap-registry` above is the same kind of claim, kept explicit for the same
+reason.
+
+**The card-scoped surface is not reachable from the shell at all**, which is the
+deeper reason behind the refusal above and the part an operator hits first.
+`bb stelow playbook --card sw-card_ahrsgllj` exits **2** with `Unknown card
+"sw-card_ahrsgllj"`, and so does every other id `status --json` lists —
+`sw-card_pttx9ion`, `sw-card_9givfhhc`, and the freshly seeded
+`sw-sw_e2e-guards-phase-verification` among them — as does
+`bb stelow manifest --card sw-card_ahrsgllj`. `bb stelow playbook` with no
+`--card` exits **2** with `No card in context (run from the worker thread or
+pass --card <card_id>).` The ids `status` enumerates and the ids `--card`
+resolves therefore come from different scopes: `status` aggregates the
+project's workflows, while the plugin instance answering a shell run holds no
+card registry, so `deps.getCard` finds nothing (`cli-inspection.ts:179`). The
+fleet-wide read-only commands are the part that works shell-side — `metrics`
+(exit 0), `storage` (exit 0), `help` (29 subcommands, exit 0), `schema` (exit 0)
+— and `status` itself. Everything card-scoped is thread-bound, which is the
+single fact the *E2E* phase has to plan around: a gated advance cannot be
+driven from a shell on this host at all, only from the card's own worker thread.
+
+Gates on this pass: `npm test` green (exit 0) before the corrections, the three
+corrected suites green after them, `npm run typecheck` green, and
+`npm run quality:shape` green. No user-facing behaviour changed and no portable
+`lib/` module was added, so `FEATURES.md` does not move and the upstream
+blueprint has nothing new to record.
+
+## The E2E phase, executed against the live board
+
+The section above is a *planning* record. This one is the executed result, and
+it corrects three of that section's claims, which were wrong about the cause
+rather than about the symptom.
+
+### The premise that did not hold: planning depth has no `auto`
+
+"Planning depth" is the `appetite` field, and its whole domain is three values:
+`appetiteSchema = z.enum(["Lean", "Core", "Complete"])` (`server/contracts.ts:18`),
+surfaced as the dialog's `APPETITE_OPTIONS` (`components/creation/creation-settings.tsx:12-16`).
+The running server agrees — `bb plugin rpc inspect stelow createCard` publishes
+that same three-value enum. `Auto` exists, but it is a **`reviewMode`**
+(review gates) value, not a planning depth
+(`reviewModeSchema`, `server/contracts.ts:19-26`); conflating the two is the
+whole error. There is no `auto` to set.
+
+The faithful reading of "let the system choose" is the board default, so that is
+what the card got. `bb plugin rpc call stelow boardWorkflowDefaults` returns
+`appetite: "Core"`, `reviewMode: "Product Spec + Interface + Scopes"`,
+`reviewGates: ["spec","interface","scope"]`, and the card below carries exactly
+those. Worth recording that "board default" is *not* a repo constant: the
+seed/template default is Core (`server/runtime/workflow-seeding.ts:216`,
+`lib/state-template.mjs:5`) while the RPC and schema defaults are Lean
+(`server/card-rpc-contract.ts:191`, `server/runtime/card-detail.ts:365`). The
+card's own `recon/setup.md` re-derived this independently and reached the same
+conclusion.
+
+### Correction 1: the card-scoped CLI *is* shell-reachable
+
+The claim above was that "everything card-scoped is thread-bound", from
+`playbook --card sw-card_ahrsgllj` exiting 2 with `Unknown card`. The cause is
+an id-space mix-up, not a missing registry. `sw-card_ahrsgllj` is a **dirHash**,
+the slug `status --json` and the state directory use; `--card` wants the
+**card id** `card_…`. Every id the previous phase tried was a dirHash. With a
+real card id all three card-scoped verbs work from the shell:
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `bb stelow playbook --card sw-card_ahrsgllj` | 2 | `Unknown card` (a dirHash, not a card id) |
+| `bb stelow playbook --card card_y6dnitl6` | 0 | prints `state`, `transitions`, `entry`, `router`, `orchestrator`, `stage(setup)` |
+| `bb stelow manifest --card card_y6dnitl6` | 0 | `Stelow-Artifacts: 2`, both paths listed |
+| `bb stelow verify --card card_y6dnitl6` | 0 | `Build verification requires --tests` |
+| `bb stelow done --card card_y6dnitl6` | 1 | `Refused: this workflow is at 'context', not 'audit'.` |
+
+So the sweeping claim is false and the narrow one survives: `advance` still
+refuses from the shell with `state.md is missing for the Stelow workflow`,
+because `server/runtime/cli-inspection.ts:215` resolves `stateDir` from
+`context.threadId`'s card and a shell run has none. The distinction is *which
+verb resolves its card*, not whether card-scoped work is possible off-thread.
+A board listing that hands out dirHashes while the card-scoped verbs demand
+card ids is the actual ergonomic defect here, and it is what produced a
+confident wrong conclusion.
+
+### Correction 2: `answer` exists
+
+"There is no `answer` subcommand" is stale. `bb stelow help answer` returns
+`bb stelow answer --card <card_id> --question <question_id> --answer <text>
+[--question … --answer …]… [--json] (repeat pairs; every open question must be
+answered in one call)`, and it is in `bb stelow help`'s 30-subcommand list. The
+card-scoped answer path is therefore shell-reachable too, which is the exact
+capability the previous phase recorded as missing.
+
+### Correction 3: `seed` does not create a card
+
+The previous section treated a `seed`-written workflow root as "the card is
+then visible in `status --json`", which reads as card creation. It is not:
+`server/runtime/cli/cli-seed.ts` calls `deps.seedWorkflow(rootPath, …)` and
+prints the state path — it writes `.stelow/<dirHash>/state.md` at the project
+root and returns. It mints no card row, so it exercises none of the card
+lifecycle. Card creation is the `createCard` RPC, and it *is* shell-drivable:
+`bb plugin rpc call stelow createCard --input-file <path>`, the platform's
+own RPC invocation path. That is the supported equivalent this phase used, and
+it is the answer to "if the CLI cannot create a card".
+
+### The card, and what it actually did
+
+`bb plugin rpc call stelow createCard` returned `cardId: card_y6dnitl6`,
+`threadId: thr_v3dwdyacu4`, on `env_v9s2z9xbm2`. `cardDetail` reports
+`kind: "build"`, `stage: triage`, `activity: running`. The state dir is
+`.stelow/2026-09-26/sw-card_y6dnitl6/`, and the board went 40 → 41 workflows.
+
+Its `state.md` carried the requested configuration through verbatim —
+`appetite: Core`, `review_gates: [spec, interface, scope]`,
+`review_mode: Product Spec + Interface + Scopes` — and the card advanced
+`triage → select → setup → context` across two **native** runs, each with a
+registration receipt:
+
+| Run | Recipe | Stage | Status | Outputs |
+| --- | --- | --- | --- | --- |
+| `exec_7zly28ff` | `setup-recon` | setup | succeeded | `recon/setup.md` |
+| `exec_9l7rotyd` | `strategic-context` | context | succeeded | `strategic/context.md`, `strategic/context-analysis.md` |
+
+`context/recon-receipt.json` is a real receipt (`stelow-recon-v2`, git
+workspace, cymbal/ripwire/sem/ast-grep all available, `missing: []`), and
+`bb stelow manifest` counts the artifacts as they land: 1, then 2.
+
+Every count in this section is a **point-in-time reading of a live board**, and
+the board keeps moving. Re-derived on review, the same
+`bb stelow manifest --card card_y6dnitl6` now reports `Stelow-Artifacts: 7`,
+and the `17` artifacts recorded for `card_2xjusphs` are now 18 registered
+entries with the card at `interface` rather than `scope`. The claims that
+matter are the exit codes, the refusal text, and the fact that `manifest` counts
+what `board` does not — all three still hold verbatim, including
+`done` exiting 1 with the same sentence. Only the totals drift, so a later
+reader who re-derives a total and finds a different number is seeing a live
+board, not a contradiction.
+
+**It did not reach `planning`, and the reason is the finding below.** Given
+`intent: investigate` plus a read-only instruction, the worker used its own
+card as an investigator and inspected a *different* live Build card,
+`card_2xjusphs` (`live-validation-add-a-read-only-scope-map-view-to-`,
+`intent: feature`), walking its planning leg: triage 09:29Z → select → setup →
+context → shape → critique → spec gate → `scope`. Those claims were
+re-derived here rather than trusted: the target's `state.md` reads
+`current_stage: scope` with the same `Core` / `[spec, interface, scope]` config;
+its `plans/spec-product_v2.md:21-25` carries the spec `gate_receipt`
+(`decision: user-approved (Approve spec v2)`, `approval_tool_fallback: structured
+ask (visual_review unavailable on this host)`), which is consistent with
+`.stelow/approvals/` naming only two *other* cards; and its artifact count is
+**17** exactly (`shape` 7, `critique` 7, `setup` 2, `triage` 1), matching the
+report. The trail record is
+`.stelow/2026-09-26/sw-card_y6dnitl6/build-card-verification.md`, with
+`audit.md` beside it.
+
+### The finding: an investigate card at `context` has no forward move
+
+The investigator card tried to finish and could not. Its own `audit.md` records
+`bb stelow advance audit` being refused from `context`. That is not a staging
+accident — it is structural, and it is a deadlock, which is the one outcome a
+transition table must never produce.
+
+`allowed_candidates_for_stage` (`data/stelow:207-242`) computes a stage's
+candidates from its `next`/`accept`/`reject`/`rework` lines and then
+**intersects** them with the intent's projected route, under an explicit rule:
+*"Intent routes are projections of the full graph, never extra edges. A route
+may omit stages, but it may not invent a transition outside the graph."* Run
+verbatim against the vendored `transitions.md`:
+
+| `(stage, intent)` | Effective candidates |
+| --- | --- |
+| `context` / `investigate` | `[setup]` — **backward only** |
+| `context` / `feature` | `[shape, planning, setup]` |
+| `setup` / `investigate` | `[context, triage]` |
+| `audit` / `investigate` | `[]` (terminal by design) |
+
+The two tables disagree. The `investigate` route is
+`triage → select → setup → context → audit`
+(`skills/stelow-workflow-orchestrator/references/transitions.md:289`), but the
+`### context` block declares only `next: shape, planning` and
+`reject: setup` (`:72-80`) — so `audit` is an edge the route invents, and the
+intersection deletes `shape` and `planning` for being outside the route,
+leaving the single backward reject. Read alone, neither table looks wrong.
+
+Blast radius on this board right now: **29 of 42** state files are
+`intent: investigate`, and **three** are `active` and parked at `context` —
+`card_4piqzxb0`, `card_4ukw3w4x`, and `card_y6dnitl6`. `investigate` is what
+the research and explore tracks use, so this is the default path for the short
+tracks, not an edge case.
+
+The format blocks the obvious repair, and this was checked rather than
+assumed. `audit` terminates *every* route, so adding it to `### context`'s
+`next` to free `investigate` also grants `feature` a `context → audit` skip
+past shape, critique, both review gates, planning, execution, verification,
+and the diff gate. Re-running the same probe against that one-word edit:
+
+```
+context/investigate    -> [audit,setup]
+context/feature        -> [shape,planning,audit,setup]   # gate-bypassing skip
+```
+
+So the fix is a format change or an intent-scoped helper, never a shared
+`next:` list, and it belongs upstream: `skills/` and `data/stelow` are
+sync-owned, so this is fixed in `calionauta/stelow` and propagated. The
+blueprint entry recording the anti-pattern and the invariant to pin shipped
+as `stelow` `27d701e`. The invariant worth adding as a test: for every
+`(stage, intent)` pair a route visits, the effective set must contain a
+forward edge, exempting only the terminal stage whose `next: (done)`
+legitimately has none — asserted against the same intersection the helper
+computes, so it fails on the disagreement instead of restating the tables.
+
+**The repair site is not the file the finding names, and following the finding
+literally would lose the fix.** `transitions.md` is a *generated* mirror, not
+the source of truth: its own header calls it "a **data-only mirror** of
+`skills/stelow-workflow-orchestrator/stages.yaml`" and says to "edit
+`stages.yaml` first and then regenerate this file" (`:3`, `:8`), and the
+Regeneration section runs `python3 scripts/generate-transitions.py` with a
+`--check` drift gate (`:295`). So the two places that must change are:
+
+- `stages.yaml`, the `context` stage's `transitions:` block —
+  `next: [shape, planning]`, `accept: [shape, planning]`, `reject: [setup]` —
+  which is what the mirror renders; and
+- `stages.yaml:42`, `routes.intents.investigate:
+  [triage, select, setup, context, audit]`, the route that invents the edge.
+
+Editing the vendored mirror instead would be doubly wrong: it is sync-owned
+(AGENTS.md), *and* it is regenerated, so the edit would be reverted by the
+drift gate upstream and would leave no trace of the intent. Worth recording
+that **this plugin checkout has no local drift gate on the mirror** — upstream
+carries it as `test:skills` (`vitest run tests/skills`), and no test under
+`tests/` invokes `generate-transitions.py --check`. So a hand-edit made here
+would persist silently until the next sync overwrote it, which is the worst of
+both: it looks applied, and it is not.
+
+A control on the finding: the same sweep reports "no forward move" for
+`audit` on every intent, and that is **not** a defect. `### audit` declares
+`next: (done — workflow complete)`, so the paren-cut empties `next` and
+`accept`; `audit` is terminal and completion is `done`, not an advance. Only
+the `context`/`investigate` row is a real deadlock.
+
+Re-derived on review, because the first statement of this control did not
+survive its own probe. The paren-cut does **not** empty the whole set: `### audit`
+also declares `reject: execution`, and that token survives, so `audit`'s raw
+candidates are `['execution']` — a single *backward* edge, not an empty list. Its
+effective set is empty only because the intersection drops it:
+
+| `(stage, intent)` | raw candidates | effective | why |
+| --- | --- | --- | --- |
+| `audit` / `investigate` | `['execution']` | `[]` | `execution` is off the investigate route |
+| `audit` / `feature` | `['execution']` | `['execution']` | on-route, so the backward reject survives |
+
+Both still have no forward edge, so the control's conclusion — `audit` is
+terminal, not deadlocked — stands, and it stands for a *stronger* reason than the
+one first recorded: the terminal stage's only surviving token is a backward
+reject. The conclusion was right; the mechanism offered for it was not, and it
+was the kind of error that would have hidden a real regression had `audit`'s
+`reject` ever been pointed forward.
+
+### The completion gate holds, verified as a control
+
+The investigator registered an `audit` artifact while `current_stage` was
+still `context` and `stages.audit` still read `pending`, so `state.md` can
+carry an artifact for a stage the card has not reached — the artifact registry
+does not check the stage it is handed. That is worth knowing, and it is *not* a
+completion bypass: `done` refuses. `bb stelow done --card card_y6dnitl6` exits
+**1** on stderr with `Refused: this workflow is at 'context', not 'audit'. Keep
+working the current stage and advancing — run 'bb stelow done' only when the
+audit work is complete.` The stage check is `lib/completion.mjs:23-25`, and
+`doneBuildGates` (`lib/build-gates.mjs:70`) returns `null` for any stage but
+`audit`. The refusal names its exit, as AGENTS.md requires — though here the
+only exit it can name is "keep advancing", because at `context` on this intent
+there is nowhere to advance to.
+
+### Smaller findings, each measured
+
+- **`stelow.json`'s `stage` block is a seed-time snapshot.** It is written in
+  exactly one place, `server/runtime/workflow-seeding.ts:194-199`, and no
+  advance path touches it, so it reads `triage` for anything seeded by the
+  current code. **15 of 41** entries disagree with their own `state.md`, and
+  **14 of the 15** read `triage` — not all 15, as first recorded. The exception
+  is `sw-card_aqzlttfh`, whose mirror reads `critique` and carries a six-entry
+  `history` (triage → select → setup → context → shape → critique) against a
+  `state.md` of `execution`. Re-derived on review: no live writer produces that,
+  since the only `stage.history` construction in the plugin is the single-entry
+  seed at `workflow-seeding.ts:198` and the helper's advance path writes
+  `state.md` and `invariants.json` (`data/stelow:481`) but never the tracking
+  file's `stage` block. So it is a **legacy snapshot** from before the freeze,
+  which is the useful part: the freeze is real but not uniform, and one entry
+  proves a richer mirror once existed. The `config` block
+  in the same entry stays correct because the same seed call writes it. Not
+  user-visible today: the `board` RPC reports stage from `state.md` (verified —
+  it returned `context` for a card whose mirror says `triage`), and
+  `server/runtime/worker-restart-prompt.ts:47` already tells a restarting
+  worker to take the *path* from `stelow.json` and the *stage* from
+  `state.md`. A latent trap, not an active bug, and the reason it is easy to
+  miss is that both files look authoritative.
+- **`board` returns `artifacts: []` for all 41 workflows**, while `manifest`
+  counts them correctly. Re-derived on review, this is a **defect with a named
+  cause, not an unpopulated summary field** — the hedge it was first recorded
+  under is stronger than the evidence supports. `findArtifacts`
+  (`server/runtime/board-read.ts:104-131`) lists the state directory with
+  `includeDirectories: false` (`:47`), so it enumerates the **top level only**.
+  Every artifact a real workflow registers lives a level or more down —
+  `recon/setup.md`, `plans/spec-product*.md`, `critiques/critique-report.md`,
+  `strategic/context*.md` — so the board cannot reach any of them by
+  construction. `sw-card_2xjusphs` has 13 `.md` files and exactly **one** at the
+  top level. Driving `findArtifacts` against an fs-backed `FilesApi` returns
+  `1` entry — and it is `state.md`, the workflow's own bookkeeping, returned as
+  `kind: "other", label: "state.md"`. `lib/artifact-manifest.mjs:43` classifies
+  exactly that path as `STATE_BOOKEEPING` and excludes it from the unregistered
+  list; `findArtifacts` has no such exclusion, so the single artifact the board
+  *can* see is the one file that is not an artifact. The live RPC returns `0`
+  rather than `1` because the SDK yields no paths for the gitignored `.stelow`
+  tree at all, which is why the symptom is uniform emptiness rather than a
+  wrong-but-populated list. Two distinct faults, one observation: a
+  non-recursive walk, and a missing bookkeeping exclusion on top of it.
+  **This needs its own `fix:` commit** — it changes what the board returns, so it
+  is out of scope for a documentation-only phase, and it is recorded here at
+  review with a reproduction so the follow-up is mechanical.
+  - *The test cannot catch it, and that is the more serious half.* The fixture
+    in `tests/runtime-seams.test.mjs:141-172` puts `spec-product.md` **flat** in
+    `sw-1` and has `listPaths` return a flat list. The suite is green on a layout
+    that no production workflow uses, so the pins pass whether or not the
+    recursion exists — they would not fail if it were dropped, because it is
+    already dropped. A real regression test needs a nested fixture
+    (`recon/setup.md` under `sw-1`) and must assert that `state.md` is absent
+    from the result. Per AGENTS.md that is a `test:` change paired with the
+    `fix:`; it does not belong in this phase either.
+- **`executionRunStatus`'s `runId` input is an `exec_` id, not a run id.** Both
+  `wfr_d68ad2e9` and the full native UUID
+  `wfr_d68ad2e9-cd75-4105-b988-742b5def54bd` return
+`Execution run not found.`, while `exec_7zly28ff` resolves. `reconcileOne`
+(`server/execution-reconcile-run.ts:49`) looks the row up by that id, and the
+sweep passes `run.id` (`server/execution-reconcile-sweep.ts:48`) — while the
+row's own `runId` field holds the native id. So the RPC parameter is named
+after the field it collides with, and an operator who reads "native identity
+for one execution run" and passes back the `runId` from a previous response
+gets a not-found. `cancelExecutionRun` takes the same parameter name. Reported,
+deliberately not fixed and deliberately not pinned: a test asserting the
+not-found would pin the defect as intended behaviour, and the fix is a rename
+that belongs with a caller sweep.
+- **`createCard`'s `environment` is a discriminated union, and a flat object
+  falls back.** `lib/card-environment.mjs` `selectCardEnvironment` accepts
+  `{type:"project-default"}`, `{type:"reuse", environmentId}`, `{type:"provider",
+  environmentProviderId}`, and `{type:"host", workspace:{type: …}}`; anything
+  else resolves to the fallback and emits `environmentFallbackNotice`. Passing
+  the `PreviewEnvironment` *read* shape (`server/runtime/card-seams.ts:30-37` —
+  `{id, path, hostId, …}`) yields `asked unknown shape`, and the card carries
+  the notice as a comment, naming asked-vs-used and the redirect. The fallback
+  happened to be the right environment here, so the outcome was correct and the
+  contract worked as designed — a fail-loud substitution, caught and reported
+  rather than silently swallowed. The read shape and the request shape sharing a
+  name is the trap.
+
+### Phase gates
+
+`npm run typecheck`, `npm test`, the architecture check, `npm run quality:shape`,
+and the source-budget check are all green on this commit; the tree-wide numbers
+are unchanged from the previous phase because this phase changed no source. No
+user-facing behaviour changed, so `FEATURES.md` does not move. One blueprint
+anti-pattern was added upstream (`stelow` `27d701e`) — the only upstream change,
+and it is a doc entry, so the `stelow` vitest baseline is unchanged by
+construction.
+
+All five re-run independently on review and confirmed green, with the numbers
+the phase reported: `typecheck` exit 0; `architecture` "no dependency
+violations found (747 modules, 1740 dependencies cruised)"; `quality:shape`
+"source shape ok: 372 source file(s) … no changed line over 160 characters" and
+7 inherited budget entries, no new ones; `npm test` exit 0 ending on
+"debt baseline ok: 3 oversized file(s) and 37 oversized function(s), 7 inherited
+entries, shape gate green". A phase whose only output is a document has an easy
+claim to fake, so the gate claim was the first thing re-derived rather than
+trusted.
+
+Nothing in the plugin checkout was edited by the E2E: the card's outputs are
+all under the gitignored `.stelow/`, and `git status` stayed clean throughout,
+which is the correct outcome for an investigation card and is itself worth
+recording as evidence rather than as an absence.
+
+### Review of the E2E phase (adversarial, independent)
+
+The phase's central finding was re-derived from source rather than accepted: the
+intersection probe was re-implemented against the vendored `transitions.md` and
+`context`/`investigate` → `['setup']` with no forward edge reproduces exactly.
+The finding is real, the blast radius is real (29 of 42 state files are
+`investigate`; `card_4piqzxb0`, `card_4ukw3w4x` and `card_y6dnitl6` are `active`
+at `context` right now), and the three corrections the phase made to its own
+earlier planning section all hold up — `appetite` really is a three-value enum
+with `Auto` belonging to `reviewMode`, `--card` really does resolve card ids
+where the earlier attempt passed dirHashes, and `seed` really does write a
+workflow root without minting a card. The four CLI exit codes re-ran verbatim,
+including `done` refusing with the exact recorded sentence.
+
+Four things were wrong or materially under-stated, and all four are corrected
+above: the `audit` control's stated mechanism (the paren-cut empties
+`next`/`accept` but not `reject: execution`, so the effective set is empty only
+because the token is off-route), "all 15 read `triage`" (14 do; the fifteenth is
+a legacy snapshot that itself disproves the uniform-freeze claim), the missing
+generated-file constraint that makes the recommended repair site `stages.yaml`
+rather than the mirror the finding names, and — the substantive one — the
+`board` artifact list recorded as a hedged observation when it is a diagnosable
+defect with a named cause, a missing bookkeeping exclusion, and a flat test
+fixture that cannot fail.
+
+Two of those four would have outlived this review as false record: the dead
+`audit` mechanism and the under-called board defect. The general lesson is the
+one the phase itself wrote into its own method — a claim hedged as "not a defect
+claim" is the cheapest kind to get wrong, because hedging reads as rigour while
+supplying no testable mechanism. Everything hedged should be diagnosed or left
+unclaimed.
+
+## Review corrections (the Blueprint phase)
+
+The blueprint phase wrote two subsections and one anti-pattern upstream
+(`stelow` `4ce9d69`, §9 plus §14 "splitting one oversized module into feature
+slices" and "secure subprocess and delegated execution") and mirrored them in
+`docs/runtime-architecture.md` (`a94efab`). This review re-derived every claim
+from the host rather than from that commit message. The §9 dispatch entry and
+the whole data-slice recipe hold; three claims in the subprocess subsection did
+not, and one of them is the kind a reader would act on. A second, narrower pass
+over the same subsection — this one prompted by re-deriving the verb count rather
+than the prose — found a fourth, and corrected this file's own version of the
+count alongside it.
+
+**What was re-derived and holds.** `CHECKS_BY_KIND`, its exported
+`CHECK_KINDS`, and the throw on an unknown kind are in
+`lib/artifact-validation.mjs:216-240`, and `tests/contract-integrity.test.mjs`
+pins every contract entry's kind against that list at `:69` with a paired
+control at `:165-166` — the §9 entry describes the code, not an intention. The
+`minWords` half is too: the doc comment names the field the interpreter actually
+reads (`lib/artifact-validation.mjs:235`), the `.d.mts` union matches, and no
+`min-words` spelling survives anywhere. The argv-array spawn, the import-time
+`HELPER_SCRIPT` resolution in `server/plugin-paths.ts:32-45`, and the
+environment-carried state in `server/runtime/helper-script.ts:28-43` are as
+described. The disposable-spawn rule is exact: `assertDisposableSpawn` throws
+before the SDK call in `lib/delegation-map.mjs`, the retry in
+`server/runtime/disposable-spawn.ts` is bounded to the one key and the one
+message, and `tests/delegation-map.test.mjs:54-58` pins one site marker per
+call site while `tests/server-drafting.test.mjs:183,231` exercise the field and
+the retry that drops it. Every census figure in the local mirror was re-measured
+and holds: 3 oversized files and 37 oversized functions,
+`dialog.tsx` 541, `icon.tsx` 450, `kanban-layout.test.mjs` 401, the largest
+execution slice 233, the largest GitHub slice 293, the largest decision slice
+226, `github-dialog-state.ts` 60, `preset-manager-band-routing.tsx` 351, and all
+three upstream anchors resolve to the real headings.
+
+**Correction 1 — the wrapped verb vocabulary was wrong in both directions.**
+The blueprint said to wrap "a fixed verb vocabulary — `advance`, `audit`,
+`schema`, `seed`". Two of those four are not verbs this host ever spawns, and
+five it does are missing. Counting the literal verb that reaches `runHelper`
+across `server/` gives exactly: `advance` (4 call sites), `audit-trail` (3),
+and `config`, `doctor`, `lock`, `schema`, `scope`, `sync-scopes` (1 each) —
+and `audit` at 0 and `seed` at 0. `seed` is implemented host-side in
+`server/runtime/cli/cli-seed.ts` and never crosses a process boundary, so
+naming it claimed a seam that does not exist; the verb the blueprint meant is
+`audit-trail`, with `check` and `build` as its operations. The blueprint now
+states the rule without a remembered list, tells the reader to derive and pin
+it from the call sites, and records the reference host's real thirteen call
+sites across the eight verbs.
+
+Re-derived on review, because the per-verb split in the paragraph above did
+not survive its own count. The two totals it reported were right — thirteen
+sites, eight verbs — but the distribution was not: `advance` has **four** call
+sites, not three, and `sync-scopes` has **one**, not two. The missing `advance`
+is `server/runtime/wiring/rpc-surfaces.ts:226`, which reaches the spawn as
+`core.runHelper` rather than `deps.runHelper`, so a grep on the dep-shaped name
+alone misses it; the four are `server/execution-advance-cli.ts:90`,
+`server/execution-advance-card.ts:70`, `server/runtime/card-gates.ts:175`, and
+that RPC surface. The extra `sync-scopes` is a double count of
+`server/runtime/cli/cli-helper-passthrough.ts:63`, whose `...passthrough`
+splat makes the second site easy to invent. Both errors are the kind that
+survive review, because a table whose totals add up looks derived.
+
+That correction has a consequence the record missed entirely, and it is the
+more useful half. The blueprint also claimed, in the same subsection, that "the
+card action and the CLI both reach `advance` through the same
+`runHelper(["advance", stage], …)` call" — while the paragraph below it recorded
+that `execution-advance-cli.ts` does not use the shared preamble at all. There
+is no such shared call: the card action spawns the literal
+`["advance", stage]` from two sites, the CLI builds its list in `helperArgs`
+(`server/execution-advance-cli.ts:105-112`) and appends `--dry-run` and `--json`
+only when set, and the RPC surface spawns the bare pair. The claim cited the
+rule as satisfied by the very file the next paragraph names as the violation,
+and the verb's real count is what exposes it. The blueprint now names the four
+`advance` sites, states that the two entry points do not share one, and pins
+the rule to the *shape* of the argument list rather than to a remembered
+literal (`stelow` `f659470`).
+
+**Correction 2 — the reference host was cited as satisfying a rule it breaks.**
+The blueprint states "the card action and the CLI must call the same wrapper and
+the same preflight", then cites `cli-helper-passthrough.ts` as "the shared
+preamble" alongside `execution-advance-cli.ts` as a wrapper. The first half
+holds and the citation does not: the passthrough file shares its preamble across
+`sync-scopes`, `scope`, and `config get`, and `advanceCli` re-implements the
+same five beats — resolve the card from the thread context, take its workspace,
+derive the state dir, run the artifact guard, refuse without one — under renamed
+deps (`workflowStateDir` as `stateDir`, `ensureProjectArtifacts` as
+`ensureArtifacts`). The two copies also drifted independently: only the
+passthrough's guard can return the `helperContext` refusal shape, while
+`advanceCli` inlines the same refusal twice. Both the upstream subsection and
+the local mirror now say the host satisfies the rule for the passthrough family
+and violates it for `advance`, instead of citing the violation as evidence.
+
+**Correction 3 — the dead-end env var was left as a rule with no instance, and
+the instance is upstream-owned.** The subsection stated that a schema
+advertising an env var the host never reads is an operator's dead end, and cited
+no evidence. The instance is `STELOW_STATE` and `STELOW_STATEDIR` under
+`advance`'s env: nothing in `server/` or `lib/` reads either —
+`server/runtime/helper-script.ts:35-40` only writes them into the child's
+environment — which is the same finding the *E2E* section of this file reached
+by hitting the refusal. It is not host-fixable, because the schema is emitted by
+the vendored helper under sync-owned `data/stelow`; the subsection now says so,
+which is the difference between a rule and a fix someone will actually attempt.
+
+**One correction outside the phase, in this file.** Two sections attributed
+`result.stderr || "stelow advance failed"` to
+`server/execution-advance-cli.ts`, whose string is `"advance failed"` at `:92`.
+`"stelow advance failed"` is real but lives in
+`server/execution-advance-card.ts:72`, `server/runtime/card-gates.ts:176`, and
+`server/runtime/wiring/rpc-surfaces.ts:231`. The string was the only thing the
+two sections quoted from the file, so the error was invisible to anyone who did
+not grep it.
+
+**Not fixed, and named.** The duplicated advance preamble is real debt and is
+left in place: collapsing it changes the `advance` CLI's `Pick<AdvanceDeps, …>`
+contract and its wiring, which is production behavior and well past a
+documentation review. It is recorded in both files as the next place to start
+rather than closed as a doc edit.
+
+Gates on this review: `npm run typecheck` green, `npm test` green (exit 0),
+`npm run architecture` clean, and `npm run quality:shape` green. The changes are
+three documentation files and no source, so `FEATURES.md` does not move and no
+blueprint entry is owed for them.
+
+**The second pass, and the gate it ran.** The only change is in this file plus
+one upstream commit (`stelow` `f659470`), both documentation. What was
+re-derived, and what held: the eight-verb vocabulary and its two zero entries
+(`audit` and `seed` at 0 call sites — no `runHelper(["audit"` or
+`runHelper(["seed"` exists anywhere in `server/`), and `seed` is host-side at
+`server/runtime/cli/cli-seed.ts:65`); the census figures quoted above, measured
+again from the tree (`dialog.tsx` 541, `icon.tsx` 450, `kanban-layout.test.mjs`
+401, `github-dialog-state.ts` 60, `preset-manager-band-routing.tsx` 351, the
+eleven GitHub slices largest 293, the twelve decision slices largest 226, the
+largest execution rule module 233); the three upstream anchors, which still
+resolve to `## 9. Anti-patterns` and to the §14 subsections
+"splitting one oversized module into feature slices" and "secure subprocess and
+delegated execution"; and the `assertDisposableSpawn` registry check, the
+one-marker-per-call-site topology pin, and the bounded lifetime-key retry
+(`server/runtime/disposable-spawn.ts:28`, whose matcher is still
+`/lifecycleOwnerThreadId|unrecognized key/i` and nothing wider). Upstream
+`npm run typecheck` and `npm run verify:execution` are green on `f659470`, and
+no added line in either file exceeds 160 characters.
+
+One thing re-derived here is worth keeping in this file even though it changes
+nothing: the E2E finding's own dead control, re-checked by running the
+intersection over the vendored `transitions.md` for every stage against both
+`investigate` and `feature`. Exactly three pairs have no forward edge —
+`context`/`investigate` (the real deadlock, effective set `['setup']`),
+`audit`/`investigate` (raw `['execution']`, dropped as off-route), and
+`audit`/`feature` (raw and effective `['execution']`, a backward reject). Of the
+34 pairs those two intents visit, the other 31 all have a forward edge, so the
+deadlock is a single cell in the table rather than a property of the
+intersection rule.
+
+## Review corrections (the final pass)
+
+Two of the three things this review changed are the record correcting itself;
+the third is dead code the record never claimed to have cleaned.
+
+**The dead reads the slice splits left behind.** The contract-test splits moved
+their pins out of `server/plugin-runtime.ts` and into the modules the runtime
+was carved into. What they left behind was the *reads*: thirteen test files
+still read a source file, or a concatenated blob, that nothing asserts on —
+eleven of them as unused named imports of
+`tests/card-lifecycle-contract.fixtures.mjs`, so 390 `readFileSync` calls that
+run at import time for every suite that imports the fixtures module and
+contribute to no assertion. Two exports of that fixtures module,
+`executionWiring` and `threadCardLookup`, were dead for the same reason.
+
+This is a real finding about the branch rather than about the phase, and it is
+the class AGENTS.md treats as a review failure: `npm run lint` exited 0 the
+whole time with **395** warnings, so the signal that would have caught it was
+present and drowned. It is now 1, and the survivor is inherited from master
+(an unused `context` parameter in the public signature of
+`renderInlineWorkflowScript`, left alone rather than renamed for a nit).
+
+The negative control is the shape of the diff, not the suite: **394 deletions,
+0 insertions**, with the `assert.` count byte-identical in all thirteen files.
+An unused binding cannot make a pin pass, so the suite re-run is only the
+floor here — what makes the commit safe is that it removed reads and imports
+and changed no assertion. `buildReviewTools` is the one that looks dead and is
+not: it is a member of the `detailSource` aggregate, which is asserted on as a
+whole.
+
+**What this pass deliberately did not do.** The `board` artifact defect recorded
+above is real and was re-verified from source: `findArtifacts`
+(`server/runtime/board-read.ts:112-124`) lists the state directory through
+`listPaths`, which passes `includeDirectories: false` (`:47`) and never
+descends, and nothing on that path excludes `state.md`, which
+`lib/artifact-manifest.mjs:43` classifies as bookkeeping for the unregistered
+list (`:58`) and `findArtifacts` does not. Both faults reproduce, and the test
+that should catch them (`tests/runtime-seams.test.mjs:141-172`) still uses a
+flat fixture — it lists `${dir}/spec-product.md` at the top level and nothing
+beneath it — so it passes on a layout no production workflow has. It stays
+deferred with its reproduction: the fix is a behavior change on a production
+read path plus a nested regression fixture, which is its own `fix:` and `test:`
+pair, and folding it into a review of a documentation phase is how a behavior
+change gets reviewed as a doc edit.
+
+Gates on this pass, all re-run after the last commit: `npm run typecheck`
+green; `npm test` exit 0, ending on "debt baseline ok: 3 oversized file(s) and
+37 oversized function(s), 7 inherited entries, shape gate green" — the census
+the sections above report, unchanged; `npm run architecture` clean at 747
+modules and 1740 dependencies; `npm run quality:shape` green with 7 inherited
+budget entries and no new ones; `npm run duplicates` at 0 exact clones; lint
+at 1 inherited warning. `FEATURES.md` does not move: nothing user-facing
+changed.
+
+## Final audit corrections (the synthesis pass)
+
+This is the workflow's last phase: run every gate, inspect both checkouts and
+the E2E card, report residuals. It changed no source. What it found is that the
+E2E evidence above is real, and that **none of it exercised this branch.**
+
+### The E2E ran against master's bundle, not this one
+
+This is the substantive finding, and no section above states it. The running
+plugin is served from a *different checkout*:
+
+```
+$ bb plugin reload stelow
+stelow@0.51.2  running
+  source: path:/home/deploy/.bb/plugins/environment-git-worktree/
+          host-data/worktrees/thr_cegycg7mxt-1/bb-plugin-stelow
+```
+
+That worktree is on `master` at `2ae7e8c`, version 0.51.2. This checkout is
+`refactor/app-slices-1-11` at `8b531a3`, version 0.49.2. `npm run build:reload`
+on this checkout exits 0 and **still** reloads the master worktree, so the
+branch's `dist/` was never the thing answering a card.
+
+The gap is not a version skew, it is a different codebase. `origin/master` has
+**zero** files under `server/runtime/`; this branch has 120. Every module the
+workflow's own analysis cites by line number is branch-only — `server/
+execution-advance-cli.ts`, `server/runtime/cli-inspection.ts`,
+`server/runtime/helper-script.ts`, `server/runtime/wiring/rpc-surfaces.ts`,
+`server/runtime/disposable-spawn.ts`, `lib/preview-lifecycle.mjs` — and
+`server/execution-advance.ts` on master is the single unsplit file the
+*Functions* phase split. A bundle grep settles it: `dist/server.js` here
+contains `execution-advance-cli`, `preview-lifecycle`, `disposable-spawn` and
+`rpc-surfaces`; the running master's `dist/server.js` contains **0** of the
+four. The `playbook` output agrees from the other side — it resolves
+`transitions` from this checkout's `skills/` but `entry` and `router` from the
+master worktree.
+
+Consequence, stated precisely so the record is not over- or under-read: the
+card `card_y6dnitl6` is real, its state dir is real, its runs and receipts are
+real, and the refusals it hit are real behaviour of *some* Stelow. But the
+branch's line citations cannot be evidenced by those observations, because the
+code that produced them does not contain those lines. The branch's splits are
+evidenced by the 356-suite node run and nothing else. Reading the E2E sections
+as behavioural proof of this branch's refactor is the error; they are proof
+that the host, the CLI and the workflow state machine work, which is a
+different and still useful claim.
+
+Two things in the record are therefore *source readings*, not observations, and
+should be read as such. The `STELOW_STATE`/`STELOW_STATEDIR` dead-end is
+verified here directly and holds: `server/runtime/helper-script.ts:35,36,40`
+only *writes* both into the child's environment, and nothing in `server/` or
+`lib/` reads either. The `advance` refusal it explains is real on both lines,
+but the branch's `execution-advance-cli.ts:92` was not the code that emitted it.
+
+**The E2E timeline also shows which build was live during the runs.** The card
+ran 11:55–12:27Z; master's last release before the current build is
+`2ae7e8c` at 13:10Z, and the master `dist/server.js` mtime is 13:11:46Z. The
+build answering the card was therefore 0.51.1 (`bdce809`), not the 0.51.2
+observed now. Every exit code below was re-run against 0.51.2 and reproduces
+except the one corrected next, which was never a version drift.
+
+### Correction: `verify` exits 2, and the table's 0 is simply wrong
+
+The E2E table records `bb stelow verify --card card_y6dnitl6` as exit **0**
+with `Build verification requires --tests`, and then claims the exit codes
+"all three still hold verbatim". Re-run against 0.51.2 it exits **2**. This is
+not drift: master's source has returned `{ exitCode: 2, stderr: ... }` for that
+refusal since `7397e40`, and the same line is present unchanged at `0.51.1`
+(`bdce809:server.ts:7648`) — the build the card actually ran against. The
+recorded `0` never held. The rest of the table re-ran verbatim: `advance
+--dry-run --json audit` exit 1 and `doctor --project proj_a6wdkdcfkk --json`
+exit 1, both with `state.md is missing for the Stelow workflow. Reseed the
+workflow.`; `schema` exit 0; `playbook --card card_y6dnitl6` exit 0;
+`manifest --card card_y6dnitl6` exit 0 with `Stelow-Artifacts: 7`; `done
+--card card_y6dnitl6` exit 1 with its recorded sentence verbatim; `help answer`
+exit 0. `status --json` exits 0 with 41 workflows and the card at
+`context`/`in-progress`. One card counts as observed, `card_y6dnitl6`, with
+`artifacts: []` — the board defect below, live.
+
+The general lesson repeats the one the guards review already wrote down: a
+table whose cells each look plausible is the cheapest place to carry a false
+claim, and the sibling exit codes reproducing is not evidence for the one that
+did not.
+
+### The two deferred residuals, re-verified and still real
+
+Neither moved, and both reproductions still hold on this branch's source.
+
+- **The `board` artifact list is empty, and the test cannot catch it.**
+  `server/runtime/board-read.ts:47` lists the state directory through
+  `listPaths` with `includeDirectories: false` and never descends, and
+  `findArtifacts` (`:104-131`) contains no `state.md` exclusion — zero matches
+  for `state.md` or `STATE_BOOK`, where `lib/artifact-manifest.mjs:43` does
+  classify it as bookkeeping. The fixture that should catch it,
+  `tests/runtime-seams.test.mjs:163-170`, still returns a flat
+  `[`${dir}/spec-product.md`, `${dir}/notes.md`, `${dir}/run.sh`]`, so it
+  describes no layout a production workflow has and would pass with the
+  recursion absent. Live: `board` returns `artifacts: []` for this card while
+  `manifest` counts 7. Still needs its own `fix:` + `test:` pair.
+- **The advance preamble is still duplicated.** `server/execution-advance-cli.ts`
+  resolves the card, takes the workspace, derives the state dir and runs the
+  artifact guard itself (`:59-77`, deps renamed to `stateDir`/`ensureArtifacts`),
+  where `server/runtime/cli-helper-passthrough.ts:30`'s `helperContext` is the
+  shared copy. The blueprint's "next place to start" is unchanged.
+
+### Gates on this pass, re-run from scratch
+
+`npm run typecheck` exit 0. `npm test` exit 0 — 356 passing lines, zero `not
+ok`, ending on the same census line the sections above quote, which is the
+check that this pass's two corrections are the only new information. `npm run
+architecture` exit 0, "no dependency violations found (747 modules, 1740
+dependencies cruised)". `npm run quality:shape` exit 0, "source shape ok: 372
+source file(s) from `1f968bea`, no changed line over 160 characters", with 7
+inherited budget entries and no new ones. `npm run test:source-shape` exit 0
+and `npm run test:source-budgets` exit 0 (both also run inside `npm test`).
+`npm run quality:report` exit 0, carrying lint at 1 warning — inherited, since
+the same `renderInlineWorkflowScript` signature is at `origin/master:123` —
+`knip` at 19 unused files that are all entry points or workflow DSL, and
+`jscpd` at 0 exact clones across 725 files. `npm run security:production` exit
+0, "found 0 vulnerabilities". `npm run build:reload` exit 0. `git diff
+--check` exit 0 on a clean tree.
+
+**One gate needed a corrected method, and the naive version lies.** Workflow
+validation fails all 17 files under `.bb/workflows/` twice over: `node --check`
+rejects them because `package.json` sets `"type": "module"` and top-level
+`return` is illegal in ESM, and `import()` rejects them for the same reason.
+Both are harness artifacts — bb evaluates a workflow body as a function, so
+top-level `return` is legal by design. Compiling each file as an
+`AsyncFunction` body, which is bb's actual model, passes **17 of 17**. Worth
+recording because the wrong tool reports a total failure on a healthy tree, and
+a reader who trusted it would file seventeen phantom breakages.
+
+**Checkouts.** This one: `refactor/app-slices-1-11` at `8b531a3`, identical to
+`origin/refactor/app-slices-1-11`, clean tree, zero untracked files, 234 ahead
+and 14 behind `origin/master` with no rebase or merge performed. The 206 files
+under `.stelow/` are preserved and gitignored. `skills/` and `data/stelow` are
+untouched across the entire workflow — zero commits reach either path, as
+AGENTS.md requires. `FEATURES.md` is likewise untouched, correctly: no
+user-facing behaviour changed, and every phase was a refactor, a guard
+retirement, or a document. Upstream: `/home/deploy/repos/stelow` on `main`,
+clean, in sync with `origin/main`, nothing unpushed, with all five blueprint
+commits (`4ce9d69`, `40cd2a6`, `bd48115`, `27d701e`, `f659470`) confirmed as
+ancestors of `origin/main`; the three anchors the sections above cite still
+resolve (§9 at `:386`, §14 at `:682`, "Splitting one oversized module into
+feature slices" at `:736`, "Secure subprocess and delegated execution" at
+`:765`); the longest line those commits add is 79 characters; and upstream
+`typecheck`, `verify:execution` and `validate:stages` are all exit 0.
+
+**The one genuine blocker, restated as a blocker rather than a caveat.** A
+gated advance with artifacts has still never executed on this host, and it
+cannot while the installed plugin path resolves to the master worktree — not
+because the state machine refuses, but because the branch's code is not loaded
+to be asked. Repointing the installed plugin at this checkout is the
+prerequisite, and it is an environment change, not a code change, so it is
+named here rather than attempted.

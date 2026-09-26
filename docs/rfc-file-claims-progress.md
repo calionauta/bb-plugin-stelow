@@ -12,8 +12,10 @@ commits (`fix:`/`feat:` user-facing, `refactor:`/`test:` silent).
 
 ## Phase 0 — DRY baseline
 - [x] `lib/card-terminal.mjs` + `lib/card-terminal.d.mts` + `tests/card-terminal.test.mjs`
-- [x] `server.ts`: import `CLAIM_TTL_MS` from lib, delete local const (`:3528`)
-- [x] `server.ts`: `termStatus` at `:4423` and `:4676` use `isClaimTerminal`
+- [x] Historical `server.ts` runtime (now `server/plugin-runtime.ts`):
+  import `CLAIM_TTL_MS` from lib and delete the local constant.
+- [x] Historical `server.ts` terminal checks (now split capability code):
+  use `isClaimTerminal`.
 - [x] `typecheck` + relevant tests green
 
 ## Phase 1 — Close the `blocked` leak
@@ -76,11 +78,11 @@ Remaining known gaps (accepted, not fixed):
 - [ ] voluntary-compliance decision belongs upstream (`scope-executor`) —
   product decision, needs human, not implementable unilaterally.
 
-## Ship status (local commits only — NOT PUSHED)
-- Plugin: `442118f` refactor, `fa580c8` fix, `9da61a9` docs (this file).
-- Stelow: `5e0b656` docs.
-- [ ] human: review, `git push`, `npm run build:reload` + `grep dist/`
-  (needs live BB; daemon runs on server.calionauta.com).
+## Historical ship record
+- Plugin work landed through `442118f` and `fa580c8`; this log landed in
+  `9da61a9`.
+- Upstream blueprint work landed in `5e0b656`.
+- These hashes are historical evidence, not a pending release checklist.
 
 ## Decision log
 - `isClaimTerminal` lives in new `lib/card-terminal.mjs` (not

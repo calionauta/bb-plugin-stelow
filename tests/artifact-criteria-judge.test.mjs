@@ -130,7 +130,10 @@ assert.equal(sealStatus({ pass: true }, "verified"), "verified", "a passing gate
 assert.equal(sealStatus(null, "verified"), "unverified", "no validation reads unverified, never verified");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+// The verify-command verdict lives in the CLI family that runs it, not in a
+// composition root. Invert `ran.ok` and a failed command would read met.
+const verifyTasks = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
+const server = [verifyTasks, readFileSync(join(root, "server.ts"), "utf8")].join("\n");
 assert.ok(server.includes('verdict: ran.ok ? "met" : "unmet"'), "verify-command verdicts stay deterministic (exit 0 reads met)");
 assert.ok(!/judgeArtifactCriteria\(\{[^}]*advance/.test(server), "the criteria judge never reaches an advance path");
 

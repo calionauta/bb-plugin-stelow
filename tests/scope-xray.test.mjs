@@ -11,7 +11,15 @@ const map = {
   openDecisions: [],
   scopes: [
     { id: "scope-1", title: "Context", outcome: "Context", capabilities: ["queue"], inScope: ["context"], outOfScope: [], dependsOn: [], status: "current" },
-    { id: "scope-2", title: "Feedback", outcome: "Feedback", capabilities: ["accessibility"], inScope: ["feedback"], outOfScope: [], dependsOn: ["scope-1"], status: "current" },
+    {
+      id: "scope-2",
+      title: "Feedback",
+      outcome: "Feedback",
+      capabilities: ["accessibility"],
+      inScope: ["feedback"],
+      outOfScope: [],
+      dependsOn: ["scope-1"],
+      status: "current" },
   ],
 };
 

@@ -2,7 +2,7 @@ import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { checkoutNoteFor, WorkerSection } from "../worker-history/worker-history";
 import { LinkedDiscussionSection } from "../github/github-linked-discussion";
-import type { BuildDetailView } from "./build-detail-body";
+import type { BuildDetailView } from "./build-detail-view";
 import { InputFiles } from "./input-files";
 import { PreviewSection } from "./preview-section";
 import { BAND_LABEL } from "./stage-timeline";

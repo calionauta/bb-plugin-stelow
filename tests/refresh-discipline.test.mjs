@@ -8,31 +8,47 @@ import { sourceBetween } from "./helpers/source-slice.mjs";
 // must publish card-state (and board-changed) so claimed indicators,
 // rework scopes, synced scopes, and transitions flip on the card without
 // waiting for the next lifecycle event. Check is the only exemption
-// (read-only). Sliced by argv markers: topology, not copy.
+// (read-only). Sliced by function markers: topology, not copy.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const helperFamily = readFileSync(
+  join(root, "server/runtime/cli/cli-helper-passthrough.ts"),
+  "utf8",
+);
+const gapScopes = readFileSync(
+  join(root, "server/runtime/cli/cli-gap-scopes.ts"),
+  "utf8",
+);
+const lockFamily = readFileSync(join(root, "server/runtime/cli/cli-lock.ts"), "utf8");
+const splitFamily = readFileSync(join(root, "server/runtime/cli/cli-split.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 
-function branch(open, close) {
-  return sourceBetween(server, open, close);
+/** The text of one named command family, failing loudly if it is gone. */
+function command(text, name) {
+  return sourceBetween(text, `function create${name}Command(`, "\n}\n");
 }
 
-function assertRefresh(name, open, close) {
-  const body = branch(open, close);
-  assert.match(body, /bb\.realtime\.publish\("card-state"/, `${name} refreshes the card`);
-  assert.match(body, /bb\.realtime\.publish\("board-changed"/, `${name} refreshes the board`);
+function assertRefresh(label, body) {
+  assert.match(body, /bb\.realtime\.publish\("card-state"/, `${label} refreshes the card`);
+  assert.match(body, /bb\.realtime\.publish\("board-changed"/, `${label} refreshes the board`);
 }
 
-assertRefresh("sync-scopes", 'if (argv[0] === "sync-scopes") {', 'if (argv[0] === "scope") {');
-const scopeBranch = branch('if (argv[0] === "scope") {', 'if (argv[0] === "lock") {');
-assert.match(scopeBranch, /return runScopeCommand\(/, "scope delegates to the extracted wrapper");
+assertRefresh("sync-scopes", command(helperFamily, "SyncScopes"));
+assert.match(helperFamily, /createScopeCommand\(deps\)/, "scope is a family of its own");
+assert.match(helperFamily, /argv\[0\] === "scope" \? deps\.scopeCommand\(argv, ctx\) : null/, "scope delegates to the extracted wrapper");
 assert.match(scopeModule, /deps\.bb\.realtime\.publish\("card-state"/, "scope refreshes the card");
 assert.match(scopeModule, /deps\.bb\.realtime\.publish\("board-changed"/, "scope refreshes the board");
-assertRefresh("gap-scopes", 'if (argv[0] === "gap-scopes") {', 'if (argv[0] === "metrics") {');
+assertRefresh("gap-scopes", gapScopes);
 
-const lock = branch('if (argv[0] === "lock") {', 'if (argv[0] === "config") {');
-assert.match(lock, /\(op === "acquire" \|\| op === "release"\) && result\.code === 0/, "only mutating lock ops refresh");
-assert.match(lock, /bb\.realtime\.publish\("card-state"/, "lock refreshes the card");
-assert.match(lock, /bb\.realtime\.publish\("board-changed"/, "lock refreshes the board");
+const lock = command(lockFamily, "Lock");
+assert.match(
+  lock,
+  /\(target\.op === "acquire" \|\| target\.op === "release"\) &&\s*result\.code === 0/,
+  "only mutating lock ops refresh",
+);
+assertRefresh("lock", lock);
+
+// Split mutates the board twice over: the parent card and the board list.
+assertRefresh("split", splitFamily);
+assert.match(splitFamily, /bb\.realtime\.publish\("board-changed", \{ cardId: card\.id \}\)/, "split refreshes the board");
 
 console.log("refresh discipline test ok: mutating wrappers publish, check stays silent");

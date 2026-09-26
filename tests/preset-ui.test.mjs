@@ -31,7 +31,11 @@ const picker = readFileSync(
   join(root, "components/settings/preset-execution-picker.tsx"),
   "utf8",
 );
-const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+const managerShell = [
+  "preset-manager-shell.tsx",
+  "preset-manager-editor.tsx",
+  "preset-manager-form-state.ts",
+].map((file) => readFileSync(join(root, "components/settings", file), "utf8")).join("\n");
 const managerForm = readFileSync(join(root, "components/settings/preset-manager-form.tsx"), "utf8");
 const managerList = readFileSync(join(root, "components/settings/preset-manager-list.tsx"), "utf8");
 
@@ -86,7 +90,7 @@ assert.match(
 const managerWindow = `${managerShell}\n${managerForm}`;
 assert.ok(managerShell.includes("overflow-y-auto sm:max-h-[calc(100dvh-1rem)]"), "the manager frame scrolls instead of overflowing the viewport");
 assert.ok(managerShell.includes("fullscreenOnMobile"), "the manager stays a real modal on phones");
-assert.match(managerShell, /title="Worker preset per track"/, "band routing hides behind a disclosure");
+assert.match(managerShell, /title: "Worker preset per track"/, "band routing hides behind a disclosure");
 assert.match(managerForm, /<PresetExecutionPicker/, "the New/Edit form uses the shared picker block");
 assert.doesNotMatch(managerWindow, /listProviderModels/, "the manager no longer fetches Stelow's catalog for its form");
 
@@ -131,13 +135,20 @@ for (const [window, name] of [[managerWindow, "manager"], [assignOptions, "assig
 // authoring stays in the context it extends.
 assert.match(managerList, /<h3 className="text-sm font-semibold">Presets \(\{presets\.length\}\)<\/h3>/, "the list header names its count");
 assert.match(managerShell, /scrollIntoView\(\{ block: "nearest" \}\)/, "opening creation scrolls it into view instead of stranding");
-const presetsHeaderAt = managerShell.indexOf("<PresetManagerList");
-const presetFormAt = managerShell.indexOf("<PresetManagerFormView");
-const routingAt = managerShell.indexOf('title="Worker preset per track"');
-assert.ok(presetsHeaderAt >= 0 && presetFormAt > presetsHeaderAt && routingAt > presetFormAt, "order reads list, creation, routing — never creation last");
+// The editor is one component now, so the order is two pins: the list above the
+// form inside it, and the editor above the routing sections in the shell. Read
+// across files a single offset comparison would only prove concatenation order.
+const managerEditor = readFileSync(join(root, "components/settings/preset-manager-editor.tsx"), "utf8");
+const managerFrame = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+const presetsHeaderAt = managerEditor.indexOf("<PresetManagerList");
+const presetFormAt = managerEditor.indexOf("<PresetManagerFormView");
+assert.ok(presetsHeaderAt >= 0 && presetFormAt > presetsHeaderAt, "the editor reads list, then creation");
+const editorAt = managerFrame.indexOf("<PresetManagerEditor");
+const routingAt = managerFrame.indexOf("<PresetManagerRoutingSection");
+assert.ok(editorAt >= 0 && routingAt > editorAt, "order reads list, creation, routing — never creation last");
 assert.equal((managerForm.match(/id="preset-form-body"/g) ?? []).length, 1, "one creation form, not a top/bottom pair");
-const openEffectAt = managerShell.indexOf("useEffect(() => {", managerShell.indexOf("function PresetManagerDialog"));
-const openEffectEnd = managerShell.indexOf("  const startNew =", openEffectAt);
+const openEffectAt = managerShell.indexOf("useEffect(() => {", managerShell.indexOf("function usePresetFormState"));
+const openEffectEnd = managerShell.indexOf("  }, [open]);", openEffectAt);
 const openEffect = managerShell.slice(openEffectAt, openEffectEnd);
 assert.ok(openEffectAt >= 0 && openEffectEnd > openEffectAt, "the open-state initialization effect is bounded");
 assert.doesNotMatch(openEffect, /\[open,\s*presets,/, "a parent preset refresh cannot reset the active create or edit form");

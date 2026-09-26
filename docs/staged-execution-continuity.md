@@ -316,8 +316,9 @@ contract.
 
 The delete case is intentionally a host-boundary contract pin rather than a
 fake in-process RPC test: it checks the archived-only refusal, owner-bound
-state removal, and row deletion in `server.ts`. A live installed-database
-upgrade exercise remains optional hardening, not a substitute for the committed
+state removal, and row deletion through the composed server capability. A
+live installed-database upgrade exercise remains optional hardening, not a
+substitute for the committed
 fixture matrix.
 
 ### Resolved — deep-link/run evidence

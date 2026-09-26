@@ -39,7 +39,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`lib/automation-rules.mjs`, exact labels with AND semantics), one intent
   heuristic (`lib/github-intent.mjs`), and one creation path with a single
   `github_imports` dedupe claimed before any work starts — manual and
-  automatic never draft the same `repo#number` twice, even racing. Each
+  automatic never draft the same `repo#number` twice, even racing. The
+  dedupe reads liveness by card existence, never by a bare link: a link
+  whose card is gone reads as not-imported everywhere (candidate list,
+  tick, and import), so a deleted card's issue can come back instead of
+  being offered as importable and then refused as in-flight forever. Each
   flow carries its own explicit Start immediately checkbox, both defaulting
   to parked Bucket drafts (creation dialogs default to started instead).
   Manual import adds one shared Isolated worktree checkbox
@@ -76,8 +80,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (band routing wins over passed presets): without an isolated worktree
   destination it fails closed (save refuses, ticks park with the fix
   named). Rules never move cards, merge code, or import behind the user's
-  back. The whole feature is one decoupled module (`server/github-issues.ts`
-  + `components/github/`, pure core in `lib/`): evolve it
+  back. The whole feature is one decoupled module set
+  (`server/github-issues.ts` is the seam; migrations, the client bridge,
+  the issue flow, the rules, the rule RPCs, the comment mirror, and the
+  completion write-back are one slice each, `components/github/` the UI,
+  pure core in `lib/`): evolve it
   there, and `STELOW_GITHUB_ISSUES=0` on the host switches off its
   scheduler, RPCs, and panel button without touching anything else.
   Operator guide (flows, trust model, kill switch, module map):
@@ -395,7 +402,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unjudged routine items per tick (older than 5 minutes) with one yes/no
   — confident blockers promote to escalating with a `model-judged` chip.
   Never demotes, resolves, or re-judges; failures keep deterministic
-  tiers standing.
+  tiers standing. An item with no reason list yet counts as unjudged, so
+  the sweep reaches items the deterministic tiers wrote first.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
@@ -506,7 +514,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
-  with receipt files; review entry surfaces the artifact under decision.
+  with receipt files; review entry surfaces the artifact under decision. The
+  check walks the workflow's whole state dir, so the spec the layout wrote to
+  `plans/spec-product_<v>.md` is found: “the gate artifact does not exist
+  yet” now means the document really is missing.
 - **Workflow classification.** Correct the type freely while a Build card
   is in triage (`updateCardIntent`). After triage, **Card actions →
   Reclassify workflow…** starts a fresh worker from triage on the new route;
@@ -642,8 +653,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
-  also offers one-click install (explicit consent, official installers
-  only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
+  also offers one-click install (explicit consent, SHA-256 verified versioned installers,
+  pinned npm/Go versions, an isolated installer environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
   one-click reinstall-as-update for installed tools. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
@@ -829,10 +840,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `classifier` (classifier.dev labels schema, keyless, Choice only).
   Reads report key presence and source, never
   the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
-  value. Test connection sends one fixed probe with latency. Unconfigured
-  means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
+  value. A key saved here is the key every decision router uses unless the
+  router pins its own. Test connection sends one fixed probe with latency.
+  Unconfigured means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
   blocks every outbound call: reads degrade, api writes and probes refuse
-  naming the variable.
+  naming the variable. A stored key also means a stored key is spent: a host
+  whose endpoint has gone stale pays one real outbound call per auto-continue
+  veto and per inbox-severity tick, each failing soft to the built-in rules.
+  Set the kill switch to stop the calls as well as the writes.
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (no extra calls, default), Decision
@@ -868,6 +883,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —
   the refusal redirects to the card's own state dir.
+- **Board document read** (`findArtifacts`, `bb stelow status --json`). A
+  workflow's documents come from a walk of its whole state dir, not of the
+  top level: the layout puts the machine artifacts one level down
+  (`plans/spec-product_<v>.md`, `plans/spec-tech_<v>.md`, `context/`,
+  `reviews/`, a nested card dir), so a flat listing hid every one of them and
+  published the bookkeeping sitting beside them. The deliverable bar is the
+  manifest's own (`isDeliverableArtifactPath`): `state.md` and its backups,
+  `drafts/`, and non-Markdown receipts stay out, judged on the
+  state-dir-relative path, so the board and the card name the same documents.
+  A nested area the host cannot list contributes nothing rather than failing
+  the read — a half-written workspace still reads as a board.
 - **Worker self-check** (`bb stelow verify [--card] [--tests] [--json]`). The same
   predicates the sync gate enforces, runnable by the worker before
   finishing: per-round PASS/FAIL for research, artifact check for

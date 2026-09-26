@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { scopeFingerprint } from "../lib/scope-fingerprint.mjs";
 import { parseScopeArgs } from "../lib/scope-command.mjs";
 import {
   sanitizeEvidenceRecord,
@@ -12,7 +11,9 @@ import {
 import { isSpecTechFile, plansRelDir } from "../lib/tracking-paths.mjs";
 import { mergePlannedTasks } from "../lib/spec-scope-reader.mjs";
 import { workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
-import { scopeDoneGate, scopeStartGate, type ScopeBatchDb } from "./scope-batch.js";
+import { array, record, text, type LooseRecord } from "./runtime/values.js";
+import { scopeDoneGate, scopeStartGate } from "./scope-batch-gates.js";
+import type { ScopeBatchDb } from "./scope-batch.js";
 
 export type ScopeStatus =
   | "draft"
@@ -28,7 +29,6 @@ export type ScopeStatus =
   | "escalated"
   | "failed";
 
-type LooseRecord = Record<string, unknown>;
 
 export interface ScopeTask {
   id: string;
@@ -76,20 +76,6 @@ const STATUSES = new Set<ScopeStatus>([
   "escalated",
   "failed",
 ]);
-
-function record(value: unknown): LooseRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as LooseRecord
-    : {};
-}
-
-function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-function array(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function strings(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -378,40 +364,3 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
   return { exitCode: 0, stdout: result.stdout };
 }
 
-interface ScopeProgressCard {
-  id: string;
-}
-
-interface ScopeProgressDeps<TCard extends ScopeProgressCard> {
-  getCard: (cardId: string) => TCard | undefined;
-  cardWorkspace: (card: TCard) => Promise<{ path?: string } | null>;
-  publish: (cardId: string) => void;
-}
-
-export function createScopeProgressSync<TCard extends ScopeProgressCard>(
-  deps: ScopeProgressDeps<TCard>,
-) {
-  const prints = new Map<string, string>();
-  async function sync(cardId: string): Promise<void> {
-    try {
-      const card = deps.getCard(cardId);
-      if (!card) {
-        prints.delete(cardId);
-        return;
-      }
-      const workspace = await deps.cardWorkspace(card);
-      const print = workspace?.path
-        ? scopeFingerprint(loadCardScopes(workspace.path, card.id))
-        : "";
-      const previous = prints.get(cardId);
-      prints.set(cardId, print);
-      if (previous !== undefined && previous !== print) deps.publish(cardId);
-    } catch {
-      // Advisory watch: the next reconcile tick retries.
-    }
-  }
-  function prune(liveIds: ReadonlySet<string>): void {
-    for (const id of prints.keys()) if (!liveIds.has(id)) prints.delete(id);
-  }
-  return { sync, prune };
-}

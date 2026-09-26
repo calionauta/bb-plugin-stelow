@@ -31,9 +31,9 @@ assert.equal(contextAskGate({ ...refactorAtContext, kind: "research" }).allowed,
 // Host wiring: the ask handler enforces the gate on slug truth before
 // anything persists — a refusal never pings the human. `--force` passes
 // through the group parser untouched (unknown flags are ignored there).
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
-assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (intent gate inside)");
-assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
-assert.match(serverSource, /forced: argv\.includes\("--force"\)/, "the explicit override reaches the gate");
+const askGateSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8");
+assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (intent gate inside)");
+assert.match(askGateSource, /stage: gateCard \? await deps\.cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
+assert.match(askGateSource, /forced: argv\.includes\("--force"\)/, "the explicit override reaches the gate");
 
 console.log("context ask gate test ok: context:5 reduced asks remain possible, force opts back in");

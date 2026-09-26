@@ -22,7 +22,11 @@ const valid = {
   evidence: ["simulation:case-2"],
   requestedBy: "interface-contrast",
 };
-assert.equal(validateExecutionArtifacts({ recipe, contents: { "scope-map-challenge.json": JSON.stringify(valid) } }).ok, true, "valid challenge passes execution artifact validation");
+assert.equal(
+  validateExecutionArtifacts({ recipe, contents: { "scope-map-challenge.json": JSON.stringify(valid) } }).ok,
+  true,
+  "valid challenge passes execution artifact validation",
+);
 
 const invalid = structuredClone(valid);
 invalid.affectedScopeIds = [];

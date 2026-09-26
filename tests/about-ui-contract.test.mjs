@@ -10,7 +10,8 @@ const tools = readFileSync(new URL("../components/settings/host-tools-section.ts
 const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../components/settings/workflow-dependency-card.tsx", import.meta.url), "utf8");
 const onboarding = readFileSync(new URL("../components/settings/preset-onboarding.tsx", import.meta.url), "utf8");
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+const dependency = readFileSync(new URL("../server/runtime/workflow-dependency.ts", import.meta.url), "utf8");
+const contract = readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8");
 
 test("app mounts About through the focused settings module", () => {
   assert.match(app, /<StelowPanelRoute\b/, "the app shell mounts the extracted panel route");
@@ -48,9 +49,17 @@ test("BB Workflows status and explicit setup are wired into About and onboarding
   assert.match(workflow, /Native execution is available for eligible Stelow recipes/);
   assert.match(onboarding, /<WorkflowDependencyCard compact \/>/);
   assert.match(about, /<WorkflowDependencyCard \/>/);
-  assert.match(server, /"plugin", "install", "builtin:workflows"/);
-  assert.match(server, /"plugin", "enable", "workflows"/);
-  assert.match(server, /workflowDependencyStatus/);
+  assert.match(dependency, /"plugin", "install", "builtin:workflows"/, "install goes through the host CLI, on request only");
+  assert.match(dependency, /"plugin", "enable", "workflows"/, "enable goes through the host CLI, on request only");
+  assert.match(dependency, /workflowDependencyStatus/, "the status is one decision over one CLI answer");
+  assert.match(contract, /workflowDependencyStatus: \{/, "the dependency status is a contracted RPC");
+  assert.match(contract, /installWorkflowDependency: \{/, "install is a contracted RPC");
+  assert.match(contract, /enableWorkflowDependency: \{/, "enable is a contracted RPC");
+  assert.doesNotMatch(
+    [workflow, onboarding, about].join("\n"),
+    /WorkflowDependencyCard[^>]*onInstall|fetch\(|child_process/,
+    "the card asks through the contract; it never shells out itself",
+  );
 });
 
 test("tool rows preserve exclusive install and resilient presentation", () => {

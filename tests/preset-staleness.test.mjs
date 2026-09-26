@@ -101,24 +101,46 @@ assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'li
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'archived'").get().preset_restart_pending, 0, "archived cards are never touched");
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'workerless'").get().preset_restart_pending, 0, "workerless cards are never touched");
 
-// Server wiring: every preset-mutating RPC fans out through the helper.
-// A new preset write path that skips re-evaluation fails here.
+// Preset server wiring: every mutating RPC fans out through the extracted
+// feature seam. A new write path that skips re-evaluation fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-function handlerBody(name) {
-  const at = server.indexOf(name);
-  assert.ok(at >= 0, `${name} exists`);
-  const end = server.indexOf("\n    },\n", at);
-  assert.ok(end > at, `${name} body is bounded`);
-  return server.slice(at, end);
-}
-const reliableBody = handlerBody("async assignReliablePreset({ presetId }) {");
-assert.ok(reliableBody.includes("liveWorkerCards(db, null)"), "reliable assign re-evaluates all live workers");
-const bandBody = handlerBody("async setBandPreset({ band, presetId }) {");
-assert.ok(bandBody.includes("liveWorkerCards(db, [band])"), "band assign re-evaluates exactly that band's workers");
-assert.ok(bandBody.includes("refreshRestartPending(db, card.id,"), "band assign recomputes restart-pending");
-const deleteBody = handlerBody("async deletePreset({ id }) {");
-assert.ok(deleteBody.includes("liveWorkerCards(db, null)"), "preset delete re-evaluates all live workers (band rows cascade silently)");
-assert.match(server, /preset = getReliablePresetForBand\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/, "reseed resolves the reliable-tier preset like any fresh start");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
+].join("\n");
+const presetAccessors = [
+  readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-workers.ts"), "utf8"),
+].join("\n");
+const presetHandlers = [
+  readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-handler-assignments.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-handler-crud.ts"), "utf8"),
+].join("\n");
+assert.match(
+  presetHandlers,
+  /table === "reliable_preset"\) accessors\.refreshLiveWorkers\(null\)/,
+  "reliable assign re-evaluates all live workers",
+);
+assert.match(
+  presetHandlers,
+  /accessors\.refreshLiveWorkers\(\[band\]\)/,
+  "band assign re-evaluates exactly that band's workers",
+);
+assert.match(
+  presetHandlers,
+  /DELETE FROM presets WHERE id = \?[\s\S]*accessors\.refreshLiveWorkers\(null\)/,
+  "preset delete re-evaluates all live workers (band rows cascade silently)",
+);
+assert.match(
+  presetAccessors,
+  /refreshRestartPending\([\s\S]*effective\.id/,
+  "band and reliable mutations recompute restart-pending",
+);
+assert.match(
+  server,
+  /return deps\.getReliablePreset\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/,
+  "reseed resolves the reliable-tier preset like any fresh start",
+);
 
 console.log("preset staleness test ok: band mapping, live filtering, cascade composition, RPC fan-out");

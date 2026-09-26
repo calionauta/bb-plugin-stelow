@@ -21,7 +21,11 @@ const valid = {
   options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
   nextAction: "Continue to the bounded comparison.",
 };
-assert.equal(validateExecutionArtifacts({ recipe, contents: { "interfaces/contrast.json": JSON.stringify(valid) } }).ok, true, "valid contrast receipt passes execution artifact validation");
+assert.equal(
+  validateExecutionArtifacts({ recipe, contents: { "interfaces/contrast.json": JSON.stringify(valid) } }).ok,
+  true,
+  "valid contrast receipt passes execution artifact validation",
+);
 
 const invalid = structuredClone(valid);
 invalid.authority = "agent";

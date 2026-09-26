@@ -8,8 +8,8 @@ assert.equal(technique.skill, "stelow-product-scope-mapping", "Explore delegates
 assert.equal(technique.primaryArtifact, "explore-scope-map.md", "Explore has one readable primary artifact");
 assert.deepEqual(technique.optionalEvidence, ["scope-map.json"], "machine evidence is optional and does not replace Markdown");
 assert.ok(TECHNIQUE_CATALOG.some((entry) => entry.id === "scope-mapping"), "Scope Mapping is in the Explore catalog");
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
-assert.match(server, /stage\.primaryArtifact \?\? `explore-\$\{stage\.id\}\.md`/, "Explore prompt uses the declared primary artifact");
-assert.match(server, /primaryArtifact/, "Explore prompt preserves the catalog artifact contract");
+const prompts = readFileSync(new URL("../server/runtime/track-prompts.ts", import.meta.url), "utf8");
+assert.match(prompts, /stage\.primaryArtifact \?\? `explore-\$\{stage\.id\}\.md`/, "Explore prompt uses the declared primary artifact");
+assert.match(prompts, /primaryArtifact/, "Explore prompt preserves the catalog artifact contract");
 
 console.log("explore scope map test ok: catalog, skill, primary artifact, optional evidence, prompt wiring");

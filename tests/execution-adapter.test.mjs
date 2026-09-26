@@ -85,16 +85,17 @@ assert.deepEqual(normalizeRun({ status: "needs input" }), { state: "needs_input"
 assert.throws(() => assertCapabilities(["resume"], report), /missing capabilities: resume/);
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const nativeSource = readFileSync(join(root, "server", "execution-native.ts"), "utf8");
-const lifecycleSource = readFileSync(join(root, "server", "execution-lifecycle.ts"), "utf8");
-const reconcileSource = readFileSync(join(root, "server", "execution-reconcile.ts"), "utf8");
+const nativeSource = readFileSync(join(root, "server", "execution-native-launch.ts"), "utf8");
+const lifecycleResume = readFileSync(join(root, "server", "execution-lifecycle-resume.ts"), "utf8");
+const lifecycleStop = readFileSync(join(root, "server", "execution-lifecycle-stop.ts"), "utf8");
+const reconcileRun = readFileSync(join(root, "server", "execution-reconcile-run.ts"), "utf8");
 const bridgeSource = readFileSync(join(root, "server", "bb-workflow-bridge.ts"), "utf8");
 assert.match(bridgeSource, /process\.env\.BB_CLI \|\| "bb"/, "the native bridge uses the host-resolved BB binary");
 assert.match(bridgeSource, /\["thread", "show", ref\.threadId, "--json"\]/, "native preflight verifies the card thread is addressable");
 assert.match(bridgeSource, /!thread\.environmentId \|\| !\["active", "idle"\]\.includes\(thread\.status \?\? ""\)/, "native preflight refuses pending or environmentless workers");
 assert.match(nativeSource, /adapterFor\(run\)\.run\(/, "native launch uses adapter.run()");
-assert.match(reconcileSource, /native\.adapterFor\(run\)\.status\(/, "reconciliation uses adapter.status()");
-assert.match(lifecycleSource, /native\.adapterFor\(run\)\.resume\(/, "boundary answers use adapter.resume()");
-assert.match(lifecycleSource, /native\.adapterFor\(run\)\.cancel\(/, "owned-run cancellation uses adapter.cancel()");
+assert.match(reconcileRun, /native\.adapterFor\(run\)\.status\(/, "reconciliation uses adapter.status()");
+assert.match(lifecycleResume, /native\.adapterFor\(run\)\.resume\(/, "boundary answers use adapter.resume()");
+assert.match(lifecycleStop, /native\.adapterFor\(run\)\.cancel\(/, "owned-run cancellation uses adapter.cancel()");
 
 console.log("execution adapter test ok: capabilities, normalization, explicit refusal, production wiring");

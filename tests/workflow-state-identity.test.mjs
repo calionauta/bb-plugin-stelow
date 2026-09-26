@@ -53,8 +53,34 @@ assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/sw-second-
 assert.equal(workflowEntryForOwner([firstCard, secondCard], "card_third"), null, "an unknown owner reads no scopes");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"),
+    "utf8",
+  ),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards.ts"), "utf8"),
+  // The seed owns its own module; the wiring layers only call it.
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/workflow-seeding.ts"),
+    "utf8",
+  ),
+  ...[
+    "card-surfaces",
+    "card-creator",
+    "gate-surfaces",
+    "execution-surfaces",
+    "host-surfaces",
+    "cli-surfaces",
+    "rpc-surfaces",
+  ].map((name) =>
+    readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        `../server/runtime/wiring/${name}.ts`,
+      ),
+      "utf8",
+    ),
+  ),
 ].join("\n");
 const scopeReads = [...serverSource.matchAll(/(?<!function )loadCardScopes\(([^,]+),\s*([^,)]+)/g)].map((match) => match[2].trim());
 assert.ok(scopeReads.length > 0, "the card-scope read sites are covered by this contract");

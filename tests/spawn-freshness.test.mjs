@@ -10,14 +10,19 @@ import { fileURLToPath } from "node:url";
 // history-carrying prompt builder fails here first — consciously update
 // this file when the spawn topology legitimately changes.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
+const protocols = readFileSync(join(root, "server", "runtime", "plugin-protocols.ts"), "utf8");
+const disposableSpawn = readFileSync(join(root, "server", "runtime", "disposable-spawn.ts"), "utf8");
+const presetJudge = readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8");
+const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const workerBackend = readdirSync(join(root, "server"))
   .filter((file) => /^workers.*\.ts$/.test(file))
   .sort()
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
-const spawnSources = `${server}\n${drafting}\n${workerBackend}`;
+const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
+const spawnSources = `${server}\n${disposableSpawn}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${reviewCli}\n${workerBackend}`;
 
 // One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
 // the disposable helper remain. All card-worker paths use the worker seam.
@@ -33,7 +38,7 @@ assert.equal(
 );
 assert.doesNotMatch(server, /delegation-site: worker-spawn/, "server.ts owns no direct worker spawn");
 assert.equal(
-  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g) ?? []).length,
+  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\s*(?:\{|[\w.]+\()/g) ?? []).length,
   4,
   "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
 );
@@ -55,7 +60,7 @@ for (const match of spawnSources.matchAll(/workers\.spawn\(\{|bb\.sdk\.threads\.
 // Disposable blocks route through the helper: same history bans. The helper
 // itself owns the only other spawn calls (with-owner, then the strict-host
 // fallback without) — lifecycle ownership travels there, never history.
-for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g)) {
+for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\s*\{/g)) {
   const block = spawnSources.slice(match.index, match.index + 900);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `disposable spawn block inherits no history (${token})`);
@@ -72,6 +77,7 @@ for (const line of server.split("\n")) {
     || line.includes("Previous worker thread:")
     || line.includes("previousThreadId: null")
     || line.includes("previousThreadId,")
+    || line.trim() === "previousThreadId"
     || line.includes("}, previousThreadId)")
     || line.includes("previousThreadId }")
     || line.includes("const previousThreadId = card.worker_thread_id")
@@ -85,24 +91,35 @@ for (const line of server.split("\n")) {
 // Disposable spawns build their prompt through the leashed lib builders —
 // the leash (no files, no commands, no questions) is tested where it lives,
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
-assert.match(server, /buildReviewPrompt\(\{ cardName:/, "review prompts go through the lib builder");
-assert.match(drafting, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
+assert.match(reviewCli, /buildReviewPrompt\(\{\s*cardName:/, "review prompts go through the lib builder");
+assert.match(drafting, /buildDraftPrompt\(\{\s*cardName:/, "draft prompts go through the lib builder");
 for (const [source, name] of [
-  [server, "reviewThread = await spawnDisposable({"],
-  [drafting, "return deps.spawnDisposable({"],
-  [server, "preThread = await spawnDisposable({"],
+  [reviewCli, "const thread = await deps.spawnDisposable("],
+  [drafting, "return deps.spawnDisposable("],
 ]) {
   const at = source.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
-  assert.ok(source.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
+  assert.ok(
+    source.slice(at, at + 600).includes('visibility: "hidden"') ||
+      // The review site builds its args in a named helper next to the call;
+      // the helper is the one that must keep the reviewer hidden.
+      source.includes('reviewSpawnArgs(card, prompt, params, environment)') &&
+        source.includes('visibility: "hidden" as const'),
+    "disposable spawns stay hidden",
+  );
 }
+assert.ok(
+  reviewPreflight.includes("const preThread = await deps.spawnDisposable("),
+  "gate pre-review uses the disposable seam",
+);
+assert.ok(reviewPreflight.includes('visibility: "hidden" as const'), "gate pre-review stays hidden");
 assert.ok(drafting.includes("lifecycleOwnerThreadId: card.worker_thread_id"), "drafts die with their worker");
-assert.ok(drafting.includes('return deps.spawnDisposable({'), "drafting owns delegated draft spawns");
+assert.match(drafting, /return deps\.spawnDisposable\(\s*\{/, "drafting owns delegated draft spawns");
 // Card titles are ownerless by design: they need no worker, and the
 // rename-guard plus silent failure cover every race — an owner link would
 // add lifecycle without meaning.
 const titleAt = drafting.indexOf(
-  "return deps.spawnDisposable({",
+  "return deps.spawnDisposable(",
   drafting.indexOf("async function spawnTitle"),
 );
 assert.ok(titleAt >= 0, "titling rides the disposable path as a registered site");
@@ -112,11 +129,19 @@ assert.ok(drafting.slice(titleAt, titleAt + 1200).includes('"card-title"'), "tit
 // fork, resume inside spawn blocks) still stand untouched.
 // Older daemons that reject the field instead of stripping it get one retry
 // without it, so disposables never break on strict hosts.
-assert.match(server, /async function spawnDisposable\(args: SpawnArgs, site: string\)/, "disposable spawns go through the registry-validated helper");
-assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-field rejection retries once without the owner");
+assert.match(
+  disposableSpawn,
+  /async function spawnDisposable\(\s*args: SpawnArgs,\s*site: string,/,
+  "disposable spawns go through the registry-validated helper",
+);
+assert.match(
+  disposableSpawn,
+  /unrecognized key\/i\.test\(message\)/,
+  "an unrecognized-field rejection retries once without the owner",
+);
 
 // The owner rule teaches fresh delegation: full task in the call, never a
 // fork, never sibling chatter.
-assert.match(server, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
+assert.match(protocols, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
 
 console.log("spawn freshness test ok: worker seam and judge pinned, no fork path, leashed builders, fresh rule taught");

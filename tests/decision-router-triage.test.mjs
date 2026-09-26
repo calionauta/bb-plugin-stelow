@@ -82,7 +82,9 @@ assert.equal(isDecisionApiDisabled(undefined), false, "a missing env leaves the 
 // any of these gates fails here before a misconfigured point spends a
 // call or blocks a spawn.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const seams = readFileSync(join(root, "server", "decision-api-seams.ts"), "utf8");
+// The seed seam is its own module: the router has several, and the kill switch
+// guard belongs to the one that reads config first.
+const seams = readFileSync(join(root, "server", "decision-seed.ts"), "utf8");
 assert.match(seams, /if \(isDecisionApiDisabled\(process\.env\)\) return "unknown"/, "the kill switch short-circuits seeding before any config read");
 assert.match(seams, /if \(mode !== "api" && mode !== "preset"\) return "unknown"/, "rules/unconfigured points seed unknown without calling out");
 assert.match(seams, /if \(!presetId\) return "unknown"/, "preset mode without a configured judge seeds unknown (never an implicit preset)");

@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { isExpiredQuestionId, expiredQuestionRowId, expiredQuestionId, parseAnswerArgs, buildAnswerPayload } from "../lib/question-answer-recording.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+// The verb, its handler, and the refusals now live in three owned modules: the
+// CLI family, the registry entry, and the answer doors it calls. Read each
+// owner rather than a fat composition root.
+const answerCommand = readFileSync(join(root, "server/runtime/cli/cli-answer.ts"), "utf8");
+const registry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8");
+const doors = readFileSync(join(root, "server/runtime/question-answers.ts"), "utf8");
 
 // The recovery/live discriminator is the only thing telling the two answering
 // doors apart in the CLI payload. Break the prefix and both doors start
@@ -19,8 +24,8 @@ assert.equal(expiredQuestionId("qexp_1"), "expired:qexp_1", "the id round-trips"
 
 // The verb exists and is documented, so the door is discoverable rather than
 // a hidden RPC. Remove the registration and the CLI can never answer a card.
-assert.match(server, /name: "answer",\n\s*summary: "Answer a card's pending questions/, "bb stelow answer is a contracted CLI verb");
-assert.match(server, /if \(argv\[0\] === "answer"\)/, "the verb has a handler");
+assert.match(registry, /command\(\s*\n\s*"answer",\s*\n\s*"Answer a card's pending questions/, "bb stelow answer is a contracted CLI verb");
+assert.match(answerCommand, /if \(argv\[0\] !== "answer"\) return null;/, "the verb has a handler");
 
 // A typo'd flag must refuse instead of silently answering the wrong thing:
 // the dangerous case is a dropped --question, which would otherwise attach an
@@ -57,15 +62,15 @@ assert.deepEqual(
 
 // Answering is atomic per door: mixing live and recovery ids in one call is
 // refused instead of half-answering, because each door answers its own set.
-assert.match(server, /Answer live and recovery questions in separate calls/, "the two doors are never mixed in one call");
+assert.match(answerCommand, /Answer live and recovery questions in separate calls/, "the two doors are never mixed in one call");
 
 // The CLI delegates to the shared implementations instead of re-implementing
 // the recording rule — a second copy is how the two doors drifted before.
-assert.match(server, /\? await answerQuestions\(\{ cardId: answerCard\.id, answers: live \}\)/, "the CLI calls the shared live door");
-assert.match(server, /: await answerExpiredQuestions\(\{/, "the CLI calls the shared recovery door");
+assert.match(answerCommand, /doors\.answerQuestions\(\{ cardId, answers \}\)/, "the CLI calls the shared live door");
+assert.match(answerCommand, /doors\.answerExpiredQuestions\(\{/, "the CLI calls the shared recovery door");
 // The argv contract is parsed in lib/, so it is unit-testable without a host
 // and cannot drift from the server's own copy.
-assert.match(server, /const parsedAnswer = parseAnswerArgs\(argv\.slice\(1\)\);/, "the CLI delegates argv parsing to the tested lib helper");
+assert.match(answerCommand, /parseAnswerArgs\(argv\.slice\(1\)\)/, "the CLI delegates argv parsing to the tested lib helper");
 
 console.log("question answer CLI test ok: one door per call, unknown flags refuse, shared handlers");
 
@@ -73,11 +78,13 @@ console.log("question answer CLI test ok: one door per call, unknown flags refus
 // bare row id used to say "No open question awaits an answer on this card" —
 // blaming the card for a question that was open, and leaving the caller with
 // no idea which id space was wanted. Every refusal here names the exit.
-const askRefusal = readFileSync(join(root, "server.ts"), "utf8");
 assert.match(
-  askRefusal,
-  /error: `That id is not a live interaction\. Recovery questions use \$\{EXPIRED_QUESTION_ID_PREFIX\}/,
+  doors,
+  /`That id is not a live interaction\. Recovery questions use \$\{EXPIRED_QUESTION_ID_PREFIX\}/,
   "a raw id aimed at a recovery question says which id space it wants",
 );
-assert.match(askRefusal, /Still open: \$\{stillOpen\.join\(", "\)\}/, "an incomplete batch names exactly which questions are still open");
-assert.match(askRefusal, /Recovery questions use `expired:<id>`/, "the empty-refusal names the accepted form too");
+assert.match(doors, /Still open: \$\{stillOpen\.join\(", "\)\}/, "an incomplete batch names exactly which questions are still open");
+assert.ok(
+  doors.includes("Recovery questions use \\`${EXPIRED_QUESTION_ID_PREFIX}<id>\\`"),
+  "the empty-refusal names the accepted form too",
+);

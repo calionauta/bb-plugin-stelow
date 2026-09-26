@@ -17,9 +17,22 @@ const valid = {
   provenance: ["simulation:case-1"],
   approval: { receiptId: "approval-1", approvedBy: "simulation" },
   openDecisions: [],
-  scopes: [{ id: "scope-1", title: "One scope", outcome: "Delivers the bounded outcome.", capabilities: ["core"], inScope: ["one behavior"], outOfScope: [], dependsOn: [], status: "current" }],
+  scopes: [{
+    id: "scope-1",
+    title: "One scope",
+    outcome: "Delivers the bounded outcome.",
+    capabilities: ["core"],
+    inScope: ["one behavior"],
+    outOfScope: [],
+    dependsOn: [],
+    status: "current",
+  }],
 };
-assert.equal(validateExecutionArtifacts({ recipe, contents: { "scope-map.json": JSON.stringify(valid) } }).ok, true, "valid scope map passes execution artifact validation");
+assert.equal(
+  validateExecutionArtifacts({ recipe, contents: { "scope-map.json": JSON.stringify(valid) } }).ok,
+  true,
+  "valid scope map passes execution artifact validation",
+);
 
 const invalid = structuredClone(valid);
 invalid.scopes[0].dependsOn = ["scope-1", "scope-1"];

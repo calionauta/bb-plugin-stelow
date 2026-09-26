@@ -54,24 +54,34 @@ assert.equal(vetoed.source, "api", "the veto is named as a model judgment");
 // proceed:true from a low signal, and the call site only consults the veto
 // after the heuristic already allowed the resume.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const heuristicAt = server.indexOf("const autoDecision = shouldAutoContinue({");
-const vetoAt = server.indexOf("const vetted = await vetAutoContinueNudge(");
+// The call site lives in the build thread sync that resumes a worker.
+const sync = readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8");
+const heuristicAt = sync.indexOf("const decision = shouldAutoContinue({");
+const vetoAt = sync.indexOf("const vetoed = decision.proceed &&");
 assert.ok(heuristicAt >= 0 && vetoAt > heuristicAt, "the heuristic gate runs before the veto is ever consulted");
 assert.match(
-  server,
-  /if \(autoDecision\.proceed\) \{\s*\/\/ Decision-API veto/,
-  "the veto lives strictly inside the heuristic-allowed branch — a heuristic refusal never reaches it",
+  sync,
+  /const vetoed = decision\.proceed &&\s*!\(await deps\.vetContinuation\(/,
+  "the veto is short-circuited behind the heuristic — a heuristic refusal never reaches the model",
 );
-assert.match(server, /if \(!vetted\) \{\s*vetoedResume = true;/, "a veto falls through to the paused path with no writes of its own");
+assert.match(
+  sync,
+  /if \(decision\.proceed && !vetoed && await resumeWorker\(/,
+  "a resume needs the heuristic AND the absence of a veto",
+);
+assert.match(
+  sync,
+  /persistStandardIdle\(deps, snapshot, transitioning, vetoed\);/,
+  "a veto falls through to the paused path with no writes of its own",
+);
 
 // Kill-switch and mode gates keep the heuristic: the seam returns true
 // (proceed) without calling out when disabled or not in api mode.
-const seams = readFileSync(join(root, "server", "decision-api-seams.ts"), "utf8");
+const seams = readFileSync(join(root, "server", "decision-auto-continue.ts"), "utf8");
 assert.ok(seams.includes("isDecisionApiDisabled(process.env)"), "the kill switch covers the veto");
 assert.ok(seams.includes('ignores preset mode'), "preset mode is refused on the hot path with the cost reason");
 assert.ok(
-  (seams.slice(seams.indexOf("async function vetAutoContinue("), seams.indexOf("async function maybeBumpSeverity")).match(/return true/g) ?? []).length >= 3,
+  (seams.slice(seams.indexOf("async function vetAutoContinue("), seams.length).match(/return true/g) ?? []).length >= 3,
   "empty output, mode/kill-switch gates, and catch-all all keep the heuristic standing",
 );
 

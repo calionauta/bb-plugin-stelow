@@ -8,6 +8,7 @@ export interface ValidationFailure {
 }
 
 export declare function wordCount(text: unknown): number;
+export declare const CHECK_KINDS: string[];
 export declare function tableRowCount(text: unknown): number;
 export declare function sectionItemCount(text: unknown, heading: string): number;
 export declare function fieldBlockCount(text: unknown, marker: string, fields: string[]): number;

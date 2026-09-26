@@ -28,7 +28,11 @@ assert.deepEqual(nativeNeedsInput(input), {
   answerSchema: input.result.answerSchema,
 }, "native needs_input preserves the durable boundary contract");
 
-const source = renderInlineWorkflowScript({ id: "interface-contrast", tasks: [{ id: "decision", output: "decision.json", human_boundary: "coordinator" }] }, { localRunId: "exec-1" });
+const coordinatorRecipe = {
+  id: "interface-contrast",
+  tasks: [{ id: "decision", output: "decision.json", human_boundary: "coordinator" }],
+};
+const source = renderInlineWorkflowScript(coordinatorRecipe, { localRunId: "exec-1" });
 assert.match(source, /contractId/, "rendered workflow propagates the contract ID");
 assert.match(source, /boundaryId/, "rendered workflow propagates the boundary ID");
 assert.match(source, /answerSchema/, "rendered workflow propagates the answer schema");
@@ -39,12 +43,19 @@ assert.match(realSource, /contractId/, "real Interface Contrast renderer propaga
 assert.match(realSource, /boundaryId/, "real Interface Contrast renderer propagates the boundary ID");
 assert.match(realSource, /answerSchema/, "real Interface Contrast renderer propagates the answer schema");
 
-const reconcileSource = readFileSync(new URL("../server/execution-reconcile.ts", import.meta.url), "utf8");
-const lifecycleSource = readFileSync(new URL("../server/execution-lifecycle.ts", import.meta.url), "utf8");
-assert.match(reconcileSource, /normalized === "needs_input"/, "reconciler reads boundaries from needs_input states");
-assert.doesNotMatch(reconcileSource, /normalized === "succeeded"[\s\S]{0,80}nativeNeedsInput/, "reconciler does not misclassify needs_input as succeeded");
-assert.match(reconcileSource, /boundaryRunPatch/, "reconciler persists the full native boundary contract");
-assert.match(reconcileSource, /invalid-native-boundary/, "reconciler rejects malformed native boundaries");
+// The reconciler and the resume rule are separate slice modules now, so each
+// pin names the file that owns the behavior it guards.
+const reconcileSource = readFileSync(new URL("../server/execution-reconcile-run.ts", import.meta.url), "utf8");
+const boundarySource = readFileSync(new URL("../server/execution-reconcile-boundary.ts", import.meta.url), "utf8");
+const lifecycleSource = readFileSync(new URL("../server/execution-lifecycle-resume.ts", import.meta.url), "utf8");
+assert.match(reconcileSource, /native\.state === "needs_input"/, "reconciler reads boundaries from needs_input states");
+assert.doesNotMatch(
+  reconcileSource,
+  /state === "succeeded" && run\.normalizedStatus !== "needs_input"[\s\S]{0,80}nativeNeedsInput/,
+  "reconciler does not misclassify needs_input as succeeded",
+);
+assert.match(boundarySource, /boundaryRunPatch/, "reconciler persists the full native boundary contract");
+assert.match(boundarySource, /invalid-native-boundary/, "reconciler rejects malformed native boundaries");
 assert.match(lifecycleSource, /resumeArtifactRoot\(run\.artifactRoot\)/, "native resume keeps completed outputs in the original artifact root");
 assert.match(lifecycleSource, /boundaryAnswerError/, "resume validates the answered boundary before creating a child run");
 

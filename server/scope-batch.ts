@@ -61,11 +61,6 @@ export interface BatchScopeClaim {
   files: string[];
 }
 
-function scopeIdOf(scope: BatchScope): string | null {
-  const id = scope?.scopeId ?? scope?.id;
-  return typeof id === "string" && id ? id : null;
-}
-
 /**
  * Admission path: a scope-batch admits only when the transitive file sets
  * of all scopes are pairwise disjoint. Overlap refuses the whole batch
@@ -313,91 +308,4 @@ export function isBatchCoordinated(db: ScopeBatchDb, cardId: string): boolean {
 
 export function batchScopeFiles(scope: BatchScope): string[] {
   return expandScopeFiles(scope);
-}
-
-/**
- * Scope-start gate for the `scope start` CLI path: when batch
- * coordination is active for the card, the starting scope must be
- * partition-disjoint from its in-progress siblings and must claim its
- * files before the helper transition runs. Dormant otherwise, so legacy
- * single-scope flows pass through untouched.
- */
-export function scopeStartGate(
-  db: ScopeBatchDb,
-  args: { cardId: string; scopeId: string; workspacePath: string; scopes: BatchScope[] },
-): { ok: true; coordinated: boolean }
-  | { ok: false; code: string; reason: string; conflicts?: unknown } {
-  const batches = batchIdsForCard(db, args.cardId);
-  if (batches.length === 0) return { ok: true, coordinated: false };
-  const batchId = batches[0]!;
-  const starting = args.scopes.find((scope) => scopeIdOf(scope) === args.scopeId);
-  const siblings = args.scopes.filter((scope) => {
-    const id = scopeIdOf(scope);
-    return id && id !== args.scopeId && scope?.status === "in-progress";
-  });
-  const admission = admitScopeBatchRun(starting ? [...siblings, starting] : siblings);
-  if (!admission.admitted) {
-    return {
-      ok: false,
-      code: "PARTITION_OVERLAP",
-      reason: `scope ${args.scopeId} overlaps an in-progress sibling; the batch refuses before any spawn.`,
-      conflicts: admission.overlaps,
-    };
-  }
-  const files = starting ? batchScopeFiles(starting) : [];
-  if (files.length === 0) return { ok: true, coordinated: true };
-  const claimed = claimScopeBatchRun(db, {
-    cardId: args.cardId,
-    batchId,
-    workspacePath: args.workspacePath,
-    scopes: [{ scopeId: args.scopeId, files }],
-  });
-  if (!claimed.ok) {
-    return {
-      ok: false,
-      code: "SCOPE_BATCH_CONFLICT",
-      reason: `scope ${args.scopeId} cannot claim its files; park it and work an independent scope.`,
-      conflicts: claimed.conflicts,
-    };
-  }
-  return { ok: true, coordinated: true };
-}
-
-/**
- * Scope-done gate for the `scope done` CLI path: when batch coordination
- * is active, the completing scope must still hold live batch claims
- * covering its target files (pre-write proof), then its claims release
- * exactly once with waiter notify. Dormant otherwise.
- */
-export function scopeDoneGate(
-  db: ScopeBatchDb,
-  args: { cardId: string; scopeId: string; workspacePath: string; targetFiles?: string[] },
-): { ok: true; coordinated: boolean; released?: number }
-  | { ok: false; code: string; reason: string } {
-  const batches = batchIdsForCard(db, args.cardId);
-  if (batches.length === 0) return { ok: true, coordinated: false };
-  const batchId = batches[0]!;
-  const tag = `${batchId}::${args.scopeId}`;
-  let live: Array<{ file_path: string }> = [];
-  try {
-    live = db.prepare(
-      "SELECT file_path FROM card_claims WHERE card_id = ? AND scope = ?",
-    ).all(args.cardId, tag) as Array<{ file_path: string }>;
-  } catch {
-    return { ok: true, coordinated: true, released: 0 };
-  }
-  const held = live.map((row) => ({ scopeId: tag, file: row.file_path, checkout: args.workspacePath }));
-  for (const file of args.targetFiles ?? []) {
-    try {
-      guardScopeBatchWrite({ scopeId: tag, file, checkout: args.workspacePath }, held);
-    } catch {
-      return {
-        ok: false,
-        code: "CLAIM_REQUIRED",
-        reason: `scope ${args.scopeId} no longer holds a live claim on ${file}; re-acquire before completing.`,
-      };
-    }
-  }
-  const done = finishScopeBatchRun(db, { batchId, scopeId: args.scopeId, cardId: args.cardId, outcome: "succeeded" });
-  return { ok: true, coordinated: true, released: done.released.length };
 }

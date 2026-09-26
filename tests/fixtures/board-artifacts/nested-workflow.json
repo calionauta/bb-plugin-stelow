@@ -1,0 +1,91 @@
+{
+  "_comment": [
+    "A workflow state dir as the host reports it, in the shape the board read",
+    "actually receives: one listing per directory with `kind` on every entry,",
+    "and the content of every file it may read. Mirrors the real layout",
+    "(lib/tracking-paths.mjs): state.md and audit.md at the state-dir root,",
+    "machine artifacts one level down in plans/ and context/, plus reviews/,",
+    "rounds/, drafts/, locks/, and a nested explore card dir. The bookkeeping",
+    "here (state.md, state.md.bak, drafts/, non-markdown) is the half that",
+    "lib/artifact-manifest.mjs calls non-deliverable: keep it in this fixture,",
+    "because its absence is exactly what a bookkeeping-exclusion regression",
+    "would reintroduce silently."
+  ],
+  "root": "/w",
+  "_comment_workflow": "The one stelow.json tracking entry: the test serves it as the tracking file and hands the same record to findArtifacts.",
+  "workflow": {
+    "workflowId": "card_y6dnitl6",
+    "dirHash": "sw-card_y6dnitl6",
+    "created": "2026-09-26T09:12:00.000Z",
+    "name": "Add a read-only scope map view",
+    "status": "in-progress",
+    "stage": { "current_stage": "planning" },
+    "config": { "appetite": "Core", "review_gates": ["spec", "interface", "scope"] }
+  },
+  "dirs": {
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6": [
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/state.md", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/state.md.bak", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/audit.md", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans", "kind": "directory" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context", "kind": "directory" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/reviews", "kind": "directory" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/drafts", "kind": "directory" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/locks", "kind": "directory" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore", "kind": "directory" }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans": [
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-product_v2.md", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-tech_v1.md", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/notes.md", "kind": "file" }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context": [
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context/context.md", "kind": "file" },
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context/recon-receipt.json", "kind": "file" }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/reviews": [
+      {
+        "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/reviews/review-2026-09-26T09-40-00Z.md",
+        "kind": "file"
+      }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/drafts": [
+      {
+        "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/drafts/draft-2026-09-26T09-30-00Z.md",
+        "kind": "file"
+      }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/locks": [
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/locks/scope-plan-y6dn.lock", "kind": "file" }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore": [
+      { "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore/card_z9r4k", "kind": "directory" }
+    ],
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore/card_z9r4k": [
+      {
+        "path": "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore/card_z9r4k/spec-product.md",
+        "kind": "file"
+      }
+    ],
+    "/w/.stelow/approvals/sw-card_y6dnitl6": [
+      { "path": "/w/.stelow/approvals/sw-card_y6dnitl6/gate-approved.md", "kind": "file" },
+      { "path": "/w/.stelow/approvals/sw-card_y6dnitl6/plan-gate-approved.md", "kind": "file" }
+    ]
+  },
+  "files": {
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/state.md": "current_stage: execution\ncard: y6dn\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/state.md.bak": "current_stage: planning\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/audit.md": "# Audit\n\nReceipts verified.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-product_v2.md": "# Spec v2\n\nRead-only map.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-tech_v1.md": "# Tech v1\n\nBehind the reader.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/plans/notes.md": "   \n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context/context.md": "# Context\n\nNo gaps.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/context/recon-receipt.json": "{\"schema\":\"stelow-recon-v2\",\"missing\":[]}",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/reviews/review-2026-09-26T09-40-00Z.md": "# Review\n\nDisclosed.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/drafts/draft-2026-09-26T09-30-00Z.md": "# Draft\n\nScratch.\n",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/locks/scope-plan-y6dn.lock": "held by thr_3v3dyacu4",
+    "/w/.stelow/2026-09-26/sw-card_y6dnitl6/explore/card_z9r4k/spec-product.md": "# Explore spec\n\nWalkthrough.\n",
+    "/w/.stelow/approvals/sw-card_y6dnitl6/gate-approved.md": "approved: true\n",
+    "/w/.stelow/approvals/sw-card_y6dnitl6/plan-gate-approved.md": "approved: true\n"
+  }
+}
