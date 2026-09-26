@@ -68,3 +68,16 @@ assert.match(server, /: await answerExpiredQuestions\(\{/, "the CLI calls the sh
 assert.match(server, /const parsedAnswer = parseAnswerArgs\(argv\.slice\(1\)\);/, "the CLI delegates argv parsing to the tested lib helper");
 
 console.log("question answer CLI test ok: one door per call, unknown flags refuse, shared handlers");
+
+// A refusal must name the way out. Answering a recovery question with its
+// bare row id used to say "No open question awaits an answer on this card" —
+// blaming the card for a question that was open, and leaving the caller with
+// no idea which id space was wanted. Every refusal here names the exit.
+const askRefusal = readFileSync(join(root, "server.ts"), "utf8");
+assert.match(
+  askRefusal,
+  /error: `That id is not a live interaction\. Recovery questions use \$\{EXPIRED_QUESTION_ID_PREFIX\}/,
+  "a raw id aimed at a recovery question says which id space it wants",
+);
+assert.match(askRefusal, /Still open: \$\{stillOpen\.join\(", "\)\}/, "an incomplete batch names exactly which questions are still open");
+assert.match(askRefusal, /Recovery questions use `expired:<id>`/, "the empty-refusal names the accepted form too");

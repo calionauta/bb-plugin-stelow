@@ -3664,6 +3664,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       .map((row) => expiredQuestionId(row.id));
   }
 
+  // A recovery question answered with its bare row id lands here, and the old
+  // wording blamed the card for a question that was very much open. Say which
+  // id space the caller wants and name the way out: a refusal without an exit
+  // is a deadlock with a good error message.
+  function noQuestionAnswered(cardId: string) {
+    const open = openExpiredQuestionIds(cardId);
+    if (open.length === 0) {
+      return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
+    }
+    return {
+      ok: false as const,
+      answered: 0,
+      error: `That id is not a live interaction. Recovery questions use ${EXPIRED_QUESTION_ID_PREFIX}<id>. Open: ${open.join(", ")}.`,
+    };
+  }
+
   // Pending plugin interactions (stelow asks), narrowed so payload/title read.
   type PendingAsk = Extract<Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>[number], { origin: { kind: "plugin" } }>;
   function pendingAsks(list: Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>): PendingAsk[] {
@@ -4327,7 +4343,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           });
         }
       }
-      if (decisions.length === 0) return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
+      if (decisions.length === 0) return noQuestionAnswered(cardId);
       // Split proposals answered on the card land here instead of the
       // blocking call above — one shared recording (lib/split-proposal).
       recordSplitAnswer(db, cardId, decisions);
@@ -4387,8 +4403,21 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!row || rows.has(item.questionId) || cleanAnswers.length === 0) continue;
       rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: cleanAnswers });
     }
-    if (openIds.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
-    if (rows.size !== openIds.size) return { ok: false as const, answered: 0, error: "Answer every pending question before submitting." };
+    if (openIds.size === 0) {
+      return {
+        ok: false as const,
+        answered: 0,
+        error: "No recovery question awaits an answer here. Recovery questions use `expired:<id>`; list them with bb stelow status.",
+      };
+    }
+    if (rows.size !== openIds.size) {
+      const stillOpen = [...openIds].filter((id) => !rows.has(id)).map((id) => expiredQuestionId(id));
+      return {
+        ok: false as const,
+        answered: 0,
+        error: `Answer every pending question: a partial answer would resume the worker early. Still open: ${stillOpen.join(", ")}.`,
+      };
+    }
     const decisions: Array<{ question: string; answers: string[]; contract: string | null }> = [];
     // Resume the CURRENT worker: the row's thread may be stale (restart /
     // reseed archives the thread but keeps its expired questions).

@@ -99,12 +99,51 @@ export async function nativeWorkflowStatus({ runId, workspaceId, projectId, thre
   const { stdout } = await execFileAsync(bbBin, ["workflows", "status", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
   try {
     const result = JSON.parse(stdout);
-    return result?.run ?? result?.data ?? result;
+    return scriptOutcome(result?.run ?? result?.data ?? result);
   } catch {
     const status = stdout.match(/\b(queued|running|needs[_ -]?input|succeeded|completed|failed|cancelled|canceled|stopped)\b/i)?.[1];
     if (status) return { status };
     throw new Error("BB Workflows status returned no recognized state");
   }
+}
+
+/**
+ * Fold the inline script's own return value into the run status.
+ *
+ * Context: the inline recipe script returns `{ state, error, outputs }`, and
+ * until now the host only ever read the WORKFLOW's status. A script that
+ * produced nothing still finished, so BB reported "succeeded" and the run was
+ * recorded as a plain artifact miss — the real cause never reached the card.
+ * The workflow succeeding only means the script ran to completion; whether
+ * the recipe did its work is the script's answer, so that answer is read.
+ *
+ * A missing or unrecognized result leaves the status untouched: a host that
+ * cannot read an outcome must not invent a failure.
+ */
+export function scriptOutcome(run: unknown): unknown {
+  if (run === null || typeof run !== "object" || Array.isArray(run)) return run;
+  const record = run as Record<string, unknown>;
+  const result = record.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return run;
+  const script = result as Record<string, unknown>;
+  const state = typeof script.state === "string" ? script.state : "";
+  if (state === "failed" || state === "error") {
+    const error = typeof script.error === "string" && script.error
+      ? script.error
+      : "the recipe script reported a failure";
+    return { ...record, status: "failed", scriptState: state, scriptError: error };
+  }
+  // A recipe that finished with no task outputs did nothing. That is a silent
+  // no-op, and leaving it as "succeeded" is what turned a real failure into
+  // a missing-file mystery three layers down.
+  if (state === "succeeded" && isEmptyOutputs(script.outputs)) {
+    return { ...record, status: "failed", scriptState: state, scriptError: "the recipe produced no task outputs" };
+  }
+  return run;
+}
+
+function isEmptyOutputs(outputs: unknown): boolean {
+  return outputs !== null && typeof outputs === "object" && !Array.isArray(outputs) && Object.keys(outputs).length === 0;
 }
 
 function stripWorkflowSchemaMetadata(value: unknown): unknown {
