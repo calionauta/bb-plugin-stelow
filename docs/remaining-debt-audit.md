@@ -835,6 +835,11 @@ second copy exists at
 the `stelow` checkout is the upstream one named by `AGENTS.md` and is the one to
 commit in.
 
+§9 was written by the *Guards* phase, not the *Blueprint* phase: retiring the
+three guards changed the public typing of a portable `lib/` module, and §9 is
+where the anti-pattern belongs (entry committed in `stelow` at `bd48115`).
+§14 is untouched and still open for the slice phases.
+
 ### 4. The real `bb stelow` CLI
 
 `bb 0.43.3` on this host. `bb stelow help` lists 29 subcommands, and `bb stelow
