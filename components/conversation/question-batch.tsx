@@ -16,6 +16,16 @@ import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 
 export type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 export type ArtifactViewerMode = "review" | "comment";
+// The option's own label travels with the open request. A handler that took
+// fewer parameters would be assignable, so a dropped label would typecheck and
+// silently disable the section lookup — the reader would land on the shared
+// brief's first line, which is the bug that lookup exists to fix. One named
+// type, so no hop in the chain can quietly narrow it.
+export type OpenArtifactHandler = (
+  artifact: AskArtifact,
+  mode: ArtifactViewerMode,
+  optionLabel: string,
+) => void;
 export type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
 export type BatchOption = {
   label: string;
@@ -238,7 +248,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
   isKeepOption: boolean;
   description: string;
   onPick: () => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
+  onOpenArtifact?: OpenArtifactHandler;
 }) {
   const artifact = option.artifact;
   const artifactInherited = option.artifactInherited === true;
@@ -271,7 +281,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
+              onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label), option.label)}
               title={artifactInherited
                 ? `${artifact.display} — the brief shared by every option, not this option's own document`
                 : `${artifact.display} — this option's own document`}
@@ -303,7 +313,7 @@ function BatchOptionList({ current, isSplitProposal, splitKeepLabel, selected, o
   splitKeepLabel: string;
   selected: Record<string, string[]>;
   onPick: (question: BatchItem, label: string) => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
+  onOpenArtifact?: OpenArtifactHandler;
 }) {
   return (
     <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
@@ -387,7 +397,7 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   submitLabel: string;
   showHeading?: boolean;
   onSubmit: (answers: string[][]) => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
+  onOpenArtifact?: OpenArtifactHandler;
 }) {
   const sel = useBatchSelection(questions);
   if (questions.length === 0) return null;
@@ -429,7 +439,13 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   );
 }
 
-export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
+export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: {
+  cardId: string;
+  questions: BatchItem[];
+  mode: "live" | "expired";
+  onAnswered: () => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -468,7 +484,12 @@ export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtif
   );
 }
 
-export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestionItem[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
+export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: {
+  cardId: string;
+  questions: ExpiredQuestionItem[];
+  onAnswered: () => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}) {
   if (questions.length === 0) return null;
   const copy = questionCopy();
   return (

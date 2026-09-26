@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Stelow",
-    "description": "Stelow turns humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks (opportunity mapping, JTBD, discovery, market analysis), then deliver through an orchestrated workflow — Shape Up proposals, interface alternatives with explicit trade-offs before any code, technical plans broken into typed scopes with dependencies and spikes up front, gated reviews, and agent workers executing scope by scope. One board, one inbox that only interrupts when you are needed.",
+    "description": "Stelow turns humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks (opportunity mapping, JTBD, discovery, market analysis), then deliver through an orchestrated workflow \u2014 Shape Up proposals, interface alternatives with explicit trade-offs before any code, technical plans broken into typed scopes with dependencies and spikes up front, gated reviews, and agent workers executing scope by scope. One board, one inbox that only interrupts when you are needed.",
     "branding": {
       "icon": "Star"
     },
@@ -55,7 +55,7 @@
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/question-batch.test.mjs && node tests/question-form.test.mjs",
     "test:question-presence": "node tests/question-presence.test.mjs",
-    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs && node tests/question-form-artifact-provenance.test.mjs && node tests/question-decision-surface.test.mjs",
+    "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs && node tests/question-form-artifact-provenance.test.mjs && node tests/question-decision-surface.test.mjs && node tests/option-anchor.test.mjs && node tests/option-section-wiring.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs && node tests/github-issue-create.test.mjs && node tests/github-issue-comments.test.mjs",
     "test:automation": "node tests/automation-rules.test.mjs",
     "test:promote": "node tests/promote-card.test.mjs",

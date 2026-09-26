@@ -19,6 +19,7 @@ type PendingQuestionInput = {
 type OpenArtifact = (
   artifact: Parameters<typeof openAskArtifact>[3],
   mode: Parameters<typeof openAskArtifact>[4],
+  optionLabel: Parameters<typeof openAskArtifact>[5],
 ) => void;
 
 type DetailQuestionSectionsProps = {
@@ -40,12 +41,13 @@ export function DetailQuestionSections({
   onAnswered,
   openLiveArtifact,
 }: DetailQuestionSectionsProps) {
-  const openArtifact: OpenArtifact = (artifact, mode) => openAskArtifact(
+  const openArtifact: OpenArtifact = (artifact, mode, optionLabel) => openAskArtifact(
     card,
     detail.fileEnvironmentId,
     setViewerFile,
     artifact,
     mode,
+    optionLabel,
   );
   return (
     <>
