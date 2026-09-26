@@ -45,8 +45,15 @@ The runtime constructs these modules and spreads or delegates their handlers:
   and lifecycle data. `createWorkers(...).dispose()` cancels host-owned retry
   and deferred-respawn timers; it does not stop a live BB thread.
 - `server/drafting.ts` owns draft execution and completion-note drafts.
-- `server/decision-api*.ts` owns the decision router contract, migrations, and
-  API seams.
+- `server/decision-api.ts` composes the decision router and re-exports its
+  contract and migrations. Each job owns a slice: `decision-store` (tables,
+  rows, the normalized point view, writes), `decision-config-rpcs` (the shared
+  endpoint, provider, model, key, probe), `decision-point-rules` (which mode
+  a point accepts, the refusals, the merge), `decision-point-rpcs` (reading
+  and writing one point's settings), `decision-review-policy` (the
+  independent-review gate singleton), and `decision-api-seams` with
+  `decision-route`, `decision-seed`, `decision-auto-continue`, and
+  `decision-severity` (route, seed, veto, severity bump).
 - `server/github-issues.ts` owns GitHub tables, import claims, automation,
   matching, the scheduler entry point, and all GitHub handlers.
   `server/github-status.ts` owns the status shape the board's GitHub column
@@ -180,17 +187,13 @@ every owned file, records each one over 400 lines and each function over 50,
 and pins them to a ratchet. Paying debt down lowers a number there; nothing
 raises one without a deliberate edit.
 
-Today the whole-tree census is four oversized files and fifty-one oversized
+Today the whole-tree census is four oversized files and forty-seven oversized
 functions, of which the diff-scoped gate reports none: every entry it still
-prints is inherited, listed above. The GitHub automation area was the first
-named area of remaining work and is now paid down — the eleven
-`server/github-*.ts` slices, largest 293 lines, with behavior tests. What
-remains:
+prints is inherited, listed above. Both named areas of this branch are paid
+down — the eleven `server/github-*.ts` slices, largest 293 lines, and the
+twelve `server/decision-*.ts` slices, largest 226 lines, each with behavior
+tests. What remains:
 
-- the decision API — `createDecisionApi` at 319 lines with an 84-line
-  `setDecisionPoint`, and `createDecisionApiSeams` at 271 with a 55-line
-  `vetAutoContinue`. `server/decision-api.ts` sits exactly on the 400-line file
-  limit, so any addition to it is a violation the moment it is edited.
 - the GitHub dialog state — `useGithubDialogState` at 229 lines plus the
   dialog components under `components/github/` (`LinkedDiscussionSection` at
   116, `GithubDoneDraftDialog` at 89, `GithubCompletionDialog` at 60), the

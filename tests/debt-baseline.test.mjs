@@ -36,11 +36,6 @@ const functionBaseline = new Map([
   ["components/github/github-linked-discussion.tsx:LinkedDiscussionSection", 116],
   ["components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog", 89],
   ["components/github/github-completion-dialog.tsx:GithubCompletionDialog", 60],
-  // DecisionApi
-  ["server/decision-api.ts:createDecisionApi", 319],
-  ["server/decision-api.ts:createDecisionApi/setDecisionPoint", 84],
-  ["server/decision-api-seams.ts:createDecisionApiSeams", 271],
-  ["server/decision-api-seams.ts:createDecisionApiSeams/vetAutoContinue", 55],
   // Elsewhere in the tree
   ["lib/preview-runtime.mjs:createPreviewRuntime", 264],
   ["lib/preview-runtime.mjs:createPreviewRuntime/start", 77],
