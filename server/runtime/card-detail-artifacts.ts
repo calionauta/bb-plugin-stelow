@@ -8,6 +8,7 @@ import {
 } from "../../lib/artifact-manifest.mjs";
 import { artifactRole } from "../../lib/artifact-roles.mjs";
 import { AUDIT_TRAIL_FILE } from "../../lib/audit-trail-contract.mjs";
+import { listNestedFiles } from "./board-read.js";
 import type { WorkerCard } from "../workers-types.js";
 
 export type DetailArtifact = {
@@ -117,15 +118,7 @@ async function appendUnregisteredArtifacts(
   seen: Set<string>,
 ): Promise<void> {
   if (!stateDir || !sourceHostId) return;
-  const listing = await deps.bb.sdk.files
-    .listPaths({
-      path: stateDir,
-      includeFiles: true,
-      includeDirectories: false,
-      limit: 500,
-    })
-    .catch(() => null);
-  const paths = listingPaths(listing, stateDir, sourcePath);
+  const paths = await listNestedFiles(deps.bb.sdk.files, stateDir);
   for (const absolute of unregisteredArtifactPaths(paths, [...seen])) {
     const relPath = deps.workspaceRelative(sourcePath, absolute);
     if (!relPath) continue;
@@ -141,36 +134,6 @@ async function appendUnregisteredArtifacts(
     ));
     seen.add(absolute);
   }
-}
-
-function listingPaths(
-  listing: unknown,
-  stateDir: string,
-  sourcePath: string,
-): string[] {
-  if (!listing || typeof listing !== "object") return [];
-  const paths = (listing as { paths?: unknown }).paths;
-  if (!Array.isArray(paths)) return [];
-  return paths
-    .map((entry) => typeof entry === "string" ? entry : pathField(entry))
-    .filter((path): path is string => Boolean(path))
-    .map((raw) => normalizeListedPath(raw, stateDir, sourcePath));
-}
-
-function pathField(entry: unknown): string {
-  if (!entry || typeof entry !== "object") return "";
-  const path = (entry as { path?: unknown }).path;
-  return typeof path === "string" ? path : "";
-}
-
-function normalizeListedPath(
-  raw: string,
-  stateDir: string,
-  sourcePath: string,
-): string {
-  if (raw === stateDir || raw.startsWith(`${stateDir}/`)) return raw;
-  if (raw === sourcePath || raw.startsWith(`${sourcePath}/`)) return raw;
-  return join(stateDir, raw.replace(/^\/+/, ""));
 }
 
 function unregisteredShape(

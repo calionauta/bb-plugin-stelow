@@ -616,7 +616,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a highlight ring. The trail never depends on the agent registering its own
   output (`unregisteredArtifactPaths`): any other document the workflow wrote
   in its state dir is listed under **Produced but not registered**, so a
-  produced artifact cannot be invisible. The workflow's own `state.md`, its
+  produced artifact cannot be invisible. That search walks the state dir
+  through the one `listNestedFiles` walk the board also uses, so a document
+  one level down — `plans/`, `reviews/`, `critiques/` — is found the same way
+  the board finds it, instead of a top-level-only listing that left the card
+  and the board disagreeing about the same directory. The workflow's own
+  `state.md`, its
   backups, logs, and JSON bookkeeping are never artifacts. Machine receipts
   (`audit-trail.md`, `recon-receipt.json`) group apart under **Evidence —
   machine receipts**: they stay in the run bundle, manifest, and commit
