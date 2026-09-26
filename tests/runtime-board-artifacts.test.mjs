@@ -93,6 +93,31 @@ test("nested workflow documents are board artifacts and bookkeeping is not", asy
   );
 });
 
+test("relative host listings resolve against the requested directory", async () => {
+  const files = hostFiles({
+    listPaths: async ({ path }) => ({
+      paths: (fixture.dirs[path] ?? []).map((entry) => ({
+        ...entry,
+        path: entry.path.slice(`${path}/`.length),
+      })),
+    }),
+  });
+  const artifacts = await findArtifacts(files, fixture.root, fixture.workflow);
+  assert.deepEqual(
+    artifacts.map((entry) => entry.path),
+    [
+      ".stelow/2026-09-26/sw-card_y6dnitl6/audit.md",
+      ".stelow/2026-09-26/sw-card_y6dnitl6/context/context.md",
+      ".stelow/2026-09-26/sw-card_y6dnitl6/explore/card_z9r4k/spec-product.md",
+      ".stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-product_v2.md",
+      ".stelow/2026-09-26/sw-card_y6dnitl6/plans/spec-tech_v1.md",
+      ".stelow/2026-09-26/sw-card_y6dnitl6/reviews/review-2026-09-26T09-40-00Z.md",
+    ],
+    "the real host returns paths relative to the listed directory, not absolute paths",
+  );
+});
+
+
 test("the board and the manifest bar agree on every file in the state dir", async () => {
   const files = hostFiles();
   const listed = new Set(

@@ -67,11 +67,15 @@ async function listDir(
     .listPaths({ path: dir, includeFiles: true, includeDirectories })
     .catch(() => null);
   return array(record(result).paths)
-    .map((entry) => ({
-      path: typeof entry === "string" ? entry : text(record(entry).path),
-      directory: record(entry).kind === "directory",
-    }))
-    .filter((entry) => Boolean(entry.path));
+    .map((entry) => {
+      const raw = typeof entry === "string" ? entry : text(record(entry).path);
+      if (!raw) return null;
+      return {
+        path: raw.startsWith(`${dir}/`) ? raw : join(dir, raw),
+        directory: record(entry).kind === "directory",
+      };
+    })
+    .filter((entry): entry is DirEntry => entry !== null);
 }
 
 /** Only a path below the directory the walk started from. */
@@ -102,7 +106,7 @@ async function listNestedFiles(
       .map((entry) => listNestedFiles(files, entry.path, depth + 1)),
   );
   const direct = entries
-    .filter((entry) => !entry.directory)
+    .filter((entry) => !entry.directory && insideDir(dir, entry.path))
     .map((entry) => entry.path);
   return [...new Set([...direct, ...nested.flat()])];
 }
