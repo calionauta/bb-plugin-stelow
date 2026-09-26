@@ -35,9 +35,25 @@ export interface DecisionCallRoute {
 const emptyConfig = {
   provider: null,
   endpoint: "",
-  api_key: "",
+  apiKey: "",
   model: "",
 };
+
+/**
+ * The stored config row is a database shape (`api_key`); the route is the
+ * lib's shape (`apiKey`). Mapping it here is what lets a key saved in
+ * settings reach a judgment that pinned no key of its own.
+ */
+function configAsRoute(cfg: ConfigRow | undefined) {
+  return cfg
+    ? {
+        provider: cfg.provider,
+        endpoint: cfg.endpoint,
+        apiKey: cfg.api_key,
+        model: cfg.model,
+      }
+    : emptyConfig;
+}
 
 export function createDecisionRoute(ctx: DecisionRouteDeps) {
   const routeConfig = (
@@ -53,7 +69,7 @@ export function createDecisionRoute(ctx: DecisionRouteDeps) {
             model: point.model,
           }
         : null,
-      fallback: cfg ?? emptyConfig,
+      fallback: configAsRoute(cfg),
     });
 
   /** `usable` is false when the provider needs a key and none resolves. */

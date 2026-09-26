@@ -237,6 +237,11 @@ try {
       "a pinned model wins field by field",
     );
     assert.equal(filled.provider, "jev");
+    assert.equal(
+      filled.apiKey,
+      "shared-key",
+      "the key saved in settings fills a point that pinned none",
+    );
 
     const call = route.callRoute(
       pointRow({ model: "point-model", api_key: "pinned-key" }),
@@ -247,19 +252,29 @@ try {
     assert.equal(
       call.key,
       "pinned-key",
-      "the key cascade resolves once, here",
+      "a pinned key wins over the shared one",
     );
     assert.equal(call.apiKey, "pinned-key");
     assert.equal(call.usable, true);
 
-    process.env.DECISION_API_KEY = "env-key";
-    const fromEnv = route.callRoute(pointRow({ model: "point-model" }));
+    const shared = route.callRoute(pointRow({ model: "point-model" }));
     assert.equal(
-      fromEnv.key,
-      "env-key",
-      "a point that pins no key falls to the host environment",
+      shared.key,
+      "shared-key",
+      "a point that pins no key uses the one saved in settings",
     );
-    assert.equal(fromEnv.usable, true);
+    assert.equal(shared.usable, true);
+
+    process.env.DECISION_API_KEY = "env-key";
+    const keylessConfig = createDecisionRoute({
+      configRow: () => ({ ...configRow(), api_key: "" }),
+    }).callRoute(pointRow({ model: "point-model" }));
+    assert.equal(
+      keylessConfig.key,
+      "env-key",
+      "with no stored key the host environment answers",
+    );
+    assert.equal(keylessConfig.usable, true);
     delete process.env.DECISION_API_KEY;
 
     const unconfigured = createDecisionRoute({ configRow: () => undefined });

@@ -376,7 +376,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unjudged routine items per tick (older than 5 minutes) with one yes/no
   — confident blockers promote to escalating with a `model-judged` chip.
   Never demotes, resolves, or re-judges; failures keep deterministic
-  tiers standing.
+  tiers standing. An item with no reason list yet counts as unjudged, so
+  the sweep reaches items the deterministic tiers wrote first.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
@@ -772,8 +773,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `classifier` (classifier.dev labels schema, keyless, Choice only).
   Reads report key presence and source, never
   the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
-  value. Test connection sends one fixed probe with latency. Unconfigured
-  means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
+  value. A key saved here is the key every decision router uses unless the
+  router pins its own. Test connection sends one fixed probe with latency.
+  Unconfigured means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
   blocks every outbound call: reads degrade, api writes and probes refuse
   naming the variable.
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,

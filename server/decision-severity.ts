@@ -50,11 +50,16 @@ interface SeverityCandidate {
 function severityCandidates(ctx: DecisionSeverityDeps): SeverityCandidate[] {
   return ctx.db
     .prepare([
-      "SELECT id, summary, severity_reasons, display_name, name, kind AS card_kind, stage",
+      "SELECT inbox_events.id, inbox_events.summary, inbox_events.severity_reasons,",
+      "cards.display_name, cards.name, cards.kind AS card_kind, cards.stage",
       "FROM inbox_events JOIN cards ON cards.id = inbox_events.card_id",
-      "WHERE resolved_at IS NULL AND archived_at IS NULL AND severity = 1",
-      "AND occurred_at <= ? AND severity_reasons NOT LIKE '%model-judged%'",
-      "ORDER BY occurred_at ASC LIMIT 3",
+      "WHERE inbox_events.resolved_at IS NULL AND inbox_events.archived_at IS NULL",
+      "AND inbox_events.severity = 1",
+      "AND inbox_events.occurred_at <= ?",
+      // COALESCE matters: a NULL reason list means "never judged", and a
+      // bare NOT LIKE would read NULL as "not a match" and skip it.
+      "AND COALESCE(inbox_events.severity_reasons, '') NOT LIKE '%model-judged%'",
+      "ORDER BY inbox_events.occurred_at ASC LIMIT 3",
     ].join(" "))
     .all(ctx.now() - 5 * 60 * 1000) as SeverityCandidate[];
 }
