@@ -30,6 +30,9 @@ insert.run("evt_q", "card_1", "question", "Choose one.", "question:card_1:ask_1"
 insert.run("evt_e", "card_1", "error", "Provider error 400: Internal server error", "error:card_1:101", 101, 200, "archived");
 insert.run("evt_p", "card_1", "paused", "Paused.", "paused:card_1:102", 102, 200, "archived");
 insert.run("evt_c", "card_1", "completed", "Build complete.", "completed:card_1:103", 103, null, null);
+// A completion the archive hypothetically resolved: restore must still not
+// touch it — the card is not completing again, and deliveries clear by read.
+insert.run("evt_c2", "card_1", "completed", "Old delivery.", "completed:card_1:104", 104, 200, "archived");
 // Rows resolved before the archive for genuine reasons: restore must not touch.
 insert.run("evt_q_old", "card_1", "question", "Old Q.", "question:card_1:ask_0", 50, 150, "answered");
 insert.run("evt_e_old", "card_1", "error", "Old E.", "error:card_1:51", 51, 150, "resumed");
@@ -67,7 +70,16 @@ assert.deepEqual(
   { resolved_at: null, resolved_reason: null, summary: "Build complete." },
   "the completion delivery is untouched: the card is not completing again",
 );
-assert.deepEqual(row("evt_q_old"), { resolved_at: 150, resolved_reason: "answered", summary: "Old Q." }, "a question answered before the archive stays answered");
+assert.deepEqual(
+  row("evt_c2"),
+  { resolved_at: 200, resolved_reason: "archived", summary: "Old delivery." },
+  "even an archive-resolved completion stays resolved: deliveries clear by read",
+);
+assert.deepEqual(
+  row("evt_q_old"),
+  { resolved_at: 150, resolved_reason: "answered", summary: "Old Q." },
+  "a question answered before the archive stays answered",
+);
 assert.deepEqual(row("evt_e_old"), { resolved_at: 150, resolved_reason: "resumed", summary: "Old E." }, "an error resumed before the archive stays resumed");
 assert.deepEqual(
   row("evt_q_other"),
