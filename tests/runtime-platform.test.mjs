@@ -181,7 +181,7 @@ test("installer provenance refuses modified scripts before execution and pins pa
   }
 
   for (const [id, command, version] of [
-    ["ast-grep", "npm", "@ast-grep/cli@0.40.3"],
+    ["ast-grep", "npm", "@ast-grep/cli@0.45.3"],
     ["cymbal", "go", "github.com/1broseidon/cymbal@v0.17.0"],
   ]) {
     const commands = [];
@@ -262,12 +262,12 @@ test("verification runs inside the private install directory before cleanup", as
     runTool: async (command, args, env) => {
       commands.push({ command, args, env });
       assert.equal(existsSync(env.HOME), true);
-      return { code: 0, out: command === "npm" ? "installed" : "ast-grep 0.40.3" };
+      return { code: 0, out: command === "npm" ? "installed" : "ast-grep 0.45.3" };
     },
   });
   assert.deepEqual(await handlers.installTool({ id: "ast-grep" }), {
     ok: true,
-    version: "ast-grep 0.40.3",
+    version: "ast-grep 0.45.3",
     log: "installed",
   });
   assert.equal(commands.length, 2);
