@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.54.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.5...v0.54.0) (2026-09-27)
+
+
+### Features
+
+* delete all archived cards, scoped to the filter, behind a confirm ([#135](https://github.com/calionauta/bb-plugin-stelow/issues/135)) ([289d064](https://github.com/calionauta/bb-plugin-stelow/commit/289d064c2f7c8194cdaf733541927ed52d91ca28))
+
 ## [0.53.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.4...v0.53.5) (2026-09-27)
 
 
