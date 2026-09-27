@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { WORKFLOW_STAGES } from "../lib/workflow-vocabulary.mjs";
 import { createCardOperationsHandlers } from "../server/runtime/card-operations.ts";
 
 function card(overrides = {}) {
@@ -54,6 +55,11 @@ function testDeps(calls, cardValue, { live = null, fresh = { ok: true, error: nu
       execution: "execution",
       review: "review",
     },
+    // The real stage-to-phase map, because the same-column guard asks which
+    // phase a card is in. A simplified stand-in would either miss the
+    // intermediate stages (so a card mid-phase looks like it is in no phase) or
+    // invent stages this fake does not model.
+    stagePhases: Object.fromEntries(WORKFLOW_STAGES.map(({ id, phase }) => [id, phase])),
     errors: { cardNotFound: "not found", cardArchived: "archived" },
   };
 }
