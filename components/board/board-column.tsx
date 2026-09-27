@@ -1,13 +1,27 @@
 import { useState, type ReactNode } from "react";
 import { DisclosureChevron } from "@/components/disclosure";
+import { ArchivedColumnDelete } from "./archived-column-delete";
+import type { ArchivedDeleteProps } from "./archived-delete-props";
 import type { BoardCardItem } from "./board-cards";
 
-function ColumnHeader({ count, collapsed, label, onToggle }: {
+/**
+ * One board column: a collapsible header with its count, the Archived column's
+ * delete-all, and the drop target the cards live in.
+ *
+ * `cards` is the already-filtered grouping for this column, which is what makes
+ * the delete-all's blast radius the list on screen rather than a server-side
+ * re-query. The affordance is passed in rather than derived here so a board that
+ * has no delete-all simply omits it, and so the ids and the filter label come
+ * from the same derivation on every track.
+ */
+
+function ColumnHeader(props: {
   count: number;
   collapsed: boolean;
   label: string;
   onToggle: () => void;
 }) {
+  const { count, collapsed, label, onToggle } = props;
   const headerClass = collapsed
     ? "flex h-full w-full cursor-pointer flex-col items-center gap-2 py-2 hover:bg-foreground/5"
     : "mb-2 flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-foreground/5";
@@ -37,7 +51,25 @@ function ColumnHeader({ count, collapsed, label, onToggle }: {
   );
 }
 
-export function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels, renderCard }: {
+/** The scrolling card list, named for assistive tech by the column's own label. */
+function ColumnCards(props: {
+  cards: BoardCardItem[];
+  label: string;
+  renderCard: (card: BoardCardItem) => ReactNode;
+}) {
+  const { cards, label, renderCard } = props;
+  return (
+    <div
+      className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1"
+      role="list"
+      aria-label={`${label} cards`}
+    >
+      {cards.map((card) => <div key={card.id}>{renderCard(card)}</div>)}
+    </div>
+  );
+}
+
+export function BoardColumn(props: {
   column: string;
   cards: BoardCardItem[];
   collapsed: boolean;
@@ -45,7 +77,10 @@ export function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDro
   onDrop: (cardId: string) => void;
   labels: Record<string, string>;
   renderCard: (card: BoardCardItem) => ReactNode;
+  deleteAll?: ArchivedDeleteProps;
 }) {
+  const { column, cards, collapsed, onToggleCollapsed, onDrop, labels, renderCard, deleteAll } = props;
+  const label = labels[column];
   const [over, setOver] = useState(false);
   return (
     <section
@@ -67,13 +102,12 @@ export function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDro
       <ColumnHeader
         count={cards.length}
         collapsed={collapsed}
-        label={labels[column]}
+        label={label}
         onToggle={onToggleCollapsed}
       />
+      {deleteAll ? <ArchivedColumnDelete {...deleteAll} count={cards.length} /> : null}
       {!collapsed ? (
-        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1" role="list" aria-label={`${labels[column]} cards`}>
-          {cards.map((card) => <div key={card.id}>{renderCard(card)}</div>)}
-        </div>
+        <ColumnCards cards={cards} label={label} renderCard={renderCard} />
       ) : null}
     </section>
   );

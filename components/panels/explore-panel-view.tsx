@@ -10,6 +10,10 @@ import { FiltersBar } from "../board/board-filters";
 import { ViewToggle } from "../board/board-view-toggle";
 import { ExploreList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
+import { archivedDeleteProps } from "../board/archived-delete-props";
+import { useDeleteArchivedCards } from "../board/use-delete-archived-cards";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { rpcContract } from "../../server";
 import { ExploreCard } from "../board/board-cards";
 import { BucketGalleryButton } from "../board/card-gallery";
 import { Button } from "../ui/button";
@@ -99,6 +103,7 @@ function ExploreFilters({ state }: { state: ExploreState }) {
 
 function ExploreBoard(props: ExploreProps) {
   const { state } = props;
+  const onConfirm = useDeleteArchivedCards(useRpc<typeof rpcContract>());
   if (state.viewMode === "list") {
     return (
       <ExploreList
@@ -133,6 +138,13 @@ function ExploreBoard(props: ExploreProps) {
               onOpen={() => props.onOpenCard(card, card.id)}
             />
           )}
+          deleteAll={archivedDeleteProps({
+            column,
+            cards: state.grouped[column],
+            filters: state,
+            projects: state.data.projects,
+            onConfirm,
+          })}
         />
       ))}
     </div>

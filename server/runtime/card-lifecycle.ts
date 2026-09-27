@@ -1,3 +1,4 @@
+import { deleteArchivedCards } from "./card-bulk-delete.js";
 import { existsSync, rmSync } from "node:fs";
 import { isAbsolute, join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -91,6 +92,8 @@ export function createCardLifecycleHandlers(deps: CardLifecycleDeps) {
   return {
     cancelCard: (input: { cardId: string }) => cancelCard(deps, input),
     deleteCard: (input: { cardId: string }) => deleteCard(deps, input),
+    deleteArchivedCards: (input: { cardIds: string[] }) =>
+      deleteArchivedCards((cardId) => deleteCard(deps, { cardId }), input.cardIds),
     discardPreview: (input: { cardId: string }) => discardPreview(deps, input),
     discardCardChanges: (input: { cardId: string }) => discardCardChanges(deps, input),
   };
