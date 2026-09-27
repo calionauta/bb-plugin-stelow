@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.53.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.4...v0.53.5) (2026-09-27)
+
+
+### Bug Fixes
+
+* the listCards contract must admit the call its handler supports ([#133](https://github.com/calionauta/bb-plugin-stelow/issues/133)) ([b0d24d4](https://github.com/calionauta/bb-plugin-stelow/commit/b0d24d4e4546cff4692d12324480f24137a97bb1))
+
 ## [0.53.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.53.3...v0.53.4) (2026-09-27)
 
 
