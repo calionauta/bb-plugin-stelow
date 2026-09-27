@@ -173,7 +173,57 @@ test("card diff combines tracked and untracked files while optional summaries fa
   ]);
   assert.equal(result.entitySummary, null);
   assert.equal(result.changedSymbols, null);
+  assert.equal(result.affectedTests, null);
+  assert.equal(result.testGate, null);
+  assert.equal(result.qualityGate, null);
   assert.ok(commands.some(([binary]) => binary === "/bin/sem"));
+});
+
+test("card diff enriches changed symbols with affected tests and ripwire gates", async () => {
+  const diff = createCardDiff({
+    execFile: (binary, args, _options, callback) => {
+      if (args[0] === "rev-parse") return callback(null, "/project\n");
+      if (binary === "git" && args[0] === "diff") return callback(null, "");
+      if (args.includes("status")) return callback(null, "");
+      if (binary === "/bin/cymbal") {
+        return callback(null, JSON.stringify({
+          results: { results: [{ symbol: "foo", files: ["a.ts"], impact: { total_callers: 1, test_callers: 0 } }] },
+        }));
+      }
+      if (binary === "/bin/sem" && args[0] === "diff") {
+        return callback(null, JSON.stringify({
+          summary: { fileCount: 1, added: 1, modified: 0, deleted: 0, renamed: 0, moved: 0, total: 1 },
+          changes: [{ structuralChange: true }],
+        }));
+      }
+      if (binary === "/bin/sem" && args[0] === "impact") {
+        assert.ok(args.includes("--tests"), "affected tests query sem impact --tests");
+        assert.ok(args.includes("--file"), "ambiguous symbols disambiguate by file");
+        return callback(null, JSON.stringify({
+          entity: { entityId: "a.ts::function::foo", file: "a.ts", lines: [1, 2], name: "foo", type: "function" },
+          tests: [{ entityId: "t.ts::test::covers foo", file: "t.ts", lines: [3, 4], name: "covers foo", type: "test" }],
+        }));
+      }
+      if (binary === "/bin/ripwire" && args.includes("--test-gate")) {
+        return callback(null, JSON.stringify({ changed: 1, impacted: 1, tests: 1, untested: 0, tests_to_run: ["t.ts"], untested_blast_radius: [] }));
+      }
+      if (binary === "/bin/ripwire" && args.includes("--quality-delta")) {
+        return callback(null, JSON.stringify({ baseline: "git-HEAD", regressions: 0, minor: 0, gating: 0 }));
+      }
+      callback(new Error("unexpected command"), "");
+    },
+    getCard: () => card(),
+    cardCheckout: async () => ({ path: "/project", hostId: "host_1" }),
+    recoveredIntegrity: async () => null,
+    resolveLocalBin: (name) => `/bin/${name}`,
+    errors: { cardNotFound: "missing", workspaceUnavailable: "workspace" },
+  });
+  const result = await diff({ cardId: "card_1" });
+  assert.equal(result.entitySummary?.total, 1);
+  assert.deepEqual(result.changedSymbols?.map((row) => row.symbol), ["foo"]);
+  assert.deepEqual(result.affectedTests?.map((test) => test.id), ["t.ts::test::covers foo"]);
+  assert.equal(result.testGate?.obligations, true);
+  assert.equal(result.qualityGate?.blocked, false);
 });
 
 test("card diff ignores partial status output after a failed status command", async () => {

@@ -3,6 +3,8 @@ import { resolveArtifactPath } from "../../lib/artifact-manifest.mjs";
 import { summarizeCymbalChanged } from "../../lib/cymbal-changed.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "../../lib/diff-split.mjs";
 import { summarizeSemDiff } from "../../lib/sem-summary.mjs";
+import { summarizeSemImpact } from "../../lib/sem-impact.mjs";
+import { summarizeTestGate, summarizeQualityDelta } from "../../lib/ripwire-gates.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type ExecFile = typeof execFile;
@@ -16,6 +18,8 @@ type DiffFile = {
   hostId: string;
 };
 type GitResult = { ok: boolean; stdout: string };
+type AffectedTest = { id: string; name: string; type: string; file: string; lines: number[] };
+type ChangedSymbol = { symbol: string; files: string[]; callers: number; testCallers: number };
 type DiffDeps = {
   execFile: ExecFile;
   getCard: (cardId: string) => WorkerCard | undefined;
@@ -24,6 +28,9 @@ type DiffDeps = {
   resolveLocalBin: (name: string) => string;
   errors: { cardNotFound: string; workspaceUnavailable: string };
 };
+
+const MAX_AFFECTED_SYMBOLS = 5;
+const MAX_AFFECTED_TESTS = 20;
 
 export function createCardDiff(deps: DiffDeps) {
   return ({ cardId }: { cardId: string }) => cardDiff(deps, cardId);
@@ -41,21 +48,8 @@ async function cardDiff(deps: DiffDeps, cardId: string) {
   if (!top.ok || !top.stdout.trim()) return emptyDiff("Not a git repository.", true);
   const root = top.stdout.trim();
   const files = await collectFiles(deps.execFile, root, checkout.hostId ?? "");
-  const entitySummary = await optionalSummary(
-    deps.execFile,
-    deps.resolveLocalBin("sem"),
-    ["diff", "-C", root, "HEAD", "--format", "json", "--color", "never"],
-    summarizeSemDiff,
-    null,
-  );
-  const changedSymbols = await optionalSummary(
-    deps.execFile,
-    deps.resolveLocalBin("cymbal"),
-    ["changed", "--base", "HEAD", "--json", "--max-symbols", "20", "--max-impact", "100"],
-    summarizeCymbalChanged,
-    null,
-    root,
-  );
+  const [entitySummary, changedSymbols] = await Promise.all([semSummary(deps, root), cymbalSymbols(deps, root)]);
+  const gates = await diffToolGates(deps, root, changedSymbols ?? []);
   return {
     found: true,
     isRepo: true,
@@ -63,8 +57,40 @@ async function cardDiff(deps: DiffDeps, cardId: string) {
     truncated: files.truncated,
     entitySummary,
     changedSymbols,
+    ...gates,
     error: null,
   };
+}
+
+function semSummary(deps: DiffDeps, root: string) {
+  return optionalSummary(
+    deps.execFile,
+    deps.resolveLocalBin("sem"),
+    ["diff", "-C", root, "HEAD", "--format", "json", "--color", "never"],
+    summarizeSemDiff,
+    null,
+  );
+}
+
+function cymbalSymbols(deps: DiffDeps, root: string) {
+  return optionalSummary(
+    deps.execFile,
+    deps.resolveLocalBin("cymbal"),
+    ["--no-federate", "changed", "--base", "HEAD", "--json", "--max-symbols", "20", "--max-impact", "100"],
+    summarizeCymbalChanged,
+    null,
+    root,
+  );
+}
+
+async function diffToolGates(deps: DiffDeps, root: string, symbols: ChangedSymbol[]) {
+  const ripwireBin = deps.resolveLocalBin("ripwire");
+  const [affectedTests, testGate, qualityGate] = await Promise.all([
+    affectedTestsForSymbols(deps, root, symbols),
+    optionalSummary(deps.execFile, ripwireBin, [root, "--test-gate", "--json"], summarizeTestGate, null, root),
+    optionalSummary(deps.execFile, ripwireBin, [root, "--quality-delta", "--json"], summarizeQualityDelta, null, root),
+  ]);
+  return { affectedTests, testGate, qualityGate };
 }
 
 function emptyDiff(error: string, found = false) {
@@ -75,8 +101,42 @@ function emptyDiff(error: string, found = false) {
     truncated: false,
     entitySummary: null as ReturnType<typeof summarizeSemDiff>,
     changedSymbols: null as ReturnType<typeof summarizeCymbalChanged>,
+    affectedTests: null as AffectedTest[] | null,
+    testGate: null as ReturnType<typeof summarizeTestGate>,
+    qualityGate: null as ReturnType<typeof summarizeQualityDelta>,
     error,
   };
+}
+
+/**
+ * Affected tests first: the test entities `sem impact --tests` names for
+ * the top changed symbols. Capped and fail-soft — a refusal (ambiguous
+ * symbol, missing file hint) drops that symbol, never the whole list.
+ */
+async function affectedTestsForSymbols(
+  deps: DiffDeps,
+  root: string,
+  symbols: ChangedSymbol[],
+): Promise<AffectedTest[] | null> {
+  const targets = symbols.slice(0, MAX_AFFECTED_SYMBOLS);
+  if (targets.length === 0) return null;
+  const semBin = deps.resolveLocalBin("sem");
+  const perSymbol = await Promise.all(targets.map((target) => {
+    const file = target.files[0];
+    const args = ["impact", target.symbol, "--tests", "--json", ...(file ? ["--file", file] : [])];
+    return optionalSummary(deps.execFile, semBin, args, summarizeSemImpact, null, root);
+  }));
+  const seen = new Set<string>();
+  const tests: AffectedTest[] = [];
+  for (const summary of perSymbol) {
+    for (const test of summary?.tests ?? []) {
+      if (seen.has(test.id)) continue;
+      seen.add(test.id);
+      tests.push({ id: test.id, name: test.name, type: test.type, file: test.file, lines: test.lines });
+      if (tests.length >= MAX_AFFECTED_TESTS) return tests;
+    }
+  }
+  return tests.length > 0 ? tests : null;
 }
 
 function gitRunner(exec: ExecFile, defaultCwd: string) {
