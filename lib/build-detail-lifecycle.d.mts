@@ -9,6 +9,7 @@ export type BuildLifecycleAction =
   | "retry"
   | "restart"
   | "start"
+  | "restore"
   | "split";
 
 export type BuildLifecycleOutcome = {

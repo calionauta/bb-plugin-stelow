@@ -64,17 +64,20 @@ function useDismissMenu(open: boolean, onClose: () => void) {
 
 // The open menu: reclassify plus the policy-gated destructive entries,
 // separated when both families show.
-function MenuPopover({ cardId, canReclassify, actions, onPick, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
+function MenuPopover({ cardId, canReclassify, actions, onPick, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify }: {
   cardId: string;
   canReclassify: boolean;
-  actions: { showRestartFresh: boolean; showArchive: boolean; showDiscard: boolean; showDelete: boolean };
+  actions: { showRestartFresh: boolean; showArchive: boolean; showDiscard: boolean; showDelete: boolean; showRestore: boolean };
   onPick: (action: () => void) => void;
   onRestartFresh: () => void;
   onArchive: () => void;
   onDiscard: () => void;
   onDelete: () => void;
+  onRestore: () => void;
   onReclassify: () => void;
 }) {
+  const showDivider = (canReclassify || actions.showRestartFresh)
+    && (actions.showArchive || actions.showDiscard || actions.showDelete || actions.showRestore);
   return (
     <div id={`card-actions-${cardId}`} role="group" aria-label="Card actions" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md">
       {canReclassify ? (
@@ -83,12 +86,25 @@ function MenuPopover({ cardId, canReclassify, actions, onPick, onRestartFresh, o
       {actions.showRestartFresh ? (
         <button type="button" onClick={() => onPick(onRestartFresh)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Restart fresh…</button>
       ) : null}
-      {(canReclassify || actions.showRestartFresh) && (actions.showArchive || actions.showDiscard || actions.showDelete) ? <div className="my-1 border-t" /> : null}
+      {showDivider ? <div className="my-1 border-t" /> : null}
       {actions.showArchive ? (
         <button type="button" onClick={() => onPick(onArchive)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Archive card…</button>
       ) : null}
       {actions.showDiscard ? (
         <button type="button" onClick={() => onPick(onDiscard)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Discard work…</button>
+      ) : null}
+      {actions.showRestore ? (
+        <button
+          type="button"
+          onClick={() => onPick(onRestore)}
+          className={
+            "flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 " +
+            "text-left hover:bg-state-hover focus-visible:outline " +
+            "focus-visible:outline-2 focus-visible:outline-primary"
+          }
+        >
+          Restore from archive…
+        </button>
       ) : null}
       {actions.showDelete ? (
         <button type="button" onClick={() => onPick(onDelete)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Delete permanently…</button>
@@ -145,12 +161,13 @@ function ReclassifyDialog({ open, onOpenChange, intent, onReclassify }: {
   );
 }
 
-export function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
+export function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify }: {
   card: ManageCardState;
   onRestartFresh: () => void;
   onArchive: () => void;
   onDiscard: () => void;
   onDelete: () => void;
+  onRestore: () => void;
   onReclassify: (intent: string) => Promise<boolean>;
 }) {
   const actions = workerActionPolicy(card, card.needsAttention);
@@ -185,6 +202,7 @@ export function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, on
             onArchive={onArchive}
             onDiscard={onDiscard}
             onDelete={onDelete}
+            onRestore={onRestore}
             onReclassify={() => { setOpen(false); setReclassifyOpen(true); }}
           />
         ) : null}

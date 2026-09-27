@@ -5,4 +5,10 @@ type CommitFileState = { binary: boolean; patch: string | null; loadMode: string
 export function shouldShowBuildDiff(input: BuildDiffVisibility): boolean;
 export function formatEntitySummary(summary: EntitySummary | null): string | null;
 export function formatChangedSymbols(symbols: ChangedSymbol[] | null): string | null;
+type AffectedTest = { id: string; name: string; type: string; file: string; lines: number[] };
+type TestGate = { tests: number; untested: number; testsToRun: string[]; obligations: boolean };
+type QualityGate = { baseline: string | null; regressions: number; minor: number; gating: number; blocked: boolean };
+export function formatAffectedTests(tests: AffectedTest[] | null): string | null;
+export function formatTestGate(gate: TestGate | null): string | null;
+export function formatQualityGate(gate: QualityGate | null): string | null;
 export function commitFileState(file: CommitFileState): string;

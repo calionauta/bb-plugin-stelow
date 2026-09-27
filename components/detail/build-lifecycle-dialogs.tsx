@@ -41,6 +41,11 @@ const PROMOTE_DESCRIPTION = [
   "Open thread then opens that project worker; the earlier thread stays in Worker history.",
 ].join(" ");
 
+const RESTORE_DESCRIPTION = [
+  "Returns this card to its archived stage with a fresh worker; the previous thread stays in Worker history.",
+  "Pending questions and errors return; nothing else moves.",
+].join(" ");
+
 function WorkerConfirmDialogs({ state }: { state: BuildLifecycleState }) {
   return (
     <>
@@ -82,7 +87,7 @@ function RecoveryConfirmDialog({ state }: { state: BuildLifecycleState }) {
   );
 }
 
-function RemovalConfirmDialogs({ state }: { state: BuildLifecycleState }) {
+function RemovalConfirmDialogs({ state, cardStage }: { state: BuildLifecycleState; cardStage: string | null }) {
   return (
     <>
       <ConfirmActionDialog
@@ -111,6 +116,15 @@ function RemovalConfirmDialogs({ state }: { state: BuildLifecycleState }) {
         confirmLabel="Discard work"
         confirmTone="destructive"
         onConfirm={state.doDiscard}
+      />
+      <ConfirmActionDialog
+        open={state.restoreOpen}
+        onOpenChange={state.setRestoreOpen}
+        title="Restore this archived card?"
+        description={cardStage ? `Returns this card to ${cardStage} with a fresh worker. ${RESTORE_DESCRIPTION}` : RESTORE_DESCRIPTION}
+        confirmLabel="Restore card"
+        confirmTone="default"
+        onConfirm={state.doRestore}
       />
       <RecoveryConfirmDialog state={state} />
     </>
@@ -156,15 +170,16 @@ function PromoteCardDialog(
 }
 
 export function BuildLifecycleDialogs(
-  { state, cardDisplayName }: {
+  { state, cardDisplayName, cardStage }: {
     state: BuildLifecycleState;
     cardDisplayName: string | null;
+    cardStage: string | null;
   },
 ) {
   return (
     <>
       <WorkerConfirmDialogs state={state} />
-      <RemovalConfirmDialogs state={state} />
+      <RemovalConfirmDialogs state={state} cardStage={cardStage} />
       <PromoteCardDialog state={state} cardDisplayName={cardDisplayName} />
     </>
   );

@@ -18,12 +18,12 @@ import {
 // before the action runs.
 assert.match(
   manageMenu,
-  /export function CardActionsMenu\(\{ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify/,
+  /export function CardActionsMenu\(\{ card, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify/,
   "the menu lives in the manage module",
 );
 assert.match(
   manageHeader,
-  /export function CardDetailHeader\(\{ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify, statusTone, intentLabel/,
+  /export function CardDetailHeader\(\{ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify, statusTone, intentLabel/,
   "the header lives in the manage module",
 );
 assert.match(
@@ -162,6 +162,7 @@ for (const rpc of [
   "retryWorker",
   "restartWorker",
   "startWorker",
+  "restoreCard",
   "requestSplitProposal",
 ]) {
   assert.equal(
@@ -173,11 +174,27 @@ for (const rpc of [
 }
 assert.equal(
   (buildLifecycleDialogs.match(/<ConfirmActionDialog/g) ?? []).length,
-  6,
-  "the lifecycle dialog leaf owns repair, restart, archive, delete, discard, and recovery confirmation",
+  7,
+  "the lifecycle dialog leaf owns repair, restart, archive, delete, discard, restore, and recovery confirmation",
 );
 assert.match(
   buildLifecycleDialogs,
   /<Dialog open=\{state\.promoteOpen\}/,
   "promotion keeps its named-project dialog in the lifecycle leaf",
+);
+// Restore is a door only a person can open: a confirmed Manage menu entry,
+// never prominent, never a drag target. The entry carries the default tone
+// (destructive styling would promote it beside Delete) and the dialog names
+// the stage the card returns to.
+const restoreLabelAt = manageMenu.indexOf("Restore from archive…");
+assert.ok(restoreLabelAt > 0, "archived cards offer restore from the Manage menu");
+assert.doesNotMatch(
+  manageMenu.slice(Math.max(0, restoreLabelAt - 400), restoreLabelAt),
+  /text-destructive/,
+  "restore is never the prominent destructive choice",
+);
+assert.match(
+  buildLifecycleDialogs,
+  /Returns this card to \$\{cardStage\}/,
+  "the restore confirm names the stage the card returns to",
 );

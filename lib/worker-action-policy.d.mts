@@ -17,6 +17,7 @@ export declare function workerActionPolicy(card: WorkerActionCard, needsAttentio
   showRestartFresh: boolean;
   showArchive: boolean;
   showDelete: boolean;
+  showRestore: boolean;
   showDiscard: boolean;
 };
 

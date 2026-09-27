@@ -87,13 +87,18 @@ test("repair reports the chosen intent and refreshes only after a reseed", () =>
 });
 
 test("resume actions always refresh while split refreshes only on success", () => {
-  for (const action of ["retry", "restart", "start"]) {
+  for (const action of ["retry", "restart", "start", "restore"]) {
     assert.equal(buildLifecycleOutcome(action, { ok: false }).refresh, true, `${action} refreshes failed host state`);
     assert.equal(buildLifecycleOutcome(action, { ok: true }).refresh, true);
   }
   assert.equal(buildLifecycleOutcome("retry", { ok: false }).error, "Retry failed. Try Restart fresh instead.");
   assert.equal(buildLifecycleOutcome("restart", { ok: false, error: "Cannot stop" }).error, "Cannot stop");
   assert.equal(buildLifecycleOutcome("start", { ok: false }).error, "Start failed.");
+  assert.equal(buildLifecycleOutcome("restore", { ok: false }).error, "Restore failed.");
+  assert.equal(
+    buildLifecycleOutcome("restore", { ok: true }).success,
+    "Card restored — a fresh worker is continuing from its stage.",
+  );
   assert.equal(buildLifecycleOutcome("split", { ok: false }).refresh, undefined);
   assert.equal(buildLifecycleOutcome("split", { ok: true }).refresh, true);
 });

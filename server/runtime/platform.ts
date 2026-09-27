@@ -77,18 +77,18 @@ const SCRIPT_INSTALLERS = {
     env: { SEM_VERSION: "v0.25.0" },
   },
   ripwire: {
-    url: "https://raw.githubusercontent.com/redhat-et/ripwire/v0.6.2/scripts/install.sh",
+    url: "https://raw.githubusercontent.com/redhat-et/ripwire/v0.6.4/scripts/install.sh",
     sha256: "dfc76bc9bdf97fb04f29683703fe931db885afadca056e98364c634874726d55",
     env: {
       RIPWIRE_REPO: "redhat-et/ripwire",
-      RIPWIRE_VERSION: "v0.6.2",
+      RIPWIRE_VERSION: "v0.6.4",
       RIPWIRE_INSTALL_YES: "1",
       RIPWIRE_NO_ACTIVATE: "1",
     },
   },
 } as const;
 
-const AST_GREP_VERSION = "0.40.3";
+const AST_GREP_VERSION = "0.45.3";
 const CYMBAL_VERSION = "v0.17.0";
 
 function defaultProbe(bin: string): Promise<ToolProbeResult> {

@@ -17,6 +17,7 @@ export const server = [
   readFileSync(join(root, "server", "runtime", "card-audit-trail.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-lifecycle.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-operations.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-restore.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "research-track-sync.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-sync-core.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-prompts.ts"), "utf8"),

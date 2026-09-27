@@ -120,13 +120,14 @@ function useEscapeBack(onBack?: () => void) {
   return { closeRef };
 }
 
-export function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify, statusTone, intentLabel }: {
+export function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify, statusTone, intentLabel }: {
   card: ManageCardState | null;
   onBack?: () => void;
   onRestartFresh: () => void;
   onArchive: () => void;
   onDiscard: () => void;
   onDelete: () => void;
+  onRestore: () => void;
   onReclassify: (intent: string) => Promise<boolean>;
   statusTone: (status: string) => string;
   intentLabel: (intent: string) => string | undefined;
@@ -151,7 +152,15 @@ export function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDi
         {card.kind === "build" && canEditWorkflowIntent(card) ? (
         <IntentSelect cardId={card.id} intent={card.intent} intentLabel={intentLabel} />
         ) : null}
-        <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDiscard={onDiscard} onDelete={onDelete} onReclassify={onReclassify} />
+        <CardActionsMenu
+          card={card}
+          onRestartFresh={onRestartFresh}
+          onArchive={onArchive}
+          onDiscard={onDiscard}
+          onDelete={onDelete}
+          onRestore={onRestore}
+          onReclassify={onReclassify}
+        />
       </> : null}
       {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <Icon name="X" className="h-4 w-4" aria-hidden />

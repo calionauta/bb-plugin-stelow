@@ -202,3 +202,13 @@ test("claim waiter terminal cleanup is a negative control", async () => {
   assert.deepEqual(calls.map(([name]) => name), ["clear"]);
   assert.deepEqual(calls[0][1], { cardId: "card_1", workspacePath: undefined, files: undefined });
 });
+
+test("explicit restore is the only path that flips an archived card back to live", () => {
+  const flagged = updaterHarness(card({ status: "archived" }));
+  flagged.updateCard("card_1", { status: "in-progress" }, { restoreFromArchive: true });
+  assert.equal(flagged.row().status, "in-progress");
+
+  const unflagged = updaterHarness(card({ status: "archived" }));
+  unflagged.updateCard("card_1", { status: "in-progress" });
+  assert.equal(unflagged.row().status, "archived");
+});

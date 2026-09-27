@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { summarizeCymbalChanged, MAX_SYMBOLS } from "../lib/cymbal-changed.mjs";
 
-// Shape mirrors live `cymbal changed --base HEAD --json` (cymbal 0.14).
+// Shape mirrors live `cymbal changed --base HEAD --json` (cymbal 0.14–0.17).
 const FIXTURE = {
   results: {
     analyzed: 1,
