@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.54.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.54.1...v0.54.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* batch the archived bulk delete, and keep the dialog open while it runs ([#139](https://github.com/calionauta/bb-plugin-stelow/issues/139)) ([0937d44](https://github.com/calionauta/bb-plugin-stelow/commit/0937d44ebf8d1e8db8db36b2352ff9727eaacd9b))
+
 ## [0.54.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.54.0...v0.54.1) (2026-09-27)
 
 
