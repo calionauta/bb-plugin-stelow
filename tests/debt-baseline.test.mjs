@@ -4,7 +4,10 @@
 // fact rather than two that can drift apart. A ceiling may be lowered, never
 // raised, and lowering one is a deliberate edit rather than a side effect. The
 // gate that produces the inherited set is diff-scoped, so the whole-tree census
-// below is the only place the debt it cannot see is recorded.
+// below is the only place the debt it cannot see is recorded. Touching a file
+// that matches its fork-point copy still puts it in the gate's changed set,
+// so a carried oversized function surfaces as inherited the moment the file
+// is edited — record its waiver line here in the same commit.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
