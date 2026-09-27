@@ -33,12 +33,13 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // — so a waiver can be checked by reading the line.
 const inheritedBaseline = [
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
+  "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
-  "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
-  "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (recorded 69)",
-  "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
-  "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
-  "tests/server-cards.test.mjs:callback#4: 82 lines (baseline 84)",
+  "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (baseline 68)",
+  "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (baseline 69)",
+  "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (baseline 61)",
+  "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (baseline 72)",
+  "tests/server-cards.test.mjs:callback#4: 82 lines (baseline 82)",
 ];
 
 function git(...command) {

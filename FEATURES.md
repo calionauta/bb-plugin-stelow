@@ -565,6 +565,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
   mutates the index.
+- **Diff test and quality signals** (`formatAffectedTests`,
+  `formatTestGate`, `formatQualityGate`). Below the entity and symbol
+  lines, the Diff panel names the affected tests to run first (`sem`),
+  the pending test obligations, and the quality gate verdict (`ripwire`)
+  — each as one fail-soft line that stays hidden when its tool is
+  absent, so a tree with no signal never reads as an error.
 - **Preview** (`PreviewSection`, `previewState`/`previewStart`/`previewStop`,
   `bb stelow preview`). Runs the card's own web app and shows it inside the
   panel: the stack is detected from the workspace (Next/Vite/Astro/Svelte,
