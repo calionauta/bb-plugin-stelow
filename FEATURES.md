@@ -296,6 +296,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   derived from one workflow catalog; Research/Explore own their separately
   derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
   move via drag-drop.
+- **A drop that changes nothing changes nothing.** Dragging is the most
+  accidental gesture in the UI, and `moveCard` was doing real work to a no-op:
+  a card nudged a few pixels and released in its own column was rewritten to
+  that column's *entry* stage, so a card being worked right now at `plan-gate`
+  silently teleported back to `critique` — reporting success, with no confirm
+  and nothing to undo. A move to the position the card already holds is now a
+  silent no-op, and a move to a phase the card is already *inside* refuses,
+  naming the stage it is at and the stage a re-entry would impose, pointing at
+  the explicit restart affordance that confirms and says what it discards.
+  Stage progress moves by doing the work. The terminality rule is now scoped
+  to what actually protects state — nothing takes a card *out* of `archived`,
+  while a card already there accepts a drop on its own column without stopping
+  a worker for nothing. A genuine move into another phase is untouched.
 - **One state language.** Build Kanban tiles and the open-card header use the
   same ordered pills: board location, lifecycle state, worker state, then
   workflow type. The components and tones are shared; a generic “Status”

@@ -10,7 +10,7 @@
  * exists before the recovery that imports into it, and the execution layer
  * exists before the detail view that reports what it did.
  */
-import { PHASE_ENTRY_STAGES } from "../../../lib/workflow-vocabulary.mjs";
+import { PHASE_ENTRY_STAGES, WORKFLOW_STAGES } from "../../../lib/workflow-vocabulary.mjs";
 import {
   discardConfirm,
   discardEligibility,
@@ -237,6 +237,7 @@ function buildCardOperations(core: RuntimeCore) {
     buildContinueInput,
     splitRequestNudge: SPLIT_REQUEST_NUDGE,
     phaseEntryStages: PHASE_ENTRY_STAGES,
+    stagePhases: Object.fromEntries(WORKFLOW_STAGES.map(({ id, phase }) => [id, phase])),
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,
