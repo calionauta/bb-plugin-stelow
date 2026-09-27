@@ -72,7 +72,7 @@ const reopened = db.prepare(`
   SELECT resolved_at, resolved_reason FROM inbox_events
   WHERE card_id = 'card_2' AND kind = 'question'
 `).get();
-assert.deepEqual(reopened, { resolved_at: null, resolved_reason: "answered" }, "a still-pending interaction reopens its durable row");
+assert.deepEqual(reopened, { resolved_at: null, resolved_reason: null }, "a still-pending interaction reopens its durable row with no stale reason");
 assert.equal(published.length, beforeReopen + 1, "reopen publishes the changed lifecycle state");
 assert.equal(published.at(-1).payload.cardId, "card_2", "reopen refreshes the owning card");
 inbox.markAnswered("card_2", ["ask_1"]);

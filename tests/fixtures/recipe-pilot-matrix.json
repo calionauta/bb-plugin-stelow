@@ -9,11 +9,11 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -70,6 +70,18 @@
       "outputs": ["interfaces/alternatives.json", "interfaces/alternatives-verification.json", "interfaces/interfaces.md"]
     },
     {
+      "id": "interface-contrast",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "020ffb9f9c16c3be94f09d63f14e449cb8b70d85757a2deabef54c3763fd13d5",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": ["contrast"],
+      "outputs": ["interfaces/contrast.json", "interfaces/interfaces.md"]
+    },
+    {
       "id": "plan-critique",
       "classification": "low-risk-artifact",
       "expected_route": "native",
@@ -105,6 +117,18 @@
       "human_boundaries": ["gap-escalation"],
       "outputs": ["execution/scope-partition.json", "execution/scope-results.json", "execution/scope-verification.json", "execution/parent-verification.json", "execution/gap-escalation.json"],
       "waiver_id": "workspace-writing-scope-batch"
+    },
+    {
+      "id": "scope-map",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "4303d57639a3ba9262264da2fdebaa80398a9cbe2e885b604df52b15cba8349e",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": [],
+      "outputs": ["scope-map.json"]
     },
     {
       "id": "setup-recon",

@@ -80,12 +80,19 @@ function assertTaskGraph(recipe) {
 
 function sample(schema) {
   if (schema.enum) return schema.enum[0];
+  if ("const" in schema) return schema.const;
+  if (Array.isArray(schema.type)) {
+    const pick = schema.type.find((entry) => entry !== "null") ?? "null";
+    if (pick === "null") return null;
+    return sample({ ...schema, type: pick });
+  }
   if (schema.type === "object") {
     return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, sample(child)]));
   }
   if (schema.type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
   if (schema.type === "string") return "pilot evidence";
   if (schema.type === "boolean") return true;
+  if (schema.type === "number" || schema.type === "integer") return schema.const ?? 1;
   assert.fail(`matrix cannot synthesize unsupported schema type: ${schema.type}`);
 }
 
