@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.55.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.54.4...v0.55.0) (2026-09-27)
+
+
+### Features
+
+* enforce tool-backed verification evidence in card diff ([a987989](https://github.com/calionauta/bb-plugin-stelow/commit/a987989833767c5a06f3d4eb7ef8e825ff03f4a2))
+* restore archived cards through a confirmed separate action ([04faa63](https://github.com/calionauta/bb-plugin-stelow/commit/04faa630f9d7915adf7b2153754ae3b8561a4af1))
+
+
+### Bug Fixes
+
+* pin host tool installers to latest verified versions ([f11699b](https://github.com/calionauta/bb-plugin-stelow/commit/f11699b590e9541a00e000d12f4cb0f0a3b6a288))
+
 ## [0.54.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.54.3...v0.54.4) (2026-09-27)
 
 
