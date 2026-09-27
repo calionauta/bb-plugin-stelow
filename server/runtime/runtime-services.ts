@@ -76,6 +76,7 @@ export function createRuntimeServices(deps: RuntimeServiceDeps) {
     getCard: cardStore.getCard,
     cardWorkspace: cardStore.cardWorkspace,
     recordInboxEvent: inbox.record,
+    upsertPausedEvent: inbox.upsertPaused,
     resolveInboxEvents: inbox.resolve,
     markInboxQuestionsAnswered: (
       cardId: string,

@@ -264,6 +264,9 @@ async function manifestSubsteps(
       .filter((fields) => fields.stage === "research" && typeof fields.path === "string")
       .map((fields) => fields.path as string)
     : [];
+  // Listed once, not per round: the walk is recursive and the round loop can
+  // hold several rounds, and every file in here is about to be read anyway.
+  const present = await deps.roundFiles(deps.joinPath(stateDir, "rounds"));
   const substeps: SubstepRow[] = [];
   for (const [index, entry] of history.entries()) {
     const n = index + 1;
@@ -277,7 +280,6 @@ async function manifestSubsteps(
     // Registration is not a licence. A declared substep the worker wrote but
     // did not register is gated too, or writing stubs and omitting them from
     // state.md is a way to make a round read as ready.
-    const present = await deps.roundFiles(deps.joinPath(stateDir, "rounds"));
     const undeclared = unregisteredSubstepPaths(strategy?.substeps, registered, present, entry.id, entry.file);
     for (const path of undeclared) {
       const slug = parseRoundPath(path, entry.id)?.subskill ?? path.split("/").pop() ?? path;

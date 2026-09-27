@@ -75,6 +75,17 @@ function createDeps(options, state, calls) {
     },
     recordInboxEvent: (row, kind, message, key, at) =>
       calls.inbox.push({ kind, message, key, at, status: row.status }),
+    // The paused path no longer records per idle period: it refreshes the
+    // card's one open row, so the fake mirrors the real one-row-per-card
+    // contract rather than appending a row per call.
+    upsertPausedEvent: (cardId, message, idleAt) => {
+      const already = calls.inbox.find((entry) => entry.kind === "paused" && entry.open);
+      if (already) {
+        already.at = idleAt;
+        return;
+      }
+      calls.inbox.push({ kind: "paused", message, key: `paused:${cardId}:${idleAt}`, at: idleAt, open: true });
+    },
     resolvePausedEvents: (cardId, at) => calls.resolved.push([cardId, at]),
     recordStageEvent: (cardId, stage) => calls.stages.push([cardId, stage]),
     markThreadRunning: async (row, lastOutput) =>

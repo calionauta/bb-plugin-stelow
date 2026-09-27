@@ -1236,6 +1236,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I need to understand before building, I want a lightweight
 investigation that feeds the build board.*
 
+- **One stuck card is one open paused event, escalated in place.** The paused
+  event used to be keyed by idle timestamp, so every new idle period minted a new
+  row. A card blinking between idle and briefly-active therefore produced a
+  stream of byte-identical notifications for a single problem — one real card
+  carried eight open rows all reading "Idle with unfinished work" — and the
+  `Stalled Nd` escalation the inbox already has for exactly this never fired once
+  in the whole database, because its rows were buried under their own
+  look-alikes. The badge counts unresolved *action items*, and one stuck card is
+  one of them. A repeat idle now refreshes the open row: the timestamp moves so
+  the item sorts as current, and the summary gains the stall age once it passes
+  the escalation window, measured from the FIRST idle so a card idle for a week
+  says `Stalled 7d` rather than resetting every time it blinks. Resolution is
+  what re-opens the count — once the user acts, the next stall is a new item,
+  and two stuck cards are still two items.
 - **Registration is not a licence on a research substep.** A composite
   research strategy declares its substeps, and each has a depth contract. The
   gate used to run on whatever the worker chose to register in `state.md`, so

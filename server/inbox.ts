@@ -7,6 +7,7 @@ import {
   listInboxEvents,
   markQuestionsAnswered,
   resolveActionInboxEvents,
+  upsertPausedEvent,
   syncQuestionInboxEvents,
   type InboxEventInput,
   type InboxResolutionReason,
@@ -341,6 +342,19 @@ export function createInboxServer(deps: InboxServerDeps) {
   return {
     handlers: createInboxHandlers(ctx, deps),
     record: createRecorder(ctx),
+    // One open paused row per card, refreshed rather than duplicated — see
+    // lib/inbox-events upsertPausedEvent for why a stream of identical rows
+    // for a single stuck card is inflation, not attention.
+    upsertPaused: (cardId: string, summary: string, idleAt: number) => {
+      const touched = upsertPausedEvent(ctx.db, {
+        cardId,
+        summary,
+        idleAt,
+        nowMs: ctx.now(),
+        createId: () => ctx.randomId("evt"),
+      });
+      if (touched) ctx.changed({ cardId });
+    },
     resolve: createResolver(ctx),
     syncPendingQuestion: createQuestionSync(ctx),
     markAnswered: createAnswerMarker(ctx),
