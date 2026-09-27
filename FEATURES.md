@@ -853,7 +853,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   delete, because a bulk action that reported only "done" would leave the
   reader looking at a non-empty column and believing it was empty. There is no
   undo, and a card's trail comment dies with the card exactly as it does for a
-  single delete — the report is the record, and it carries the counts.
+  single delete — the report is the record, and it carries the counts. The RPC's
+  200-id cap is a request-size guard, not a product limit, so the client
+  **batches** and stays accountable across batches: a batch that fails at the
+  transport level is reported as unaccounted rather than dropped. The confirm
+  dialog stays open while the work runs, so "Working…" shows and the button
+  cannot be fired twice over a stale id list — a column of hundreds takes long
+  enough that silence reads as a hang.
 - **Discard work** (`discardPreview`, `discardCardChanges`,
   `lib/discard-policy.mjs`). Archive parks with the work intact; discard
   destroys unpushed work, then archives. Manage offers it on live and

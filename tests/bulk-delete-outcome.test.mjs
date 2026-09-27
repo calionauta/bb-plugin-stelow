@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { bulkDeleteTooLarge, describeBulkDelete } from "../lib/bulk-delete-outcome.mjs";
+import { describeBulkDelete } from "../lib/bulk-delete-outcome.mjs";
 
 /**
  * A bulk delete that reported only "done" would hide the one card whose native
@@ -74,11 +74,5 @@ assert.equal(
   "Deleted 2 archived cards.",
   "a zero request does not turn two deletions into \"Deleted 0\"",
 );
-
-// The batch cap is the same one the RPC enforces, so the client never fires a
-// call the server will refuse for size alone.
-assert.equal(bulkDeleteTooLarge(200), false, "the cap itself is allowed");
-assert.equal(bulkDeleteTooLarge(201), true, "one past the cap is refused before the call");
-assert.equal(bulkDeleteTooLarge(0), false);
 
 console.log("bulk delete outcome test ok: the report cannot overstate what was deleted");

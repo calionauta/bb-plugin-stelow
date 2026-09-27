@@ -58,8 +58,15 @@ export function ArchivedColumnDelete(props: ArchivedDeleteProps & { count: numbe
         confirmLabel={`Delete ${count}`}
         confirmTone="destructive"
         onConfirm={async () => {
-          setOpen(false);
+          // Stay open until the work is done. `ConfirmActionDialog` shows
+          // "Working…" and disables both buttons while this awaits — which is
+          // the only thing standing between the reader and a second click over
+          // a stale id list. Closing first (as the single-card delete does) is
+          // fine for one card and wrong for a column of hundreds: stopping
+          // workers and removing run files takes long enough that silence reads
+          // as a hang, and a closed dialog cannot show progress.
           await onConfirm(props.cardIds);
+          setOpen(false);
         }}
       />
     </>
