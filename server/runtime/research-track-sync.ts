@@ -149,13 +149,11 @@ function noteIdlePaused(
   message: string,
 ): void {
   if (!hasIdledLongEnough(idleAt, deps.now, deps.idleAttentionMs)) return;
-  deps.recordInboxEvent(
-    card,
-    "paused",
-    message,
-    `paused:${card.id}:${idleAt}`,
-    idleAt,
-  );
+  // Refresh the card's one open paused row rather than minting a new one per
+  // idle period: a card blinking between idle and briefly-active otherwise
+  // produced byte-identical notifications for a single problem, and buried the
+  // "Stalled Nd" escalation under its own look-alikes.
+  deps.upsertPausedEvent(card.id, message, idleAt);
 }
 
 /**

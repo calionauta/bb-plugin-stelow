@@ -14,6 +14,8 @@ export type InboxKind = "error" | "paused" | "completed";
 export type TrackSyncDepsBase = {
   getCard: (cardId: string) => WorkerCard | undefined;
   updateCard: (cardId: string, fields: CardUpdate) => void;
+  /** Keep ONE open paused row per card instead of one per idle period. */
+  upsertPausedEvent: (cardId: string, summary: string, idleAt: number) => void;
   recordInboxEvent: (
     card: WorkerCard,
     kind: InboxKind,

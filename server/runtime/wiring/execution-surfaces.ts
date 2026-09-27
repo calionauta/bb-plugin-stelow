@@ -208,6 +208,7 @@ function buildThreadSync(core: RuntimeCore) {
     getCard,
     updateCard,
     recordInboxEvent: core.recordInboxEvent,
+    upsertPausedEvent: core.upsertPausedEvent,
     resolvePausedEvents: (cardId, at) =>
       core.resolveInboxEvents(cardId, at, ["paused"], "completed"),
     recordStageEvent: core.ledger.recordStageEvent,
