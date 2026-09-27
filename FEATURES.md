@@ -1294,6 +1294,21 @@ investigation that feeds the build board.*
   the handler supports, and the refusal showed on the plugin's status line — the
   one place a user looks to see whether a plugin is healthy. `projectId` is now
   genuinely optional, and the contract stays strict about everything else.
+- **A published RPC contract admits the call its handler answers.** All three
+  card creators resolve the worker environment with
+  `selectCardEnvironment(input.environment, <the workspace's own environment>)`
+  — an absent or unrecognised request falls back rather than failing, so every
+  creator genuinely answers "the project default". The contract said
+  `environment: z.unknown()`, which reads as "any value" and is not the same
+  claim as "may be absent", and a non-optional property is what the host's
+  schema derivation reports as REQUIRED. The host's own plugin probe omits it, so
+  all three were refused at validation for a call the handler supports, and the
+  refusal showed as `rpc createCard failed` on the plugin's status line — the one
+  place a person looks to see whether a plugin is healthy. Now genuinely
+  optional, and still strict: an unexpected field, a missing `projectId` and a
+  missing prompt are all still refused, while a real environment request is
+  still honoured. The same shape as the `listCards` contract, fixed earlier the
+  same day.
 - **One stuck card is one open paused event, escalated in place.** The paused
   event used to be keyed by idle timestamp, so every new idle period minted a new
   row. A card blinking between idle and briefly-active therefore produced a

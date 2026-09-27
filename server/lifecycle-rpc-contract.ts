@@ -130,7 +130,15 @@ export const lifecycleRpcContract = {
     input: z
       .object({
         projectId: z.string(),
-        environment: z.unknown(),
+        // Optional, not merely unconstrained. `selectCardEnvironment` returns
+        // the workspace's own environment whenever the request is absent or
+        // unrecognised, so every creator genuinely answers "the project
+        // default" — but a non-optional property is what the host's schema
+        // derivation reports as REQUIRED. The host's plugin probe omits it and
+        // was refused at validation for a call the handler supports, which
+        // surfaced as "rpc createCard failed" on the plugin's own status line:
+        // the one place a person looks to see whether a plugin is healthy.
+        environment: z.unknown().optional(),
         prompt: z.string().min(1).max(20_000),
         attachments: z.array(attachmentSchema).max(20).default([]),
         strategy: z.string().min(1).max(60),
@@ -146,7 +154,15 @@ export const lifecycleRpcContract = {
     input: z
       .object({
         projectId: z.string(),
-        environment: z.unknown(),
+        // Optional, not merely unconstrained. `selectCardEnvironment` returns
+        // the workspace's own environment whenever the request is absent or
+        // unrecognised, so every creator genuinely answers "the project
+        // default" — but a non-optional property is what the host's schema
+        // derivation reports as REQUIRED. The host's plugin probe omits it and
+        // was refused at validation for a call the handler supports, which
+        // surfaced as "rpc createCard failed" on the plugin's own status line:
+        // the one place a person looks to see whether a plugin is healthy.
+        environment: z.unknown().optional(),
         prompt: z.string().min(1).max(20_000),
         attachments: z.array(attachmentSchema).max(20).default([]),
         stageId: z.string().min(1).max(60),
