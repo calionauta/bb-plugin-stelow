@@ -826,6 +826,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `.stelow` run files (no orphaned artifacts on disk); Git checkouts are
   never touched, so code changes survive the delete — the confirm dialog
   states exactly that.
+- **Delete all archived, scoped to the filter**
+  (`deleteArchivedCards`, `lib/board-filter-label.mjs`,
+  `lib/bulk-delete-outcome.mjs`). The Archived column of every board carries a
+  small ghost button beside its count, hidden when the column is empty, behind
+  a confirm dialog. The blast radius is the column **as filtered** — the same
+  cards on screen — and the dialog names that filter, so an intentional narrow
+  delete never reads as a wide one. The client sends the exact ids it was
+  showing, so the set cannot widen between the dialog and the click, and each
+  card still goes through the single-card delete, so a stale panel cannot
+  destroy a live card. Every id comes back accounted for: a card whose native
+  run refuses to stop is reported **with its reason** while the rest still
+  delete, because a bulk action that reported only "done" would leave the
+  reader looking at a non-empty column and believing it was empty. There is no
+  undo, and a card's trail comment dies with the card exactly as it does for a
+  single delete — the report is the record, and it carries the counts.
 - **Discard work** (`discardPreview`, `discardCardChanges`,
   `lib/discard-policy.mjs`). Archive parks with the work intact; discard
   destroys unpushed work, then archives. Manage offers it on live and

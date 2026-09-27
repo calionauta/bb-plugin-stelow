@@ -25,6 +25,14 @@ export const lifecycleRpcContract = {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
   },
+  deleteArchivedCards: {
+    experimental_description: "Hard-delete a set of archived cards, reporting each outcome",
+    input: z.object({ cardIds: z.array(z.string()).min(1).max(200) }).strict(),
+    output: z.object({
+      deleted: z.array(z.string()),
+      failed: z.array(z.object({ cardId: z.string(), error: z.string() })),
+    }),
+  },
   discardPreview: {
     experimental_description: "Preview destroying unpushed work before archiving, blast radius first",
     input: z.object({ cardId: z.string() }).strict(),

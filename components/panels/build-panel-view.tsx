@@ -10,6 +10,8 @@ import { FiltersBar } from "../board/board-filters";
 import { ViewToggle } from "../board/board-view-toggle";
 import { BuildList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
+import { archivedDeleteProps } from "../board/archived-delete-props";
+import { useDeleteArchivedCards } from "../board/use-delete-archived-cards";
 import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
@@ -199,6 +201,7 @@ function BuildFilters({ state, onAttention }: { state: BuildPanelState; onAttent
 }
 
 function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
+  const onConfirm = useDeleteArchivedCards(state.rpc);
   if (state.viewMode === "list") {
     return (
       <BuildList
@@ -226,18 +229,52 @@ function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Pr
       style={{ gridTemplateColumns: kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns) }}
     >
       {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
-        <BoardColumn
+        <BuildBoardColumn
           key={column}
           column={column}
-          cards={state.grouped[column]}
-          collapsed={Boolean(state.collapsedColumns[column])}
-          onToggleCollapsed={() => state.toggleColumn(column)}
-          onDrop={(cardId) => onMoveCard(cardId, column)}
-          labels={BUILD_BOARD_COLUMN_LABELS}
-          renderCard={(card) => <BoardCard card={card} onOpen={() => onOpenCard(card, card.id)} />}
+          state={state}
+          onOpenCard={onOpenCard}
+          onMoveCard={onMoveCard}
+          onConfirm={onConfirm}
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * One column of the build board, with its delete-all derived here rather than
+ * in the column component — the blast radius is `state.grouped[column]`, the
+ * cards the active filter resolved, and the confirmation has to name that same
+ * filter. Deriving it in one place per board is what stops the two from
+ * disagreeing about what is about to be destroyed.
+ */
+function BuildBoardColumn(props: {
+  column: string;
+  state: BuildPanelState;
+  onOpenCard: Props["onOpenCard"];
+  onMoveCard: (cardId: string, column: string) => void;
+  onConfirm: (cardIds: string[]) => Promise<void>;
+}) {
+  const { column, state, onOpenCard, onMoveCard, onConfirm } = props;
+  return (
+    <BoardColumn
+      column={column}
+      cards={state.grouped[column]}
+      collapsed={Boolean(state.collapsedColumns[column])}
+      onToggleCollapsed={() => state.toggleColumn(column)}
+      onDrop={(cardId) => onMoveCard(cardId, column)}
+      labels={BUILD_BOARD_COLUMN_LABELS}
+      renderCard={(card) => <BoardCard card={card} onOpen={() => onOpenCard(card, card.id)} />}
+      deleteAll={archivedDeleteProps({
+        column,
+        cards: state.grouped[column],
+        filters: state,
+        labels: { ...INTENT_LABEL, ...BUILD_BOARD_COLUMN_LABELS },
+        projects: state.projects,
+        onConfirm,
+      })}
+    />
   );
 }
 
