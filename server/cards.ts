@@ -66,8 +66,8 @@ type CardsDeps = {
 export function createCardsServer(deps: CardsDeps) {
   const { getCard, cardWorkspace } = deps.store;
   const createInternal = createCardInternal(deps.create);
-  const listCards = async ({ projectId, kind }: { projectId: string | null; kind?: string | null }) => {
-    const rows = queryCards(deps.db, projectId, kind ?? null);
+  const listCards = async ({ projectId, kind }: { projectId?: string | null; kind?: string | null }) => {
+    const rows = queryCards(deps.db, projectId ?? null, kind ?? null);
     const projects = await deps.bb.sdk.projects.list();
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
     const summaries = new Map<string, ScopeSummary>();
