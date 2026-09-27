@@ -279,6 +279,7 @@ function BuildDetailLayout({
         onArchive={() => lifecycle.setArchiveOpen(true)}
         onDiscard={() => void lifecycle.openDiscard()}
         onDelete={() => lifecycle.setDeleteOpen(true)}
+        onRestore={() => lifecycle.setRestoreOpen(true)}
         onReclassify={lifecycle.doRepair}
         statusTone={statusTone}
         intentLabel={(intent) => intentLabels[intent]}
@@ -304,6 +305,7 @@ function BuildDetailLayout({
       <BuildLifecycleDialogs
         state={lifecycle}
         cardDisplayName={card?.displayName ?? null}
+        cardStage={card?.stage ?? null}
       />
     </div>
   );

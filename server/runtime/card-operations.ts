@@ -3,6 +3,7 @@ import { isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { resolveCardMove } from "../../lib/card-move.mjs";
 import { splitActionState } from "../../lib/split-proposal.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { restoreCard } from "./card-restore.js";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -10,6 +11,7 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type CardOperationsDeps = {
   db: Db;
   bb: BbPluginApi;
+  now: () => number;
   getCard: (cardId: string) => WorkerCard | undefined;
   workers: {
     fresh: (cardId: string, reason: "start" | "restart") => Promise<{
@@ -21,7 +23,7 @@ type CardOperationsDeps = {
   updateCard: (
     cardId: string,
     values: Record<string, unknown>,
-    options?: { suppressCompletionEvent?: boolean },
+    options?: { suppressCompletionEvent?: boolean; restoreFromArchive?: boolean },
   ) => void;
   releaseClaims: (cardId: string) => Promise<void>;
   recordStageEvent: (cardId: string, stage: string) => void;
@@ -63,6 +65,7 @@ export function createCardOperationsHandlers(deps: CardOperationsDeps) {
       requestSplitProposal(deps, input),
     moveCard: (input: { cardId: string; status: string }) =>
       moveCard(deps, input),
+    restoreCard: (input: { cardId: string }) => restoreCard(deps, input),
   };
 }
 

@@ -36,7 +36,7 @@ type CardUpdaterDeps = {
   ) => unknown;
 };
 
-type UpdateOptions = { suppressCompletionEvent?: boolean };
+type UpdateOptions = { suppressCompletionEvent?: boolean; restoreFromArchive?: boolean };
 
 export function createCardUpdater(deps: CardUpdaterDeps) {
   return function updateCard(
@@ -50,11 +50,14 @@ export function createCardUpdater(deps: CardUpdaterDeps) {
     const previous = deps.getCard(cardId);
     // Archived is terminal: strip any status change that would resuscitate the
     // card (a stopping worker settling after Archive is the classic case).
-    // Archiving itself always passes through.
-    const effective = stripArchivedResuscitation(
-      previous?.status,
-      fields as Record<string, unknown>,
-    ) as Record<string, unknown>;
+    // Archiving itself always passes through, as does an explicit restore
+    // through restoreCard (the only path that may carry restoreFromArchive).
+    const effective = options?.restoreFromArchive
+      ? (fields as Record<string, unknown>)
+      : (stripArchivedResuscitation(
+        previous?.status,
+        fields as Record<string, unknown>,
+      ) as Record<string, unknown>);
     const keys = Object.keys(effective);
     if (keys.length === 0) return;
     // No-op guard: sync polls call updateCard every cycle, usually with
@@ -62,7 +65,7 @@ export function createCardUpdater(deps: CardUpdaterDeps) {
     // order and "Idle since" labels) and publish card-state for zero change.
     const changed = changedKeys(previous, keys, effective);
     if (previous && changed.length === 0) return;
-    const finalWrite = finalCardWrite(deps, cardId, changed, effective);
+    const finalWrite = finalCardWrite(deps, cardId, changed, effective, options);
     if (!Object.keys(finalWrite).some((key) => key !== "updated_at")) return;
     writeCard(deps.db, cardId, finalWrite);
     const current = deps.getCard(cardId);
@@ -95,9 +98,11 @@ function finalCardWrite(
   cardId: string,
   changed: string[],
   effective: Record<string, unknown>,
+  options?: UpdateOptions,
 ): Record<string, unknown> {
   const write: Record<string, unknown> = { updated_at: deps.now() };
   for (const key of changed) write[key] = effective[key];
+  if (options?.restoreFromArchive) return write;
   return stripArchivedResuscitation(
     deps.getCard(cardId)?.status,
     write,

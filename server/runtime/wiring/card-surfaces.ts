@@ -223,6 +223,7 @@ function buildCardOperations(core: RuntimeCore) {
   return createCardOperationsHandlers({
     db: core.db,
     bb: core.bb,
+    now: core.now,
     getCard: core.getCard,
     workers: core.workers,
     updateCard: core.updateCard,

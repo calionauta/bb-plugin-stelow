@@ -234,3 +234,9 @@ assert.match(
   /The card remains exploratory; its existing worker is still active/,
   "failed handoff explains the safe state",
 );
+
+// The archived door has exactly one keyhole: restoreFromArchive may be set
+// at a single call site (the restoreCard handler). A second setter would
+// silently widen the only path that bypasses the terminal strip.
+const restoreSetters = (server.match(/restoreFromArchive: true/g) ?? []).length;
+assert.equal(restoreSetters, 1, "only restoreCard carries the archived-restore bypass");

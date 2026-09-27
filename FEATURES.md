@@ -890,6 +890,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and
   ledger rows; stops + archives the worker thread.
+- **Restore archived card** (`restoreCard`,
+  `lib/card-restore-pending.mjs`). The only door out of Archived, and
+  only a person can open it: a confirmed Manage menu entry (never
+  prominent, never a drag — dragging an archived card still refuses).
+  The card returns to the exact stage it was archived from with a fresh
+  worker; the previous thread stays in Worker history. Pending items
+  return per kind — questions reopen, errors return carrying the stored
+  `last_error` verbatim, pauses re-derive from live state — while
+  completed deliveries stay read. If the fresh spawn fails, the status
+  rolls back instead of leaving a phantom wait.
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest

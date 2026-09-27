@@ -109,6 +109,11 @@ export const lifecycleRpcContract = {
     input: z.object({ cardId: z.string(), status: z.enum(BOARD_MOVE_COLUMNS as [string, ...string[]]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  restoreCard: {
+    experimental_description: "Restore an archived card to its stage with a fresh worker; drag never restores",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   researchStrategies: {
     experimental_description: "Research strategy catalog: labels, skills, keywords",
     input: z.object({}).strict(),

@@ -46,6 +46,7 @@ function useRemovalState(cardId: string) {
   const rpc = useRpc<typeof rpcContract>();
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discardConfirm, setDiscardConfirm] = useState<{ title: string; body: string } | null>(null);
 
@@ -59,10 +60,10 @@ function useRemovalState(cardId: string) {
       toast.error(err instanceof Error ? err.message : "Could not inspect the checkout.");
     }
   }
-  return { archiveOpen, setArchiveOpen, deleteOpen, setDeleteOpen, discardOpen, setDiscardOpen, discardConfirm, openDiscard };
+  return { archiveOpen, setArchiveOpen, deleteOpen, setDeleteOpen, restoreOpen, setRestoreOpen, discardOpen, setDiscardOpen, discardConfirm, openDiscard };
 }
 
-function useRemovalActions(cardId: string, onClose: () => void, state: ReturnType<typeof useRemovalState>) {
+function useRemovalActions(cardId: string, onClose: () => void, onChanged: () => void | Promise<void>, state: ReturnType<typeof useRemovalState>) {
   const rpc = useRpc<typeof rpcContract>();
   async function doArchive() {
     state.setArchiveOpen(false);
@@ -71,6 +72,15 @@ function useRemovalActions(cardId: string, onClose: () => void, state: ReturnTyp
       if (outcome.close) onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
+    }
+  }
+  async function doRestore() {
+    state.setRestoreOpen(false);
+    try {
+      const outcome = reportOutcome("restore", await rpc.call("restoreCard", { cardId }));
+      if (outcome.refresh) await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Restore failed.");
     }
   }
   async function doDelete() {
@@ -87,7 +97,7 @@ function useRemovalActions(cardId: string, onClose: () => void, state: ReturnTyp
       toast.error(err instanceof Error ? err.message : "Discard failed.");
     }
   }
-  return { ...state, doArchive, doDelete, doDiscard };
+  return { ...state, doArchive, doDelete, doDiscard, doRestore };
 }
 
 function useWorkerResumeActions(cardId: string, onChanged: () => void | Promise<void>) {
@@ -234,7 +244,7 @@ function useRecoveryActions(
 export function useBuildDetailLifecycle({ cardId, card, intentLabels, onChanged, onClose, onOpenRecoveryAudit }: LifecycleOptions) {
   const recovery = useWorkspaceRecovery(cardId, card);
   const removalState = useRemovalState(cardId);
-  const removal = useRemovalActions(cardId, onClose, removalState);
+  const removal = useRemovalActions(cardId, onClose, onChanged, removalState);
   const worker = useWorkerResumeActions(cardId, onChanged);
   const repair = useRepairAndSplitActions(cardId, intentLabels, onChanged);
   const promotion = usePromotionActions(cardId, card, onChanged);
