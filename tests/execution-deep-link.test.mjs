@@ -7,12 +7,17 @@ import { executionRunDeepLink, executionRunFocus, executionRunSubPath, parseExec
 const root = fileURLToPath(new URL("..", import.meta.url));
 const navigationSource = readFileSync(join(root, "components", "app-support", "navigation.ts"), "utf8");
 const runsSource = readFileSync(join(root, "components", "detail", "execution-runs-section.tsx"), "utf8");
-const focusSource = readFileSync(join(root, "lib", "execution-deep-link.mjs"), "utf8");
-const uiSource = [navigationSource, runsSource, focusSource].join("\n");
+const uiSource = [navigationSource, runsSource].join("\n");
 assert.match(uiSource, /localRunId:\s*run\.id/, "run rows use the tested in-app route builder");
 assert.doesNotMatch(uiSource, /localRunId:\s*run\.runId/, "native run identity never becomes in-app navigation");
-assert.match(uiSource, /executionRunFocus\(/, "deep-open focus uses the shared state mapping");
-assert.match(focusSource, /execution-needs-input-questions/, "needs_input deep-open names the real card question target");
+
+// The id a link aims at is behaviour, not source text: which element a deep
+// link resolves to for every run state, and that no two elements claim the same
+// id, live in `execution-run-focus-target.test.mjs` as a rendered-document
+// model. These two lines used to assert that the string "execution-needs-input-
+// questions" appeared in the source — which passed while the effect looked for
+// an id that was not there, and while a run row and the question section
+// answered to the same one.
 
 const expectedFocus = {
   queued: "run",

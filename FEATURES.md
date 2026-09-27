@@ -431,6 +431,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   structured outputs, and safe fan-out; explicit install or enable actions
   are shown only when the host needs them, while the sequential fallback stays
   visible.
+- **Open on an execution run lands where you can see it.** Each run's **Open**
+  deep-links into the card at that run, and the link now has an observable
+  outcome. It used to have none: the scroll asked for the nearest block, which
+  by definition moves nothing when the target is already on screen, and the
+  focus was told not to scroll — so opening a run with the Execution runs
+  section already visible produced no motion and no change at all. The card
+  navigated; the reader saw precisely nothing. The run is now brought to the
+  middle of the viewport every time and the opened row draws a ring, so *which*
+  run is answered. The target is derived from one shared helper rather than
+  hand-written: a run row names itself (`executionRunRowId`) and a link says
+  where it aims (`executionRunFocus`), because borrowing the link's target for
+  the row put `execution-needs-input-questions` on both the run row and the
+  card's question section — two elements answering to one id, and a focus
+  effect searching for a third thing, which is why a run waiting on a person
+  navigated and then did nothing.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 

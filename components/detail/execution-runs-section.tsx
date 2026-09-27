@@ -1,6 +1,7 @@
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { cn } from "../../lib/utils";
 import { goToExecutionRun } from "../app-support/navigation";
-import { executionRunFocus } from "../../lib/execution-deep-link.mjs";
+import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import type { ExecutionRun } from "./use-execution-runs";
 
 type ExecutionRunsSectionProps = {
@@ -112,19 +113,28 @@ function ExecutionRunRow({
   stoppingRunId: string | null;
   onCancel: ExecutionRunsSectionProps["onCancel"];
 }) {
-  const focusId = executionRunFocus({
-    localRunId: run.id,
-    status: run.normalizedStatus,
-    hasQuestion: run.normalizedStatus === "needs_input",
-  });
+  // The row names ITSELF. It used to borrow the deep link's focus id, which for
+  // a run waiting on a person is the card's question section — so the row and
+  // that section both claimed one id, and the focus effect was looking for a
+  // third thing. A row's identity and a link's destination are different
+  // questions, and conflating them made "Open" a no-op.
+  const rowId = executionRunRowId(run.id);
   const waiting = waitingForYou(run);
   return (
     <div
-      id={focusId ?? undefined}
+      id={rowId ?? undefined}
       tabIndex={focusRunId === run.id ? -1 : undefined}
-      className={waiting
-        ? "flex min-h-11 items-start justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
-        : "flex min-h-11 items-center justify-between gap-3 rounded-md border bg-background/60 px-3 py-2"}
+      className={cn(
+        "flex min-h-11 items-center justify-between gap-3 rounded-md border px-3 py-2",
+        waiting
+          ? "items-start border-amber-500/40 bg-amber-500/10"
+          : "bg-background/60",
+        // A deep link that lands silently is indistinguishable from a button
+        // that does nothing, so the row a link just opened says so. The outline
+        // rides the existing `focusRunId` rather than :focus-visible, because a
+        // programmatically focused div does not raise :focus-visible at all.
+        focusRunId === run.id && "outline-2 outline-offset-2 outline-primary",
+      )}
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{run.recipeId}</p>
