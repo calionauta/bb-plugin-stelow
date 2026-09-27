@@ -24,3 +24,4 @@ export declare function executionRunDeepLink(input?: ExecutionRunDeepLinkInput):
 export declare function executionRunSubPath(input?: ExecutionRunDeepLinkInput): string | null;
 export declare function executionRunFocus(input?: { localRunId?: string; status?: ExecutionRunState; hasQuestion?: boolean }): string | null;
 export declare function parseExecutionRunSubPath(subPath?: string): ParsedExecutionRunSubPath | null;
+export declare function executionRunRowId(localRunId: unknown): string | null;
