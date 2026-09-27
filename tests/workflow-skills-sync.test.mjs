@@ -70,7 +70,7 @@ try {
   assert.ok(!existsSync(retired), "retired stelow-* dir pruned");
   assert.ok(existsSync(join(foreign, "x.md")), "non-stelow dirs untouched");
 
-  assert.equal(WORKFLOW_SKILLS.length, 14, "exactly 14 core skills are vendored");
+  assert.equal(WORKFLOW_SKILLS.length, 15, "exactly 15 core skills are vendored");
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-entry"), "workflow entry is vendored");
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-router"), "workflow router is vendored");
 

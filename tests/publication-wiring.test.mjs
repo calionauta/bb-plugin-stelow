@@ -200,6 +200,21 @@ assert.match(
 );
 assert.match(
   diff,
+  /formatAffectedTests\(props\.diffData\.affectedTests\)[\s\S]*title="Affected tests to run first \(sem\)"[\s\S]*\{affectedTests\}/,
+  "working-tree review renders affected tests to run first; without this pin the sem affectedTests field could be dropped from the panel silently",
+);
+assert.match(
+  diff,
+  /formatTestGate\(props\.diffData\.testGate\)[\s\S]*title="Test obligations \(ripwire\)"[\s\S]*\{testGate\}/,
+  "working-tree review renders pending test obligations; without this pin the ripwire testGate field could be dropped from the panel silently",
+);
+assert.match(
+  diff,
+  /formatQualityGate\(props\.diffData\.qualityGate\)[\s\S]*title="Quality gate \(ripwire\)"[\s\S]*\{qualityGate\}/,
+  "working-tree review renders the quality gate verdict; without this pin the ripwire qualityGate field could be dropped from the panel silently",
+);
+assert.match(
+  diff,
   /const openFile = \(\) => props\.onOpenFile\(\{[\s\S]*target: fileLinkTarget\([\s\S]*onClick=\{openFile\}/,
   "patchless working-tree files open through the artifact viewer with an explicit click path",
 );

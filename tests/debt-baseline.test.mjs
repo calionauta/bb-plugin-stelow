@@ -36,6 +36,7 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 const inheritedBaseline = [
   "components/conversation/question-batch.tsx:useBatchSelection#1: 53 lines (baseline 53)",
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
+  "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 53 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
@@ -47,6 +48,7 @@ const inheritedBaseline = [
   "lib/scope-merge.mjs:mergeScopesAtomically#1: 71 lines (recorded 71)",
   "lib/scope-retry.mjs:claimScopeRetry#1: 61 lines (recorded 61)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
+  "lib/workflow-skills-sync.mjs:syncWorkflowSkills#1: 112 lines (baseline 112)",
   "server/bb-workflow-bridge.ts:renderInlineWorkflowScript#1: 54 lines (baseline 57)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
   "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (recorded 69)",

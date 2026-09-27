@@ -276,6 +276,37 @@ export const lifecycleRpcContract = {
           z.object({ symbol: z.string(), files: z.array(z.string()), callers: z.number(), testCallers: z.number() }),
         )
         .nullable(),
+      affectedTests: z
+        .array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            type: z.string(),
+            file: z.string(),
+            lines: z.array(z.number()),
+          }),
+        )
+        .nullable(),
+      testGate: z
+        .object({
+          changed: z.number(),
+          impacted: z.number(),
+          tests: z.number(),
+          untested: z.number(),
+          testsToRun: z.array(z.string()),
+          untestedBlastRadius: z.array(z.unknown()),
+          obligations: z.boolean(),
+        })
+        .nullable(),
+      qualityGate: z
+        .object({
+          baseline: z.string().nullable(),
+          regressions: z.number(),
+          minor: z.number(),
+          gating: z.number(),
+          blocked: z.boolean(),
+        })
+        .nullable(),
       error: z.string().nullable(),
     }),
   },

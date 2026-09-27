@@ -11,8 +11,11 @@ import {
   type WorkspaceFileTarget,
 } from "../artifacts/artifact-inventory";
 import {
+  formatAffectedTests,
   formatChangedSymbols,
   formatEntitySummary,
+  formatQualityGate,
+  formatTestGate,
 } from "../../lib/build-diff-presentation.mjs";
 import type { rpcContract } from "../../server";
 
@@ -119,6 +122,50 @@ function DiffFile(props: DiffFileProps) {
   );
 }
 
+type DiffGateRowsProps = {
+  diffData: CardDiff;
+};
+
+function DiffGateRows(props: DiffGateRowsProps) {
+  const affectedTests = formatAffectedTests(props.diffData.affectedTests);
+  const testGate = formatTestGate(props.diffData.testGate);
+  const qualityGate = formatQualityGate(props.diffData.qualityGate);
+  return (
+    <>
+      {affectedTests
+        ? (
+          <p
+            className="text-[11px] text-muted-foreground"
+            title="Affected tests to run first (sem)"
+          >
+            {affectedTests}
+          </p>
+        )
+        : null}
+      {testGate
+        ? (
+          <p
+            className="text-[11px] text-muted-foreground"
+            title="Test obligations (ripwire)"
+          >
+            {testGate}
+          </p>
+        )
+        : null}
+      {qualityGate
+        ? (
+          <p
+            className="text-[11px] text-muted-foreground"
+            title="Quality gate (ripwire)"
+          >
+            {qualityGate}
+          </p>
+        )
+        : null}
+    </>
+  );
+}
+
 function DiffFiles(props: DiffFilesProps) {
   const entitySummary = formatEntitySummary(props.diffData.entitySummary);
   const changedSymbols = formatChangedSymbols(props.diffData.changedSymbols);
@@ -137,6 +184,7 @@ function DiffFiles(props: DiffFilesProps) {
           </p>
         )
         : null}
+      <DiffGateRows diffData={props.diffData} />
       {props.diffData.files.map((file) => (
         <DiffFile
           key={file.path}
