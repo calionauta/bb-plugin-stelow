@@ -58,6 +58,11 @@ export const stelowCliCommands: CliCommand[] = [
     "[--tasks <json>] [--start-sha <sha>] [--json]",
   ),
   command(
+    "scope-approve",
+    "Approve a card's scope map on the host (no content args)",
+    "bb stelow scope-approve [--card <card_id>]",
+  ),
+  command(
     "lock",
     "File-reservation locks for parallel scopes",
     "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id>",

@@ -130,6 +130,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     },
     draftingCommand: (argv, threadId) => core.drafting.command(argv, threadId),
     advanceCli: (argv, context) => execution.executionAdvance.cli(argv, context),
+    scopeMapApproval: (cardId) => execution.approval.approveScopeMap({ cardId }),
     skillsDir: PLUGIN_SKILLS_DIR,
   };
 }

@@ -16,6 +16,7 @@ import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
 import { createReviewCommand } from "./cli-review.js";
 import { createSeedCommand } from "./cli-seed.js";
+import { createScopeApproveCommand } from "./cli-scope-approve.js";
 import { createSplitCommand } from "./cli-split.js";
 import { createStorageCommand } from "./cli-storage.js";
 import { createVerifyCommand } from "./cli-verify.js";
@@ -52,6 +53,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createVerifyTasksCommand(deps),
     createVerifyDelegationCommand(deps),
     createGapTriageCommand(deps),
+    createScopeApproveCommand(deps),
     ...createDelegatedCommands(deps),
   ];
 }
