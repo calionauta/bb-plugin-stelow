@@ -1236,6 +1236,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I need to understand before building, I want a lightweight
 investigation that feeds the build board.*
 
+- **A published RPC contract says what the handler can do.** `listCards`
+  answers "every project" when `projectId` is absent — `queryCards` omits the
+  project filter. The contract declared `projectId: z.string().nullable()`,
+  which reads as "may be null" but not "may be absent", and a non-optional
+  property is what the host's schema derivation reports as REQUIRED. So the
+  host's own plugin probe, which omits it, was refused at validation for a call
+  the handler supports, and the refusal showed on the plugin's status line — the
+  one place a user looks to see whether a plugin is healthy. `projectId` is now
+  genuinely optional, and the contract stays strict about everything else.
 - **One stuck card is one open paused event, escalated in place.** The paused
   event used to be keyed by idle timestamp, so every new idle period minted a new
   row. A card blinking between idle and briefly-active therefore produced a

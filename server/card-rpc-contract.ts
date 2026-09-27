@@ -48,7 +48,14 @@ export const cardRpcContract = {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
     input: z
       .object({
-        projectId: z.string().nullable(),
+        // Optional, not merely nullable. `queryCards` omits the project filter
+        // when this is null, so the handler genuinely answers "every project"
+        // — but a non-optional property is what the host's schema derivation
+        // reports as REQUIRED, so a caller that omitted it (the host's own
+        // plugin probe) was refused at validation for a call the handler
+        // supports. `.nullable()` said the value could be absent; only
+        // `.optional()` makes that true of the published contract too.
+        projectId: z.string().nullable().optional(),
         kind: z.enum(["build", "research", "explore"]).nullable().optional(),
       })
       .strict(),
