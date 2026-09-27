@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.55.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.55.0...v0.55.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* clear the stale reason when a pending question reopens ([3ff9c9f](https://github.com/calionauta/bb-plugin-stelow/commit/3ff9c9f4b8f4a7e0407633c7ef15849de4795fa5))
+* clear the stale reason when a pending question reopens ([d4936f1](https://github.com/calionauta/bb-plugin-stelow/commit/d4936f10e8c9dee63a91bce4183b29f1c3c7df7c))
+
 ## [0.55.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.54.4...v0.55.0) (2026-09-27)
 
 
