@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.2...v0.57.3) (2026-09-28)
+
+
+### Bug Fixes
+
+* **A machine receipt is not a file the card produced.** Stelow's own
+  `audit-trail.md` and `recon-receipt.json` are audit value, not deliverables,
+  and `lib/artifact-roles.mjs` has said so from the start: they must not inflate
+  the file count or sit unlabeled beside the specs. The server applied that rule
+  and the card-detail contract carried the resulting `role` on every artifact —
+  and the view discarded it.
+
+  Explore passed every artifact through, so a card with two deliverables and one
+  receipt said "3 files". Build re-implemented the same filter inline, twice in
+  one file, and wrapped the result in a hand-drawn section rather than the
+  disclosure family the rest of the card uses. Each section derived its own count
+  from whatever it was handed, so the list and the number could disagree with
+  nothing noticing.
+
+  The rule now lives in `lib/artifact-roles.mjs` alone, the shared inventory
+  applies it once for every track, and the count each section states is read from
+  that same predicate. Receipts render in a named **Machine receipts**
+  disclosure, closed by default: a receipt is reference material, not a decision
+  awaiting the reader, so it is neither live nor blocking and never earns
+  open-on-load. One row renders receipts and everything else, so a file cannot
+  look like two different things depending on where it landed.
+  ([#168](https://github.com/calionauta/bb-plugin-stelow/pull/168))
+
 ## [0.57.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.1...v0.57.2) (2026-09-28)
 
 
