@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { codeOf } from "./helpers/source-code.mjs";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -58,15 +59,34 @@ assert.doesNotMatch(
   /function CardConversation\(/,
   "no local thread copy survives in the detail slice",
 );
+// Whitespace-tolerant, and pinned on the BEHAVIOUR rather than the label. The
+// old regex also matched the literal string "Send to agent", so renaming the
+// section to what it actually is — a note, not a live conversation — went red
+// here with nothing about the behaviour having changed.
 assert.match(
   cardConversation,
-  /disabled=\{!draft\.trim\(\)\} onClick=\{\(\) => onSend\(\)\}>Send to agent/,
+  /disabled=\{!draft\.trim\(\)\}\s*onClick=\{\(\) => onSend\(\)\}\s*>\s*Leave note/,
   "empty drafts cannot send",
 );
 assert.match(
   cardConversation,
   /event\.metaKey \|\| event\.ctrlKey/,
   "keyboard send rides Cmd/Ctrl+Enter",
+);
+// The thread is the real conversation, so it must be reachable from the section
+// HEADER — a reader should not have to expand a section of notes to find the
+// way to the place where talking to the agent actually happens.
+assert.match(
+  cardConversation,
+  /action=\{threadId \? <OpenThreadButton threadId=\{threadId\} \/> : null\}/,
+  "the thread affordance belongs in the header, not below the composer",
+);
+// And the section must not claim to be a conversation it is not: addCardComment
+// writes to the card log, which the worker reads on its next poll.
+assert.doesNotMatch(
+  codeOf(cardConversation),
+  /title="Conversation"|talk to the agent|Send to agent|Write to the agent/,
+  "the section promised a live channel and had none; a name that overstates a feature is a bug",
 );
 
 assert.doesNotMatch(

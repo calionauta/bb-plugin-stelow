@@ -195,6 +195,8 @@ const columns = legacyDb.prepare("PRAGMA table_info(inbox_events)").all().map((c
 assert.ok(columns.includes("resolved_at"), "legacy rows gain the resolution timestamp");
 assert.ok(columns.includes("resolved_reason"), "legacy rows gain the resolution reason");
 assert.ok(columns.includes("severity"), "legacy rows gain severity");
+assert.ok(columns.includes("holder_card_id"), "legacy rows gain the holder id — the affordance is a column, not prose to re-parse");
+assert.ok(columns.includes("holder_file"), "legacy rows gain the held file");
 assert.ok(columns.includes("severity_reasons"), "legacy rows gain severity reasons");
 assert.deepEqual(
   legacyDb.prepare("SELECT id FROM inbox_events ORDER BY id").all().map((row) => row.id),

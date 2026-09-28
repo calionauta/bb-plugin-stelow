@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { decisionApiRpcContract } from "./decision-api.js";
 import { githubRpcContract } from "./github-rpc-contract.js";
-import { inboxRpcContract } from "./inbox.js";
+import { inboxRpcContract } from "./inbox-contract.js";
 import { publicationRpcContract } from "./artifacts-publication.js";
 import { workspaceRecoveryRpcContract } from "./workspaces-recovery.js";
 import { cardRpcContract } from "./card-rpc-contract.js";

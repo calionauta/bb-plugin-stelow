@@ -18,6 +18,21 @@ import type { WorkerCard } from "./workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
+/**
+ * What the host tells us about a run: the normalized state, plus the reason when
+ * it reported a failure.
+ *
+ * `scriptError` is not invented here — `scriptOutcome` in bb-workflow-bridge
+ * reads the recipe script's own `{ state, error, outputs }` and folds the real
+ * message in. This type used to be `{ state: string }`, which is what let a
+ * known failure be recorded as `unknown-native-state`: the reason was on the
+ * wire and the signature refused to carry it.
+ */
+type NativeStatus = {
+  state: string;
+  scriptError?: string | null;
+};
+
 /** The two rules this one dispatches to, as narrow as they can be written. */
 export type RunDispatch = {
   reconcileBoundary: (
@@ -40,6 +55,35 @@ export type RunDeps = {
 
 const SIMPLE_STATES = ["queued", "running", "failed", "cancelled"] as const;
 type SimpleState = typeof SIMPLE_STATES[number];
+
+/**
+ * Why a run failed, as far as we actually know.
+ *
+ * The host's script outcome already carries the reason — `scriptOutcome` in
+ * bb-workflow-bridge reads `{ state, error, outputs }` and folds a real message
+ * into `scriptError`, including the silent no-op case ("the recipe produced no
+ * task outputs"). That reason used to die one layer down: the reconciler typed
+ * the native status as `{ state }`, threw the message away, and wrote the
+ * literal `unknown-native-state` — a name that says the STATE is unknown, at
+ * the exact point where the state was matched from a known set. The card then
+ * logged "Native scope-map failed with native status queued", quoting the
+ * pre-transition value while claiming the post-transition one.
+ *
+ * So this is one fact with one representation. The reason is read from the
+ * host, stored once, and quoted from the value that was just written — never
+ * reconstructed from something adjacent. When the host genuinely gives no
+ * reason, the code says THAT, which is a different and true statement.
+ */
+function failureReason(native: NativeStatus, state: SimpleState): string {
+  if (state !== "failed") return "";
+  const reason = typeof native.scriptError === "string" ? native.scriptError.trim() : "";
+  if (reason) return reason;
+  // A host that reported a failure without saying why is a real gap, and it is
+  // a gap about the REASON. Saying "no reason was recorded" is honest and
+  // actionable; saying "unknown state" is neither, and sends a reader looking
+  // for a state problem that does not exist.
+  return "the host reported a failure without a reason";
+}
 
 export function createRunReconciler(deps: RunDeps) {
   return { reconcileOne: (runId: string) => reconcileOne(deps, runId) };
@@ -83,7 +127,7 @@ async function applyNativeState(
   deps: RunDeps,
   card: WorkerCard,
   run: ExecutionRun,
-  native: { state: string },
+  native: NativeStatus,
 ): Promise<void> {
   const boundary = nativeNeedsInput(native);
   if (native.state === "needs_input" || boundary) {
@@ -96,7 +140,7 @@ async function applyNativeState(
     return;
   }
   if (SIMPLE_STATES.includes(native.state as SimpleState)) {
-    reconcileSimpleState(deps, card, run, native.state as SimpleState);
+    reconcileSimpleState(deps, card, run, native, native.state as SimpleState);
   }
 }
 
@@ -104,21 +148,27 @@ function reconcileSimpleState(
   deps: RunDeps,
   card: WorkerCard,
   run: ExecutionRun,
+  native: NativeStatus,
   state: SimpleState,
 ): void {
   if (state === run.normalizedStatus) return;
-  transitionExecutionRun(deps.db, run.id, state, {
+  const reason = failureReason(native, state);
+  const next = transitionExecutionRun(deps.db, run.id, state, {
     nativeStatus: state,
-    errorCode: state === "failed" ? "unknown-native-state" : null,
+    errorCode: reason || null,
   });
-  if (state === "failed") {
-    deps.logComment(
-      card.id,
-      run.id,
-      `Native ${run.recipeId} failed with native status ${run.nativeStatus}. `
-      + "The card remains available for retry.",
-    );
-  }
+  if (state !== "failed") return;
+  // Quote what was just WRITTEN, never the value this replaced. The old line
+  // interpolated `run.nativeStatus` — the status BEFORE the transition — into a
+  // sentence that said "failed", so the card's own log read "Native scope-map
+  // failed with native status queued". One fact, one representation, read back
+  // from the row that now holds it.
+  deps.logComment(
+    card.id,
+    run.id,
+    `Native ${run.recipeId} failed: ${next.errorCode ?? reason}. `
+    + "The card remains available for retry.",
+  );
 }
 
 /** What the row looks like before and after: the tell for "this really moved". */

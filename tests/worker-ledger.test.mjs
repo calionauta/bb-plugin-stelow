@@ -8,7 +8,11 @@ db.exec(`
   CREATE TABLE card_presets (card_id TEXT PRIMARY KEY, preset_id TEXT NOT NULL, assigned_at INTEGER NOT NULL);
   CREATE TABLE presets (id TEXT PRIMARY KEY, name TEXT NOT NULL);
   CREATE TABLE card_threads (thread_id TEXT PRIMARY KEY, card_id TEXT NOT NULL, preset_id TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, ended_reason TEXT);
-  CREATE TABLE inbox_events (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER, resolved_at INTEGER);
+  CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER,
+    archived_at INTEGER, resolved_at INTEGER, holder_card_id TEXT, holder_file TEXT
+  );
 `);
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("card_1", "thr_old", "preset_default", 0);
 db.prepare("INSERT INTO presets VALUES (?, ?)").run("preset_default", "Default");
@@ -24,8 +28,10 @@ assert.equal(rows[1].ended_at, null, "new row stays open as the live worker");
 
 // Stall count drives hero escalation copy.
 assert.equal(stallCount(db, "card_1"), 0, "no stalls initially");
-db.prepare("INSERT INTO inbox_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("e1", "card_1", "paused", "p", "paused:card_1:1", 1, null, null, null);
-db.prepare("INSERT INTO inbox_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("e2", "card_1", "question", "q", "question:card_1:2", 2, null, null, 3);
+const IN = "INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, read_at, archived_at, resolved_at)"
+  + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+db.prepare(IN).run("e1", "card_1", "paused", "p", "paused:card_1:1", 1, null, null, null);
+db.prepare(IN).run("e2", "card_1", "question", "q", "question:card_1:2", 2, null, null, 3);
 assert.equal(stallCount(db, "card_1"), 1, "only paused events count as stalls");
 
 // Flag transitions on assign: live worker + different preset -> pending.

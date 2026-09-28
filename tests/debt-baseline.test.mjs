@@ -40,6 +40,12 @@ const inheritedBaseline = [
   "components/conversation/question-batch.tsx:useBatchSelection#1: 53 lines (baseline 53)",
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
   "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
+  // The parenthesised number is the debt the FORK POINT carried, not today's:
+  // the gate reports what the branch started with, so it stays stable while the
+  // recorded ceiling in scripts/source-debt.json falls. Both moved here —
+  // 74→57 and 119→111 — which is why the recorded values are the lower ones.
+  "components/panels/inbox-panel.tsx:InboxEntry#1: 57 lines (baseline 74)",
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 111 lines (baseline 119)",
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 53 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",

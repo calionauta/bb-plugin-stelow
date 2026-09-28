@@ -12,6 +12,9 @@ export type InboxPanelNotification = {
   archivedAt: number | null;
   severity: number;
   severityReasons: string[];
+  /** The card holding a file this one waits on. Identity, not prose. */
+  holderCardId: string | null;
+  holderFile: string | null;
 };
 
 export function inboxVisibleEntries(

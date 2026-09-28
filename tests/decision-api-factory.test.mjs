@@ -226,7 +226,10 @@ try {
   disabled.db.prepare("INSERT INTO decision_api_config VALUES (1, 'https://decision.test/v1', 'key', 'model', 'jev', 1)").run();
   disabled.db.prepare("INSERT INTO decision_points VALUES ('inbox-severity', 'api', '{\"routeAt\":0.6}', NULL, NULL, NULL, NULL, NULL, 1)").run();
   disabled.db.prepare("INSERT INTO cards VALUES ('card-1', 'Card', 'card-1', 'build', 'build')").run();
-  disabled.db.prepare("INSERT INTO inbox_events VALUES ('event-1', 'card-1', 'Routine blocker', 1, NULL, 0, NULL, NULL)").run();
+  disabled.db.prepare(
+    "INSERT INTO inbox_events (id, card_id, summary, severity, occurred_at, archived_at, resolved_at)"
+    + " VALUES ('event-1', 'card-1', 'Routine blocker', 1, 0, NULL, NULL)",
+  ).run();
   await disabled.api.maybeBumpSeverity();
   assert.equal(disabled.evaluateCalls(), 0, "the kill switch blocks severity calls before the injected evaluator");
   assert.deepEqual(

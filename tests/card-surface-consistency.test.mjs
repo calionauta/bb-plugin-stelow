@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { codeLinesOf as stripComments } from "./helpers/source-code.mjs";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -32,18 +33,9 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..");
 const read = (relative) => readFileSync(join(repoRoot, relative), "utf8");
 
-/**
- * Source with comments stripped. A comment that names the shape it just removed
- * — "not a hand-rolled <details>" — is documentation, and a test that cannot tell
- * documentation from code is a test people learn to work around.
- */
+/** Source with comments stripped: a comment naming the shape it removed is documentation. */
 function codeLinesOf(relative) {
-  return read(relative)
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trimStart();
-      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-    });
+  return stripComments(read(relative));
 }
 
 /**

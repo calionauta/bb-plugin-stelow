@@ -17,6 +17,7 @@ const server = [
   readFileSync(join(root, "server/runtime/claim-coordination.ts"), "utf8"),
 ].join("\n");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
+const inboxContract = readFileSync(join(root, "server/inbox-contract.ts"), "utf8");
 const app = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 // Scorer boundaries: fresh actions act, old/repeated escalate, completions
@@ -45,7 +46,11 @@ assert.deepEqual(parseSeverityReasons(["a", "b", "c", "d", "e", "f", "g"]), ["a"
 // the row itself; stalls come from the worker ledger).
 const db = new Database(":memory:");
 db.exec(`CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'build');
-  CREATE TABLE inbox_events (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER, resolved_at INTEGER);`);
+  CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER,
+    archived_at INTEGER, resolved_at INTEGER, holder_card_id TEXT, holder_file TEXT
+  );`);
 ensureInboxSeverityColumns(db);
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity"), "pre-tier databases gain the severity column");
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity_reasons"), "pre-tier databases gain the reasons column");
@@ -86,8 +91,12 @@ assert.equal(countsForInboxBadge({ kind: "question", archivedAt: 1, resolvedAt: 
 assert.match(serverInbox, /export function runInboxMigrations/, "the feature migration is owned by the inbox slice");
 assert.match(server, /refreshEventSeverity\(deps\.db, \{ cardId, nowMs: deps\.now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
 assert.match(serverInbox, /ensureInboxSeverityColumns\(db\);/, "the feature module owns severity migrations");
-assert.match(serverInbox, /severity: z\.number\(\),/, "the snapshot contract carries severity");
-assert.match(serverInbox, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");
+// The zod shapes moved to server/inbox-contract.ts, which is where the wire
+// contract lives. Asserting them against the behaviour file would only pin
+// where the schema used to sit.
+assert.match(inboxContract, /severity: z\.number\(\),/, "the snapshot contract carries severity");
+assert.match(inboxContract, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");
+assert.match(inboxContract, /holderCardId: z\.string\(\)\.nullable\(\)/, "and the holder id, so a blocked file can link its blocker");
 assert.match(
   serverInbox,
   /severity: row\.severity \?\? 1,[\s\S]*severityReasons: parseSeverityReasons\(row\.severity_reasons\)/,

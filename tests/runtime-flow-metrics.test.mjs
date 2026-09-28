@@ -3,33 +3,23 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { flowMetrics } from "../server/runtime/flow-metrics.ts";
 
-function fixture() {
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE cards (
-      id TEXT PRIMARY KEY,
-      project_id TEXT,
-      kind TEXT,
-      name TEXT,
-      display_name TEXT,
-      status TEXT,
-      activity TEXT,
-      created_at INTEGER
-    );
-    CREATE TABLE card_stage_events (
-      id INTEGER PRIMARY KEY,
-      card_id TEXT,
-      stage TEXT,
-      entered_at INTEGER
-    );
-    CREATE TABLE inbox_events (
-      card_id TEXT,
-      kind TEXT,
-      read_at INTEGER,
-      archived_at INTEGER,
-      resolved_at INTEGER
-    );
-  `);
+/** The schema this test needs, and nothing else. */
+const SCHEMA = `
+  CREATE TABLE cards (
+    id TEXT PRIMARY KEY, project_id TEXT, kind TEXT, name TEXT,
+    display_name TEXT, status TEXT, activity TEXT, created_at INTEGER
+  );
+  CREATE TABLE card_stage_events (
+    id INTEGER PRIMARY KEY, card_id TEXT, stage TEXT, entered_at INTEGER
+  );
+  CREATE TABLE inbox_events (
+    card_id TEXT, kind TEXT, read_at INTEGER, archived_at INTEGER, resolved_at INTEGER,
+    holder_card_id TEXT, holder_file TEXT
+  );
+`;
+
+/** The cards the two tests below read, and the stages they reached. */
+function seed(db) {
   const card = db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   card.run("first", "project-a", "build", "First", null, "completed", "idle", 0);
   card.run("second", "project-a", "research", "Second", "Visible second", "completed", "idle", 0);
@@ -37,19 +27,25 @@ function fixture() {
   card.run("blocked", "project-a", "build", "Blocked", null, "blocked", "idle", 0);
   card.run("no-done", "project-a", "build", "No done event", null, "completed", "idle", 0);
   const event = db.prepare("INSERT INTO card_stage_events (card_id, stage, entered_at) VALUES (?, ?, ?)");
-  for (const [id, moved, done] of [
-    ["first", 10, 100],
-    ["second", 50, 200],
-    ["other", 100, 300],
-  ]) {
+  for (const [id, moved, done] of [["first", 10, 100], ["second", 50, 200], ["other", 100, 300]]) {
     event.run(id, "triage", 0);
     event.run(id, "execution", moved);
     event.run(id, "done", done);
   }
+}
+
+function fixture() {
+  const db = new Database(":memory:");
+  db.exec(SCHEMA);
+  seed(db);
   // The trailing NULL is `resolved_at`: an unread, unresolved completion is a
   // review still being requested, which is what "retaining live attention"
-  // below means. A fixture that left the column out would pass by accident.
-  db.prepare("INSERT INTO inbox_events VALUES (?, 'completed', NULL, NULL, NULL)").run("second");
+  // means. A fixture that left the column out would pass by accident. Columns
+  // are NAMED so a migration adding one does not silently change what this row
+  // means.
+  db.prepare(
+    "INSERT INTO inbox_events (card_id, kind, read_at, archived_at, resolved_at) VALUES (?, 'completed', NULL, NULL, NULL)",
+  ).run("second");
   return db;
 }
 

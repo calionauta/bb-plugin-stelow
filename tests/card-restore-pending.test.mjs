@@ -12,6 +12,7 @@ db.exec(`
     summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL,
     read_at INTEGER, archived_at INTEGER, resolved_at INTEGER,
     severity INTEGER NOT NULL DEFAULT 1, severity_reasons TEXT NOT NULL DEFAULT '[]',
+    holder_card_id TEXT, holder_file TEXT,
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
 `);

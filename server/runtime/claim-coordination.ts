@@ -29,16 +29,6 @@ export type ClaimCoordinationDeps = {
   now: () => number;
 };
 
-function lockBlockedSummary(
-  deps: ClaimCoordinationDeps,
-  file: string,
-  holderName: string,
-  expiresAt: number,
-): string {
-  const when = new Date(expiresAt).toLocaleString();
-  const resumeNotice = "no action needed; the host resumes this card on release.";
-  return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — ${resumeNotice}`;
-}
 async function releaseCardClaimsAndNotify(
   deps: ClaimCoordinationDeps,
   cardId: string,
@@ -78,7 +68,6 @@ function escalateIfStalled(
 
 export function createClaimCoordination(deps: ClaimCoordinationDeps) {
   return {
-    lockBlockedSummary: lockBlockedSummary.bind(null, deps),
     releaseCardClaimsAndNotify: releaseCardClaimsAndNotify.bind(null, deps),
     escalateIfStalled: escalateIfStalled.bind(null, deps),
   };

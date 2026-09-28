@@ -14,7 +14,10 @@ const source = [
   readFileSync(join(root, "server/runtime/cli/cli-lock.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
 ].join("\n");
-const lockFamily = readFileSync(join(root, "server/runtime/cli/cli-lock.ts"), "utf8");
+const lockFamily = [
+  readFileSync(join(root, "server/runtime/cli/cli-lock.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-lock-waiters.ts"), "utf8"),
+].join("\n");
 const doneFamily = readFileSync(join(root, "server/runtime/cli/cli-done.ts"), "utf8");
 const operations = readFileSync(
   join(root, "server/runtime/card-operations.ts"),
@@ -53,8 +56,29 @@ assert.match(lockFamily, /BB-LOCK-BLOCKED file=\$\{entry\.file\} heldBy=.*expire
 assert.match(lockFamily, /do not retry in a loop/i, "blocked worker is told to park the scope, never spin");
 
 // Blocked user: one paused event per file, naming holder + automatic unlock.
-assert.match(lockFamily, /`lock-blocked:\$\{target\.card!\.id\}:\$\{entry\.file\}`/, "paused dedupe key is per card per file");
-assert.match(source, /no action needed; the host resumes this card on release/i, "paused copy promises automatic resume");
+// Both used to be pinned as literals in the CLI slice and the coordination
+// slice. They moved to lib/lock-blocked because that is where the record lives:
+// the sentence is DERIVED from it and the holder's id rides alongside, so the
+// two cannot disagree. Pinning a literal in a file that no longer owns it
+// would only assert where the code used to be, so these pin the owner and the
+// wiring — which is the stronger claim.
+const lockBlockLib = readFileSync(join(root, "lib", "lock-blocked.mjs"), "utf8");
+assert.match(
+  lockBlockLib,
+  /lock-blocked:\$\{block\.cardId\}:\$\{block\.file\}/,
+  "the dedupe key is per card per file, owned by the record",
+);
+assert.match(lockBlockLib, /no action needed/i, "the copy promises automatic resume, because it is automatic");
+assert.match(
+  lockFamily,
+  /lockBlockEvent\(\{/,
+  "the writer derives its event from the record rather than formatting a summary of its own",
+);
+assert.match(
+  lockFamily,
+  /\{ cardId: block\.holderCardId, file: block\.holderFile \}/,
+  "and it stores the holder's id with it, so the inbox row can link the holder instead of re-finding the name",
+);
 
 // Release: waiters resolve as resumed and get an agent-only re-acquire nudge.
 const notifyFrom = cardState.indexOf("export function createClaimWaiterNotifier(");
@@ -102,13 +126,10 @@ assert.match(operations, /if \(isClaimTerminal\(status\)\) await deps\.releaseCl
 // Ghost holders are terminal-or-gone everywhere, never archived-only:
 // a completed/blocked holder must not park a live card behind it. One
 // liveness predicate serves the acquire reap, the acquire block, and check.
-const liveHolder = slice(
-  lockFamily,
-  "function isLiveHolder(",
-  "function blockedResult(",
-);
+const contention = readFileSync(join(root, "server/runtime/cli/cli-lock-waiters.ts"), "utf8");
+const liveHolder = slice(contention, "export function isLiveHolder(", "\n}\n");
 assert.match(liveHolder, /holder !== undefined && !isClaimTerminal\(holder\.status\);/, "live-holder filter covers every terminal state");
-const reap = slice(lockFamily, "function reapDeadHolders(", "function queueWaiters(");
+const reap = slice(contention, "export function reapDeadHolders(", "export function queueWaiters(");
 assert.match(
   reap,
   /const dead = outcome\.conflicts\.filter\(\(entry\) => !isLiveHolder\(deps, entry\)\);/,

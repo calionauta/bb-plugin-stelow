@@ -5,6 +5,8 @@ export type InboxEventInput = {
   summary: string;
   dedupeKey: string;
   occurredAt: number;
+  /** The card holding a file this card is waiting on. The AFFORDANCE, not prose. */
+  holder?: { cardId: string; file: string } | null;
 };
 
 export type InboxResolutionReason = "answered" | "superseded" | "resumed" | "completed" | "archived";

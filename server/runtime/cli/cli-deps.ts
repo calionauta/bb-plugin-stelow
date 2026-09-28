@@ -158,11 +158,6 @@ export type CliDeps = {
   ) => Promise<{ cardId: string; threadId: string | null }>;
   releaseCardClaims: (cardId: string) => Promise<void>;
   notifyClaimWaiters: (workspacePath: string, files: string[]) => Promise<void>;
-  lockBlockedSummary: (
-    file: string,
-    holderName: string,
-    expiresAt: number,
-  ) => string;
   workers: Workers;
   presets: PresetServer;
   reviewPolicy: DecisionApi["reviewPolicy"];

@@ -34,7 +34,9 @@ function memoryDb() {
       resolved_at INTEGER,
       resolved_reason TEXT,
       severity INTEGER NOT NULL DEFAULT 1,
-      severity_reasons TEXT NOT NULL DEFAULT '[]'
+      severity_reasons TEXT NOT NULL DEFAULT '[]',
+      holder_card_id TEXT,
+      holder_file TEXT
     );
     CREATE TABLE worker_ledger (card_id TEXT NOT NULL, stalled_count INTEGER NOT NULL DEFAULT 0);
   `);

@@ -7,24 +7,15 @@ import {
 } from "../../../lib/card-claims.mjs";
 import { resolveClaimKey } from "../../../lib/card-claim-key.mjs";
 import { isClaimTerminal } from "../../../lib/card-terminal.mjs";
+import { isLiveHolder, queueWaiters, reapDeadHolders } from "./cli-lock-waiters.js";
+import type { ClaimConflict, ClaimOutcome, LockOp, LockTarget } from "./cli-lock-types.js";
+import { lockBlockEvent } from "../../../lib/lock-blocked.mjs";
 import { refuse, usage, type CliCommandFn, type CliResult, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 
 const USAGE =
   "Usage: bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]";
-
-type LockOp = "acquire" | "release" | "check";
-
-type LockTarget = {
-  op: LockOp;
-  rest: string[];
-  card: WorkerCard | undefined;
-  claimRoot: string;
-  claimScope: string | null;
-  claimFiles: string[];
-  at: number;
-};
 
 /** Helper exit codes are meaningful here (1 = lock conflict): pass through.
  * The workspace claim registry (lib/card-claims) is keyed by the checkout the
@@ -174,20 +165,6 @@ function claimSelection(rest: string[]): {
   return { claimScope, claimFiles };
 }
 
-type ClaimOutcome = {
-  acquired: Array<{ file: string; fencing: number }>;
-  renewed: Array<{ file: string }>;
-  stolen: Array<{ file: string; previousHolder: string; fencing: number }>;
-  conflicts: ClaimConflict[];
-} | null;
-
-type ClaimConflict = {
-  file: string;
-  heldBy: string;
-  heldScope: string | null;
-  expiresAt: number;
-};
-
 /** A null result means "the claim registry had nothing to say" and the
  * helper's own verdict stands. Every registry path is advisory: the helper
  * lock already decided, so a registry write failure must not flip the exit
@@ -249,69 +226,6 @@ the previous holder re-acquires if still live.`,
 
 /** Claims left by terminal/gone cards are dead weight: reap and re-acquire
  * instead of parking a live card behind a ghost. */
-function reapDeadHolders(
-  deps: CliDeps,
-  target: LockTarget,
-  outcome: NonNullable<ClaimOutcome>,
-): NonNullable<ClaimOutcome> {
-  const dead = outcome.conflicts.filter((entry) => !isLiveHolder(deps, entry));
-  if (dead.length === 0) return outcome;
-  try {
-    const del = deps.db.prepare(
-      "DELETE FROM card_claims WHERE workspace_path = ? AND file_path = ? AND card_id = ?",
-    );
-    for (const entry of dead) del.run(target.claimRoot, entry.file, entry.heldBy);
-    return acquireWorkspaceClaims(deps.db, {
-      cardId: target.card!.id,
-      workspacePath: target.claimRoot,
-      files: target.claimFiles,
-      scope: target.claimScope,
-      ttlMs: CLAIM_TTL_MS,
-      nowMs: target.at,
-    });
-  } catch {
-    /* advisory */
-    return outcome;
-  }
-}
-
-function queueWaiters(
-  deps: CliDeps,
-  target: LockTarget,
-  live: ClaimConflict[],
-): void {
-  try {
-    addClaimWaiters(deps.db, {
-      cardId: target.card!.id,
-      workspacePath: target.claimRoot,
-      files: live.map((entry) => entry.file),
-      scope: target.claimScope,
-      nowMs: target.at,
-    });
-  } catch {
-    /* advisory */
-  }
-  for (const entry of live) {
-    const holder = deps.getCard(entry.heldBy);
-    deps.recordInboxEvent(
-      target.card!,
-      "paused",
-      deps.lockBlockedSummary(
-        entry.file,
-        holder?.display_name ?? holder?.name ?? entry.heldBy,
-        entry.expiresAt,
-      ),
-      `lock-blocked:${target.card!.id}:${entry.file}`,
-      target.at,
-    );
-  }
-}
-
-function isLiveHolder(deps: CliDeps, entry: ClaimConflict): boolean {
-  const holder = deps.getCard(entry.heldBy);
-  return holder !== undefined && !isClaimTerminal(holder.status);
-}
-
 function blockedResult(
   deps: CliDeps,
   target: LockTarget,

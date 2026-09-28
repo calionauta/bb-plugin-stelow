@@ -12,7 +12,7 @@ import { boardFromRoot, findArtifacts } from "../server/runtime/board-read.ts";
 import { seedWorkflow } from "../server/runtime/workflow-seeding.ts";
 import { createCardLedger } from "../server/runtime/card-ledger.ts";
 import { createQuestionInbox } from "../server/runtime/question-inbox.ts";
-import { createClaimCoordination } from "../server/runtime/claim-coordination.ts";
+import { lockBlockEvent } from "../lib/lock-blocked.mjs";
 import { recoveryNudge, statusLabelForSummary } from "../server/runtime/card-copy.ts";
 import { auditReceiptNote } from "../server/runtime/audit-receipts.ts";
 import { fileTimestamp, join as joinPath, projectRoot } from "../server/runtime/root-paths.ts";
@@ -61,17 +61,22 @@ assert.equal(statusLabelForSummary("completed"), "done");
 assert.equal(statusLabelForSummary("archived"), "archived", "an unmapped status reads verbatim");
 
 // --- claim copy: a parked scope must say what frees it ---
-const claims = createClaimCoordination({
-  bb: { realtime: { publish() {} } },
-  db: new Database(":memory:"),
-  getCard: () => undefined,
-  notifyClaimWaiters: async () => {},
-  now: () => 0,
+// The copy moved from the coordination seam to lib/lock-blocked, which is where
+// the record lives, so the sentence is derived from the fact and the holder's
+// id survives next to it. Asserting it through the seam it used to hang off
+// would only pin where the code used to be.
+const block = lockBlockEvent({
+  cardId: "card_blocked",
+  file: "src/a.ts",
+  holderCardId: "card_holder",
+  holderName: "other card",
+  expiresAt: Date.UTC(2030, 0, 2),
 });
-const summary = claims.lockBlockedSummary("src/a.ts", "other card", Date.UTC(2030, 0, 2));
-assert.match(summary, /src\/a\.ts/, "the blocked file is named");
-assert.match(summary, /other card/, "the holder is named");
-assert.match(summary, /no action needed/, "the wait promises an automatic resume");
+assert.match(block.summary, /src\/a\.ts/, "the blocked file is named");
+assert.match(block.summary, /other card/, "the holder is named");
+assert.match(block.summary, /no action needed/, "the wait promises an automatic resume");
+assert.equal(block.holderCardId, "card_holder", "and the holder is an id the inbox can link, not only a name in prose");
+assert.equal(block.dedupeKey, "lock-blocked:card_blocked:src/a.ts", "one notification per card per file");
 
 // --- audit receipts: only the two receipts are attributed ---
 assert.equal(auditReceiptNote("/w/docs/manifest.md"), null, "an unrelated file is not a receipt");

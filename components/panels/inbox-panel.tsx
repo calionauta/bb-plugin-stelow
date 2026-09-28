@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePanelData } from "../panel/panel-state-hooks";
-import { goToInboxCard } from "./inbox-panel-actions";
+import { HolderChip } from "./inbox-holder-chip";
+import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
 import {
   INBOX_EVENT_LABELS,
   inboxEventPresentation,
@@ -25,6 +26,9 @@ export type InboxNotification = {
   archivedAt: number | null;
   severity: number;
   severityReasons: string[];
+  /** The card holding a file this one waits on. Identity, not prose. */
+  holderCardId: string | null;
+  holderFile: string | null;
 };
 
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
@@ -71,14 +75,87 @@ function PanelSkeleton() {
   );
 }
 
+/**
+ * A row's first line: which card, what state, and the two markers that must
+ * read at a glance without the reader parsing the sentence below them.
+ *
+ * Extracted because the row is a list item, not a paragraph: the header is one
+ * concern — identity and state — and keeping it apart is what lets the row stay
+ * about the event itself.
+ */
+/**
+ * Open a notification: acknowledge it, then go there.
+ *
+ * Acknowledgement is best-effort on purpose. A reader who clicked a card to
+ * act on it must still arrive even if marking it read fails, so the error is
+ * swallowed here and the navigation is not. That is the one place in this file
+ * where a failure is deliberately not reported, and the comment says so rather
+ * than leaving a reader to wonder.
+ */
+function openNotification(
+  rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
+  navigate: ReturnType<typeof useBbNavigate>,
+  reload: () => Promise<unknown>,
+) {
+  return async (entry: InboxNotification) => {
+    if (!entry.readAt) {
+      try {
+        await rpc.call("markNotificationRead", { notificationId: entry.id });
+      } catch {
+        // Navigation remains available when acknowledgement fails.
+      }
+    }
+    goToInboxCard(navigate, entry.cardId, entry.id);
+  };
+}
+
+/** The chip, bound to the router. The only thing the panel owns is where it goes. */
+function holderChipFor(navigate: ReturnType<typeof useBbNavigate>) {
+  return (entry: InboxNotification): ReactNode => (
+    <HolderChip entry={entry} onOpen={() => goToHolderCard(navigate, entry.holderCardId!)} />
+  );
+}
+
+function InboxEntryHeader({ entry, label, stateLabel }: {
+  entry: InboxNotification;
+  label: string;
+  stateLabel: string | null;
+}) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2">
+      <strong className="text-sm">{entry.cardName}</strong>
+      {stateLabel ? (
+        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+          {label}
+        </span>
+      ) : null}
+      {entry.severity >= 2 && entry.resolvedAt == null ? (
+        <span
+          className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+          title={entry.severityReasons.join(" · ")}
+        >
+          escalating
+        </span>
+      ) : null}
+      {!entry.readAt ? (
+        <span className="size-1.5 rounded-full bg-primary">
+          <span className="sr-only">Unread</span>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function InboxEntry({
   entry,
   onOpen,
+  onHolderChip,
   onArchive,
   onRestore,
 }: {
   entry: InboxNotification;
   onOpen: () => void;
+  onHolderChip: (entry: InboxNotification) => ReactNode;
   onArchive: () => void;
   onRestore: () => void;
 }) {
@@ -101,28 +178,9 @@ function InboxEntry({
           {copy.icon}
         </span>
         <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-x-2">
-            <strong className="text-sm">{entry.cardName}</strong>
-            {presentation.stateLabel ? (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                {presentation.label}
-              </span>
-            ) : null}
-            {entry.severity >= 2 && entry.resolvedAt == null ? (
-              <span
-                className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-                title={entry.severityReasons.join(" · ")}
-              >
-                escalating
-              </span>
-            ) : null}
-            {!entry.readAt ? (
-              <span className="size-1.5 rounded-full bg-primary">
-                <span className="sr-only">Unread</span>
-              </span>
-            ) : null}
-          </span>
+          <InboxEntryHeader entry={entry} label={presentation.label} stateLabel={presentation.stateLabel} />
           <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>
+          {entry.holderCardId ? onHolderChip(entry) : null}
           {entry.severityReasons.length > 0 && entry.resolvedAt == null ? (
             <span className="mt-1 block text-xs text-muted-foreground">
               {entry.severityReasons.slice(0, 3).join(" · ")}
@@ -181,16 +239,7 @@ export function InboxPanel() {
       ? "Stelow will surface work only when it needs you."
       : selected.description;
 
-  const open = async (entry: InboxNotification) => {
-    if (!entry.readAt) {
-      try {
-        await rpc.call("markNotificationRead", { notificationId: entry.id });
-      } catch {
-        // Navigation remains available when acknowledgement fails.
-      }
-    }
-    goToInboxCard(navigate, entry.cardId, entry.id);
-  };
+  const open = openNotification(rpc, navigate, load);
   const archive = async (entry: InboxNotification) => {
     await rpc.call("archiveNotification", { notificationId: entry.id });
     await load();
@@ -249,6 +298,7 @@ export function InboxPanel() {
                   key={entry.id}
                   entry={entry}
                   onOpen={() => void open(entry)}
+                  onHolderChip={holderChipFor(navigate)}
                   onArchive={() => void archive(entry)}
                   onRestore={() => void restore(entry)}
                 />

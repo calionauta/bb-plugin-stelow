@@ -541,6 +541,41 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   own visibility gate — on the one card kind where they are the entire reason to
   open it. A completed card now leads with them; an in-flight card keeps them
   below, where there is nothing yet to review.
+- **A failure reaches the card as the reason the host gave.** Found in
+  production: card_k9gei1jy's own comment log read "Native scope-map failed with
+  native status queued" and "Native interface-contrast failed with native status
+  running" — two sentences that contradict themselves, from the same five lines.
+  The reason is a four-link chain and the truth dies at the second link. The
+  recipe script returns `{ state, error }` and `scriptOutcome` already folds the
+  real message into `scriptError`; the reconciler typed the native status as
+  `{ state: string }`, so the message was unreachable; it wrote the literal
+  `unknown-native-state` at the one point where the state had just been matched
+  from a known set; and the comment interpolated `run.nativeStatus` — the value
+  BEFORE the transition — into a sentence about the one after. The signature
+  carries the reason now, the code stores it once, and the log reads back the
+  row it just wrote. When the host genuinely gives no reason, the card says
+  "the host reported a failure without a reason", which is a gap about the
+  reason and a different, true claim — not a claim about a state it just knew.
+- **The card holding your file is a link, not a sentence.** A blocked card was
+  told `held by card "Restore archived cards to board columns"`, and that was
+  the whole of it: a reader who wanted to see what that card was doing to the
+  file had to copy a display name and hunt it on a board of dozens, doing a
+  join the system had already made and dropped. The record is the truth now
+  (`lib/lock-blocked`): the sentence is derived from it, and the holder's id
+  rides alongside in two columns, so the inbox row can link the blocker instead
+  of re-finding the name in prose. A link parsed out of a sentence is a link
+  that eventually points at the wrong card and fails by still looking right.
+- **The card log is named for what it is.** The section was called
+  "Conversation", hinted "talk to the agent", labelled its textarea "Write to the
+  agent" and its button "Send to agent" — four names for a feature that is not a
+  conversation. `addCardComment` writes with `target: "card"`: it appends a note
+  to the card's log, which the worker reads on its next poll. There is no live
+  channel, and a section promising one teaches people to wait for a reply that
+  is not coming. It is "Notes for the agent" now, and the thread — which IS the
+  real conversation — moved into the section HEADER, so it is one click away
+  with the section still closed. The note composer stays: five words of
+  course-correction do not justify losing your place on the card to go find a
+  thread. Removed capability, none: the ambiguity was the feature.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 

@@ -1,4 +1,4 @@
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   ensureInboxResolvedReasonColumn,
@@ -14,6 +14,7 @@ import {
   type InboxResolutionReason,
 } from "../lib/inbox-events.mjs";
 import { parseSeverityReasons } from "../lib/inbox-severity.mjs";
+import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -39,8 +40,15 @@ type InboxEventRow = {
   resolved_reason: string | null;
   severity: number | null;
   severity_reasons: string | null;
+  holder_card_id: string | null;
+  holder_file: string | null;
 };
 
+
+// The reasons a resolution can carry, in the order the contract declares them.
+// Duplicated from inbox-contract deliberately: a runtime constant and a zod
+// enum are different things, and importing one from the other would make the
+// schema a runtime dependency of every reader of a resolution reason.
 const RESOLUTION_REASONS = [
   "answered",
   "superseded",
@@ -48,62 +56,6 @@ const RESOLUTION_REASONS = [
   "completed",
   "archived",
 ] as const;
-
-const inboxEventSnapshotSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["question", "error", "paused", "completed"]),
-  summary: z.string(),
-  occurredAt: z.number(),
-  resolvedAt: z.number().nullable(),
-  resolvedReason: z.enum(RESOLUTION_REASONS).nullable(),
-  archivedAt: z.number().nullable(),
-  severity: z.number(),
-  severityReasons: z.array(z.string()),
-});
-
-export const inboxRpcContract = defineRpcContract({
-  listNotifications: {
-    experimental_description: "Inbox events: needs-attention first, then completions, history, archived",
-    input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
-    output: z.object({
-      notifications: z.array(inboxEventSnapshotSchema.extend({
-        cardId: z.string(),
-        cardName: z.string(),
-        projectName: z.string(),
-        cardKind: z.enum(["build", "research", "explore"]),
-        readAt: z.number().nullable(),
-      })),
-    }),
-  },
-  markNotificationRead: {
-    experimental_description: "Mark one inbox event read",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
-  markCardNotificationsRead: {
-    experimental_description: "Mark a card's events of one kind read",
-    input: z.object({
-      cardId: z.string(),
-      kind: z.enum(["question", "error", "paused", "completed"]),
-    }).strict(),
-    output: z.object({ marked: z.boolean() }),
-  },
-  archiveNotification: {
-    experimental_description: "Archive one inbox event",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
-  restoreNotification: {
-    experimental_description: "Restore an archived inbox event to history",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
-  getNotification: {
-    experimental_description: "One inbox event for a card",
-    input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
-    output: z.object({ notification: inboxEventSnapshotSchema.nullable() }),
-  },
-});
 
 export function runInboxMigrations(db: Db): void {
   db.exec(`CREATE TABLE IF NOT EXISTS inbox_events (
@@ -128,6 +80,14 @@ export function runInboxMigrations(db: Db): void {
     db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
   }
   ensureInboxResolvedReasonColumn(db);
+  // The holder of a blocked file, as identity rather than prose. A summary can
+  // only be read; a card id can be opened. Both columns are written together
+  // from one record (lib/lock-blocked), so the sentence and the affordance can
+  // never name different cards.
+  ensureColumns(db, "inbox_events", [
+    ["holder_card_id", "TEXT"],
+    ["holder_file", "TEXT"],
+  ]);
   ensureInboxSeverityColumns(db);
   db.prepare(`
     DELETE FROM inbox_events
@@ -154,6 +114,8 @@ function snapshot(row: InboxEventRow) {
     archivedAt: row.archived_at,
     severity: row.severity ?? 1,
     severityReasons: parseSeverityReasons(row.severity_reasons),
+    holderCardId: row.holder_card_id ?? null,
+    holderFile: row.holder_file ?? null,
   };
 }
 
@@ -169,6 +131,15 @@ type InboxContext = Pick<InboxServerDeps, "db" | "now" | "randomId"> & {
   changed: (payload: Record<string, unknown>) => void;
 };
 
+/**
+ * Record an inbox event.
+ *
+ * `holder` is the optional second fact an event can carry: which card is
+ * holding the file, and which file. It is a separate argument rather than
+ * something parsed back out of the summary, because a sentence can only be
+ * read while an id can be opened — and a caller that had to re-extract the
+ * holder from prose to build a link would eventually get it wrong.
+ */
 function createRecorder(ctx: InboxContext) {
   return (
     card: { id: string },
@@ -176,6 +147,7 @@ function createRecorder(ctx: InboxContext) {
     summary: string,
     dedupeKey: string,
     occurredAt: number,
+    holder: { cardId: string; file: string } | null = null,
   ) => {
     const inserted = insertInboxEvent(ctx.db, {
       id: ctx.randomId("evt"),
@@ -184,6 +156,7 @@ function createRecorder(ctx: InboxContext) {
       summary,
       dedupeKey,
       occurredAt,
+      holder,
     });
     if (inserted) ctx.changed({ cardId: card.id });
   };
@@ -331,7 +304,7 @@ function createGetHandler(ctx: InboxContext) {
   return async ({ notificationId, cardId }: { notificationId: string; cardId: string }) => {
     const row = ctx.db.prepare(`
       SELECT id, kind, summary, occurred_at, resolved_at, resolved_reason,
-        archived_at, severity, severity_reasons
+        archived_at, severity, severity_reasons, holder_card_id, holder_file
       FROM inbox_events WHERE id = ? AND card_id = ?
     `).get(notificationId, cardId) as InboxEventRow | undefined;
     return { notification: row ? snapshot(row) : null };

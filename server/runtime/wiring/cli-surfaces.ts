@@ -189,7 +189,6 @@ function claimSeams(core: RuntimeCore) {
   return {
     releaseCardClaims: claims.releaseCardClaimsAndNotify,
     notifyClaimWaiters: core.notifyClaimWaiters,
-    lockBlockedSummary: claims.lockBlockedSummary,
   };
 }
 

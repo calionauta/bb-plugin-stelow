@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
+import { codeLinesOf as stripComments } from "./helpers/source-code.mjs";
 
 /**
  * The card's vocabulary must be named, or it cannot be checked.
@@ -40,12 +41,7 @@ function componentFiles() {
 
 /** Source with comments stripped, so a comment naming a removed class is not code. */
 function codeLinesOf(relative) {
-  return read(relative)
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trimStart();
-      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-    });
+  return stripComments(read(relative));
 }
 
 const ALL = componentFiles().map((file) => file.replace(`${repoRoot}/`, ""));
