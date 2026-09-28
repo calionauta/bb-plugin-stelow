@@ -60,6 +60,39 @@ name a valid redirect — a refusal without an exit is a deadlock with a
 good error message. Verify all paths live with fixture `state.md` files
 before shipping guard changes.
 
+**A guard with no door is a trap, not a safety.** Terminality protects a card
+from automation, not from a person. A settled poll, a stale event, or a drag
+must never resurrect an archived card — and none of them may. But when someone
+archives a card by accident, the only exit being an irreversible delete destroys
+the rows, the comments, the history and the run files, and that has cost real
+work before. So archiving is terminal **to every automated path**, and reversible
+**by exactly one human-initiated action**, on purpose, behind a confirmation,
+naming the stage it returns to.
+
+The two halves are one rule, and separating them is the point:
+
+- **Terminal by default.** No poll, event, error path or drag may move a card
+  out of `archived`. Not one of them carries the key. A drag is the most
+  accidental gesture in the UI, and it must never be a resurrection.
+- **Reversible by decision.** Restore is a separate named action, never a
+  transition target — widening it into the general move path is the specific
+  regression to fear, because it hands the blast radius back to a gesture
+  instead of a decision. It is not an undo: delete stays irreversible, because
+  restoring an archive is not restoring run files.
+- **Never a partial restore.** An archive is the single event that closed every
+  pending item on a card, so a restore that returned only some of them teaches
+  the reader that the badge lies. Everything it closed returns; what it did not
+  close — a question answered before the archive, an error that had already
+  been resumed — stays closed, because the archive never took it away.
+- **The stage survives.** Returning means returning to the exact stage, not to
+  the phase's entry stage. Re-entering a phase would overwrite the card's real
+  position with a guess about where the phase begins.
+- **A refused spawn is a rollback, not a partial success.** A card must never
+  be left claiming live work with no worker behind it; a phantom wait is a bug.
+
+A refusal that names no exit is a deadlock with a good error message. So is a
+terminal state with no way back that a person chose by accident.
+
 ## Commits
 
 Write conventional commits: `type: subject` in English, imperative,
