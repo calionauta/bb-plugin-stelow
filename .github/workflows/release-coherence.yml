@@ -1,0 +1,45 @@
+name: release coherence
+
+# The stranded-release guard needs a path that does not depend on the push it
+# is meant to cover.
+#
+# scripts/check-release-published.mjs already runs inside the release workflow,
+# where it judged v0.57.0 and would have caught it. But a release pull request
+# merged by squash has twice produced a commit on master with no workflow run at
+# all — no ci, no release — while every neighbouring push ran normally. A check
+# that lives inside the workflow can only cover the runs that happen; when the
+# workflow never starts, the check never executes and the version sits on master
+# with no tag until a human goes looking.
+#
+# So this is the second path, on a clock rather than on an event. It costs one
+# node invocation an hour and repeats no part of the test suite.
+on:
+  schedule:
+    # Hourly, off the :00 mark so it does not pile onto the top of the hour with
+    # whatever else the repository schedules.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-coherence
+  cancel-in-progress: true
+
+jobs:
+  assert-published:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guard falls back to the tags this clone knows; a shallow clone
+          # would report a healthy release as stranded.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assert the version on master is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-release-published.mjs
