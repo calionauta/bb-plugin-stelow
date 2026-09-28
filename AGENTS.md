@@ -214,6 +214,23 @@ Do not re-run it instead, and do not merge around it: a check that
 never executed is not a passing check, and merging the release PR on
 one leaves the version bump unverified.
 
+**Squash-merging a release PR sometimes triggers no workflow at all.**
+Both `ci` and `release` fire on every other push to `master`, but a
+release PR merged by squash has produced zero runs — twice, on v0.57.0
+and v0.57.3, while every neighbouring push ran normally. "The merge is
+the release" assumes the merge starts something, and here it does not.
+Wait five minutes; if the merge commit has no run, the merge was not
+the release:
+
+```bash
+gh workflow run release.yml
+```
+
+The version-coherence guard cannot cover this, and that is worth
+saying plainly: it runs *inside* the release workflow, so a workflow
+that never starts never reaches it. Recover, then check the tag
+exists — `gh release list --limit 1`.
+
 **A squash-merged PR is typed by its title, not by its commits.** The
 squash commit keeps every merged message in its *body*, but the
 *subject* — the only line release-please reads for the change type —
