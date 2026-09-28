@@ -11,8 +11,19 @@ and this project adheres to a single-version-per-release tag format
 
 ### Bug Fixes
 
-* a merged release bump that never shipped now fails the build ([#161](https://github.com/calionauta/bb-plugin-stelow/issues/161)) ([dde9ce1](https://github.com/calionauta/bb-plugin-stelow/commit/dde9ce13a137c48b463f158b2af27b6416b3db88))
-* this repairs a release incident rather than adding a capability, but it is ([dde9ce1](https://github.com/calionauta/bb-plugin-stelow/commit/dde9ce13a137c48b463f158b2af27b6416b3db88))
+* **A merged release bump that never shipped now fails the build.** v0.57.0
+  reached `master` with no tag, so installs could not move to it, and nothing
+  went red: release-please does not fail when it loses track of its own release
+  pull request — it reports no baseline, diffs from the start of history, and
+  opens a new release pull request re-listing months of already-shipped features
+  as new work.
+
+  The release job now runs `scripts/check-release-published.mjs` right after the
+  release action, so it judges what the action just did. A version on `master`
+  with neither a tag nor an open release PR for it exits non-zero and names the
+  stranded version. Every ordinary push is unaffected: `master` still sits at
+  the published version, because the bump only lands with the release PR.
+  ([#161](https://github.com/calionauta/bb-plugin-stelow/pull/161))
 
 ## [0.57.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.4...v0.57.0) (2026-09-28)
 
