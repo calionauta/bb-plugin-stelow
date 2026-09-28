@@ -243,8 +243,52 @@ test("audit idle never implies completion when the done budget is spent", async 
     fixture.calls.some(([name, fields]) => name === "update" && fields.status === "completed"),
     false,
   );
-  assert.equal(fixture.calls.filter(([name]) => name === "comment").length, 2);
+  // One comment, not two. The notice that used to be here claims the workflow
+  // "reached the audit stage", and this fixture's card is ALREADY at stage
+  // audit with the observed state also at audit — nothing transitioned during
+  // this sync, so the notice was not true. It hung off `transitioning`, which
+  // is derived from `activity`, and a native run flips activity; that is how
+  // card_1fgz8lge re-announced the same arrival twice, minutes apart.
+  assert.equal(fixture.calls.filter(([name]) => name === "comment").length, 1);
   assert.equal(fixture.calls.at(-1)[0], "escalate");
+});
+
+test("the audit notice says arrival, so it fires on the arrival and not after", async () => {
+  const arriving = harness(
+    card({
+      status: "in-progress",
+      stage: "execution",
+      activity: "running",
+      // The done budget has to be spent for the notice path to be reached at
+      // all: with budget left, sendDoneNudge resumes the worker and returns
+      // before anything is announced, which is the correct outcome.
+      auto_continue_count: 2,
+      auto_continue_stage: "audit",
+    }),
+    { status: "idle", output: "audit narrated", state: "name: Useful\ncurrent_stage: audit\n" },
+  );
+  await arriving.sync(arriving.row().id);
+  const notices = () => arriving.calls.filter(([name, , body]) => name === "comment" && /reached the audit stage/.test(String(body)));
+  assert.equal(notices().length, 1, "reaching audit announces it once");
+
+  // Same card, still at audit, going idle again. The stage did not move, so the
+  // card has nothing new to say about arriving.
+  const staying = harness(
+    card({
+      status: "in-progress",
+      stage: "audit",
+      activity: "running",
+      auto_continue_count: 2,
+      auto_continue_stage: "audit",
+    }),
+    { status: "idle", output: "audit narrated again", state: "name: Useful\ncurrent_stage: audit\n" },
+  );
+  await staying.sync(staying.row().id);
+  assert.equal(
+    staying.calls.filter(([name, , body]) => name === "comment" && /reached the audit stage/.test(String(body))).length,
+    0,
+    "a card already at audit is not told it reached audit",
+  );
 });
 
 test("terminal and unverifiable ownership refusals are negative controls", async () => {

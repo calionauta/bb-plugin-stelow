@@ -205,7 +205,11 @@ async function syncAuditIdle(
   transitioning: boolean,
 ): Promise<boolean> {
   if (await sendDoneNudge(deps, snapshot, transitioning)) return true;
-  if (snapshot.card.status !== "completed" && transitioning) {
+  // This notice claims a stage was REACHED, so it is gated on the stage moving.
+  // It hung off `transitioning`, which is derived from `activity` — and a native
+  // run flips activity, so one card re-announced the same arrival twice.
+  const enteredAudit = snapshot.stage === "audit" && snapshot.card.stage !== "audit";
+  if (snapshot.card.status !== "completed" && enteredAudit) {
     deps.logComment(
       snapshot.card.id,
       "The workflow reached the audit stage, but the card completes only when the worker " +
