@@ -179,7 +179,27 @@ from a laptop.
 Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
 confirm CI is green on it. Keep feature commits separate; the release
-PR owns the version bump.
+PR owns the version bump. Curating the notes is safe: release-please
+writes a release PR body once and does not overwrite it on later runs,
+so a hand-written body survives until the PR merges.
+
+**A squash-merged PR is typed by its title, not by its commits.** The
+squash commit keeps every merged message in its *body*, but the
+*subject* — the only line release-please reads for the change type —
+is the pull request title. So a PR titled `fix:` that carries a
+`feat:` commit is released as a patch and the feature appears nowhere
+in the notes. This is not hypothetical: PR #157 mixed the design-ref
+feature with three fixes and a sync, and release-please computed
+0.56.5 for work that had to ship as 0.57.0.
+
+Two consequences, both now rules: a PR that carries a feature is
+**titled** `feat:` even when it also carries fixes, and a feature
+never shares a PR with unrelated fixes. When a bump is already wrong
+— the release PR is open and says the wrong version — correct it
+through the release workflow's own `release-as` input
+(`gh workflow run release.yml -f release-as=<version>`), never by
+editing `package.json` in the release PR, which release-please
+overwrites.
 
 Release notes come from commit messages: `feat:`/`fix:` (plus `perf:`
 and `BREAKING CHANGE:`) bump the version and appear in the notes;
