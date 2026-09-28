@@ -1061,6 +1061,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `last_error` verbatim, pauses re-derive from live state — while
   completed deliveries stay read. If the fresh spawn fails, the status
   rolls back instead of leaving a phantom wait.
+
+  *Proven against the live database, 2026-09-28* (`card_19ny9eq3`, the
+  accidental test archive, reproduced by `tests/fixtures/restore-dogfood.mjs`
+  on a `.backup` snapshot of `~/.bb/plugins/stelow/data.db`, inside a
+  transaction that is rolled back). Before: `status=archived`,
+  `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
+  reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
+  341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
+  the archive-resolved rows are exactly one question. Result:
+  `questionsReopened: 1, errorsReopened: 0, pausedReopened: 0,
+  completedReopened: 0` — `evt_yclvhua2` reopened with its reason cleared,
+  the 12 rows resolved before the archive stayed resolved, no event created
+  or deleted, globals unchanged, and the live database left byte-for-byte as
+  found.
+
+  What this fixture does **not** prove: the host half. The status flip and
+  the fresh worker spawn both need a running bb host, so "a new worker" is
+  still unverified against a real host. And because no error on this card
+  was resolved *by the archive*, the verbatim-`last_error` revival path is
+  untested here — the unit tests cover it, this card cannot.
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
