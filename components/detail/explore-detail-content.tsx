@@ -2,6 +2,7 @@ import { statusTone } from "../../lib/detail-presentation.mjs";
 import { researchColumnForStatus } from "../../lib/card-question-state.mjs";
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
+import { artifactRoleCounts } from "../../lib/artifact-roles.mjs";
 import { ArtifactGroups } from "../artifacts/artifact-inventory";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
@@ -66,8 +67,12 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
 function ExploreArtifacts({ card, detail, stageLabel, setViewerFile }: Pick<ExploreContentProps, "card" | "detail" | "stageLabel"> & {
   setViewerFile: ExploreDetailState["setViewerFile"];
 }) {
+  // Machine receipts are not files this card produced, so they are not counted
+  // here — the same rule the inventory applies. Counting them is how Explore
+  // said "3 files" over two deliverables.
+  const { deliverables } = artifactRoleCounts(detail?.artifacts ?? []);
   return (
-    <DisclosureSection title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
+    <DisclosureSection title="Artifacts" hint={detail ? `${deliverables} file${deliverables === 1 ? "" : "s"}` : "being prepared"} defaultOpen>
       {detail ? <ArtifactGroups artifacts={detail.artifacts} workspaceKind={card.workspaceKind} fileEnvironmentId={detail.fileEnvironmentId} onView={setViewerFile} groupTitleForStage={() => stageLabel ?? "Exploration"} /> : <p className="text-xs text-muted-foreground">Loading…</p>}
     </DisclosureSection>
   );

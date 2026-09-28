@@ -6,3 +6,7 @@ export declare function splitArtifactsByRole<T>(artifacts: T[] | null | undefine
   deliverables: T[];
   evidence: T[];
 };
+export declare function artifactRoleCounts(artifacts: unknown[] | null | undefined): {
+  deliverables: number;
+  evidence: number;
+};

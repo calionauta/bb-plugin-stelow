@@ -3,6 +3,8 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { groupArtifactsByStage } from "../../lib/artifact-groups.mjs";
+import { splitArtifactsByRole } from "../../lib/artifact-roles.mjs";
+import { DisclosureSection } from "../disclosure";
 
 // Artifact surfaces: the file-target convention (workspace vs host links),
 // the shared inventory renderer (every track supplies its grouping axis),
@@ -65,6 +67,45 @@ function formatArtifactDate(value: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
 }
 
+// One row, one meaning: an actual file that opens in the viewer. Extracted so
+// the deliverables inventory and the machine-receipts disclosure cannot drift
+// into two different rows for the same file.
+type InventoryRow = { path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
+
+// A row is a full-width touch target: min-h-11, a pointer cursor, and a visible
+// focus ring. Named so the two places that render a row cannot drift.
+const ROW_CLASS = [
+  "flex min-h-11 w-full cursor-pointer items-start gap-2",
+  "px-2 py-2 text-left text-xs",
+  "hover:bg-muted/60",
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+].join(" ");
+
+function ArtifactRow({ file, workspaceKind, fileEnvironmentId, onView }: {
+  file: InventoryRow;
+  workspaceKind: string;
+  fileEnvironmentId: string | null;
+  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+}) {
+  const target = fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath);
+  const meta = [formatArtifactDate(file.generatedAt), `File: ${artifactFilename(file.path)}`].filter(Boolean).join(" · ");
+  return (
+    <button
+      onClick={() => onView({ display: file.display, path: file.absolutePath, target })}
+      className={ROW_CLASS}
+      title={`Open ${file.display} (${file.path})`}
+    >
+      <span className="mt-0.5" aria-hidden>📄</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-foreground">{file.display}</span>
+        <span className="block truncate text-muted-foreground">{meta}</span>
+        {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
+      </span>
+      <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
+    </button>
+  );
+}
+
 // One visual inventory for every card type. Each track supplies its durable
 // grouping axis (Build stage, Research round, Explore technique); rows always mean
 // an actual file that opens in the viewer.
@@ -85,20 +126,7 @@ export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, on
           </div>
           <div className="divide-y divide-border rounded-md border">
             {group.items.map((file) => (
-              <button
-                key={file.path}
-                onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath) })}
-                className="flex min-h-11 w-full cursor-pointer items-start gap-2 px-2 py-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                title={`Open ${file.display} (${file.path})`}
-              >
-                <span className="mt-0.5" aria-hidden>📄</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-foreground">{file.display}</span>
-                  <span className="block truncate text-muted-foreground">{[formatArtifactDate(file.generatedAt), `File: ${artifactFilename(file.path)}`].filter(Boolean).join(" · ")}</span>
-                  {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
-                </span>
-                <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
-              </button>
+              <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
             ))}
           </div>
         </div>
@@ -107,21 +135,80 @@ export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, on
   );
 }
 
+// Stelow's own receipts, kept out of the deliverable count. Closed by default:
+// a receipt is reference material, not a decision awaiting the reader, so it is
+// neither live nor blocking and earns no open-on-load.
+function EvidenceDisclosure({ artifacts, workspaceKind, fileEnvironmentId, onView }: {
+  artifacts: InventoryRow[];
+  workspaceKind: string;
+  fileEnvironmentId: string | null;
+  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+}) {
+  if (artifacts.length === 0) return null;
+  return (
+    <DisclosureSection
+      title="Machine receipts"
+      subtitle="Stelow's own audit record. Not deliverables — they are not part of what this card produced."
+    >
+      <div className="divide-y divide-border rounded-md border">
+        {artifacts.map((file) => (
+          <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
+        ))}
+      </div>
+    </DisclosureSection>
+  );
+}
+
 // Build and Explore use stages as their canonical grouping axis. Keeping this
 // adapter preserves the shared inventory while avoiding a second renderer.
+//
+// Machine receipts are separated here, not on the server. The server has always
+// classified them — `artifactRole` calls audit-trail.md and recon-receipt.json
+// evidence, and the RPC carries that `role` on every artifact — but this
+// component's prop type never mentioned it, so the classification was computed,
+// transported, and then dropped at the last step. Both receipts rendered as
+// ordinary rows: counted in the deliverables total and sitting unlabeled beside
+// the specs, which is the thing lib/artifact-roles.mjs says must not happen.
+//
+// It is the same shape as a field that is validated and never read: the honest
+// contract is that a reader can tell a deliverable from a machine receipt, and a
+// receipt that inflates the artifact count is a claim about the work the card
+// actually produced.
+type InventoryGroupItem = {
+  stage: string;
+  kind: string;
+  role?: "deliverable" | "evidence";
+  path: string;
+  display: string;
+  generatedAt: string;
+  absolutePath: string;
+  hostId: string;
+};
+
 export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, groupTitleForStage }: {
-  artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
+  artifacts: InventoryGroupItem[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
   groupTitleForStage?: (stage: string) => string;
 }) {
-  const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(artifacts).map((group) => ({
+  const { deliverables, evidence } = useMemo(() => splitArtifactsByRole(artifacts), [artifacts]);
+  const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(deliverables).map((group) => ({
     id: group.stage,
     title: groupTitleForStage?.(group.stage) ?? stageLabel(group.stage),
     items: group.items,
-  })), [artifacts, groupTitleForStage]);
-  return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />;
+  })), [deliverables, groupTitleForStage]);
+  return (
+    <>
+      <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
+      <EvidenceDisclosure
+        artifacts={evidence}
+        workspaceKind={workspaceKind}
+        fileEnvironmentId={fileEnvironmentId}
+        onView={onView}
+      />
+    </>
+  );
 }
 
 // A completed Build card carries two receipts whose names differ by one word,

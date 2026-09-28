@@ -237,6 +237,9 @@ assert.doesNotMatch(
 );
 assert.match(
   artifactModule,
-  /groupArtifactsByStage\(artifacts\)/,
-  "stage grouping sums through the lib, never inline math",
+  /groupArtifactsByStage\(deliverables\)/,
+  // Grouping sums through the lib, never inline math — over the deliverables
+  // rather than the raw prop. Grouping the raw list is what put a machine
+  // receipt in a stage bucket and in the deliverables count at once.
+  "stage grouping sums through the lib, over the role-partitioned deliverables",
 );
