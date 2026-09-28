@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.56.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.55.1...v0.56.0) (2026-09-28)
+
+
+### Features
+
+* add the host door that approves a scope map ([cfac273](https://github.com/calionauta/bb-plugin-stelow/commit/cfac273d2ed0fad7cf75ff1d47b787f651606f6f))
+* add the host door that approves a scope map ([bba649e](https://github.com/calionauta/bb-plugin-stelow/commit/bba649e9f76589a3c2a2303e4826bcc7e7e87faf))
+* add the host door that approves a scope map ([#151](https://github.com/calionauta/bb-plugin-stelow/issues/151)) ([cfac273](https://github.com/calionauta/bb-plugin-stelow/commit/cfac273d2ed0fad7cf75ff1d47b787f651606f6f))
+
+
+### Bug Fixes
+
+* an archived card stops asking for a review it can never get ([c1da80f](https://github.com/calionauta/bb-plugin-stelow/commit/c1da80fed7fc455ff96a4a76a44551db702a9834))
+
 ## [0.55.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.55.0...v0.55.1) (2026-09-27)
 
 
