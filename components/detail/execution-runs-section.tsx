@@ -5,6 +5,7 @@ import { goToExecutionRun } from "../app-support/navigation";
 import { DisclosureSection, DisclosureChevron } from "../disclosure";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import { ExecutionRunDetail } from "./execution-run-detail";
+import { liveProgressNote } from "../../lib/execution-run-presentation.mjs";
 import type { ExecutionRun } from "./use-execution-runs";
 
 type ExecutionRunsSectionProps = {
@@ -41,11 +42,13 @@ function waitingForYou(run: ExecutionRun) {
 // so the card reads as a question, not a stalled spinner; everything else
 // keeps the plain status-and-stage line.
 function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<typeof waitingForYou> }) {
+  const live = liveProgressNote(run.normalizedStatus);
   if (!waiting) {
     return (
       <p className="text-xs text-muted-foreground">
         {stateLabel[run.normalizedStatus] ?? run.normalizedStatus}
         {run.stage ? ` · ${run.stage}` : ""}
+        {live ? ` · ${live}` : ""}
       </p>
     );
   }

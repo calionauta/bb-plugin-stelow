@@ -183,6 +183,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   answer cannot silently resume a run. Refactors with more than one delivery
   scope require an approved Scope Map before execution; one-scope refactors stay
   lightweight.
+  A boundary question renders as the moment it records. A `reaction` boundary
+  is captured **before** the agent has synthesised anything, so its option
+  list is withheld and the card says why; a `confirmation` boundary is captured
+  after synthesis and keeps its options. The boundary's `kind` is read from
+  the `[Stelow boundary <id>]` marker the run already requires, and the framing
+  is decided once in `lib/execution-boundary-marker` and sent to the card whole,
+  so a question can no longer ask for a first reaction while listing the
+  options that would replace it. A receipt naming a human decision reports the
+  route's own stale-artifact set (the card used to be told nothing went stale),
+  and the trail line says that `human` is not a stage. A run that is still
+  moving says where its live step progress streams; a paused or finished one
+  points nowhere. The runtime validator now covers every field the published
+  schema declares — including `nextAction`, which a receipt must fill, since a
+  receipt with no next move is not evidence.
 - **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
   `stelow-product-scope-mapping` method as one focused technique. It writes the
   readable `explore-scope-map.md` artifact first and may include validated

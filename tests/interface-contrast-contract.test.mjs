@@ -26,6 +26,7 @@ const receipt = {
     { id: "split-context", primaryValue: "split view", relatedValues: [], compatibility: "valid" },
     { id: "ghost-whole", primaryValue: "crop with ghost whole", relatedValues: [], compatibility: "valid" },
   ],
+  nextAction: "Present both retained-context options at the Interface gate.",
 };
 
 assert.deepEqual(validateInterfaceContrastReceipt(receipt), [], "simulated Interface Contrast receipt is valid");

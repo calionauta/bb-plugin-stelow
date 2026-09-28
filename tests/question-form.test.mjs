@@ -67,7 +67,7 @@ assert.deepEqual(calls, [
 const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
 const form = readFileSync(new URL("../components/conversation/question-form.tsx", import.meta.url), "utf8");
 const button = readFileSync(new URL("../components/ui/button.tsx", import.meta.url), "utf8");
-const batch = readFileSync(new URL("../components/conversation/question-batch.tsx", import.meta.url), "utf8");
+const answerBody = readFileSync(new URL("../components/conversation/batch-answer-body.tsx", import.meta.url), "utf8");
 assert.match(
   app,
   /import \{ registerPendingInteraction \} from "\.\/components\/conversation\/question-form"/,
@@ -83,10 +83,19 @@ assert.match(
 assert.match(form, /const batched = items\.length > 1;/, "the host payload shape follows the rendered question count");
 assert.match(form, /<Button variant="outline" onClick=\{\(\) => void actions\.cancel\(\)\}>/, "cancel uses the shared button control");
 assert.match(button, /const Comp = asChild \? Slot : "button";/, "the shared button is natively keyboard-operable by default");
+// The submit control moved out of question-batch into batch-answer-body when
+// the answer controls were given their own slice. The guarded topology is the
+// point of the pin, not the file it lives in: one submit, rendered only on the
+// last question, and disabled until every question carries a decision.
 assert.match(
-  batch,
-  /sel\.isLastQuestion \? <Button size="sm" disabled=\{!sel\.complete \|\| busy\}/,
+  answerBody,
+  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy\}/,
   "submit uses the shared native button after every question is decided",
+);
+assert.equal(
+  answerBody.match(/onSubmit\(\{questions\.length > 1 \? copy\.submitAnswers : copy\.submitAnswer\}\)/g)?.length ?? 0,
+  0,
+  "the submit label is still chosen once, in QuestionBatch, and passed down",
 );
 assert.match(
   form,

@@ -23,7 +23,7 @@ import {
 } from "../lib/execution-run-ledger.mjs";
 import { requiredOutputPaths, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
 import { humanStopMessage, humanStopRequest } from "../lib/execution-human-stop.mjs";
-import { resolveInterfaceContrastRoute } from "../lib/interface-contrast.mjs";
+import { describeInterfaceContrastRoute } from "../lib/interface-contrast.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
 import type { CardNotifier } from "./execution-reconcile-deps.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -132,12 +132,7 @@ function interfaceRouteNote(
   if (recipeId !== "interface-contrast") return { note: "", error: null };
   try {
     const receipt = JSON.parse(contents["interfaces/contrast.json"]) as unknown;
-    const route = resolveInterfaceContrastRoute(receipt);
-    const stale = route.staleArtifacts.join(", ") || "none";
-    return {
-      note: `Interface Contrast route: ${route.destination}; stale artifacts: ${stale}.`,
-      error: null,
-    };
+    return { note: describeInterfaceContrastRoute(receipt).note, error: null };
   } catch (error) {
     return {
       note: "",

@@ -15,6 +15,7 @@ import {
   buildProgressView,
   detailSource,
   conversation,
+  answerBody,
   cardConversation,
   disclosureModule,
   artifactModule,
@@ -32,10 +33,18 @@ assert.match(
   /<BatchQuestionHeading questions=\{questions\}/,
   "the heading renders through one unit",
 );
+// The list renders through one unit, and that unit now receives the
+// boundary-filtered options (`shown`) rather than the raw question: a reaction
+// boundary withholds its options there, once, instead of at every read.
 assert.match(
-  conversation,
-  /<BatchOptionList current=\{current\}/,
-  "options render through one list",
+  answerBody,
+  /<BatchOptionList[\s\S]{0,40}current=\{shown\}/,
+  "options render through one list, fed the boundary-filtered options",
+);
+assert.match(
+  answerBody,
+  /const shown: BatchItem = \{ \.\.\.current, options: boundaryOptions\(current\) \};/,
+  "the boundary decides the option list in one place",
 );
 assert.match(
   conversation,

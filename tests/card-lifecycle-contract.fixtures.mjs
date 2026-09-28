@@ -214,6 +214,10 @@ export const conversation = readFileSync(
   join(root, "components", "conversation", "question-batch.tsx"),
   "utf8",
 );
+export const answerBody = readFileSync(
+  join(root, "components", "conversation", "batch-answer-body.tsx"),
+  "utf8",
+);
 export const cardConversation = readFileSync(
   join(root, "components", "conversation", "card-conversation.tsx"),
   "utf8",
