@@ -803,7 +803,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   acceptance criteria surface as task notes; the card detail also reports
   scope-sync health (`scopeSync`: spec file, machine/human block counts,
   synced count) and the panel names an unsynced card instead of rendering
-  it empty. Workers mark scopes through `bb stelow scope <start|done>`
+  it empty. **A card with no scopes is only a fault when a spec said there
+  should be some** (`scopeSyncNotice`, from `diagnoseScopeSync`): a card
+  whose spec is missing (`no-spec`) or carries no scope blocks yet
+  (`no-blocks`) is silent, and only `unsynced` and `human-dialect` name a
+  fault and the way out of it. Emptiness is not evidence — an
+  investigation that reached audit without ever planning has no tech spec,
+  and telling its reader their planning used headings instead of machine
+  blocks accuses them of a spec that never existed. That is what the panel
+  used to say, from a rule that read the current stage and nothing else.
+  One fact, one representation: the classification is the decision, decided
+  once in `lib/scope-sync-notice.mjs`, and the panel reads it.
+  Workers mark scopes through `bb stelow scope <start|done>`
   (single writer: terminality, containment, and dependency order validated
   before commit; writes refresh the card and trail the decision).
   Every scope projects its machine evidence beside the plan:

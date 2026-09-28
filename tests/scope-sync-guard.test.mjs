@@ -136,9 +136,13 @@ assert.match(
 );
 assert.match(server, /scopeSync: z\s*\.object\(\{\s*state: z\.enum\(/, "the card detail contract carries the sync state");
 const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
-assert.match(buildProgress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");
-assert.match(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]\.includes\(detail\.scopeSync\.state\)/, "the progress section renders the reported sync state");
-assert.match(buildProgress, /ended before tracking was established/, "completed cards read history, not worker redirects");
-assert.match(buildProgress, /card\.status !== "completed" && card\.status !== "archived"/, "terminal cards hide the rewrite advisory");
+// The panel reads the server's classification and nothing else. The stage-derived
+// rule it replaced fired on cards that never planned — the reported state is
+// `no-spec` on those, and a notice that invents a spec the reader never owed is
+// worse than silence.
+assert.doesNotMatch(buildProgress, /isScopeTrackingMissing/, "the stage-derived scope-tracking rule is not used");
+assert.match(buildProgress, /scopeSyncNotice\(detail\.scopeSync,/, "the notice is decided once, in lib, from the reported state");
+assert.doesNotMatch(buildProgress, /No synced scopes on this card/, "the copy that accused a reader of a nonexistent spec is gone");
+assert.doesNotMatch(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]/, "the alarm list is not re-spelled in the view");
 
 console.log("scope sync guard test ok: dialects, task extraction, execution/done refusals, merge, wiring");

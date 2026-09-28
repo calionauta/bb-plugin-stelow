@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "../../lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked } from "../../lib/card-checks.mjs";
+import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { statusTone } from "../../lib/detail-presentation.mjs";
 import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
@@ -79,12 +80,10 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
   });
   if (groups.length === 0) return null;
   const visible = pendingOnly ? groups.filter((group) => groupState(group) === "pending") : groups;
-  const missingTracking = isScopeTrackingMissing({ activity: card.activity, stage: card.stage, scopes: detail.scopes }) && card.status !== "completed" && card.status !== "archived";
   return (
     <div className="space-y-2 rounded-md border bg-muted/20 p-3">
       <div className="flex items-center gap-2"><h3 className="text-xs font-semibold text-foreground">Checks</h3><label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label></div>
       {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
-      {missingTracking ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">No synced scopes on this card — planning likely used headings instead of machine blocks, so sync-scopes parsed nothing. Rewrite the spec with [SCOPE-N] blocks and resync before executing.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => <div key={group.id} className="space-y-0.5"><p className="text-xs"><span className="font-medium text-foreground">{group.label}</span><span className="ml-2 tabular-nums text-muted-foreground">{group.open.length}/{group.total} open</span>{groupState(group) === "done" ? <span className="ml-2 text-emerald-700 dark:text-emerald-300">✓</span> : null}</p>{group.open.length > 0 ? <p className="truncate text-[11px] text-muted-foreground" title={group.open.join(" · ")}>{group.open.slice(0, 3).join(" · ")}{group.open.length > 3 ? ` +${group.open.length - 3} more` : ""}</p> : null}</div>)}
     </div>
   );
@@ -140,14 +139,10 @@ function formatGapMs(ms: number | null): string | null {
 }
 
 function ScopeSyncWarning({ card, detail }: { card: BuildCard; detail: BuildDetail }) {
-  if (!detail.scopeSync || !["human-dialect", "unsynced"].includes(detail.scopeSync.state)) return null;
-  const terminal = card.status === "completed" || card.status === "archived";
-  const total = detail.scopeSync.humanBlocks || detail.scopeSync.machineBlocks;
-  const copy = terminal
-    ? `Scope sync parsed 0 of ${total} planned scopes — this card ended before tracking was established (pre-guard format). Its audit record below is the evidence of what was verified.`
-    : detail.scopeSync.state === "human-dialect"
-      ? `Scope sync parsed 0 of ${detail.scopeSync.humanBlocks} planned scopes — ${detail.scopeSync.specFile ?? "the spec"} uses headings instead of machine blocks. Rewrite openers as [SCOPE-N] Title, resync, then advance.`
-      : `Scope sync parsed 0 of ${detail.scopeSync.machineBlocks} planned scopes — run bb stelow sync-scopes, then advance again.`;
+  const copy = scopeSyncNotice(detail.scopeSync, {
+    terminal: card.status === "completed" || card.status === "archived",
+  });
+  if (!copy) return null;
   return <p className="text-xs text-amber-700 dark:text-amber-300" role="status">{copy}</p>;
 }
 
