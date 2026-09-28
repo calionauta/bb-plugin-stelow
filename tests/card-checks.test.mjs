@@ -58,7 +58,12 @@ assert.match(progress, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detai
 assert.match(progress, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
 assert.match(progress, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
 assert.match(progress, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
-assert.match(progress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the rollup names missing scope tracking from live card state");
+// The missing-tracking signal is gone from the rollup, and that is the fix: it
+// alarmed on any empty scope list at a late stage, including cards that never
+// planned. Scope sync has one voice now (lib/scope-sync-notice.mjs), which
+// reads the server's classification instead of re-deriving from the stage.
+assert.doesNotMatch(progress, /isScopeTrackingMissing/, "no stage-derived scope-tracking alarm survives in the rollup");
+assert.doesNotMatch(progress, /No synced scopes on this card/, "the copy that named a nonexistent spec is gone");
 
 // Untracked execution: running with synced scopes but nothing ever marked
 // (neither in-progress nor done) names the silence bands — the exact shape

@@ -49,6 +49,12 @@ const inheritedBaseline = [
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 51 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
+  // Surfaced while removing a sibling function from lib/card-checks.mjs — the
+  // function itself is untouched, and 57 is the number the fork point already
+  // carried. The gate stopped suppressing it for a reason not yet explained,
+  // so it is recorded here verbatim rather than quietly dropped: a suppression
+  // that disappears with an unrelated edit is worth seeing, not hiding.
+  "lib/card-checks.mjs:groupCardChecks#1: 57 lines (baseline 57)",
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (recorded 78)",
   "lib/scope-batch-cancel.mjs:cancelBatch#1: 76 lines (recorded 76)",
