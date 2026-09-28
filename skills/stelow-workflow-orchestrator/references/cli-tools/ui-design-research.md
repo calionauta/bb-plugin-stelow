@@ -5,7 +5,7 @@
 > Strategies reference this file instead of duplicating reference instructions.
 
 The gap this fills is narrow and specific. The archetypes in
-`stelow-workflow-interface-alternatives/references/archetypes.md` are
+`../../../stelow-workflow-interface-alternatives/references/archetypes.md` are
 **interaction philosophies** (conventional, paradigm shift, radical
 simplicity, expert-first). They say what the interaction should feel like. They
 say nothing about how a real page for that archetype is laid out. Without a
@@ -84,8 +84,8 @@ structure query over a broad moodboard.
 
 ## Optional install
 
-Stelow never installs it. The About panel lists it, shows exactly which agent
-CLIs on this host can reach it, and registers on request only.
+Stelow never installs it. The host's dependency panel lists it, shows exactly
+which agent CLIs on this host can reach it, and registers on request only.
 
 ```bash
 # Source: https://github.com/Nutlope/inspo
@@ -98,10 +98,10 @@ The installer writes the agent-CLI configs that exist **at the moment it
 runs**. Installing a new agent CLI later leaves it working but without the
 reference — a gap that is invisible from inside a worker turn.
 
-So: if a reference lookup unexpectedly finds nothing, check the About panel
-before concluding the catalogue is empty. It re-reads every open and names the
-exact CLIs that bb can run but that do not name the server. Re-running the
-installer registers it for all of them; then restart those CLIs.
+So: if a reference lookup unexpectedly finds nothing, check the host's
+dependency panel before concluding the catalogue is empty. It re-reads every
+open and names the exact CLIs the host can run but that do not name the server.
+Re-running the installer registers it for all of them; then restart those CLIs.
 
 `pi` reaches MCP servers through the `pi-mcp-adapter` extension, reading
 `~/.pi/agent/mcp.json`. Without that extension its config entries are inert.
