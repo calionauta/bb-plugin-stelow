@@ -28,9 +28,29 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # The guard reads the newest tag merged into HEAD; a shallow clone
+          # cannot see it and would report a healthy release as stranded.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: googleapis/release-please-action@v4
         with:
           release-type: node
           # Empty string is release-please's own "no opinion"; passing an empty
           # input keeps the automatic path identical to having no input at all.
           release-as: ${{ inputs.release-as }}
+      # Release-please can fail to recognise that its own release pull request
+      # was merged — it then reports no baseline, diffs from the start of
+      # history, and opens a new release pull request re-listing months of
+      # shipped work, while saying nothing actionable. On v0.57.0 that left
+      # master bumped with no tag and every build green, so installs could not
+      # move forward. This step fails the run instead, naming the stranded
+      # version. Every ordinary push is `released` and an in-flight release
+      # pull request is `pending`, so only the broken state is red.
+      - name: Assert the version on master is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-release-published.mjs
