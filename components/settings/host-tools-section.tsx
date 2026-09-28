@@ -1,7 +1,8 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import type { HostToolId, HostToolStatus } from "../../lib/host-tools.mjs";
 import { Button } from "../ui/button";
-import { DisclosureChevron } from "../disclosure";
+import { cn } from "../../lib/utils";
+import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Icon } from "../ui/icon";
 
 type HostToolMeta = {
@@ -92,7 +93,7 @@ function InstallError({ message }: { message: string }) {
     <div className="mt-1.5 space-y-1">
       <p className="text-[11px] text-destructive">Install failed: {summary}</p>
       <details className="group">
-        <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+        <summary className={cn(SUMMARY_ROW, "text-[11px] text-muted-foreground hover:text-foreground")}>
           <DisclosureChevron />
           Install log
         </summary>
@@ -114,39 +115,77 @@ function HostToolCard({ meta, status, installing, disabled, error, onInstall }: 
 }) {
   const present = status?.present === true;
   return (
-    <div className="rounded-lg border bg-muted/20 p-3">
-      <div className="flex items-center gap-2">
-        <span aria-hidden className={present ? "text-emerald-500" : "text-muted-foreground/50"}>
-          {present ? "●" : "○"}
-        </span>
-        <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
-        <UrlLink
-          href={meta.repo}
-          title={`${meta.name} repository`}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"
-        >
-          <Icon name="Github" className="h-3.5 w-3.5" aria-hidden />
-        </UrlLink>
-        <span className="text-[11px] text-muted-foreground">
-          {present ? (status?.version ?? "installed") : "not installed"}
-        </span>
-        <span className="ml-auto">
-          <Button
-            size="sm"
-            variant={present ? "ghost" : "outline"}
-            disabled={disabled}
-            onClick={() => onInstall(meta.id)}
-            title={present ? `Reinstall ${meta.name} at its latest release` : `Install ${meta.name} now`}
-          >
-            {installing ? (present ? "Updating…" : "Installing…") : (present ? "Update" : "Install")}
-          </Button>
-        </span>
-      </div>
+    <div className={`${SECTION_SURFACE} p-3`}>
+      <HostToolHeader
+        meta={meta}
+        present={present}
+        version={present ? (status?.version ?? "installed") : "not installed"}
+        installing={installing}
+        disabled={disabled}
+        onInstall={onInstall}
+      />
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
       <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
+      <HostToolFoot
+        present={present}
+        installing={installing}
+        install={meta.install}
+        error={error}
+      />
+    </div>
+  );
+}
+
+/** One tool's identity and its single action, on one line. */
+function HostToolHeader({ meta, present, version, installing, disabled, onInstall }: {
+  meta: HostToolMeta;
+  present: boolean;
+  version: string;
+  installing: boolean;
+  disabled: boolean;
+  onInstall: (id: HostToolId) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span aria-hidden className={present ? "text-emerald-500" : "text-muted-foreground/50"}>
+        {present ? "●" : "○"}
+      </span>
+      <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
+      <UrlLink
+        href={meta.repo}
+        title={`${meta.name} repository`}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"
+      >
+        <Icon name="Github" className="h-3.5 w-3.5" aria-hidden />
+      </UrlLink>
+      <span className="text-[11px] text-muted-foreground">{version}</span>
+      <span className="ml-auto">
+        <Button
+          size="sm"
+          variant={present ? "ghost" : "outline"}
+          disabled={disabled}
+          onClick={() => onInstall(meta.id)}
+          title={present ? `Reinstall ${meta.name} at its latest release` : `Install ${meta.name} now`}
+        >
+          {installing ? (present ? "Updating…" : "Installing…") : (present ? "Update" : "Install")}
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+/** What a tool needs before, during and after an install. */
+function HostToolFoot({ present, installing, install, error }: {
+  present: boolean;
+  installing: boolean;
+  install: string;
+  error?: string;
+}) {
+  return (
+    <>
       {!present && !installing ? (
         <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">
-          {meta.install}
+          {install}
         </pre>
       ) : null}
       {installing ? (
@@ -155,7 +194,7 @@ function HostToolCard({ meta, status, installing, disabled, error, onInstall }: 
         </p>
       ) : null}
       {error ? <InstallError message={error} /> : null}
-    </div>
+    </>
   );
 }
 

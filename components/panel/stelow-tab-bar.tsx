@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon } from "../ui/icon";
+import { TEXT_TAB } from "../../lib/design-tokens";
 import { STELOW_TRACKS, type StelowTrack, type StelowTrackCounts, type StelowTrackEntry } from "./stelow-route.mjs";
 
 function TrackNavButton({ entry, active, count, aboutAlert, updateBadge, onSelect }: {
@@ -15,7 +16,12 @@ function TrackNavButton({ entry, active, count, aboutAlert, updateBadge, onSelec
     : "bg-muted text-muted-foreground";
   const className = [
     "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5",
-    "text-[13px] font-medium focus-visible:outline focus-visible:outline-2",
+    // The tab's own step of the scale, named in lib/design-tokens. It was 13px
+    // and anonymous until this audit: a real fifth role (a tab is a target, not
+    // a label) that nobody had written down, which is how a scale stops being
+    // one. `sm:text-sm` steps up to the body size at the breakpoint, as before.
+    TEXT_TAB,
+    "focus-visible:outline focus-visible:outline-2",
     "focus-visible:outline-primary sm:px-3 sm:text-sm",
     active
       ? "bg-foreground text-background shadow-sm"

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
-import { DisclosureChevron } from "../disclosure";
+import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/expired-question-answers.mjs";
 import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
@@ -37,12 +37,6 @@ export type {
 
 // One class for both disclosures (preview and touched paths) so a keyboard
 // focus ring reads identically wherever a disclosure appears.
-const DISCLOSURE_SUMMARY_CLASS = [
-  "inline-flex min-h-11 cursor-pointer items-center gap-1.5",
-  "text-xs font-medium hover:underline",
-  "focus-visible:outline focus-visible:outline-2",
-].join(" ");
-
 // Advisory only: names what moved since a question was asked — a revised or
 // removed document, a moved checkout with the touched paths — and points at
 // the existing exits (re-open the doc, request changes, regress the stage).
@@ -74,10 +68,7 @@ function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) 
       </p>
       {paths.length > 0 ? (
         <details className="mt-1">
-          <summary
-            className={DISCLOSURE_SUMMARY_CLASS}
-
-          >
+          <summary className={SUMMARY_LINK}>
             <DisclosureChevron />
             {paths.length} file{paths.length === 1 ? "" : "s"} touched
           </summary>

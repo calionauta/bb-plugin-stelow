@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DisclosureChevron } from "../disclosure";
+import { cn } from "../../lib/utils";
+import { DisclosureChevron, SUMMARY_ROW } from "../disclosure";
 import { commitFileState } from "../../lib/build-diff-presentation.mjs";
 import type { rpcContract } from "../../server";
 
@@ -68,9 +69,7 @@ function CommitDiffFileView(props: { file: CommitDiffFile; open: boolean }) {
   const file = props.file;
   return (
     <details open={props.open} className="group rounded-md border">
-      <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5
-        text-[11px] font-semibold text-muted-foreground hover:text-foreground
-        focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+      <summary className={cn(SUMMARY_ROW, "text-[11px] font-semibold text-muted-foreground hover:text-foreground")}>
         <DisclosureChevron />
         {file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}
         {commitFileState(file)}

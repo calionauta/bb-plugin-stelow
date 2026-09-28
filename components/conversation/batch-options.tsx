@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { DisclosureChevron } from "../disclosure";
+import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { splitOptionDescription } from "../../lib/split-question-presentation.mjs";
 import type {
   AskArtifact,
@@ -37,13 +37,6 @@ const AUTO_REVEAL_PREVIEW_CHARS = 280;
 // one earns a disclosure. Its summary carries the same 44px target and focus
 // ring as every other disclosure in the conversation, so a keyboard reader
 // meets the same affordance wherever one appears.
-const DISCLOSURE_SUMMARY_CLASS = [
-  "inline-flex min-h-11 cursor-pointer items-center gap-1.5",
-  "text-xs font-medium text-primary hover:underline",
-  "focus-visible:outline focus-visible:outline-2",
-  "focus-visible:outline-primary",
-].join(" ");
-
 // The select control of a row: the whole left half of the row is the target,
 // so it carries the same 44px minimum and focus ring as every other control.
 const PICK_CONTROL_CLASS = [
@@ -68,7 +61,7 @@ function OptionPreview({ preview }: { preview: string | null }) {
   return (
     <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
       <details className="group">
-        <summary className={DISCLOSURE_SUMMARY_CLASS}>
+        <summary className={SUMMARY_LINK}>
           <DisclosureChevron />
           Preview
         </summary>

@@ -165,6 +165,14 @@ assert.doesNotMatch(flowStrip, /p90 lead \{/, "no bare p90 readout survives in t
 assert.match(workerHistory, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
 assert.match(workerHistory, /<WorkerHistoryRow key=\{entry\.threadId\} entry=\{entry\} \/>/, "the list delegates one row per entry");
 assert.match(workerHistory, /entry\.endedAt === null \? "Current worker"/, "a live worker reads current, a replaced one names its end");
-assert.match(workerHistory, /tokens total<\/span>/, "the total reads as a total, not another row");
+// Whitespace-tolerant: this was `tokens total</span>`, a copy pin that broke the
+// moment the label was wrapped across lines — the behaviour was unchanged and
+// the assertion still went red. A pin on formatting is a test that trains people
+// to fear the formatter; a pin on the claim survives it.
+assert.match(
+  workerHistory,
+  /tokens total\s*<\/span>/,
+  "the total reads as a total, not another row",
+);
 
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

@@ -1,7 +1,7 @@
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { scopeElapsedMs } from "../../lib/scope-elapsed.mjs";
 import { useState } from "react";
-import { DisclosureChevron } from "../disclosure";
+import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { isDoneStatus } from "../../lib/trackables.mjs";
 import { orderScopes, statusRank } from "../../lib/scope-order.mjs";
@@ -94,7 +94,7 @@ function ScopeBody({ scope, fns }: { scope: ScopeListScope; fns: ScopeStatusFns 
       ) : null}
       {scope.contract && scope.contract.acceptanceCriteria.length > 0 ? (
         <details className="mt-2">
-          <summary className="inline-flex min-h-11 cursor-pointer items-center text-[11px] font-medium text-primary hover:underline">Acceptance criteria ({scope.contract.acceptanceCriteria.length})</summary>
+          <summary className={SUMMARY_LINK}>Acceptance criteria ({scope.contract.acceptanceCriteria.length})</summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
             {scope.contract.acceptanceCriteria.map((criterion, index) => <li key={index}>{criterion}</li>)}
           </ul>

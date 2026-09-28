@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { cn } from "../lib/utils";
 
 /**
  * The one surface a section of the card is allowed to be.
@@ -19,6 +20,44 @@ import { useState } from "react";
  * entire visual hierarchy the card has.
  */
 export const SECTION_SURFACE = "rounded-lg border bg-muted/20";
+
+/**
+ * The three disclosure families, named.
+ *
+ * The chevron was already shared — twelve components import it — which made the
+ * leak easy to miss: eight of them were still hand-rolling the whole pattern
+ * around it, each with its own summary padding. Seven different paddings for one
+ * interaction is why the same accordion feels like a different control depending
+ * on which card it is in, and it is invisible in review because each site looks
+ * locally reasonable.
+ *
+ * There are exactly three shapes here, and they are genuinely different jobs, so
+ * the fix is to name them rather than to force one:
+ *
+ * - SECTION — a labelled region of the card. That is `DisclosureSection`.
+ * - ROW — a bordered thing with a header, like a scope or a diff file.
+ * - LINK — an inline "show more" inside running text, the lightest of the three.
+ *
+ * A site picks its family and adds only what is genuinely its own. What it may
+ * not do is re-spell the family's base, because that is how one constant ended
+ * up duplicated under one name in two files with different contents.
+ */
+export const SUMMARY_BASE = [
+  "flex cursor-pointer list-none items-center gap-1.5",
+  "marker:hidden [&::-webkit-details-marker]:hidden",
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+].join(" ");
+
+/** A bordered row with a header: a scope, a file in a diff, a tool card. */
+export const SUMMARY_ROW = `${SUMMARY_BASE} min-h-11 px-3 py-2`;
+
+/**
+ * An inline "show more" inside running text. `text-primary` because it is a
+ * control, not a label — and one of the two files that used to carry its own
+ * copy of this constant had forgotten the colour, so its "show more" read as
+ * body text while its twin elsewhere read as a link.
+ */
+export const SUMMARY_LINK = `${SUMMARY_BASE} inline-flex min-h-11 text-xs font-medium text-primary hover:underline`;
 
 /**
  * Whether a section starts open.
@@ -75,7 +114,11 @@ export function DisclosureSection({ title, subtitle, hint, action, children, def
       onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
       className={`group ${SECTION_SURFACE}`}
     >
-      <summary className={`flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden ${subtitle ? "min-h-12" : "min-h-11"}`}>
+      <summary className={cn(
+        SUMMARY_ROW,
+        "text-sm font-medium",
+        subtitle ? "min-h-12" : "min-h-11",
+      )}>
         <DisclosureChevron className="mr-1.5" />
         {/* A subtitle is how a section names its job; the Workflow map uses the
             same two-line shape, so the pair reads as one family. */}

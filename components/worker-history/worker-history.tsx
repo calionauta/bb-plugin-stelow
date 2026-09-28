@@ -1,6 +1,7 @@
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
-import { DisclosureChevron, SECTION_SURFACE } from "../disclosure";
+import { cn } from "../../lib/utils";
+import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { workerSectionPolicy } from "../../lib/worker-action-policy.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
@@ -108,7 +109,15 @@ export function WorkerHistoryList({ history, separated = false }: { history: Wor
   ].filter((part): part is string => part !== null) : [];
   return (
     <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
+      <summary className={cn(SUMMARY_ROW, "text-xs font-medium text-muted-foreground")}>
+        <DisclosureChevron />
+        Worker history ({history.length}) — archived threads stay readable
+        {total !== null ? (
+          <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}>
+            {" · "}{formatTokenUsage(total)} tokens total
+          </span>
+        ) : null}
+      </summary>
       {legs.length > 0 ? <p className="mt-1 text-[11px] text-muted-foreground" title="Provider-reported split across all workers; legs without reports are omitted, never zeroed.">{legs.join(" · ")}</p> : null}
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (

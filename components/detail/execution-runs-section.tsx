@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { goToExecutionRun } from "../app-support/navigation";
-import { DisclosureSection } from "../disclosure";
+import { DisclosureSection, DisclosureChevron } from "../disclosure";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import { ExecutionRunDetail } from "./execution-run-detail";
 import type { ExecutionRun } from "./use-execution-runs";
@@ -153,15 +153,11 @@ function RunChevron({ run, open, onToggle }: { run: ExecutionRun; open: boolean;
       title={open ? "Hide this run's details" : "Show this run's details"}
       onClick={onToggle}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "text-xs transition-transform duration-150 motion-reduce:transition-none",
-          open ? "rotate-90" : "rotate-0",
-        )}
-      >
-        ▶
-      </span>
+      {/* The shared chevron, not a second one. This row drew its own `▶` span
+          with a copy of the rotation classes one commit after the shared one was
+          made the rule — the exact leak the rule exists to stop, introduced by
+          the change that announced it. */}
+      <DisclosureChevron open={open} />
       <span className="sr-only">{open ? "Hide" : "Show"} details for the {run.recipeId} run</span>
     </button>
   );

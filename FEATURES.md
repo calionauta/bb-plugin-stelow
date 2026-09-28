@@ -483,6 +483,29 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   surface; closed once nothing is running, and open again when a deep link names
   a specific run. The outcome tally stays in the header, so closing it costs the
   reader the rows and not the facts.
+- **A named vocabulary, and a design system that is a list of tests.** The
+  chevron was already shared — twelve components imported it — which is exactly
+  what hid the leak: eight of them still hand-rolled the whole pattern around it,
+  with SEVEN different summary paddings between them, so the same accordion felt
+  like a different control depending on which card it was in. And one constant
+  literally named `DISCLOSURE_SUMMARY_CLASS` existed in two files with DIFFERENT
+  contents, so the same "show more" rendered as a link in one place and as body
+  text in another — the most expensive kind of duplication, because nothing in
+  review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
+  102 times: the card had a real type scale, invented by whoever needed a small
+  section heading first, and therefore invisible to review, because a reviewer
+  cannot check a rule that was never stated. There are three disclosure families
+  now — SECTION, ROW, LINK — and five named type steps, each with the job that
+  earns it. `TEXT_SECTION` sits at 11px, BELOW `TEXT_META` at 12px, because
+  section headings are uppercase and letter-spaced and read smaller than body
+  text while still commanding the eye; split those two halves and you get either
+  loud headings or unreadable ones. The tab bar's 13px became `TEXT_TAB` rather
+  than being forced onto a step that does not fit — a tab is a target, not a
+  label, and it is a real fifth role that nobody had written down.
+  `DESIGN.md` is the index, and its rule is that a design rule with no test does
+  not belong in it: a sentence in markdown does not intercept a commit, and
+  `AGENTS.md` has said "min-h-11, cursor-pointer" for a long time next to 76 raw
+  buttons. A test does.
 - **One surface, and one rule for opening.** The open card drew its sections
   eight different ways — `border p-3`, `border p-4`, `border bg-background/60`,
   `border bg-muted/20` — each written into whichever component needed it. Eight
