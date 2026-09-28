@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.56.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.1...v0.56.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* one surface for every section, and history stops getting the first screen ([1614f2a](https://github.com/calionauta/bb-plugin-stelow/commit/1614f2a72a71b441a95a9793d21078a7671c6948))
+
 ## [0.56.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.0...v0.56.1) (2026-09-28)
 
 
