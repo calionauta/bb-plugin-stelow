@@ -4,11 +4,31 @@ import { executionRunFocus, executionRunRowId } from "../../lib/execution-deep-l
 import type { rpcContract } from "../../server";
 
 type ExecutionRunState = "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled";
+// The row shows recipe and status, which is enough to know a run happened. The
+// questions people actually open a card to answer — why did it fail, how long
+// did it take, is this a retry, where did it start — are all in the run the RPC
+// already returns and the row used to discard. These are those fields, so
+// expanding a run answers the question instead of restating its label.
 export type ExecutionRun = {
   id: string;
   normalizedStatus: ExecutionRunState;
   recipeId: string;
   stage: string;
+  // The host's own id for the run. The ledger's local `id` is Stelow's
+  // navigation identity; this is what the host calls it, and a person
+  // comparing the card to a host transcript needs both.
+  runId?: string | null;
+  // Why the run failed, in the host's vocabulary. A failed run with no
+  // readable reason is the one state a person cannot act on.
+  errorCode?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
+  // Set when this run is a retry of an earlier one. Without it a card that
+  // failed three times looks like three independent attempts.
+  resumeOf?: string | null;
+  // The adapter that executed it, so a card failing only under one adapter is
+  // legible instead of mysterious.
+  adapter?: string | null;
   // Present when the run is waiting on a person. Carrying the run's own
   // words lets the card show the actual question instead of a status label
   // the reader has to open a trail to decode.

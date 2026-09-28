@@ -1,5 +1,6 @@
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { CardConversation } from "../conversation/card-conversation";
+import { CardSummary } from "./card-summary";
 import type { BuildDetailView } from "./build-detail-view";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
@@ -72,6 +73,10 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         sectionRef={view.inboxEventRef}
       />
       <BuildReviewHero view={view} presetStale={presetStale} />
+      {/* The summary answers "what is this, where does it stand" in one line,
+          so it goes directly under the hero that already promised to. The run
+          list follows it, because the summary's counts are read against it. */}
+      <CardSummary card={card} detail={detail} runs={view.execution.runs} />
       <ExecutionRunsSection
         card={card}
         runs={view.execution.runs}
@@ -79,11 +84,15 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         stoppingRunId={view.execution.stoppingRunId}
         onCancel={view.execution.cancel}
       />
+      {/* Review tools are the reason to open a finished card, and they used to
+          sit below Artifacts and the workflow map — six sections down, past the
+          diff's own visibility gate. A completed card leads with them. */}
+      {card.status === "completed" ? <BuildReviewTools cardId={cardId} view={view} /> : null}
       <BuildWorkspace view={view} presetStale={presetStale} />
       <BuildProgressSection view={view} />
       <WorkflowMap open={view.mapOpen} onToggle={view.setMapOpen} />
       <BuildArtifacts view={view} />
-      <BuildReviewTools cardId={cardId} view={view} />
+      {card.status === "completed" ? null : <BuildReviewTools cardId={cardId} view={view} />}
       <CardConversation
         comments={detail?.comments ?? []}
         draft={view.comments.comment}

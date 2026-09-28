@@ -26,7 +26,8 @@ function fixture() {
       card_id TEXT,
       kind TEXT,
       read_at INTEGER,
-      archived_at INTEGER
+      archived_at INTEGER,
+      resolved_at INTEGER
     );
   `);
   const card = db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -45,7 +46,10 @@ function fixture() {
     event.run(id, "execution", moved);
     event.run(id, "done", done);
   }
-  db.prepare("INSERT INTO inbox_events VALUES (?, 'completed', NULL, NULL)").run("second");
+  // The trailing NULL is `resolved_at`: an unread, unresolved completion is a
+  // review still being requested, which is what "retaining live attention"
+  // below means. A fixture that left the column out would pass by accident.
+  db.prepare("INSERT INTO inbox_events VALUES (?, 'completed', NULL, NULL, NULL)").run("second");
   return db;
 }
 

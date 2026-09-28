@@ -34,6 +34,14 @@ type CardUpdaterDeps = {
     kinds: InboxActionKind[],
     resolution: InboxResolutionReason,
   ) => unknown;
+  // The terminal resolver: reaches `completed` too, for a card whose life has
+  // ended. Kept separate from resolveInbox because the two answer different
+  // questions — "is there anything left to do" versus "is this card over".
+  resolveAllInbox: (
+    cardId: string,
+    resolvedAt: number,
+    resolution: InboxResolutionReason,
+  ) => unknown;
 };
 
 type UpdateOptions = { suppressCompletionEvent?: boolean; restoreFromArchive?: boolean };
@@ -134,14 +142,24 @@ function resolveAttentionEvents(
   cardId: string,
   current: WorkerCard,
 ): void {
-  if (current.status === "archived" || current.status === "completed") {
-    deps.resolveInbox(
-      cardId,
-      current.updated_at,
-      ["question", "error", "paused"],
-      current.status === "archived" ? "archived" : "completed",
-    );
-  } else if (current.activity === "running") {
+  // Archiving is terminal, so it closes EVERY open row — including `completed`.
+  // An archived card is off the board and its worker is stopped: an open review
+  // request for it is a notification demanding an action nobody can take, and it
+  // would hold the inbox badge above zero forever. The rows survive in Resolved
+  // history reading "Closed with the card", which is the honest account of a
+  // card that was archived before anyone reviewed it.
+  if (current.status === "archived") {
+    deps.resolveAllInbox(cardId, current.updated_at, "archived");
+    return;
+  }
+  // Completion is NOT terminal in the same way: the review it asks for is the
+  // whole point of an unread `completed` row, so only the actionable kinds are
+  // closed here. `hasPendingReview` is what decides the card still wants eyes.
+  if (current.status === "completed") {
+    deps.resolveInbox(cardId, current.updated_at, ["question", "error", "paused"], "completed");
+    return;
+  }
+  if (current.activity === "running") {
     deps.resolveInbox(cardId, current.updated_at, ["error", "paused"], "resumed");
   }
 }

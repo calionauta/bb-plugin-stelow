@@ -37,7 +37,11 @@ function createCardWriters(
       getCard: core.cardStore.getCard,
       recordInbox: core.inbox.record,
       resolveInbox: core.inbox.resolve,
+      resolveAllInbox: core.inbox.resolveAll,
     }),
+    // A claim waiter resumes a specific PAUSE, so it needs the action
+    // resolver, not the terminal one: a card freed from a wait is going back
+    // to work, and the completion that closed its card is not its business.
     notifyClaimWaiters: createClaimWaiterNotifier({
       db: deps.db,
       bb: deps.bb,

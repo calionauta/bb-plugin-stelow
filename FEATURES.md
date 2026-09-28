@@ -446,6 +446,40 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card's question section — two elements answering to one id, and a focus
   effect searching for a third thing, which is why a run waiting on a person
   navigated and then did nothing.
+- **A run's row can answer why it failed.** A run row showed recipe, status and
+  stage, and dropped every other field the RPC was already sending — the host's
+  own run id, the failure reason, start and end times, whether this was a retry
+  of an earlier one, which adapter ran it. So a card with two failed runs and
+  two successful ones read as four undifferentiated lines, and the only way to
+  learn why something failed was to leave the card and find the host's own
+  transcript. Every row now carries a disclosure showing exactly those fields,
+  and a run a deep link just opened starts expanded — the link exists because
+  someone asked what happened to this run, so answering it with the status label
+  the link replaced would be no answer at all. It stays closable, because a
+  disclosure nobody can dismiss is a dialog. A run that failed with no recorded
+  reason says exactly that rather than dressing the absence up as a cause, and
+  durations use the card's shared `formatDuration` instead of a relative clock
+  that re-bases every second and would make two runs disagree with each other
+  as the page ages. The section header reports outcomes ("1 failed · 2
+  succeeded") rather than an active count that reads "0 active" on a card whose
+  four runs all finished.
+- **One line that says what the card is and where it stands.** The card already
+  carried every fact — the stage in the hero, run outcomes in a list, the file
+  count inside a collapsed section, the scope count inside another — so answering
+  "what did this produce and what still needs me" took four visits and a memory,
+  which is why the card read as a dozen unrelated sections. `CardSummary` sits
+  directly under the hero and states it once: whatever still needs a person
+  outranks everything else, because a card waiting on a decision is a different
+  card from one that quietly finished. A number appears only when the data
+  behind it is loaded — an absent artifact list is not "0 files" — and the whole
+  strip renders nothing rather than an empty band that looks like a bug. It
+  reads the hero's own state instead of re-deciding it, so it cannot contradict
+  the banner directly above it.
+- **Review tools lead a finished card.** The diff and the publication panel used
+  to sit below Artifacts and the workflow map — six sections down, past the diff's
+  own visibility gate — on the one card kind where they are the entire reason to
+  open it. A completed card now leads with them; an in-flight card keeps them
+  below, where there is nothing yet to review.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -462,6 +496,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   The badge counts the same action and review requests shown by **Needs attention**;
   an unopened completion reads **Ready for review** — the request it actually is —
   until the Done card is opened, which is also what clears the card's Review
+  check. Archiving a card closes EVERY open row, completions included, and
+  completion does not. That asymmetry is the point: an archived card is off the
+  board with its worker stopped, so an open review request for it is a
+  notification demanding an action nobody can take, and it would hold the badge
+  above zero forever. The rows are resolved rather than deleted, so a card
+  archived before anyone reviewed it still shows in Resolved reading "Closed
+  with the card" — the honest account. `read_at` is left alone throughout: a
+  read is something a person did, and recording one for work nobody saw is the
+  one lie this table must not tell. `hasPendingReview` therefore asks about
+  `resolved_at` as well as `read_at`, since only a card's death ends a review,
+  not an unread row — this is the card's own attention
   marker on the board.
   The toolbar is one row: four tabs with semantic status dots (amber waits,
   emerald resolved, zinc archived, primary all) and a single Unread-only

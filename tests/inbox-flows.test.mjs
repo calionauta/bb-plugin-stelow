@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, STALLED_ESCALATION_MS, escalatePausedSummary, refreshStalledPaused, stalledDays } from "../lib/inbox-events.mjs";
+import {
+  ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents,
+  markQuestionsAnswered, resolveActionInboxEvents, resolveAllInboxEvents, syncQuestionInboxEvents,
+  countsForInboxBadge, STALLED_ESCALATION_MS, escalatePausedSummary, refreshStalledPaused, stalledDays,
+} from "../lib/inbox-events.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -198,4 +202,63 @@ assert.equal(staleDb.prepare("SELECT summary FROM inbox_events WHERE id = ?").ge
 assert.equal(refreshStalledPaused(staleDb, { cardId: "card_9", nowMs }), 0, "re-running without new aging changes nothing");
 assert.equal(refreshStalledPaused(staleDb, { cardId: "card_absent", nowMs }), 0, "unknown cards escalate nothing");
 staleDb.close();
-console.log("inbox flows test ok: dedupe, resolve, completion, archive, history visibility, and stalled escalation");
+// Archiving is terminal for a card, so it must close the review request too.
+// An archived card is off the board and its worker is stopped: an open
+// `completed` row is a notification asking someone to go look at work that is
+// no longer reachable from anywhere, and the badge would count it forever.
+const archiveDb = new Database(":memory:");
+archiveDb.exec(`
+  CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'build');
+  CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
+    summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL,
+    read_at INTEGER, archived_at INTEGER, resolved_at INTEGER,
+    resolved_reason TEXT,
+    severity INTEGER NOT NULL DEFAULT 1, severity_reasons TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+`);
+ensureInboxResolvedReasonColumn(archiveDb);
+archiveDb.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_arc", "Archived", "archived", "project_1", "build");
+insertInboxEvent(archiveDb, { id: "evt_arc_q", cardId: "card_arc", kind: "question", summary: "Q?", dedupeKey: "question:card_arc:1", occurredAt: 1 });
+insertInboxEvent(archiveDb, { id: "evt_arc_e", cardId: "card_arc", kind: "error", summary: "E!", dedupeKey: "error:card_arc:2", occurredAt: 2 });
+insertInboxEvent(archiveDb, { id: "evt_arc_c", cardId: "card_arc", kind: "completed", summary: "Done.", dedupeKey: "completed:card_arc:3", occurredAt: 3 });
+
+assert.equal(hasPendingReview(archiveDb, "card_arc"), true, "an unopened completion asks for review");
+assert.equal(
+  resolveAllInboxEvents(archiveDb, "card_arc", 10, "archived"),
+  3,
+  "archiving closes every open row, completions included",
+);
+assert.equal(hasPendingReview(archiveDb, "card_arc"), false, "an archived card cannot keep asking for a review");
+const archivedRows = archiveDb.prepare("SELECT id, resolved_at, resolved_reason, read_at FROM inbox_events WHERE card_id = ? ORDER BY id").all("card_arc");
+assert.equal(archivedRows.length, 3, "archiving resolves; it never deletes the history");
+assert.deepEqual(
+  archivedRows.map((row) => row.resolved_reason),
+  ["archived", "archived", "archived"],
+  "every kind records why it closed, so Resolved can name it per row",
+);
+assert.deepEqual(
+  archivedRows.map((row) => row.read_at),
+  [null, null, null],
+  "archiving is not a read: nobody is recorded as having reviewed work they never saw",
+);
+assert.equal(
+  resolveAllInboxEvents(archiveDb, "card_arc", 20, "archived"),
+  0,
+  "re-archiving changes nothing, and never rewrites an existing resolution",
+);
+assert.equal(
+  archiveDb.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get("evt_arc_c").resolved_at,
+  10,
+  "the first resolution timestamp is the one that stands",
+);
+assert.equal(resolveAllInboxEvents(archiveDb, "card_absent", 30, "archived"), 0, "an unknown card closes nothing");
+assert.equal(
+  resolveAllInboxEvents(archiveDb, "card_arc", 40, null),
+  0,
+  "a reason-less terminal resolution is allowed but still resolves nothing twice",
+);
+archiveDb.close();
+
+console.log("inbox flows test ok: dedupe, resolve, completion, archive, terminal-resolves-completions, history visibility, and stalled escalation");

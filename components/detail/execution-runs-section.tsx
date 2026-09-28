@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { goToExecutionRun } from "../app-support/navigation";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
+import { ExecutionRunDetail } from "./execution-run-detail";
 import type { ExecutionRun } from "./use-execution-runs";
 
 type ExecutionRunsSectionProps = {
@@ -57,6 +59,28 @@ function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<t
   );
 }
 
+/**
+ * What the section's header says about the runs it lists.
+ *
+ * While work is in flight the active count is the only thing that matters, so
+ * it leads. Once nothing is running, the interesting fact is the tally: a
+ * card that failed twice and then succeeded is a different story from one that
+ * succeeded first time, and neither is visible in a list of labels. Failures
+ * come before successes, because a card that ended green after two failures is
+ * exactly the one where the failures are the context.
+ */
+function runOutcomeHint(runs: ExecutionRun[], active: number): string {
+  if (active > 0) return `${active} active`;
+  const failed = runs.filter((run) => run.normalizedStatus === "failed").length;
+  const cancelled = runs.filter((run) => run.normalizedStatus === "cancelled").length;
+  const succeeded = runs.filter((run) => run.normalizedStatus === "succeeded").length;
+  const parts: string[] = [];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (succeeded > 0) parts.push(`${succeeded} succeeded`);
+  if (cancelled > 0) parts.push(`${cancelled} cancelled`);
+  return parts.length > 0 ? parts.join(" · ") : `${runs.length} queued`;
+}
+
 /** What a person can do with a run: open its transcript, or stop it. */
 function RunActions({
   card,
@@ -95,10 +119,75 @@ function RunActions({
   );
 }
 
+// The disclosure toggle's affordances, named so the row reads as a row: the
+// same hit target as a button, the same focus ring as every other control on
+// the card, and quiet until the reader reaches for it.
+const CHEVRON_BUTTON = [
+  "-ml-1 flex min-h-11 shrink-0 cursor-pointer items-center rounded-md px-1",
+  "text-muted-foreground hover:text-foreground",
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+].join(" ");
+
+/**
+ * The row's own disclosure toggle.
+ *
+ * "Open" navigates: it centres the row and rings it, which is right when the
+ * reader arrives from a deep link. But the common case is someone already
+ * looking at this list, asking why a run failed — and for them the answer was
+ * a button that moved the page without adding anything. So the row also opens
+ * in place, showing the run's own account of itself.
+ *
+ * A run a deep link just opened starts expanded. The link exists because
+ * someone asked "what happened to this run" from somewhere the card could not
+ * answer; landing on a collapsed row would answer that question with a status
+ * label the link was meant to replace. It is not forced — the reader can close
+ * it — because a disclosure nobody can close is a dialog.
+ */
+function RunChevron({ run, open, onToggle }: { run: ExecutionRun; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      className={CHEVRON_BUTTON}
+      title={open ? "Hide this run's details" : "Show this run's details"}
+      onClick={onToggle}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "text-xs transition-transform duration-150 motion-reduce:transition-none",
+          open ? "rotate-90" : "rotate-0",
+        )}
+      >
+        ▶
+      </span>
+      <span className="sr-only">{open ? "Hide" : "Show"} details for the {run.recipeId} run</span>
+    </button>
+  );
+}
+
 /**
  * One run's row. Extracted from the section so the section reads as a list and
  * this reads as a card: the tone, the focus anchor, and the two actions are
  * decided once, here, instead of inside a mapping callback.
+ *
+ * The row names ITSELF — `executionRunRowId`, never the deep link's focus id.
+ * It used to borrow that helper, which for a run waiting on a person returns
+ * the card's question section, so the row and that section both claimed one id
+ * while the focus effect searched for a third. A row's identity and a link's
+ * destination are different questions, and conflating them made "Open" a
+ * no-op.
+ *
+ * A run a deep link just opened starts EXPANDED. The link exists because
+ * someone asked what happened to this run from somewhere the card could not
+ * answer; landing on a collapsed row would answer that with the status label
+ * the link was meant to replace. It is seeded rather than forced — the reader
+ * can still close it, because a disclosure nobody can dismiss is a dialog.
+ *
+ * The outline for a focused row rides `focusRunId` rather than
+ * :focus-visible, because a programmatically focused div never raises
+ * :focus-visible at all — and a deep link that lands silently is
+ * indistinguishable from a button that does nothing.
  */
 function ExecutionRunRow({
   card,
@@ -113,38 +202,67 @@ function ExecutionRunRow({
   stoppingRunId: string | null;
   onCancel: ExecutionRunsSectionProps["onCancel"];
 }) {
-  // The row names ITSELF. It used to borrow the deep link's focus id, which for
-  // a run waiting on a person is the card's question section — so the row and
-  // that section both claimed one id, and the focus effect was looking for a
-  // third thing. A row's identity and a link's destination are different
-  // questions, and conflating them made "Open" a no-op.
-  const rowId = executionRunRowId(run.id);
   const waiting = waitingForYou(run);
+  const [open, setOpen] = useState(focusRunId === run.id);
   return (
     <div
-      id={rowId ?? undefined}
+      id={executionRunRowId(run.id) ?? undefined}
       tabIndex={focusRunId === run.id ? -1 : undefined}
       className={cn(
-        "flex min-h-11 items-center justify-between gap-3 rounded-md border px-3 py-2",
-        waiting
-          ? "items-start border-amber-500/40 bg-amber-500/10"
-          : "bg-background/60",
-        // A deep link that lands silently is indistinguishable from a button
-        // that does nothing, so the row a link just opened says so. The outline
-        // rides the existing `focusRunId` rather than :focus-visible, because a
-        // programmatically focused div does not raise :focus-visible at all.
+        "rounded-md border px-3 py-2",
+        waiting ? "border-amber-500/40 bg-amber-500/10" : "bg-background/60",
         focusRunId === run.id && "outline-2 outline-offset-2 outline-primary",
       )}
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{run.recipeId}</p>
-        <RunSummary run={run} waiting={waiting} />
+      <RunHeader
+        card={card}
+        run={run}
+        waiting={waiting}
+        open={open}
+        stopping={stoppingRunId === run.id}
+        onToggle={() => setOpen((value) => !value)}
+        onCancel={onCancel}
+      />
+      {/* The details sit OUTSIDE the header flex line, so a long failure reason
+          wraps under the whole row instead of being squeezed between the
+          chevron and the Open button. */}
+      {open ? <ExecutionRunDetail run={run} /> : null}
+    </div>
+  );
+}
+
+/** The row's single line: who it is, how it reads, and the two actions. */
+function RunHeader({
+  card,
+  run,
+  waiting,
+  open,
+  stopping,
+  onToggle,
+  onCancel,
+}: {
+  card: ExecutionRunsSectionProps["card"];
+  run: ExecutionRun;
+  waiting: ReturnType<typeof waitingForYou>;
+  open: boolean;
+  stopping: boolean;
+  onToggle: () => void;
+  onCancel: ExecutionRunsSectionProps["onCancel"];
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-1">
+        <RunChevron run={run} open={open} onToggle={onToggle} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{run.recipeId}</p>
+          <RunSummary run={run} waiting={waiting} />
+        </div>
       </div>
       <RunActions
         card={card}
         run={run}
         active={["queued", "running", "needs_input"].includes(run.normalizedStatus)}
-        stopping={stoppingRunId === run.id}
+        stopping={stopping}
         onCancel={onCancel}
       />
     </div>
@@ -158,7 +276,12 @@ export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, on
     <section aria-label="Execution runs" className="rounded-lg border bg-card/60 p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Execution runs</h2>
-        <span className="text-xs text-muted-foreground">{active} active</span>
+        {/* "3 active" on a card whose four runs all finished says nothing. The
+            outcomes are the reason this section exists — a card that failed
+            twice and then succeeded is a different card from one that never
+            ran — so the header reports them, and stays silent about the active
+            count when there is none to report. */}
+        <span className="text-xs text-muted-foreground">{runOutcomeHint(runs, active)}</span>
       </div>
       <div className="space-y-2">
         {runs.map((run) => (

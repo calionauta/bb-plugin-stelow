@@ -7,6 +7,7 @@ import {
   listInboxEvents,
   markQuestionsAnswered,
   resolveActionInboxEvents,
+  resolveAllInboxEvents,
   upsertPausedEvent,
   syncQuestionInboxEvents,
   type InboxEventInput,
@@ -21,6 +22,9 @@ type Publish = (
   payload: Record<string, unknown>,
 ) => void;
 type InboxKind = InboxEventInput["kind"];
+// The kinds a person can still act on. `completed` is excluded on purpose: it
+// is a review request, not an open action, so the action resolver leaves it
+// alone and the terminal resolver is the one that closes it.
 type ActionKind = Exclude<InboxKind, "completed">;
 
 type InboxEventRow = {
@@ -198,6 +202,19 @@ function createResolver(ctx: InboxContext) {
   };
 }
 
+/**
+ * The terminal resolver, for a card whose life has ended. It reaches
+ * `completed` too — see resolveAllInboxEvents for why an archived card must
+ * not keep asking for a review nobody can perform.
+ */
+function createTerminalResolver(ctx: InboxContext) {
+  return (cardId: string, resolvedAt: number, reason: InboxResolutionReason | null = null) => {
+    if (resolveAllInboxEvents(ctx.db, cardId, resolvedAt, reason) > 0) {
+      ctx.changed({ cardId });
+    }
+  };
+}
+
 function createQuestionSync(ctx: InboxContext) {
   return (cardId: string, interactionIds: string[], occurredAt = ctx.now()) => {
     const result = syncQuestionInboxEvents(ctx.db, {
@@ -356,6 +373,7 @@ export function createInboxServer(deps: InboxServerDeps) {
       if (touched) ctx.changed({ cardId });
     },
     resolve: createResolver(ctx),
+    resolveAll: createTerminalResolver(ctx),
     syncPendingQuestion: createQuestionSync(ctx),
     markAnswered: createAnswerMarker(ctx),
   };

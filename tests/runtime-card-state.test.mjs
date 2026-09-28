@@ -47,6 +47,7 @@ function updaterHarness(initial = card(), openQuestion = false) {
     getCard: () => row,
     recordInbox: (...args) => calls.push(["record", ...args]),
     resolveInbox: (...args) => calls.push(["resolve", ...args]),
+    resolveAllInbox: (...args) => calls.push(["resolveAll", ...args]),
   });
   return { calls, updateCard, row: () => row };
 }
@@ -71,6 +72,39 @@ test("card update resolves attention before recording completion and publishing"
     ["write", "resolve", "record", "publish"],
   );
   assert.equal(harness.calls[2][2], "completed");
+});
+
+// Completion is the one transition that must NOT reach the terminal resolver.
+// An unread `completed` row IS the review request for a finished card; closing
+// it on arrival would delete the signal the moment it was written, and the
+// card would sit Done looking reviewed.
+test("completion resolves only the actionable kinds, never the review request", () => {
+  const harness = updaterHarness();
+  harness.updateCard("card_1", { status: "completed" });
+  const resolve = harness.calls.find(([name]) => name === "resolve");
+  const resolveAll = harness.calls.find(([name]) => name === "resolveAll");
+  assert.ok(resolve, "completion closes the open actions");
+  assert.equal(resolveAll, undefined, "completion must not touch the terminal resolver");
+  assert.deepEqual(resolve[3], ["question", "error", "paused"], "only the kinds a person can still act on");
+  assert.equal(resolve[4], "completed", "and it records why they closed");
+});
+
+// Archiving is terminal, so it must close the review request as well. An
+// archived card is off the board and its worker is stopped: an open completion
+// for it asks someone to go look at work reachable from nowhere, and the badge
+// would count that impossible request forever.
+test("archiving closes every open row, completions included", () => {
+  const harness = updaterHarness();
+  harness.updateCard("card_1", { status: "archived" });
+  const names = harness.calls.map(([name]) => name);
+  assert.ok(names.includes("resolveAll"), "archiving uses the terminal resolver");
+  assert.equal(
+    names.includes("resolve"),
+    false,
+    "the terminal resolver already reaches the action kinds; calling both would be redundant",
+  );
+  const resolveAll = harness.calls.find(([name]) => name === "resolveAll");
+  assert.deepEqual(resolveAll.slice(1), ["card_1", 20, "archived"], "and it says the card's life ended it");
 });
 
 test("card update suppresses completion only when explicitly requested", () => {
@@ -127,6 +161,7 @@ test("card update write-time re-check never writes a stripped status key", () =>
     },
     recordInbox: () => {},
     resolveInbox: () => {},
+    resolveAllInbox: () => {},
   });
 
   updateCard("card_1", { status: "completed", activity: "running" });
