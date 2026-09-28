@@ -208,9 +208,15 @@ const BOUNDARY = {
   // that is not there and must be told.
   assert.deepEqual(await reconcileOne(deps, "nope"), { run: null, error: "Execution run not found." });
 
-  // The republish tell: with a dispatch that really moves the row, the card is
-  // woken once; reconciling the same run again changes nothing and wakes it
-  // not at all. Without the runKey compare, every pass republishes.
+  // The republish tell: when reconciling really moves the row, the card is woken
+  // once; reconciling the same run again changes nothing and wakes it not at all.
+  // Without the runKey compare, every pass republishes.
+  //
+  // The success branch now settles the row itself — the host's word is the only
+  // thing that may write a terminal state — so the dispatch no longer has to
+  // move it to prove that it moves. The stub still moves it, on a field the
+  // success path leaves alone, which is what makes the second pass a genuine
+  // no-op rather than an accident of ordering.
   const moving = ledger();
   createExecutionRun(moving, { ...RUN, id: "local-9", runId: "run-9", now: 100 });
   const woke = [];
@@ -221,12 +227,17 @@ const BOUNDARY = {
     native: { adapterFor: () => ({ status: async () => ({ state: "succeeded" }) }) },
     dispatch: {
       reconcileBoundary: async () => {},
-      reconcileArtifacts: (card, run) => transitionExecutionRun(moving, run.id, "running", { nativeStatus: "running" }),
+      reconcileArtifacts: async () => {},
     },
   };
   await reconcileOne(real, "local-9");
   assert.deepEqual(woke, ["card-1"], "a row that moved republishes its card");
-  await reconcileOne({ ...real, native: { adapterFor: () => ({ status: async () => ({ state: "running" }) }) } }, "local-9");
+  assert.equal(
+    getExecutionRun(moving, "local-9").normalizedStatus,
+    "succeeded",
+    "the success branch settles the row before reconciling artifacts",
+  );
+  await reconcileOne(real, "local-9");
   assert.deepEqual(woke, ["card-1"], "a row that did not move republishes nothing");
 
   // A run the host never started ages out instead of waiting forever. A queued

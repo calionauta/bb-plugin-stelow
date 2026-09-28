@@ -158,19 +158,38 @@ async function launchNativeRun(
   }
 }
 
+/**
+ * Record what the host answered at launch, and nothing more.
+ *
+ * `native.state === "succeeded"` here means the host ACCEPTED the dispatch, so
+ * the run is `running` — the work has not happened yet. This function used to
+ * say exactly that on the first line and then overwrite it with `"succeeded"`
+ * on the last, giving one value two meanings ten lines apart, and marking the
+ * run finished the moment it was launched.
+ *
+ * That was not cosmetic. Terminal states accept no further transitions, and the
+ * reconciler answers a terminal run without a host round trip, so a run marked
+ * finished at launch could never be corrected: the adapter was never asked what
+ * was actually happening, and `native_status` kept whatever it held mid-flight.
+ * Every run in the live database was in that state — 31 at succeeded/running, 8
+ * at failed/running, 5 at failed/queued — and not one with a terminal native
+ * status. The card reported a run done before it ran, and two such runs looked
+ * identical because they carried the same frozen state.
+ *
+ * So the host alone decides when a run finishes. Launch says `running`; the
+ * reconciler writes the terminal state when the host reports one.
+ */
 function recordRunIdentity(
   deps: LaunchDeps,
   runId: string,
   native: NativeOutcome,
 ): ExecutionRun {
   const launchState = native.state === "succeeded" ? "running" : native.state;
-  const started = transitionExecutionRun(deps.db, runId, launchState, {
+  return transitionExecutionRun(deps.db, runId, launchState, {
     runId: String(record(native).runId ?? ""),
     nativeStatus: native.state,
     previewDirective: typeof record(native).previewDirective === "string"
       ? record(native).previewDirective
       : null,
   });
-  if (native.state !== "succeeded") return started;
-  return transitionExecutionRun(deps.db, runId, "succeeded", { nativeStatus: native.state });
 }
