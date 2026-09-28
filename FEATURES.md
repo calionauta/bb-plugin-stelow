@@ -1370,6 +1370,25 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifacts, worktree snapshot). Freshness is asked for on demand, never on
   every board read, because `check` re-derives the projection. A finished card
   opens its Artifacts section by default: the evidence is the deliverable.
+- **Machine receipts are counted apart, and say so** (`artifactRoleCounts`,
+  `ArtifactGroups`, `EvidenceDisclosure`). Stelow's own `audit-trail.md` and
+  `recon-receipt.json` are real audit value and are not deliverables, so they
+  never inflate the number of files a card produced and never sit unlabeled
+  beside the specs. They render in their own **Machine receipts** disclosure —
+  closed by default, because a receipt is reference material rather than a
+  decision waiting on the reader — naming itself as Stelow's record and not as
+  output.
+
+  The classification was already made, transported on every artifact by the card
+  detail contract, and then dropped where it became visible: Build re-implemented
+  the filter inline (twice, in one file) and drew a hand-made section around it,
+  while Explore passed every artifact straight through and counted receipts as
+  produced files — a card with two deliverables and one receipt said "3 files".
+  The rule now lives in `lib/artifact-roles.mjs` alone, `ArtifactGroups` applies
+  it once for every track, and the count each section states comes from the same
+  function, so the two surfaces cannot drift. The same row renders both places,
+  so a file cannot look like two different things depending on which section it
+  landed in.
 - **Checks rollup** (`CardChecksSection`, `lib/card-checks.mjs`). Every
   pending thing grouped by type — questions (live + expired asks),
   scopes, tasks, gaps, review — with done/pending counts from the same
