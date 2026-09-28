@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.4...v0.57.0) (2026-09-28)
+
+
+### Bug Fixes
+
+* a boundary question renders as the moment it records ([#157](https://github.com/calionauta/bb-plugin-stelow/issues/157)) ([dac5d91](https://github.com/calionauta/bb-plugin-stelow/commit/dac5d91d153a55d7df823d78861303851ac6f31d))
+
 ## [0.56.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.3...v0.56.4) (2026-09-28)
 
 
