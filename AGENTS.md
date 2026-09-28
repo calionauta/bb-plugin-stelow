@@ -199,6 +199,21 @@ master carries a version that has no tag and no open release PR for
 it. Run it after any manual tag or release change; the workflow runs
 the same check.
 
+**A release PR's `verify` can sit in `action_required` with zero
+jobs.** Observed four times, always on the release-please branch and
+always intermittent — the same branch also passed cleanly. It is a
+platform-level approval gate on `pull_request` events, not a test
+failure: the run never starts, so there is nothing to read in the log.
+Approve it and it proceeds:
+
+```bash
+gh api -X POST repos/calionauta/bb-plugin-stelow/actions/runs/<run-id>/approve
+```
+
+Do not re-run it instead, and do not merge around it: a check that
+never executed is not a passing check, and merging the release PR on
+one leaves the version bump unverified.
+
 **A squash-merged PR is typed by its title, not by its commits.** The
 squash commit keeps every merged message in its *body*, but the
 *subject* — the only line release-please reads for the change type —
