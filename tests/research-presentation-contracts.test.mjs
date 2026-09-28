@@ -13,6 +13,7 @@ import {
   routeAdapters,
   detailSource,
   conversation,
+  answerBody,
   answerExpired,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
@@ -232,8 +233,10 @@ assert.match(
   /cleanAnswerList\(item\.answers\)/,
   "timed-out answers are cleaned through the shared helper before completeness validation",
 );
+// The guarded submit moved into the answer-controls slice, so this reads that
+// file: the same topology, at its current home.
 assert.match(
-  conversation,
-  /\{sel\.isLastQuestion \? <Button size="sm" disabled=\{!sel\.complete \|\| busy\}/,
+  answerBody,
+  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy\}/,
   "the batch action only renders on the last step and waits for every decision",
 );

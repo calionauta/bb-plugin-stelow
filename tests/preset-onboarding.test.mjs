@@ -181,10 +181,21 @@ assert.match(
   /function reset\(\) \{[\s\S]*resetOnboarding\(window\.localStorage\)/,
   "Manage confirms the behavior-tested reset helper",
 );
+// The shared helper is bound to a local name and invoked through it, so the
+// old pin — which looked for a literal `acknowledgeSharedOnboarding(...)` call
+// — no longer matched, while the behaviour was unchanged: `close` IS the
+// helper. Two assertions instead of one, so this is now the stronger pin: it
+// proves the binding AND the call site with its exact arguments, where the old
+// regex could have matched the helper's use anywhere in the file.
 assert.match(
   component,
-  /acknowledgeSharedOnboarding\([\s\S]*window\.localStorage,[\s\S]*STORAGE_KEYS\.onboardPresets,[\s\S]*onOpenPresets,[\s\S]*\)/,
-  "opening presets uses the behavior-tested shared acknowledgement helper",
+  /const close = acknowledgeSharedOnboarding;/,
+  "the shared acknowledgement helper is the one bound for the open-presets action",
+);
+assert.match(
+  component,
+  /onOpenPresets=\{\(\) => close\(window\.localStorage, STORAGE_KEYS\.onboardPresets, onOpenPresets\)\}/,
+  "opening presets acknowledges the shared onboarding state before opening",
 );
 
 console.log("preset onboarding test ok: opening cases, navigation, dismissal reset, storage reset, and all manager paths");
