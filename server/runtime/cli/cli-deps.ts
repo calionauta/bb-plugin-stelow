@@ -179,6 +179,17 @@ export type CliDeps = {
     argv: string[],
     ctx: CliRunContext,
   ) => Promise<CliResult>;
+  scopeMapApproval: (cardId: string) => Promise<
+    | {
+        ok: true;
+        receiptId: string;
+        approvedBy: string;
+        mapId: string;
+        shapeVersion: string;
+        scopeIds: string[];
+      }
+    | { ok: false; error: string }
+  >;
   runInspection: (
     argv: string[],
     context: CliRunContext,

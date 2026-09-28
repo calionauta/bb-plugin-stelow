@@ -58,6 +58,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...execution.executionReconcile.handlers,
     ...execution.executionAdvance.handlers,
     ...execution.worktreeCleanup.handlers,
+    approveScopeMap: execution.approval.approveScopeMap as never,
     ...cards.cardMutations,
     ...cards.cardLifecycle,
     ...cards.cardOperations,

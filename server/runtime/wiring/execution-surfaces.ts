@@ -19,6 +19,7 @@ import { createExecutionReconcile } from "../../execution-reconcile.js";
 import { createExecutionAdvance } from "../../execution-advance.js";
 import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
+import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-map-approval.js";
 import { createResearchTrackSync } from "../research-track-sync.js";
 import { createBuildThreadSync } from "../build-thread-sync.js";
 import { registerRuntimeLifecycle } from "../composition.js";
@@ -61,8 +62,33 @@ export function createExecutionSurfaces(deps: ExecutionSurfaceDeps) {
     executionReconcile,
     executionAdvance: buildAdvance(core, gates, executionNative, scopeMaps.scopeMapApproved),
     scopeMaps,
+    approval: buildScopeMapApproval(core),
     worktreeCleanup: buildWorktreeCleanup(core),
     ...buildThreadSync(core),
+  };
+}
+
+/** Approving a scope map: the host-side door that stamps the worker's draft. */
+function buildScopeMapApproval(core: RuntimeCore) {
+  const deps: ScopeMapApprovalDeps = {
+    bb: core.bb,
+    getCard: core.getCard,
+    cardWorkspace: core.cardWorkspace,
+    workflowStateDir: (rootPath, card) =>
+      core.workflowStateDir(core.bb, rootPath, card.id, card.dir_hash!),
+    randomId: core.randomId,
+    logCardComment: (cardId, target, targetId, author, body) =>
+      core.ledger.logCardComment(cardId, target, targetId, author, body),
+    publish: (cardId) => core.bb.realtime.publish("card-state", { cardId }),
+    errors: {
+      cardNotFound: core.ERRORS.cardNotFound,
+      cardArchived: core.ERRORS.cardArchived,
+      workspaceUnavailable: core.ERRORS.workspaceUnavailable,
+    },
+  };
+  return {
+    approveScopeMap: ({ cardId }: { cardId: string }) =>
+      approveScopeMapOnCard(deps, cardId),
   };
 }
 
