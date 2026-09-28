@@ -179,9 +179,25 @@ from a laptop.
 Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
 confirm CI is green on it. Keep feature commits separate; the release
-PR owns the version bump. Curating the notes is safe: release-please
-writes a release PR body once and does not overwrite it on later runs,
-so a hand-written body survives until the PR merges.
+PR owns the version bump.
+
+**Curate `CHANGELOG.md` on the release branch, never the release PR
+body.** Release-please parses its own release PR body to recognise
+that PR as its own. Rewrite that body and it can no longer parse it
+(`could not parse pull request body as a release PR`), stops seeing
+its own release PR as merged, and never publishes the tag. On v0.57.0
+that is exactly what happened: the body was hand-edited to restore a
+feature entry release-please had dropped, and the release silently
+never shipped. The prose belongs in the `CHANGELOG.md` section on the
+release branch, which release-please regenerates only when new commits
+arrive, so it survives until the merge. A body edit surviving later
+runs is a different question from whether release-please can still
+read it, and after such an edit it cannot.
+
+`scripts/check-release-published.mjs` fails the release run when
+master carries a version that has no tag and no open release PR for
+it. Run it after any manual tag or release change; the workflow runs
+the same check.
 
 **A squash-merged PR is typed by its title, not by its commits.** The
 squash commit keeps every merged message in its *body*, but the
