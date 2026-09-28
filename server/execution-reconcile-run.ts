@@ -135,8 +135,24 @@ async function applyNativeState(
     return;
   }
   if (native.state === "succeeded" && run.normalizedStatus !== "needs_input") {
-    const fresh = getExecutionRun(deps.db, run.id) ?? run;
-    await deps.dispatch.reconcileArtifacts(card, fresh);
+    // A finished run is recorded finished. This branch used to reconcile
+    // artifacts and return, leaving the row on whatever the launch wrote — and
+    // the launch wrote a terminal state, so the run stayed `succeeded` with a
+    // `native_status` still reading `running`. The two columns disagreed, and
+    // the card showed a run finished while it executed. The host's word is the
+    // only thing that may write a terminal state, so it is written here.
+    let settled = getExecutionRun(deps.db, run.id) ?? run;
+    if (settled.normalizedStatus !== "succeeded") {
+      // `queued → succeeded` is not a legal transition, and forcing it throws
+      // into the catch below — which is how the first version of this fix
+      // silently stopped settling rows. A run the host reports finished did
+      // start, so it walks the legal path and the ledger's own rules apply.
+      if (settled.normalizedStatus === "queued") {
+        settled = transitionExecutionRun(deps.db, run.id, "running", { nativeStatus: "running" });
+      }
+      settled = transitionExecutionRun(deps.db, run.id, "succeeded", { nativeStatus: "succeeded" });
+    }
+    await deps.dispatch.reconcileArtifacts(card, settled);
     return;
   }
   if (SIMPLE_STATES.includes(native.state as SimpleState)) {
