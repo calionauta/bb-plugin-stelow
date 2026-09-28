@@ -250,6 +250,11 @@ test("a registering installer that lands a real entry reports ok", async () => {
   makeBin(binDir, "claude");
   const handlers = createUiDesignMcpHandlers({
     homeDir: home,
+    // The CLI this test installs is the one above. Without saying so, the
+    // verdict is read from the ambient PATH, and the case passes only on a
+    // machine that happens to have that CLI — which is why it went green here
+    // and red in CI.
+    env: { PATH: fakePath(binDir) },
     listProviders: ALL_BB_PROVIDERS,
     // The installer writes the config as a side effect, exactly as the real
     // one does — the verdict is read back from disk, not from the exit code.

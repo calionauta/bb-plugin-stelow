@@ -52,6 +52,14 @@ export type UiDesignMcpDeps = {
   bb: { sdk: { providers: { list: () => Promise<Provider[]> } } };
   listProviders?: () => Promise<Provider[]>;
   runRegister?: (serverId: string) => Promise<{ code: number; out: string }>;
+  /**
+   * The environment `installed` is answered from.
+   *
+   * Injected rather than read from the ambient process so a test can say which
+   * CLIs exist. Left unset, it stays `process.env` — the same answer, but the
+   * handlers below pass it explicitly instead of each call site deciding.
+   */
+  env?: NodeJS.ProcessEnv;
 };
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
@@ -159,7 +167,8 @@ function defaultRegister(): Promise<{ code: number; out: string }> {
 }
 
 export function createUiDesignMcpHandlers(deps: UiDesignMcpDeps) {
-  const status = () => readUiDesignMcpStatus(deps);
+  const env = deps.env ?? process.env;
+  const status = () => readUiDesignMcpStatus(deps, env);
   return {
     uiDesignMcpStatus: status,
     registerUiDesignMcp: async ({ serverId }: { serverId: string }) => {
