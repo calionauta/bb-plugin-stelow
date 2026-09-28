@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.3...v0.57.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* **A card with no scopes is only a fault when a spec said there should be some.**
+  A card told its reader that planning "likely used headings instead of machine
+  blocks" — on a card with no tech spec, which was an investigation that reached
+  audit without ever planning (`planning: pending` in its own `state.md`). The
+  panel rendered two scope-sync notices side by side and they disagreed: one read
+  the server's classification (`no-spec`) and stayed silent, the other inferred
+  the same fact from the current stage alone and invented a fault. Emptiness is
+  not evidence. The classification is now the decision, made once in
+  `lib/scope-sync-notice.mjs`; the stage-derived rule is deleted rather than
+  amended, because it had no behavioural test — only a source pin asserting it
+  was still used, which is how a wrong rule gets pinned in place.
+  ([#172](https://github.com/calionauta/bb-plugin-stelow/pull/172))
+
+* **A dispatched run is not a finished run.** Every run in the live database was
+  reported finished before it finished: not one carried a terminal
+  `native_status` — 31 sat at succeeded/running, 8 at failed/running, 5 at
+  failed/queued. The host's `succeeded` at launch means the dispatch was
+  *accepted*, so the run is `running`; the launch code said that and then
+  overwrote it with a terminal state ten lines later. Terminal states accept no
+  further transitions and the reconciler answers a terminal run without a host
+  round trip, so the adapter was never asked what was actually happening. The
+  host alone decides when a run finishes now, and the native column is written
+  with it, so the two cannot disagree again.
+  ([#174](https://github.com/calionauta/bb-plugin-stelow/pull/174))
+
+* **The audit notice says "reached the audit stage", so it is gated on the
+  stage.** A card announced the same arrival twice, minutes apart, because the
+  notice was gated on `activity` — which a native run flips — rather than on the
+  stage moving. Its neighbour, the pause event, was already deduplicating on the
+  honest signal, and that asymmetry is what made the comment look accidental.
+  ([#175](https://github.com/calionauta/bb-plugin-stelow/pull/175))
+
 ## [0.57.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.2...v0.57.3) (2026-09-28)
 
 
