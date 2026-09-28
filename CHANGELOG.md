@@ -6,6 +6,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.4...v0.57.0) (2026-09-28)
+
+### Features
+
+* **Optional UI design reference MCP, with per-CLI detection.** A worker can now
+  study real shipped sites before writing an interface instead of reconstructing
+  a layout from memory — the archetype library is interaction philosophy and
+  carries no visual reference, which is where generic-looking UI comes from.
+
+  Detection is honest about the thing that actually breaks: registration is per
+  agent CLI, and a vendor installer writes only the configs that exist when it
+  runs. A CLI installed afterwards is permanently unregistered, and that is
+  invisible from inside a worker turn. The About panel and the Build/Explore
+  onboarding re-read on every open and name the exact CLIs bb can run that lack
+  it.
+
+  The client list maps to bb's own provider registry rather than a hardcoded set,
+  so `acp-opencode` and `acp-cursor` resolve to their CLIs, an installed CLI bb
+  does not offer is not reported as a gap, and a bb provider with no known
+  config path surfaces as a declared blind spot. Registration is explicit-click
+  only, matching the doctrine already stated for the sibling host dependency: a
+  plugin install changes the host, not this card. "Registered" claims config
+  presence only, never a working handshake, and the verdict is always re-read
+  from disk rather than taken from an exit code.
+
+  Also fixes a real defect in the decision router: the settings slider read
+  "Act at confidence >=" for every point, which is backwards for auto-continue.
+  `routeAt` floors the confidence that a turn *did* progress, so raising it
+  makes the veto fire more and the worker spend fewer turns — an operator
+  setting 0.9 to be strict would have got the opposite. Each point now carries
+  its own `thresholdLabel` in the registry, beside the point it describes.
+  Display only; no stored value or behavior changed.
+
+### Bug Fixes
+
+* **A boundary question renders as the moment it records.** An Interface Contrast
+  boundary carries a `kind` — `reaction` or `confirmation` — and the host read
+  neither, so both rendered identically. A card could ask "what was your first
+  reaction?" while listing the options the agent had already generated: the
+  exact inversion the method exists to prevent, because it replaces the recorded
+  first reaction with the agent's framing.
+
+  Reaction boundaries now withhold their options and *name* the withholding, so
+  nobody wonders where a list went; confirmation boundaries keep theirs. The
+  kind is read from the `[Stelow boundary <id>]` marker the run already requires,
+  and the framing is decided once in `lib/` and sent whole, the convention
+  `splitAction` already follows.
+
+* **A receipt naming a human decision reported no stale artifacts.** The list was
+  read off a field that `additionalProperties: false` makes no receipt able to
+  carry, so it was always empty. It now derives from the route table that owns
+  it, and a receipt smuggling its own list cannot narrow it.
+
+* **The runtime validator now covers every field the published schema declares.**
+  `nextAction` was the consequential one: a receipt with no next move passed.
+
+* **A running run says where its live progress streams; a paused or finished one
+  points nowhere**, rather than at a chat token no card can render.
+
+* **A design-reference status read from the ambient `PATH`.** The register-then-
+  report case installed a `claude` stub into a temp bin dir and expected the
+  verdict to see it, which only happened on a machine that already had that CLI
+  on `PATH`. Green locally, red in CI. The handlers now take the environment
+  they answer from.
+
+### Chores
+
+* **Sync stelow 0.71.6-alpha** ([calionauta/stelow#27](https://github.com/calionauta/stelow/pull/27)),
+  which carries the design-reference skill. The four `skills/` files this release
+  introduced now exist upstream, so the next sync can no longer delete them.
+  Going up changed two things deliberately: the reference names the host's
+  dependency panel rather than one host's About panel and the CLIs the host can
+  run rather than one host's list, and its cross-skill link uses the
+  `../../../<skill>/references/...` form that resolves in the repo layout, the
+  flat hub layout, and the vendored tree alike.
+* **Pins and debt ledger left behind by a rebase.** The preset-onboarding pin
+  looked for a literal helper call where the code now invokes it through a local
+  name; the behaviour never changed, and the replacement is a stronger pin
+  (binding *and* call site with exact arguments).
+
+### Documentation
+
+* **A squash-merged PR is typed by its title, not its commits.** The five commits
+  of #157 collapsed into one whose subject is the PR title, and the subject is
+  the only line release-please reads for the change type. This release is
+  0.57.0 rather than the 0.56.5 first computed, corrected through the workflow's
+  `release-as` input, and the rule is now written down so it cannot recur.
+
+  ([#159](https://github.com/calionauta/bb-plugin-stelow/pull/159))
+
 ## [0.56.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.56.3...v0.56.4) (2026-09-28)
 
 
