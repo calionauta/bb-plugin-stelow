@@ -1,5 +1,6 @@
 import { selectBuildReviewArtifact } from "../../lib/build-review-target.mjs";
 import { Button } from "@/components/ui/button";
+import { SECTION_SURFACE } from "../disclosure";
 import { fileLinkTarget } from "../artifacts/artifact-inventory";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
@@ -47,7 +48,12 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
     <section
       aria-label="Card status"
       {...(heroStyle.alert ? { role: "alert" } : {})}
-      className={`rounded-lg border p-4 ${heroStyle.wrap}`}
+      // The shared surface with the card's ONE deliberate exception: more
+      // padding, because the hero is the thing, and a tone, because the hero is
+      // what carries "this needs you". The exception is written here rather than
+      // as a second surface definition, so the reader learns one shape and one
+      // reason for it differing.
+      className={`${SECTION_SURFACE} p-4 ${heroStyle.wrap}`}
     >
       <div className="flex items-start gap-2.5">
         <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />

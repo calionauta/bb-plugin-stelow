@@ -1,6 +1,6 @@
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
-import { DisclosureChevron } from "../disclosure";
+import { DisclosureChevron, SECTION_SURFACE } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { workerSectionPolicy } from "../../lib/worker-action-policy.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
@@ -138,7 +138,10 @@ export function WorkerSection({ card, detail, presetStale, restarting, onRestart
   const hasPreset = actions.showPresetControls;
   if (!actions.showSection) return null;
   return (
-    <section aria-label="Worker" className="rounded-lg border p-3">
+    // The card's section surface, from the same token as every other section.
+    // This one wrote its own `rounded-lg border p-3`, so the worker row was the
+    // only sibling on the card with a different weight and background.
+    <section aria-label="Worker" className={`${SECTION_SURFACE} px-3 py-2`}>
       {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
         <Pill tone="bg-muted text-muted-foreground" title={pillTitle}>
           {presetPill}

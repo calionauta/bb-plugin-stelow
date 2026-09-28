@@ -1,5 +1,5 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
-import { DisclosureChevron } from "../disclosure";
+import { DisclosureSection } from "../disclosure";
 import { STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, stageInfoUrl, stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 // Workflow map: what each stage does, grouped by phase, each linked to
@@ -48,24 +48,23 @@ function WorkflowPhaseSection({ phase }: { phase: { id: string; label: string } 
 
 export function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   return (
-    // No self-margin: as a sibling of the progress section it inherits the
-    // card's section rhythm instead of stacking its own offset on top.
-    <details className="group overflow-hidden rounded-lg border bg-background/60" onToggle={(event) => onToggle(event.currentTarget.open)}>
-      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-3 py-2.5 marker:hidden hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-        <DisclosureChevron open={open} className="text-base text-foreground" />
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold leading-5 text-foreground">Workflow map</span>
-          <span className="block text-xs leading-5 text-muted-foreground">What each stage does</span>
-        </span>
-      </summary>
-      <div className="space-y-4 border-t px-3 py-3 sm:px-4 sm:py-4">
-        <p className="max-w-4xl text-sm leading-6 text-muted-foreground">Analysis, Planning, Execution, and Review are workflow phases. Review contains automated checks (Diff gate and Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior document that defines it.</p>
-        <div className="space-y-4">
-          {WORKFLOW_PHASES.map((phase) => (
-            <WorkflowPhaseSection key={phase.id} phase={phase} />
-          ))}
-        </div>
+    // The one shared disclosure, not a second hand-rolled <details>. This section
+    // had its own summary markup, its own chevron call and its own background,
+    // so it was the one sibling on the card that did not match the others — and a
+    // reader reads shape before words. DisclosureSection is the shape; the
+    // content below is what this section was the only one able to say.
+    <DisclosureSection title="Workflow map" subtitle="what each stage does" open={open} onToggle={onToggle}>
+      <p className="max-w-4xl text-sm leading-6 text-muted-foreground">
+        Analysis, Planning, Execution, and Review are workflow phases. Review contains
+        automated checks (Diff gate and Audit), not human review. Done is the completed
+        outcome after Audit, not a stage; Needs attention can occur in any phase. Each
+        stage links to the upstream Stelow skill or behavior document that defines it.
+      </p>
+      <div className="space-y-4">
+        {WORKFLOW_PHASES.map((phase) => (
+          <WorkflowPhaseSection key={phase.id} phase={phase} />
+        ))}
       </div>
-    </details>
+    </DisclosureSection>
   );
 }

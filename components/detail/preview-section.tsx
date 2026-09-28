@@ -5,7 +5,7 @@ import { previewAction } from "../../lib/preview-session.mjs";
 import type { PreviewInfo, rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
-import { DisclosureSection } from "../disclosure";
+import { DisclosureSection, startsOpen } from "../disclosure";
 
 type PreviewAction = "previewStart" | "previewStop" | "previewShare";
 type Navigate = ReturnType<typeof useBbNavigate>;
@@ -235,7 +235,16 @@ export function PreviewSection({ cardId }: { cardId: string }) {
   const framedUrl = running && info.frame === "frame" && info.url && !frameHidden ? info.url : null;
   const hint = running && info.url ? info.url.replace(/^https?:\/\//, "") : `${info.label ?? "Web app"} · ${info.source ?? ""}`.trim();
   return (
-    <DisclosureSection title="Preview" hint={hint} defaultOpen action={<PreviewHeader info={info} busy={busy} nowTick={nowTick} act={act} load={load} />}>
+    // Open while the preview is starting or running, because then it IS the live
+    // surface — someone watching an app build wants to see it, not open a
+    // section. Closed once it is up or gone: from then on it is a thing to visit,
+    // and its URL is in the header, so the reader can open it in one click.
+    <DisclosureSection
+      title="Preview"
+      hint={hint}
+      defaultOpen={startsOpen({ live: running })}
+      action={<PreviewHeader info={info} busy={busy} nowTick={nowTick} act={act} load={load} />}
+    >
       <PreviewOverview info={info} />
       {framedUrl ? <FramedPreview info={info} url={framedUrl} navigate={navigate} hide={() => setFrameHidden(true)} /> : null}
       {running && info.url && !framedUrl ? <PreviewOpenActions info={info} url={info.url} navigate={navigate} show={() => setFrameHidden(false)} /> : null}

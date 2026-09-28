@@ -1,5 +1,39 @@
 import { useState } from "react";
 
+/**
+ * The one surface a section of the card is allowed to be.
+ *
+ * The open card used to draw its sections eight different ways — `border p-3`,
+ * `border p-4`, `border bg-background/60`, `border bg-muted/20`, each written
+ * into the component that needed it. Eight siblings that do not match do not
+ * read as eight sections of one thing; they read as eight unrelated panels,
+ * and the reader has to work out which ones matter from the decoration rather
+ * than from the content. That is the consistency half of a type scale applied
+ * to surfaces: if the card is a column of sections, the sections are boxes of
+ * one shape and everything that makes one of them different is its TONE — it is
+ * a blocker, or it is history, or it is a warning — not a different border.
+ *
+ * So this is a token and not a convention. A section that needs to stand out
+ * asks for `tone`, which is a colour the reader already learned from the hero;
+ * a section that does not gets the plain surface and recedes, which is the
+ * entire visual hierarchy the card has.
+ */
+export const SECTION_SURFACE = "rounded-lg border bg-muted/20";
+
+/**
+ * Whether a section starts open.
+ *
+ * Progressive disclosure earns its keep when the default is CLOSED and the
+ * reader earns the opening. Two things are exempt, and only two: a section
+ * holding something happening right now, and a section the reader is blocked
+ * on. Everything else — the files you attached, the maps this workflow defines,
+ * the gaps a past run recorded — is history, and history does not get to push
+ * the page down before the reader has asked for it.
+ */
+export function startsOpen({ live = false, blocking = false }: { live?: boolean; blocking?: boolean } = {}) {
+  return live || blocking;
+}
+
 // One open/close affordance for every collapsible: a chevron that points
 // right when closed and rotates down when open. Native <details>/<summary>
 // drive it from explicit open state — never CSS group-open hope, which
@@ -39,7 +73,7 @@ export function DisclosureSection({ title, subtitle, hint, action, children, def
     <details
       open={controlled ? open : defaultOpen}
       onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
-      className="group rounded-lg border bg-muted/20"
+      className={`group ${SECTION_SURFACE}`}
     >
       <summary className={`flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden ${subtitle ? "min-h-12" : "min-h-11"}`}>
         <DisclosureChevron className="mr-1.5" />

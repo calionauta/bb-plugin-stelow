@@ -5,7 +5,7 @@ import {
   AuditTrailStatusRow,
   artifactGroupTitle,
 } from "../artifacts/artifact-inventory";
-import { DisclosureSection } from "../disclosure";
+import { DisclosureSection, startsOpen } from "../disclosure";
 import type { BuildDetailView } from "./build-detail-view";
 import { BuildProgress } from "./build-progress";
 import { heroFor } from "./detail-hero";
@@ -27,7 +27,7 @@ export function BuildProgressSection({ view }: { view: BuildDetailView }) {
         detail={detail}
         archivedPresentation={archivedCardDetailPresentation(card, stageLabel)}
         artifactTotal={artifactTotal}
-        defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
+        defaultOpen={startsOpen({ live: hero?.kind === "working", blocking: hero?.kind === "calm" })}
         intentLabels={view.intentLabels}
         onOpenArtifacts={view.showArtifacts}
         onPickStage={view.setPendingAdvance}

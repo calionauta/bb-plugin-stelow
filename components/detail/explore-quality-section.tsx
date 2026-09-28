@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
+import { DisclosureSection } from "../disclosure";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
 
@@ -23,12 +24,23 @@ export function ExploreQualitySection({ cardId, filePath, repairing, onRepair }:
   const failures = seal?.failures ?? [];
   const lines = failures.map((failure) => `${seal?.label ?? filePath}: ${failure} — rewrite it, then run verify again.`);
   return (
-    <section aria-label="Artifact quality" className="rounded-lg border p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</h3>
-      {!seal ? <p className="pt-1 text-xs text-muted-foreground">Checking…</p> : null}
-      {seal && failures.length === 0 ? <p className="pt-1 text-xs text-muted-foreground">Stage deliverable meets its contract.</p> : null}
+    // The shared surface, and open only when something is actually wrong. A
+    // clean seal is the absence of news: it used to render as its own always-open
+    // `border p-4` panel saying so, which spent a box on "nothing to report" and
+    // made the report that DOES matter indistinguishable from it.
+    <DisclosureSection
+      title="Artifact quality"
+      subtitle={!seal
+        ? "checking the stage deliverable"
+        : failures.length === 0
+          ? "meets its contract"
+          : `${failures.length} failure${failures.length === 1 ? "" : "s"}`}
+      defaultOpen={failures.length > 0}
+    >
+      {!seal ? <p className="text-xs text-muted-foreground">Checking…</p> : null}
+      {seal && failures.length === 0 ? <p className="text-xs text-muted-foreground">Stage deliverable meets its contract.</p> : null}
       {seal && failures.length > 0 ? (
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2">
           <ul className="space-y-1">
             {failures.map((failure, i) => (
               <li key={i} className="flex items-start gap-2 text-xs">
@@ -40,6 +52,6 @@ export function ExploreQualitySection({ cardId, filePath, repairing, onRepair }:
           <Button size="sm" variant="outline" disabled={repairing} onClick={() => onRepair(lines)} title="Post the failure list as a comment and resume the worker to fix it.">{repairing ? "Repairing…" : "Repair this artifact"}</Button>
         </div>
       ) : null}
-    </section>
+    </DisclosureSection>
   );
 }

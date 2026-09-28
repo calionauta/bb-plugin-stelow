@@ -483,6 +483,32 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   surface; closed once nothing is running, and open again when a deep link names
   a specific run. The outcome tally stays in the header, so closing it costs the
   reader the rows and not the facts.
+- **One surface, and one rule for opening.** The open card drew its sections
+  eight different ways — `border p-3`, `border p-4`, `border bg-background/60`,
+  `border bg-muted/20` — each written into whichever component needed it. Eight
+  siblings that do not match do not read as eight sections of one thing; they
+  read as eight unrelated panels, and the reader has to work out which matter
+  from the decoration instead of the content. That is the surface half of a type
+  scale, so it is a token now (`SECTION_SURFACE`) rather than a convention: one
+  shape, and everything that makes a section differ is its TONE — a colour the
+  reader already learned from the hero — never a different border. The hero
+  keeps the card's one deliberate exception, more padding and a tone, and writes
+  it as the token plus that exception. `BuildGaps` and the research and explore
+  quality panels stopped being free-standing `border p-4` boxes, and the workflow
+  map stopped hand-rolling its own `<details>`, chevron and background: a second
+  implementation of the same pattern is correct only until one of them changes.
+- **History does not get the first screen.** Progressive disclosure only works
+  when the default is closed and the reader earns the opening, and half the
+  sections were opening unconditionally. `startsOpen({ live, blocking })` names
+  the only two exemptions — something happening right now, and something the
+  reader is blocked on — and everything else is history that has to be asked
+  for: the files the request NAMED, settled before the worker started; the
+  workflow map, which describes stages rather than this card's state; the gaps a
+  past run recorded; a quality panel whose verdict is "nothing to report". A
+  preview opens while it is starting or running, because then it IS the live
+  surface, and closes once it is up — its URL is in the header either way. Every
+  count stays in the hint, so closing a section costs the reader the list and
+  not the number.
 - **Review tools lead a finished card.** The diff and the publication panel used
   to sit below Artifacts and the workflow map — six sections down, past the diff's
   own visibility gate — on the one card kind where they are the entire reason to

@@ -27,7 +27,13 @@ export function InputFiles({ card, detail, onView }: {
   const files = detail?.attachments ?? [];
   if (files.length === 0) return null;
   return (
-    <DisclosureSection title="Input files" hint={`${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen>
+    // Closed by default. These are the files the request NAMED, attached before
+    // the worker started — settled the moment the card was created, and nothing
+    // that happens on this card will change them. It opened unconditionally, so
+    // a card with three attachments spent the reader's first screen on history
+    // before they reached the run that is happening right now. The count stays
+    // in the header, so closing it costs the number and not the list.
+    <DisclosureSection title="Input files" subtitle="named in the request" hint={`${files.length} file${files.length === 1 ? "" : "s"}`}>
       <p className="text-xs text-muted-foreground">Files attached when this card was started.</p>
       <div className="mt-2 divide-y divide-border rounded-md border">
         {files.map((file) => {

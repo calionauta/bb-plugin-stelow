@@ -5,7 +5,7 @@ import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { ArtifactGroups } from "../artifacts/artifact-inventory";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
-import { DisclosureSection } from "../disclosure";
+import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
 import { checkoutNoteFor, WorkerSection } from "../worker-history/worker-history";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
@@ -34,7 +34,7 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
   const heroStyle = HERO_STYLE[hero.kind];
   const presetStale = isWorkerPresetStale(card, detail);
   return (
-    <section aria-label="Exploration status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
+    <section aria-label="Exploration status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`${SECTION_SURFACE} p-4 ${heroStyle.wrap}`}>
       <div className="flex items-start gap-2.5">
         <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
         <div className="min-w-0 flex-1 space-y-1">

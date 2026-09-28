@@ -1,5 +1,6 @@
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { CardConversation } from "../conversation/card-conversation";
+import { startsOpen } from "../disclosure";
 import type { BuildDetailView } from "./build-detail-view";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
@@ -93,7 +94,7 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         draft={view.comments.comment}
         onDraftChange={view.comments.setComment}
         onSend={() => void view.comments.submitComment()}
-        defaultOpen={hero?.kind === "decision"}
+        defaultOpen={startsOpen({ blocking: hero?.kind === "decision" })}
         threadId={card.workerThreadId ?? null}
       />
     </>

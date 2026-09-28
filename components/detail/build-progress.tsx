@@ -94,19 +94,39 @@ function GapItems({ items }: { items: GapSummary["items"] }) {
   return <ul className="space-y-1 pt-2">{items.map((item) => <li key={item.description} className="flex items-start gap-2 text-xs"><span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && isDoneStatus(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} /><span className="flex-1">{item.description}</span>{item.scopeStatus ? <Pill tone={statusTone(item.scopeStatus)}><span className="mr-1">{statusGlyph(item.scopeStatus)}</span>{statusLabel(item.scopeStatus)}</Pill> : <span className="text-amber-700 dark:text-amber-300">no scope yet</span>}</li>)}</ul>;
 }
 
+/**
+ * Gaps and rework: a section like any other, not a free-standing panel.
+ *
+ * It was `rounded-lg border p-4` with its own uppercase heading — a different
+ * box on a card of identical boxes, on a card whose visual hierarchy is
+ * precisely "one hero, then sections of one shape". The list of gap items is
+ * history — gaps a past run recorded — so it starts closed and its tally lives
+ * in the header, which is the same contract every other section on the card
+ * already follows.
+ */
 function BuildGaps({ summary }: { summary: GapSummary | null }) {
   const view = gapSummaryPresentation(summary);
   if (!summary?.matched || !view) return null;
   const lead = formatGapMs(summary.leadMs);
   const cycle = formatGapMs(summary.cycleMs);
+  const tally = [
+    `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
+    `${summary.fixed} fixed`,
+    `${summary.escalated} escalated`,
+    lead ? `lead ${lead}` : null,
+    cycle ? `cycle ${cycle}` : null,
+  ].filter(Boolean).join(" · ");
   return (
-    <section aria-label="Gaps and rework" className="rounded-lg border p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gaps &amp; rework</h3>
-      <p className="pt-1 text-xs text-muted-foreground" title="From the execution critique Gap Registry">{summary.total} gap{summary.total === 1 ? "" : "s"} · {summary.fixed} fixed · {summary.documented} documented · {summary.escalated} escalated{lead ? ` · lead ${lead}` : ""}{cycle ? ` · cycle ${cycle}` : ""}</p>
+    <DisclosureSection
+      title="Gaps and rework"
+      subtitle="what the critique found"
+      hint={tally}
+      defaultOpen={summary.escalated > 0}
+    >
       {summary.escalated > 0 ? <GapItems items={summary.items} /> : null}
-      {view.waitCopy ? <p className="pt-2 text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
-      {view.resolvedCopy ? <p className="pt-2 text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
-    </section>
+      {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
+      {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
+    </DisclosureSection>
   );
 }
 

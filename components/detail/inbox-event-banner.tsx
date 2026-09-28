@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { SECTION_SURFACE } from "../disclosure";
 import { inboxEventDescription, inboxEventPresentation, inboxEventTime, isOpenInboxAction } from "../../lib/inbox-event-presentation.mjs";
 
 // Inbox-event banner shared by the detail bodies: one definition instead
@@ -30,7 +31,19 @@ export function InboxEventBanner({ visible, event, sectionRef }: {
   if (!visible) return null;
   const presentation = event ? inboxEventPresentation(event) : null;
   return (
-    <section ref={sectionRef} tabIndex={-1} className={`rounded-lg border p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${presentation?.tone ? "border-border bg-muted/40" : "border-amber-500/40 bg-amber-500/10"}`} aria-label="Inbox notification">
+    // The shared surface plus a TONE, never a second surface. This banner is the
+    // one thing allowed to look different from the sections below it, and the
+    // difference has to be a colour the reader already learned — amber for
+    // "this still needs you" — rather than a different border and padding, which
+    // is what made it read as a panel from somewhere else.
+    <section
+      ref={sectionRef}
+      tabIndex={-1}
+      className={`${SECTION_SURFACE} p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+        presentation?.tone ? "border-border bg-muted/40" : "border-amber-500/40 bg-amber-500/10"
+      }`}
+      aria-label="Inbox notification"
+    >
       <p className="text-sm font-semibold">{presentation ? `${presentation.label}.` : "Opened from Stelow Inbox."}</p>
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{event ? inboxEventDescription(event) : "This notification is no longer available."}</p>
       {event && presentation ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>{inboxEventTime(event)}</p> : null}
