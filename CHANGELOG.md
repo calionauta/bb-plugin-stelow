@@ -11,8 +11,28 @@ and this project adheres to a single-version-per-release tag format
 
 ### Bug Fixes
 
-* a machine receipt is not a file the card produced ([#168](https://github.com/calionauta/bb-plugin-stelow/issues/168)) ([4e8f8ce](https://github.com/calionauta/bb-plugin-stelow/commit/4e8f8ce76d313d2d9f9d8e9bac0b432436a77a17))
-* this corrects a false claim the card makes about its own output, not a new ([4e8f8ce](https://github.com/calionauta/bb-plugin-stelow/commit/4e8f8ce76d313d2d9f9d8e9bac0b432436a77a17))
+* **A machine receipt is not a file the card produced.** Stelow's own
+  `audit-trail.md` and `recon-receipt.json` are audit value, not deliverables,
+  and `lib/artifact-roles.mjs` has said so from the start: they must not inflate
+  the file count or sit unlabeled beside the specs. The server applied that rule
+  and the card-detail contract carried the resulting `role` on every artifact —
+  and the view discarded it.
+
+  Explore passed every artifact through, so a card with two deliverables and one
+  receipt said "3 files". Build re-implemented the same filter inline, twice in
+  one file, and wrapped the result in a hand-drawn section rather than the
+  disclosure family the rest of the card uses. Each section derived its own count
+  from whatever it was handed, so the list and the number could disagree with
+  nothing noticing.
+
+  The rule now lives in `lib/artifact-roles.mjs` alone, the shared inventory
+  applies it once for every track, and the count each section states is read from
+  that same predicate. Receipts render in a named **Machine receipts**
+  disclosure, closed by default: a receipt is reference material, not a decision
+  awaiting the reader, so it is neither live nor blocking and never earns
+  open-on-load. One row renders receipts and everything else, so a file cannot
+  look like two different things depending on where it landed.
+  ([#168](https://github.com/calionauta/bb-plugin-stelow/pull/168))
 
 ## [0.57.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.1...v0.57.2) (2026-09-28)
 
