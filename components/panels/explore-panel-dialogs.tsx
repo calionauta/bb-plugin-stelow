@@ -17,6 +17,7 @@ export type ExploreOnboardingProps = {
   intro: string;
   onOpenPresets: () => void;
   active: boolean;
+  showDesignReference?: boolean;
 };
 
 type Props = {
@@ -45,6 +46,8 @@ export function ExplorePanelDialogs(props: Props) {
         intro: "Explorations run on the explore band preset — set it once here, or pin a different preset per card in Manage.",
         onOpenPresets: props.onOpenPresets,
         active: props.active,
+        // Explore can run the interface-contrast step, so the offer applies here too.
+        showDesignReference: true,
       })}
       <CreateExploreDialog
         open={props.createOpen}

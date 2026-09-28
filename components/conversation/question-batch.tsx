@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
-import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/expired-question-answers.mjs";
 import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
-import { BatchOptionList } from "./batch-options";
+import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
+import { BoundaryQuestionFrame } from "./boundary-question-frame";
 import type {
   BatchItem,
   ExpiredQuestionItem,
@@ -198,34 +198,17 @@ function BatchQuestionHeading({ questions, index, showHeading, copy, current, pr
         <BatchStepDots questions={questions} index={index} onSelect={onSelectDot} isDone={isDone} copy={copy} />
       ) : null}
       {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
+      {current.boundary ? <BoundaryQuestionFrame boundary={current.boundary} /> : null}
       {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
       {current.staleness ? <StalenessNotice staleness={current.staleness} /> : null}
     </>
   );
 }
 
-// Free-text "Other": an option and a custom text stay mutually exclusive
-// on single-select (the hook clears the other side on each keystroke).
-function BatchCustomInput({ copy, value, onType }: {
-  copy: ReturnType<typeof questionCopy>;
-  value: string;
-  onType: (value: string) => void;
-}) {
-  return (
-    <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
-      <span>{copy.other}</span>
-      <input
-        value={value}
-        onChange={(event) => onType(event.target.value)}
-        placeholder={copy.customPlaceholder}
-        className="mt-1 min-h-11 w-full cursor-text rounded-md border border-border bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground"
-      />
-    </label>
-  );
-}
-
 // radio (single) / checkbox (multi) options plus a free-text "Other", explicit
 // skip, and a single atomic submit — one worker resume, one inbox resolution.
+// The controls themselves live in ./batch-answer-body; this owns position,
+// framing, and submission.
 export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
   questions: BatchItem[];
   allowSkip: boolean;
@@ -249,27 +232,24 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
         <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
         <div className="min-w-0 flex-1 space-y-2">
           <BatchQuestionHeading questions={questions} index={sel.index} showHeading={showHeading} copy={copy} current={current} prompt={prompt} onSelectDot={sel.setIndex} isDone={isDone} />
-          {sel.isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</p> : null}
-          <BatchOptionList current={current} isSplitProposal={sel.isSplitProposal} splitKeepLabel={sel.splitKeepLabel} selected={sel.selected} onPick={sel.pick} onOpenArtifact={onOpenArtifact} />
-          {splitNotice ? <p role="status" className="rounded-md border border-primary/40 bg-primary/10 p-2 text-xs leading-5 text-foreground">{splitNotice.text}</p> : null}
-          {!sel.isSplitProposal ? <BatchCustomInput copy={copy} value={sel.custom[current.id] ?? ""} onType={(value) => sel.typeCustom(current, value)} /> : null}
-          {allowSkip && !sel.isSplitProposal ? (
-            sel.skipped.has(current.id)
-              ? <button onClick={() => sel.unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">{copy.skipped}</button>
-              : <button onClick={() => sel.skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">{copy.skip}</button>
-          ) : null}
-          {error ? <p className="text-xs text-destructive">{error}</p> : null}
-          {questions.length > 1 ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.batchProgress(sel.doneCount, questions.length, allowSkip)}</p>
-          ) : current.multiple && !sel.isSplitProposal ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.pickOneOrMore}</p>
-          ) : null}
-          {sel.isLastQuestion && !sel.complete ? <p role="status" className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.answersRemaining(sel.remainingCount, allowSkip)}</p> : null}
-          <div className="flex flex-wrap items-center gap-2">
-            {questions.length > 1 ? <Button size="sm" variant="outline" disabled={sel.index === 0 || busy} onClick={() => sel.setIndex((i) => Math.max(0, i - 1))}>{copy.back}</Button> : null}
-            {questions.length > 1 && sel.index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => sel.setIndex((i) => Math.min(questions.length - 1, i + 1))}>{copy.next}</Button> : null}
-            {sel.isLastQuestion ? <Button size="sm" disabled={!sel.complete || busy} onClick={() => onSubmit(questions.map((q) => sel.merged(q.id)))}>{busy ? copy.sending : submitLabel}</Button> : null}
-          </div>
+          <BatchAnswerBody
+            sel={sel}
+            current={current}
+            copy={copy}
+            allowSkip={allowSkip}
+            error={error}
+            splitNotice={splitNotice}
+            onOpenArtifact={onOpenArtifact}
+          />
+          <BatchFooter
+            sel={sel}
+            questions={questions}
+            copy={copy}
+            busy={busy}
+            allowSkip={allowSkip}
+            submitLabel={submitLabel}
+            onSubmit={onSubmit}
+          />
         </div>
       </div>
     </div>

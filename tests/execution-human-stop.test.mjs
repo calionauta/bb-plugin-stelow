@@ -5,6 +5,12 @@ import { humanStopRequest, humanStopMessage } from "../lib/execution-human-stop.
 // decision. Before this rule it was recorded as `failed` /
 // `artifact-malformed` and the card sat in "Working" with the question
 // nowhere on screen.
+//
+// It carries no `staleArtifacts`: the contrast schema sets
+// `additionalProperties: false` and never declares the field, so a real
+// receipt cannot name its own stale set. The fixture used to carry one and
+// the assertion below used to echo it back — a test that passed on a
+// document the schema forbids.
 const stopReceipt = {
   schemaVersion: 1,
   receiptId: "contrast-exec_tu34f4ua",
@@ -13,7 +19,6 @@ const stopReceipt = {
   authority: "human",
   disposition: "human-decision-required",
   decisionQuestion: "Should the read-only Scope Map view extend the existing Scope stage surface, or become a separate user-visible concept?",
-  staleArtifacts: ["scope-map", "selection"],
 };
 
 const stop = humanStopRequest("interfaces/contrast.json", stopReceipt);
@@ -23,20 +28,32 @@ assert.equal(
   "Should the read-only Scope Map view extend the existing Scope stage surface, or become a separate user-visible concept?",
   "the question travels verbatim — the worker chose these words on purpose",
 );
-assert.deepEqual(stop.staleArtifacts, ["scope-map", "selection"], "the stale artifacts the route declared are carried through");
+assert.deepEqual(
+  stop.staleArtifacts,
+  ["scope-map", "interface-contrasts", "selection", "technical-plan"],
+  "the stale set is derived from the route table, the only authority for it",
+);
 
-// The wording must let a human tell "asking me" from "broke" without opening
-// the trail. Remove the "did not fail" framing and the distinction is lost.
-const message = humanStopMessage(stop);
-assert.match(message, /did not fail/, "the card says this is a question, not a failure");
-assert.match(message, /Should the read-only Scope Map view/, "the card quotes the actual question");
-assert.match(message, /stays paused until you answer/, "the card says the run is waiting, not silently stalled");
+// The regression this closes: a receipt smuggling its own stale set is
+// ignored, so the card cannot be told one thing by the artifact and another
+// by the route it claims to take.
+const smuggled = humanStopRequest("interfaces/contrast.json", {
+  ...stopReceipt,
+  staleArtifacts: ["scope-map", "selection"],
+});
+assert.deepEqual(
+  smuggled.staleArtifacts,
+  stop.staleArtifacts,
+  "a declared staleArtifacts field cannot narrow or widen the route's list",
+);
 
-// Fail-closed: a broken run must never be mistaken for a deliberate stop, or
-// the card would park forever waiting for a question nobody will see.
+// Fail-closed on a brief that is not stopped: the route table admits only
+// `stop:human-decision-required`, so a generation-ready brief naming a
+// human decision is an inconsistent receipt, not a stop.
 for (const [label, mutation] of [
   ["authority agent", { authority: "agent" }],
   ["disposition continue", { disposition: "continue" }],
+  ["brief still generating", { briefStatus: "generation-ready" }],
   ["empty question", { decisionQuestion: "   " }],
   ["missing question", { decisionQuestion: undefined }],
   ["unrelated route", { route: "interface-refinement" }],
@@ -48,6 +65,13 @@ for (const [label, mutation] of [
     `${label} is not treated as a human stop`,
   );
 }
+
+// The wording must let a human tell "asking me" from "broke" without opening
+// the trail. Remove the "did not fail" framing and the distinction is lost.
+const message = humanStopMessage(stop);
+assert.match(message, /did not fail/, "the card says this is a question, not a failure");
+assert.match(message, /Should the read-only Scope Map view/, "the card quotes the actual question");
+assert.match(message, /stays paused until you answer/, "the card says the run is waiting, not silently stalled");
 
 for (const [label, value] of [
   ["null", null],

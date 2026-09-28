@@ -160,6 +160,7 @@ function pointView(def: DecisionPointDef, row?: PointRow) {
   return {
     mode: normalizePointMode(row?.mode, def.defaultMode),
     thresholds: parsedThresholds(row, def.id),
+    thresholdLabel: def.thresholdLabel,
     route: hasRoute ? route : null,
     presetId: row?.preset_id ?? null,
   };

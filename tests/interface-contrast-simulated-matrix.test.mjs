@@ -21,6 +21,7 @@ const cases = [
       criteria: ["scan cost", "accessibility"],
       evidence: [{ source: "simulation", reference: "case-1", claim: "split view keeps the queue visible" }],
       options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+      nextAction: "Present the bounded comparison at the Interface gate.",
     },
   },
   {
@@ -38,6 +39,7 @@ const cases = [
       fixedConstraints: [{ name: "actor", value: "operator", source: "simulation" }],
       evidence: [{ source: "simulation", reference: "case-2", claim: "reviewer approval is a new commitment" }],
       options: [],
+      nextAction: "Return the new approval actor to Shape for a human decision.",
     },
   },
   {
@@ -58,6 +60,7 @@ const cases = [
       criteria: ["recovery confidence", "review cost"],
       evidence: [{ source: "simulation", reference: "case-3", claim: "review drawer reduces batch review cost" }],
       options: [{ id: "drawer", primaryValue: "review drawer", relatedValues: [], compatibility: "valid" }],
+      nextAction: "Present the drawer at the Interface gate.",
     },
   },
   {
@@ -75,6 +78,7 @@ const cases = [
       fixedConstraints: [{ name: "map clarity", value: "relationships are clear", source: "simulation" }],
       evidence: [{ source: "simulation", reference: "case-4", claim: "task observation is missing" }],
       options: [],
+      nextAction: "Run the research task that observes the task graph.",
     },
   },
   {
@@ -92,6 +96,7 @@ const cases = [
       fixedConstraints: [{ name: "organizing unit", value: "slice", source: "simulation" }],
       evidence: [{ source: "simulation", reference: "case-5", claim: "existing interface is accepted" }],
       options: [],
+      nextAction: "Carry the accepted interface into the Interface gate without a comparison.",
     },
   },
   {

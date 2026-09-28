@@ -30,6 +30,7 @@ export type OnboardingProps = {
   active: boolean;
   secondTitle: string;
   secondBody: ReactNode;
+  showDesignReference?: boolean;
 };
 
 type Props = {
@@ -56,27 +57,34 @@ type Props = {
   renderPresetManager: (props: PresetManagerProps) => ReactNode;
 };
 
+function BuildOnboarding(props: Props) {
+  return props.renderOnboarding({
+    storageKey: STORAGE_KEYS.onboardBuild,
+    title: "Choose your agent presets",
+    intro: "Set the preset each phase runs with. Planning depth and your review gates "
+      + "are a separate choice — picked per card in New issue, under the description.",
+    onOpenPresets: props.onOpenPresets,
+    active: props.active,
+    // Build proposes interfaces, so the optional design reference is worth
+    // surfacing here.
+    showDesignReference: true,
+    secondTitle: "Defaults for new cards",
+    secondBody: (
+      <WorkflowSettings
+        appetite={props.appetite}
+        reviewGates={props.reviewGates}
+        onAppetiteChange={props.onAppetiteChange}
+        onReviewGatesChange={props.onReviewGatesChange}
+        groupNamePrefix="board-default"
+      />
+    ),
+  });
+}
+
 export function BuildPanelDialogs(props: Props) {
   return (
     <>
-      {props.renderOnboarding({
-        storageKey: STORAGE_KEYS.onboardBuild,
-        title: "Choose your agent presets",
-        intro: "Set the preset each phase runs with. Planning depth and your review gates "
-          + "are a separate choice — picked per card in New issue, under the description.",
-        onOpenPresets: props.onOpenPresets,
-        active: props.active,
-        secondTitle: "Defaults for new cards",
-        secondBody: (
-          <WorkflowSettings
-            appetite={props.appetite}
-            reviewGates={props.reviewGates}
-            onAppetiteChange={props.onAppetiteChange}
-            onReviewGatesChange={props.onReviewGatesChange}
-            groupNamePrefix="board-default"
-          />
-        ),
-      })}
+      <BuildOnboarding {...props} />
       <CreateBuildDialog
         open={props.createOpen}
         onOpenChange={props.onCreateOpenChange}

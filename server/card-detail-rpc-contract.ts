@@ -2,6 +2,18 @@ import { z } from "zod";
 import { attachmentSchema, askOptionSchema, statusSchema } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
 
+/**
+ * A boundary question's framing. Resolved from the `[Stelow boundary <id>]`
+ * marker against the run's boundary contract, then shaped in lib/ — the card
+ * renders `showOptions` and the copy, and never re-derives the rule.
+ */
+const boundaryShapeSchema = z.object({
+  kind: z.enum(["reaction", "confirmation"]),
+  showOptions: z.boolean(),
+  heading: z.string(),
+  notice: z.string().nullable(),
+});
+
 export const cardDetailRpcContract = {
   cardDetail: {
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
@@ -136,6 +148,10 @@ export const cardDetailRpcContract = {
           question: z.string(),
           multiple: z.boolean(),
           kind: z.enum(["standard", "split"]),
+          // A boundary question's framing, decided in lib/ from the boundary's
+          // `kind` and sent whole so the card renders instead of
+          // re-implementing the rule. Null for an ordinary question.
+          boundary: boundaryShapeSchema.nullable(),
           options: z.array(askOptionSchema),
           expiresAt: z.number().nullable(),
           staleness: z

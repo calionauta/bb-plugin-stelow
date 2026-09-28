@@ -10,6 +10,7 @@ import {
   readOnboardingComplete,
 } from "../../lib/preset-onboarding-state.mjs";
 import { StayInTouchStep } from "../dashboard/stay-in-touch-step";
+import { UiDesignMcpCard } from "./ui-design-mcp-card";
 import { WorkflowDependencyCard } from "./workflow-dependency-card";
 import { Button } from "../ui/button";
 import {
@@ -30,6 +31,12 @@ export type PresetOnboardingProps = {
   active: boolean;
   secondTitle?: string;
   secondBody?: ReactNode;
+  /**
+   * Show the optional design-reference offer. Only for tracks that run
+   * interface work (Build, Explore) — offering it on a track that never
+   * proposes an interface is noise the reader has to dismiss.
+   */
+  showDesignReference?: boolean;
 };
 
 type OnboardingBodyProps = {
@@ -37,14 +44,32 @@ type OnboardingBodyProps = {
   total: number;
   secondBody?: ReactNode;
   children?: ReactNode;
+  showDesignReference?: boolean;
 };
 
-function PresetOnboardingBody({ step, total, secondBody, children }: OnboardingBodyProps) {
+/** The optional-dependency offers, shown on the steps that introduce them. */
+function OptionalOffers({ showDesignReference }: { showDesignReference?: boolean }) {
+  return (
+    <>
+      <WorkflowDependencyCard compact />
+      {showDesignReference ? <UiDesignMcpCard /> : null}
+    </>
+  );
+}
+
+function PresetOnboardingBody({ step, total, secondBody, children, showDesignReference }: OnboardingBodyProps) {
   if (step === total - 1) return <StayInTouchStep />;
-  if (step === 1 && secondBody) return <div className="grid min-w-0 gap-3"><WorkflowDependencyCard compact />{secondBody}</div>;
+  if (step === 1 && secondBody) {
+    return (
+      <div className="grid min-w-0 gap-3">
+        <OptionalOffers showDesignReference={showDesignReference} />
+        {secondBody}
+      </div>
+    );
+  }
   return (
     <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-      {step <= 1 ? <WorkflowDependencyCard compact /> : null}
+      {step <= 1 ? <OptionalOffers showDesignReference={showDesignReference} /> : null}
       <p>
         Agent presets decide which provider, model, reasoning, and permission each worker runs with.
         {" "}Each track has its own band default; cards without one fall back to the board default,
@@ -136,6 +161,13 @@ function usePresetOnboardingState({ storageKey, active, hasSecond }: OnboardingS
   };
 }
 
+/** Title and description for one step — the copy rules live in one place. */
+function stepCopy(step: number, lastStep: number, hasSecondTitle: boolean, title: string, secondTitle: string | undefined, intro: string) {
+  if (step === lastStep) return { title: "Stay in touch", body: "Feedback and follow-ups." };
+  if (step === 1 && secondTitle) return { title: secondTitle, body: "Defaults new cards start from." };
+  return { title, body: intro };
+}
+
 export function PresetOnboardingDialog({
   storageKey,
   title,
@@ -145,41 +177,39 @@ export function PresetOnboardingDialog({
   active,
   secondTitle,
   secondBody,
+  showDesignReference,
 }: PresetOnboardingProps) {
   const hasSecond = !!secondTitle;
   const total = onboardingTotal(hasSecond);
   const lastStep = total - 1;
   const onboarding = usePresetOnboardingState({ storageKey, active, hasSecond });
+  const copy = stepCopy(onboarding.step, lastStep, hasSecond, title, secondTitle, intro);
+  const close = acknowledgeSharedOnboarding;
 
   return (
     <Dialog open={onboarding.open} onOpenChange={(next) => { if (!next) onboarding.dismiss(); }}>
       <DialogContent className={`${hasSecond ? "sm:max-w-2xl" : "sm:max-w-lg"} sm:max-h-[calc(100dvh-1rem)] sm:overflow-y-auto`}>
         <DialogHeader>
-          <DialogTitle>{onboarding.step === lastStep ? "Stay in touch" : onboarding.step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
-          <DialogDescription>
-            {onboarding.step === lastStep
-              ? "Feedback and follow-ups."
-              : onboarding.step === 1 && secondTitle
-                ? "Defaults new cards start from."
-                : intro}
-          </DialogDescription>
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.body}</DialogDescription>
         </DialogHeader>
         {!onboarding.singleStep && total > 1 ? (
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Step {onboarding.step + 1} of {total}
           </p>
         ) : null}
-        <PresetOnboardingBody step={onboarding.step} total={total} secondBody={secondBody}>{children}</PresetOnboardingBody>
+        <PresetOnboardingBody
+          step={onboarding.step}
+          total={total}
+          secondBody={secondBody}
+          showDesignReference={showDesignReference}
+        >{children}</PresetOnboardingBody>
         <DialogFooter>
           <PresetOnboardingFooter
             step={onboarding.step}
             total={total}
             hasSecond={hasSecond}
-            onOpenPresets={() => acknowledgeSharedOnboarding(
-              window.localStorage,
-              STORAGE_KEYS.onboardPresets,
-              onOpenPresets,
-            )}
+            onOpenPresets={() => close(window.localStorage, STORAGE_KEYS.onboardPresets, onOpenPresets)}
             onNext={onboarding.next}
             onBack={onboarding.back}
             onDone={onboarding.dismiss}

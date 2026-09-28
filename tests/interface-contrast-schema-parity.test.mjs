@@ -81,4 +81,38 @@ const good = {
 };
 assert.deepEqual(validateInterfaceContrastReceipt(good), [], "a receipt satisfying the schema also satisfies the validator");
 
+// The seven fields the schema declared that the validator used to accept
+// blind. Each assertion below is a field a reader acts on: a receipt that
+// passed the runtime layer while carrying one of these in the wrong shape
+// told the card something the contract never promised.
+const optionals = [
+  { field: "relatedDimensions", value: "cost", label: "a string instead of a list", expected: "relatedDimensions must be an array" },
+  { field: "missingInputs", value: "cost", label: "a string instead of a list", expected: "missingInputs must be an array" },
+  { field: "invalidOptions", value: { id: "Z" }, label: "an object instead of a list", expected: "invalidOptions must be an array" },
+  { field: "reshapeProof", value: "reshaped", label: "a string instead of an object", expected: "reshapeProof must be an object or null" },
+  { field: "jobImportance", value: 3, label: "a number", expected: "jobImportance must be a non-empty string or null" },
+  { field: "acceptedSacrifice", value: "  ", label: "an empty string", expected: "acceptedSacrifice must be a non-empty string or null" },
+];
+for (const { field, value, label, expected } of optionals) {
+  assert.ok(
+    validateInterfaceContrastReceipt({ ...good, [field]: value }).some((issue) => issue === expected),
+    `${field} given ${label} is rejected (${expected})`,
+  );
+}
+
+// `nextAction` is required and is what a reader acts on next: the runtime
+// validator checked that the key existed and never that it said anything.
+assert.ok(
+  validateInterfaceContrastReceipt({ ...good, nextAction: "   " }).some((issue) => issue === "nextAction must be non-empty"),
+  "an empty nextAction is rejected — a receipt with no next move is not evidence",
+);
+
+// Absent stays absent. The optional fields are not in the schema's required
+// list, so requiring them would reject receipts that satisfy the contract.
+assert.deepEqual(
+  validateInterfaceContrastReceipt(good),
+  [],
+  "a receipt omitting every optional field still validates",
+);
+
 console.log("interface contrast schema parity test ok: schema and runtime validator agree field for field");

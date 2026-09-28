@@ -23,12 +23,15 @@ import { createPreviewHost } from "./preview-host.js";
 import { createTrackProjection, strategyRounds } from "./track-projection.js";
 import { listNestedFiles } from "./board-read.js";
 import { roundFileName, roundTimestamp } from "../../lib/research-rounds.mjs";
+import { boundaryIdFromQuestion } from "../../lib/execution-boundary-marker.mjs";
+import { listExecutionRuns } from "../../lib/execution-run-ledger.mjs";
 import { workspaceRelative } from "./card-files.js";
 import { join } from "./root-paths.js";
 import { workflowStateDir } from "./workflow-state.js";
 import { ERRORS } from "./card-errors.js";
 import type { RuntimeServices } from "./runtime-services.js";
 import type { CardLedger } from "./card-ledger.js";
+import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -132,10 +135,35 @@ function questionProjection(
       fetchPendingAsks: workspace.questions.fetchPendingAsks,
       getCardByWorkerThread: deps.ledger.getCardByWorkerThread,
       resolveAskOptions: asks.resolveAskOptions,
+      boundaryForQuestion: (card, question) => boundaryForQuestionOnCard(deps, card, question),
     }),
     roundFileName,
     roundTimestamp,
   };
+}
+
+/**
+ * The boundary a card question belongs to, found by its marker.
+ *
+ * The card's runs are read once per question, which is a single indexed query
+ * against a table of a handful of rows per card — cheaper than threading a run
+ * list through the read path for a lookup that almost always misses: most card
+ * questions are ordinary ones and carry no marker at all, so that case returns
+ * before touching the database.
+ */
+async function boundaryForQuestionOnCard(
+  deps: ReadRuntimeDeps,
+  card: WorkerCard | null,
+  question: string,
+): Promise<{ kind: string } | null> {
+  const boundaryId = boundaryIdFromQuestion(question);
+  if (!boundaryId || !card) return null;
+  const run = listExecutionRuns(deps.db, card.id).find(
+    (entry) => entry.boundaryId === boundaryId,
+  );
+  const contract = run?.boundaryContract;
+  const kind = contract && typeof contract === "object" ? (contract as { kind?: unknown }).kind : null;
+  return typeof kind === "string" ? { kind } : null;
 }
 
 /** The research round artifacts a lightweight track writes and reads back. */

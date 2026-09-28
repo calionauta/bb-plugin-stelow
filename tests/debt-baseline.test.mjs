@@ -47,7 +47,7 @@ const inheritedBaseline = [
   "components/panels/inbox-panel.tsx:InboxEntry#1: 57 lines (baseline 74)",
   "components/panels/inbox-panel.tsx:InboxPanel#1: 111 lines (baseline 119)",
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
-  "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 53 lines (baseline 53)",
+  "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 51 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (recorded 78)",

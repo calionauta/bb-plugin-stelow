@@ -27,12 +27,24 @@ export type BatchOption = {
   artifactInherited?: boolean;
 };
 
+// A boundary question's framing, decided server-side from the boundary's
+// `kind` (lib/execution-boundary-marker). The card renders what it is told:
+// `showOptions` is why the option list is or is not there, and `notice` is why
+// a reader is not looking at one they may have expected.
+export type QuestionBoundaryShape = {
+  kind: "reaction" | "confirmation";
+  showOptions: boolean;
+  heading: string;
+  notice: string | null;
+};
+
 export type BatchItem = {
   id: string;
   title: string;
   prompt: string;
   multiple: boolean;
   kind?: "standard" | "split";
+  boundary?: QuestionBoundaryShape | null;
   options: BatchOption[];
   staleness?: QuestionStalenessNotice | null;
 };
