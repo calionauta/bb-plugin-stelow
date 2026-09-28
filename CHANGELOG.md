@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.3...v0.57.4) (2026-09-28)
+
+
+### Bug Fixes
+
+* a card with no scopes is only a fault when a spec said there should be some ([#172](https://github.com/calionauta/bb-plugin-stelow/issues/172)) ([ee0ec1a](https://github.com/calionauta/bb-plugin-stelow/commit/ee0ec1a33545d518b9352bb129428269ab0a76c3))
+* a dispatched run is not a finished run ([#174](https://github.com/calionauta/bb-plugin-stelow/issues/174)) ([0d0660a](https://github.com/calionauta/bb-plugin-stelow/commit/0d0660a0052698462903a47ce00b7274e0eae487))
+* it stops the card repeating itself about one transition. ([ce7dce7](https://github.com/calionauta/bb-plugin-stelow/commit/ce7dce7a9bde6e30476d3c88dec98c37e7b6836a))
+* the audit notice says "reached the audit stage", so gate it on the stage ([#175](https://github.com/calionauta/bb-plugin-stelow/issues/175)) ([ce7dce7](https://github.com/calionauta/bb-plugin-stelow/commit/ce7dce7a9bde6e30476d3c88dec98c37e7b6836a))
+* this corrects what the card claims about work in progress, not a new ([0d0660a](https://github.com/calionauta/bb-plugin-stelow/commit/0d0660a0052698462903a47ce00b7274e0eae487))
+
 ## [0.57.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.2...v0.57.3) (2026-09-28)
 
 
