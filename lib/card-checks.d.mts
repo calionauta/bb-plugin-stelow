@@ -16,8 +16,3 @@ export declare function isExecutionUntracked(options: {
   activity?: string | null;
   scopes?: Array<{ status?: string } | null> | null;
 }): boolean;
-export declare function isScopeTrackingMissing(options: {
-  activity?: string | null;
-  stage?: string | null;
-  scopes?: Array<{ status?: string } | null> | null;
-}): boolean;
