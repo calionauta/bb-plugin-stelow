@@ -110,7 +110,7 @@ try {
   git("commit", "-m", "base");
   git("update-ref", "refs/remotes/origin/master", "master");
   git("switch", "-c", "feature");
-  for (const script of ["check-source-budgets.mjs", "budget-lineage.mjs"]) {
+  for (const script of ["check-source-budgets.mjs", "budget-lineage.mjs", "changed-files.mjs"]) {
     copyFileSync(join(repositoryRoot, "scripts", script), join(fixtureRoot, "scripts", script));
   }
   writeLedger({});

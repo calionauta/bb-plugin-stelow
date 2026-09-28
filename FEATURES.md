@@ -463,18 +463,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   as the page ages. The section header reports outcomes ("1 failed · 2
   succeeded") rather than an active count that reads "0 active" on a card whose
   four runs all finished.
-- **One line that says what the card is and where it stands.** The card already
-  carried every fact — the stage in the hero, run outcomes in a list, the file
-  count inside a collapsed section, the scope count inside another — so answering
-  "what did this produce and what still needs me" took four visits and a memory,
-  which is why the card read as a dozen unrelated sections. `CardSummary` sits
-  directly under the hero and states it once: whatever still needs a person
-  outranks everything else, because a card waiting on a decision is a different
-  card from one that quietly finished. A number appears only when the data
-  behind it is loaded — an absent artifact list is not "0 files" — and the whole
-  strip renders nothing rather than an empty band that looks like a bug. It
-  reads the hero's own state instead of re-deciding it, so it cannot contradict
-  the banner directly above it.
+- **Every fact on the card has exactly one home.** A summary strip was added to
+  the top of the open card and then removed again, and the reason is the rule
+  worth keeping. Its four fields were the blocker, the stage, the file count and
+  the scope tally — and all four were already on the card in a better place: the
+  hero's title is the authoritative state line ("Needs your decision — 2
+  questions", "Working — Execution"), the progress disclosure's hint is the
+  scope tally and its action button is the file count, both visible with those
+  sections closed. So the strip added a fifteenth bordered box and a ninth
+  border treatment to restate the card four times. The rule the hierarchy test
+  pins: a fact stated at the top of the card must be stated where it is DECIDED,
+  not where it is convenient, and nothing above a section may repeat what that
+  section's own hint will already say.
+- **Finished runs are history, so they collapse.** The run list was a
+  permanently-open bordered box holding one bordered row per run, which meant a
+  card with a dozen finished runs pushed everything below it a dozen rows down
+  the page — on the card kind where people usually came for something else. It
+  is a disclosure now: open while work is in flight, because then it is the live
+  surface; closed once nothing is running, and open again when a deep link names
+  a specific run. The outcome tally stays in the header, so closing it costs the
+  reader the rows and not the facts.
 - **Review tools lead a finished card.** The diff and the publication panel used
   to sit below Artifacts and the workflow map — six sections down, past the diff's
   own visibility gate — on the one card kind where they are the entire reason to

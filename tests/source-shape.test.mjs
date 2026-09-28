@@ -85,14 +85,31 @@ try {
     join(repositoryRoot, "scripts/check-source-shape.mjs"),
     join(fixtureRoot, "scripts/check-source-shape.mjs"),
   );
-  for (const script of ["check-source-budgets.mjs", "budget-lineage.mjs"]) {
+  // The gates' own dependency set, named. Copying the whole scripts directory
+  // instead would commit unrelated scripts as ADDED against the fixture's base,
+  // and the gate would correctly — but uselessly — fail on their pre-existing
+  // long lines. The guard below is what keeps this list honest: a new shared
+  // module fails HERE, with the import named, instead of turning the fixture
+  // into ERR_MODULE_NOT_FOUND.
+  const gateScripts = ["check-source-budgets.mjs", "budget-lineage.mjs", "changed-files.mjs"];
+  for (const script of gateScripts) {
     copyFileSync(join(repositoryRoot, "scripts", script), join(fixtureRoot, "scripts", script));
+  }
+  for (const gate of ["check-source-shape.mjs", "check-source-budgets.mjs"]) {
+    const imported = [...readFileSync(join(repositoryRoot, "scripts", gate), "utf8")
+      .matchAll(/from "\.\/([^"]+\.mjs)"/g)].map((match) => match[1]);
+    for (const module of imported) {
+      assert.ok(
+        gateScripts.includes(module) || module === gate,
+        `${gate} imports ./${module}, which this fixture does not copy — add it to gateScripts`,
+      );
+    }
   }
   // The budget gate reads the debt ledger next to itself, and this fixture's
   // debt is inherited through lineage rather than recorded, so it gets an empty
   // one. tests/source-budgets.test.mjs is where a recorded entry is exercised.
   writeFileSync(join(fixtureRoot, "scripts/source-debt.json"), '{"files":{},"functions":{}}\n');
-  git("add", "scripts/check-source-budgets.mjs", "scripts/budget-lineage.mjs", "scripts/source-debt.json");
+  git("add", ...gateScripts.map((script) => `scripts/${script}`), "scripts/source-debt.json");
   git("commit", "-m", "activate source shape gate");
 
   const clean = runChecker();

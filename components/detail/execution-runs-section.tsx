@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { goToExecutionRun } from "../app-support/navigation";
+import { DisclosureSection } from "../disclosure";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import { ExecutionRunDetail } from "./execution-run-detail";
 import type { ExecutionRun } from "./use-execution-runs";
@@ -269,20 +270,34 @@ function RunHeader({
   );
 }
 
+/**
+ * The run list, as a disclosure.
+ *
+ * It was a permanently-open bordered box holding one bordered row per run — so
+ * a card with a dozen finished runs pushed everything below it a dozen rows
+ * down the page, on the one card kind where the reader usually came for
+ * something else. Runs that have finished are history; history is exactly what
+ * a disclosure is for.
+ *
+ * It starts OPEN while work is in flight, because then it is the live surface
+ * — someone watching a run wants to see it move, not open a section. It starts
+ * CLOSED once nothing is running, and the header keeps the tally visible so
+ * closing it costs the reader the outcomes and nothing else.
+ */
 export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
   const active = runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length;
   if (runs.length === 0) return null;
+  // A deep link names a run. Landing on a section that is not showing that run
+  // would repeat the original bug in a new costume, so the link opens it.
+  const [open, setOpen] = useState(active > 0 || focusRunId !== null);
   return (
-    <section aria-label="Execution runs" className="rounded-lg border bg-card/60 p-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Execution runs</h2>
-        {/* "3 active" on a card whose four runs all finished says nothing. The
-            outcomes are the reason this section exists — a card that failed
-            twice and then succeeded is a different card from one that never
-            ran — so the header reports them, and stays silent about the active
-            count when there is none to report. */}
-        <span className="text-xs text-muted-foreground">{runOutcomeHint(runs, active)}</span>
-      </div>
+    <DisclosureSection
+      title="Execution runs"
+      subtitle="what each run did"
+      hint={runOutcomeHint(runs, active)}
+      open={open}
+      onToggle={setOpen}
+    >
       <div className="space-y-2">
         {runs.map((run) => (
           <ExecutionRunRow
@@ -295,6 +310,6 @@ export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, on
           />
         ))}
       </div>
-    </section>
+    </DisclosureSection>
   );
 }

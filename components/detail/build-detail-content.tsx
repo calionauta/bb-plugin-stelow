@@ -1,6 +1,5 @@
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { CardConversation } from "../conversation/card-conversation";
-import { CardSummary } from "./card-summary";
 import type { BuildDetailView } from "./build-detail-view";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
@@ -73,10 +72,6 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         sectionRef={view.inboxEventRef}
       />
       <BuildReviewHero view={view} presetStale={presetStale} />
-      {/* The summary answers "what is this, where does it stand" in one line,
-          so it goes directly under the hero that already promised to. The run
-          list follows it, because the summary's counts are read against it. */}
-      <CardSummary card={card} detail={detail} runs={view.execution.runs} />
       <ExecutionRunsSection
         card={card}
         runs={view.execution.runs}

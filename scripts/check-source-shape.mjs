@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
+import { changedFiles as changedFileList } from "./changed-files.mjs";
 
 const sourceExtensions = new Set([".js", ".mjs", ".ts", ".tsx"]);
 const maxLineLength = 160;
@@ -71,12 +72,7 @@ function isPromptArtifact(file) {
 }
 
 function changedFiles(base) {
-  const tracked = git("diff", "--name-only", "--diff-filter=ACMRT", base, "--").trim().split("\n");
-  const untracked = git("status", "--porcelain", "--untracked-files=all")
-    .split("\n")
-    .map((line) => line.slice(3))
-    .filter((file) => file && !file.includes(" -> "));
-  return [...new Set([...tracked, ...untracked])].filter(Boolean).filter(isSource);
+  return changedFileList(base).filter(isSource);
 }
 
 function trackedFiles() {

@@ -5,6 +5,7 @@ import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { censusKey, pathAffinity, provesMove, tokenList } from "./budget-lineage.mjs";
+import { changedFiles as changedFileList } from "./changed-files.mjs";
 
 const roots = ["server/", "components/", "hooks/", "lib/", "scripts/", "tests/"];
 const entrypoints = new Set(["server.ts", "app.tsx"]);
@@ -71,16 +72,8 @@ function comparisonBases() {
   return { diff: git("merge-base", target, "HEAD").trim(), debt: target };
 }
 
-function untrackedFiles() {
-  return git("status", "--porcelain", "--untracked-files=all")
-    .split("\n")
-    .map((line) => line.slice(3))
-    .filter((file) => file && !file.includes(" -> "));
-}
-
 function changedFiles(base) {
-  const tracked = git("diff", "--name-only", "--diff-filter=ACMRT", base, "--").trim().split("\n");
-  return [...new Set([...tracked, ...untrackedFiles()].filter(Boolean))].filter(isOwnedSource);
+  return changedFileList(base).filter(isOwnedSource);
 }
 
 function baselineFiles(ref) {
