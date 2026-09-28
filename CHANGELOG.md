@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.1...v0.57.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* the release guard must not race the release it is guarding ([#163](https://github.com/calionauta/bb-plugin-stelow/issues/163)) ([23a7cf1](https://github.com/calionauta/bb-plugin-stelow/commit/23a7cf19dcd87ace4af34f0548766b71e6ced0aa))
+
 ## [0.57.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.0...v0.57.1) (2026-09-28)
 
 
