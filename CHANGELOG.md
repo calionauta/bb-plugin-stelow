@@ -11,11 +11,37 @@ and this project adheres to a single-version-per-release tag format
 
 ### Bug Fixes
 
-* a card with no scopes is only a fault when a spec said there should be some ([#172](https://github.com/calionauta/bb-plugin-stelow/issues/172)) ([ee0ec1a](https://github.com/calionauta/bb-plugin-stelow/commit/ee0ec1a33545d518b9352bb129428269ab0a76c3))
-* a dispatched run is not a finished run ([#174](https://github.com/calionauta/bb-plugin-stelow/issues/174)) ([0d0660a](https://github.com/calionauta/bb-plugin-stelow/commit/0d0660a0052698462903a47ce00b7274e0eae487))
-* it stops the card repeating itself about one transition. ([ce7dce7](https://github.com/calionauta/bb-plugin-stelow/commit/ce7dce7a9bde6e30476d3c88dec98c37e7b6836a))
-* the audit notice says "reached the audit stage", so gate it on the stage ([#175](https://github.com/calionauta/bb-plugin-stelow/issues/175)) ([ce7dce7](https://github.com/calionauta/bb-plugin-stelow/commit/ce7dce7a9bde6e30476d3c88dec98c37e7b6836a))
-* this corrects what the card claims about work in progress, not a new ([0d0660a](https://github.com/calionauta/bb-plugin-stelow/commit/0d0660a0052698462903a47ce00b7274e0eae487))
+* **A card with no scopes is only a fault when a spec said there should be some.**
+  A card told its reader that planning "likely used headings instead of machine
+  blocks" — on a card with no tech spec, which was an investigation that reached
+  audit without ever planning (`planning: pending` in its own `state.md`). The
+  panel rendered two scope-sync notices side by side and they disagreed: one read
+  the server's classification (`no-spec`) and stayed silent, the other inferred
+  the same fact from the current stage alone and invented a fault. Emptiness is
+  not evidence. The classification is now the decision, made once in
+  `lib/scope-sync-notice.mjs`; the stage-derived rule is deleted rather than
+  amended, because it had no behavioural test — only a source pin asserting it
+  was still used, which is how a wrong rule gets pinned in place.
+  ([#172](https://github.com/calionauta/bb-plugin-stelow/pull/172))
+
+* **A dispatched run is not a finished run.** Every run in the live database was
+  reported finished before it finished: not one carried a terminal
+  `native_status` — 31 sat at succeeded/running, 8 at failed/running, 5 at
+  failed/queued. The host's `succeeded` at launch means the dispatch was
+  *accepted*, so the run is `running`; the launch code said that and then
+  overwrote it with a terminal state ten lines later. Terminal states accept no
+  further transitions and the reconciler answers a terminal run without a host
+  round trip, so the adapter was never asked what was actually happening. The
+  host alone decides when a run finishes now, and the native column is written
+  with it, so the two cannot disagree again.
+  ([#174](https://github.com/calionauta/bb-plugin-stelow/pull/174))
+
+* **The audit notice says "reached the audit stage", so it is gated on the
+  stage.** A card announced the same arrival twice, minutes apart, because the
+  notice was gated on `activity` — which a native run flips — rather than on the
+  stage moving. Its neighbour, the pause event, was already deduplicating on the
+  honest signal, and that asymmetry is what made the comment look accidental.
+  ([#175](https://github.com/calionauta/bb-plugin-stelow/pull/175))
 
 ## [0.57.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.2...v0.57.3) (2026-09-28)
 
