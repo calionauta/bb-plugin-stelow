@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.2...v0.57.3) (2026-09-28)
+
+
+### Bug Fixes
+
+* a machine receipt is not a file the card produced ([#168](https://github.com/calionauta/bb-plugin-stelow/issues/168)) ([4e8f8ce](https://github.com/calionauta/bb-plugin-stelow/commit/4e8f8ce76d313d2d9f9d8e9bac0b432436a77a17))
+* this corrects a false claim the card makes about its own output, not a new ([4e8f8ce](https://github.com/calionauta/bb-plugin-stelow/commit/4e8f8ce76d313d2d9f9d8e9bac0b432436a77a17))
+
 ## [0.57.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.1...v0.57.2) (2026-09-28)
 
 
