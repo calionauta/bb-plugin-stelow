@@ -30,6 +30,12 @@ export interface DecisionPoint {
   description: string;
   rules: string;
   requires?: string | null;
+  /**
+   * How to read the threshold slider for THIS point. The direction is not
+   * uniform across points, so a single shared label would misdescribe
+   * auto-continue; the wording lives beside the point it describes.
+   */
+  thresholdLabel: string;
   modes: string[];
   defaultMode: string;
   defaultThresholds: Record<string, number>;

@@ -15,6 +15,7 @@
     "components/panels/build-panel-dialogs.tsx:BuildPanelDialogs": 55,
     "components/panels/inbox-panel.tsx:InboxEntry": 57,
     "components/panels/inbox-panel.tsx:InboxPanel": 111,
+    "components/settings/host-tools-section.tsx:HostToolCard": 54,
     "components/settings/plugin-update-status.tsx:PluginUpdateStatus": 54,
     "components/settings/preset-manager-band-routing.tsx:PresetManagerBandRouting": 68,
     "components/settings/preset-manager-band-routing.tsx:PresetManagerDelegatedWork": 84,

@@ -300,7 +300,9 @@ test("platform exposes the complete public RPC handler set", () => {
     "previewStart",
     "previewState",
     "previewStop",
+    "registerUiDesignMcp",
     "toolStatus",
+    "uiDesignMcpStatus",
     "workflowDependencyStatus",
   ]);
 });

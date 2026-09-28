@@ -46,12 +46,14 @@ try {
       id: "triage-intent",
       defaultMode: "rules",
       modes: ["rules", "api", "preset"],
+      thresholdLabel: "Accept the seeded intent at confidence ≥",
     };
     assert.deepEqual(
       store.pointView(def, pointRow({ mode: "quantum", model: "  " })),
       {
         mode: "rules",
         thresholds: { routeAt: 0.6 },
+        thresholdLabel: "Accept the seeded intent at confidence ≥",
         route: null,
         presetId: null,
       },
@@ -59,7 +61,13 @@ try {
     );
     assert.deepEqual(
       store.pointView(def, undefined),
-      { mode: "rules", thresholds: { routeAt: 0.6 }, route: null, presetId: null },
+      {
+        mode: "rules",
+        thresholds: { routeAt: 0.6 },
+        thresholdLabel: "Accept the seeded intent at confidence ≥",
+        route: null,
+        presetId: null,
+      },
       "an unconfigured point reads as the registry default, not as an error",
     );
   }

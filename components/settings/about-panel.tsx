@@ -22,6 +22,7 @@ import {
 } from "../ui/dialog";
 import { Icon } from "../ui/icon";
 import { HostToolsSection } from "./host-tools-section";
+import { UiDesignMcpSection } from "./ui-design-mcp-section";
 import { usePluginUpdateActions } from "./plugin-update-actions";
 import { PluginUpdateStatus } from "./plugin-update-status";
 import { UpdateBadge } from "./update-badge";
@@ -319,6 +320,7 @@ export function AboutPanel() {
                   installingId={hostTools.installingId}
                   errors={hostTools.errors}
                 />
+                <UiDesignMcpSection />
               </section>
             </div>
           </div>

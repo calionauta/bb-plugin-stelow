@@ -6,6 +6,7 @@ import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { loadAboutLogo } from "../../lib/about-logo.mjs";
+import { createUiDesignMcpHandlers } from "./ui-design-mcp.js";
 import {
   createWorkflowDependencyHandlers,
   runHostBbCli,
@@ -343,6 +344,7 @@ async function listProviderModels(deps: PlatformDeps) {
 
 export function createPlatformHandlers(deps: PlatformDeps) {
   const workflowDependency = createWorkflowDependencyHandlers({ runBbCli: runHostBbCli });
+  const uiDesignMcp = createUiDesignMcpHandlers({ homeDir: deps.homeDir, bb: deps.bb });
   return {
     buildInfo: () => buildInfo(deps),
     applyPluginUpdate: () => applyPluginUpdate(deps),
@@ -354,6 +356,9 @@ export function createPlatformHandlers(deps: PlatformDeps) {
     listProviderModels: () => listProviderModels(deps),
     toolStatus: () => toolStatus(deps),
     installTool: ({ id }: { id: string }) => installTool(deps, id),
+    uiDesignMcpStatus: () => uiDesignMcp.uiDesignMcpStatus(),
+    registerUiDesignMcp: ({ serverId }: { serverId: string }) =>
+      uiDesignMcp.registerUiDesignMcp({ serverId }),
     workflowDependencyStatus: () => workflowDependency.workflowDependencyStatus(),
     installWorkflowDependency: () => workflowDependency.installWorkflowDependency(),
     enableWorkflowDependency: () => workflowDependency.enableWorkflowDependency(),

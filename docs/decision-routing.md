@@ -37,6 +37,65 @@ The policy is not yet applied uniformly to every model-assisted judgment. The kn
 
 Those paths are candidates for future named decision points, but they must not be migrated blindly. Each needs a bounded question schema, confidence policy, fallback behavior, tests against real artifacts, and a refusal/redirect when confidence is insufficient.
 
+## Reading the threshold
+
+`routeAt` is one stored number per point, and its direction is **not** uniform
+across points. Each point's own wording ships in its registry entry
+(`thresholdLabel`) and is what the settings slider shows, because a single
+shared label would misdescribe at least one point.
+
+- `artifact-criteria`, `inbox-severity`, `triage-intent` — a floor on the
+  confidence needed to **act** on the model's answer. Raising it makes the host
+  act less.
+- `auto-continue` — a floor on the confidence that a turn **did** make progress.
+  The action is the veto, so raising it makes the veto fire more often and the
+  worker spend fewer turns. This is the only inverted point, and it is
+  deliberate: a worker turn is the expensive resource, so the bar for spending
+  one should be high.
+
+The asymmetry is the reason no point shares a threshold with a different
+direction. If a future point's action is neither "act on the answer" nor "veto
+it", give it its own key rather than reusing `routeAt` with new semantics.
+
+## Known debt
+
+Recorded here so the next pass does not rediscover them as if they were new
+findings. None of these has a bounded question schema plus real-traffic
+evidence yet, which is the bar this document sets for adding a point.
+
+**No router point sits at a stage transition or artifact acceptance.** All four
+registered points are at the edges: card creation, idle resume, the inbox tick,
+and explicit CLI calls. Every stage advance and every artifact acceptance is
+either decided deterministically or delegated to a full worker turn — and the
+worker turn is the cost the router exists to avoid. This is the largest
+unclaimed win, and it is deliberately unmigrated: a seam there needs at least
+one named point with a real question behind it, not a place to hang a future
+call.
+
+**Three candidates were measured and rejected** (2026-09-28, against the live
+card corpus rather than by inspection):
+
+- *ask necessity* — the ask corpus is 45 rows over 16 days, and it is not a
+  usable calibration set for this. Its largest cluster is 9 "request is empty"
+  asks, but those split across two very different populations: 6 come from
+  audit-harness cards (`REALSCN-…`, `AUDIT-NEEDS-INPUT-…`, `E2E audit …`) that
+  were built to ask, and 3 come from real feature cards where a truncated title
+  left the body empty. One cluster, two opposite correct answers — a classifier
+  fit on it would learn the harness, not the product. And it sits on the
+  product-authority path, where a wrong refusal is unrecoverable.
+- *scope-map challenge* — `scope-map-challenge.json` has no host consumer
+  today. A decision point with nothing reading its answer is advisory theater.
+  The artifact is validated; nothing acts on it.
+- *interface selection support* — there is real evidence (a card asked the
+  interface gate, then asked the same direction again as a "selection record"),
+  but the duplication is deterministic and answerable from the receipt already
+  on disk. A rule beats a model call, and costs nothing to re-run.
+
+If any of these becomes worth building, the bar is unchanged: prove
+deterministic rules cannot answer it, then register a point with a bounded
+schema, a confidence policy, a fallback, tests against real artifacts, and a
+refusal when confidence is insufficient.
+
 ## Rule for new decision sites
 
 Before adding a model call for a classification:

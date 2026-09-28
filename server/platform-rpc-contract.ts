@@ -20,6 +20,50 @@ const workflowDependencyStatusSchema = z.object({
   detail: z.string(),
 });
 
+const uiDesignMcpRegistrationSchema = z.enum([
+  "registered",
+  "unregistered",
+  "not-installed",
+  "not-allowed",
+  "unsupported",
+]);
+
+const uiDesignMcpClientSchema = z.object({
+  client: z.string(),
+  name: z.string(),
+  state: uiDesignMcpRegistrationSchema,
+  detail: z.string(),
+});
+
+const uiDesignMcpServerSchema = z.object({
+  id: z.enum(["inspo"]),
+  name: z.string(),
+  repo: z.string(),
+  package: z.string(),
+  register: z.string(),
+  plain: z.string(),
+  feeds: z.string(),
+  note: z.string(),
+  clients: z.array(uiDesignMcpClientSchema),
+  usable: z.number(),
+  pending: z.number(),
+  missing: z.array(z.string()),
+  state: z.enum(["ready", "available", "absent"]),
+});
+
+const uiDesignMcpUnsupportedSchema = z.object({
+  client: z.string(),
+  name: z.string(),
+  note: z.string(),
+});
+
+const uiDesignMcpStatusSchema = z.object({
+  servers: z.array(uiDesignMcpServerSchema),
+  bbProviders: z.array(z.string()),
+  unmappedProviders: z.array(z.string()),
+  unsupported: z.array(uiDesignMcpUnsupportedSchema),
+});
+
 export const platformRpcContract = {
   listPresets: {
     experimental_description: "Agent presets: provider, model, reasoning, permission, environment",
@@ -218,6 +262,18 @@ export const platformRpcContract = {
     experimental_description: "Install one optional host tool with the official installer",
     input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
+  },
+  uiDesignMcpStatus: {
+    experimental_description:
+      "Per-agent-CLI registration state for the optional UI design reference MCP, against bb's provider registry",
+    input: z.object({}).strict(),
+    output: uiDesignMcpStatusSchema,
+  },
+  registerUiDesignMcp: {
+    experimental_description:
+      "Run the design reference MCP's own installer against every detected agent CLI",
+    input: z.object({ serverId: z.enum(["inspo"]) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: uiDesignMcpStatusSchema }),
   },
   previewState: {
     experimental_description: "Dev-server preview state: address, command, log, share hints",

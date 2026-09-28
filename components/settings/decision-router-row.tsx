@@ -133,7 +133,7 @@ function RouterThresholdControls(props: {
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <label className="flex flex-1 items-center gap-2">
-        <span className="shrink-0">Act at confidence ≥</span>
+        <span className="shrink-0">{point.thresholdLabel}</span>
         <Input
           type="number"
           min="0"

@@ -28,6 +28,8 @@ export type DecisionRouterPoint = {
   modes: string[];
   mode: string;
   thresholds: Record<string, number>;
+  /** Per-point wording for the threshold slider — the direction differs by point. */
+  thresholdLabel: string;
   route: DecisionPointRoute | null;
   presetId: string | null;
 };

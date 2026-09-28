@@ -76,6 +76,7 @@ export const decisionApiRpcContract = defineRpcContract({
           modes: z.array(z.string()),
           mode: z.string(),
           thresholds: z.record(z.string(), z.number()),
+          thresholdLabel: z.string(),
           route: routeSchema.nullable(),
           presetId: z.string().nullable(),
         }),

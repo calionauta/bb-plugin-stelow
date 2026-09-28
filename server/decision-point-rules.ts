@@ -46,6 +46,9 @@ export function anonymousPointDef(point: string) {
     label: point,
     description: "",
     rules: "",
+    // An unregistered id has no direction of its own, so it borrows the
+    // majority reading rather than claiming a semantic it does not have.
+    thresholdLabel: "Act at confidence ≥",
     defaultMode: "rules" as const,
     defaultThresholds: { routeAt: 0.6 },
     modes: ["rules" as const],
