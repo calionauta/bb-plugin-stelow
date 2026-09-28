@@ -502,10 +502,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   loud headings or unreadable ones. The tab bar's 13px became `TEXT_TAB` rather
   than being forced onto a step that does not fit — a tab is a target, not a
   label, and it is a real fifth role that nobody had written down.
-  `DESIGN.md` is the index, and its rule is that a design rule with no test does
-  not belong in it: a sentence in markdown does not intercept a commit, and
-  `AGENTS.md` has said "min-h-11, cursor-pointer" for a long time next to 76 raw
-  buttons. A test does.
+  A `DESIGN.md` was written as the index, and its own rule is that a design
+  rule with no test does not belong in it — a sentence in markdown does not
+  intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
+  long time next to 76 raw buttons. A test does. The index itself then failed
+  that rule: nothing loaded it, three of its five distinctive claims were
+  already in the test docstrings, and it could name a test that no longer
+  existed without failing. Its six lines of unique content live in `AGENTS.md`
+  instead, which is the instruction file every session actually reads.
 - **One surface, and one rule for opening.** The open card drew its sections
   eight different ways — `border p-3`, `border p-4`, `border bg-background/60`,
   `border bg-muted/20` — each written into whichever component needed it. Eight

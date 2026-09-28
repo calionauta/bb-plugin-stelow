@@ -99,6 +99,40 @@ before writing or reviewing code. If the skill is not installed, install it
 with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 (same standard, public source) and continue.
 
+### UI vocabulary: a design rule with no test is not a rule
+
+`AGENTS.md` has said *"touch targets are `min-h-11`; every clickable gets
+`cursor-pointer`"* for a long time, and 76 raw `<button>` elements sat next to a
+shared `ui/Button` that 50 files import and 19 never touch. A sentence in
+markdown does not intercept a commit. So UI rules here are enforced, and the
+enforcement is what tells you the rule is real:
+
+| Rule | Enforced by |
+|------|-------------|
+| A section is `SECTION_SURFACE` or `DisclosureSection`; what differs is its tone, never a new border | `card-surface-consistency` |
+| A disclosure picks a named family: `DisclosureSection`, `SUMMARY_ROW`, `SUMMARY_LINK` — never a re-spelled `<summary>` | `card-design-tokens` |
+| A shared name is imported, never redefined locally | `card-design-tokens` |
+| A type size is a named step of `lib/design-tokens.ts`, or a declared exception with a reason | `card-design-tokens` |
+| A section starts closed unless it is `live` or `blocking` | `card-surface-consistency` |
+| Every fact on the card has exactly one home | `card-information-hierarchy` |
+
+Adding a UI rule means adding its test in the same commit. If the test cannot
+be written, the rule is a preference and belongs in review, not here. Known
+debt that is deliberately not yet enforced is listed at the bottom of this
+section rather than left to be discovered.
+
+The reasoning behind each rule lives in the test file that enforces it, next
+to the failure it produces — which is where a change will actually meet it, and
+where it stays true when the test is renamed. Do not copy it into a second
+document: a `DESIGN.md` was written here, found to be ~80% duplicated of those
+docstrings, and deleted.
+
+**Known debt, so it is not rediscovered as a surprise:** `text-[11px]` still
+appears in ~101 places doing the same job the scale already names — the size is
+allowed, the test blocks growth, and the migration is owed but not urgent. The
+`min-h-11` rule above is the one this section is least able to keep: it is
+stated, not tested, and 76 raw buttons are the standing evidence.
+
 ## Test value (no bullshit tests)
 
 Every test must fail if its guarded behavior breaks — verify by removing or
