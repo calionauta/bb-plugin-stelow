@@ -136,7 +136,7 @@ export const cardRpcContract = {
       fixed: z.number(),
       documented: z.number(),
       escalated: z.number(),
-      items: z.array(z.object({ description: z.string(), scopeStatus: z.string().nullable() })),
+      items: z.array(z.object({ description: z.string(), resolution: z.string(), scopeStatus: z.string().nullable() })),
       pendingScopes: z.number(),
       unscoped: z.number(),
       leadMs: z.number().nullable(),

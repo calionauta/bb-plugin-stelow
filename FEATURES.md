@@ -421,7 +421,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
-  an update badge when a plugin update is known). One shared update signal
+  an update badge when a plugin update is known). A tab count is the cards
+  its own board holds: terminal outcomes are out, and so is the Bucket —
+  the Bucket is not a rendered column and carries its own count on its own
+  header button, so counting it made the Build tab read 5 beside a board
+  holding one card, with the same parked card visible in two places.
+  One shared update signal
   (BB candidate or newer GitHub release, `updateAvailableFrom`) drives the
   sidebar accessory, the About tab badge, the About header, and the status
   box from a single store: the first `buildInfo` read fills it, and a forced
@@ -653,6 +658,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the waiting cards with an agent-only nudge when the files free. Done,
   archive, cancel, and delete release every claim; expired leases are
   reaped on the reconcile sweep.
+- **A lock is visible on the card, not only in the Inbox.** The open card
+  says which files a scope holds, by name, and which file another live card
+  is holding from it. It used to say "files claimed" and never say which
+  files, and it showed nothing at all about the case a reader most needs —
+  another card is holding a file this one is waiting on — while the Inbox,
+  on another screen, knew all of it. One read now feeds both: the claim
+  room (`lib/scope-claim-room.mjs`) names in one pass what a scope holds
+  and what it cannot have, so the card can never show a scope holding a
+  file it is also waiting on, and `lib/lock-blocked.mjs` derives the
+  Inbox row, the card's wait, and the scope line from that same record
+  rather than each writing its own sentence. A card blocked by contention
+  says so in the hero — it is paused on another card, not stalled — with
+  the holder named, and the scope line marks the wait in amber instead of
+  the muted grey that "files claimed" and "no live file claim" once shared,
+  which made a defect read as a footnote. A scope with no state dir has an
+  unknown claim, and unknown is never a fault.
 - **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
@@ -1068,10 +1089,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   prominent, never a drag — dragging an archived card still refuses).
   The card returns to the exact stage it was archived from with a fresh
   worker; the previous thread stays in Worker history. Pending items
-  return per kind — questions reopen, errors return carrying the stored
-  `last_error` verbatim, pauses re-derive from live state — while
-  completed deliveries stay read. If the fresh spawn fails, the status
-  rolls back instead of leaving a phantom wait.
+  return per kind — errors return carrying the stored `last_error`
+  verbatim, pauses re-derive from live state, completed deliveries stay
+  read — while **questions are withheld, and counted as
+  `questionsWithheld`**. A question belongs to the worker that asked it:
+  its identity is a thread interaction, and restore starts a fresh worker
+  on purpose. That worker's first question sync resolves the row as
+  `superseded` regardless, so reopening it bought a badge that appeared
+  and vanished a second later and an answer aimed at a thread with none
+  of the context the question was asked in. The withheld count is
+  trailed on the card with its exit ("the worker re-asks anything it
+  still needs a decision on"), so nothing disappears without a stated
+  reason. This is the one deliberate narrowing of the never-a-partial-
+  restore rule, and the test names it. If the fresh spawn fails, the
+  status rolls back instead of leaving a phantom wait.
 
   *Proven against the live database, 2026-09-28* (`card_19ny9eq3`, the
   accidental test archive, reproduced by `tests/fixtures/restore-dogfood.mjs`
@@ -1082,12 +1113,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
   reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
   341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
-  the archive-resolved rows are exactly one question. Result:
-  `questionsReopened: 1, errorsReopened: 0, pausedReopened: 0,
-  completedReopened: 0` — `evt_yclvhua2` reopened with its reason cleared,
-  the 12 rows resolved before the archive stayed resolved, no event created
-  or deleted, globals unchanged, and the live database left byte-for-byte as
-  found.
+  the archive-resolved rows are exactly one question. Result under the
+  current contract: `questionsReopened: 0, questionsWithheld: 1,
+  errorsReopened: 0, pausedReopened: 0, completedReopened: 0` —
+  `evt_yclvhua2` stays resolved as `archived` (see below), the 12 rows
+  resolved before the archive stay resolved, no event is created or
+  deleted, globals unchanged, and the live database is left
+  byte-for-byte as found. The same run originally returned
+  `questionsReopened: 1` with the question reopened, which the dogfood
+  in [`docs/restore-dogfood.md`](docs/restore-dogfood.md) then showed
+  being superseded a second later by the fresh worker; the question is
+  now withheld instead.
 
   What this fixture does **not** prove: the host half. The status flip and
   the fresh worker spawn both need a running bb host, so "a new worker" is
@@ -1710,8 +1746,18 @@ one input, one artifact.*
   rework, re-runs the critique, and only then returns to audit for
   `done`. `done` refuses while escalations lack scopes or linked
   scopes stay open. The mother card shows the loop in Gaps &
-  rework (counts, per-escalation scope status, lead/cycle time via
-  `gapSummary`); rework scopes carry a rework pill naming their gap.
+  rework (counts, per-gap disposition and scope status, lead/cycle
+  time via `gapSummary`); rework scopes carry a rework pill naming
+  their gap. The section lists every gap the registry named, not
+  only the escalated ones: a critique of two documented gaps used to
+  render a header reading "2 gaps" above an empty section, because
+  the tally counted findings while the body listed rework. A fixed
+  or documented gap shows its own disposition; an escalation shows
+  its rework scope, and "no scope yet" while it waits for one. The
+  Checks rollup counts only escalations that still need work — a
+  documented gap and an escalation whose rework scope finished are
+  both settled, and listing them as open told the reader a card was
+  waiting on findings nobody has to act on.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card

@@ -196,12 +196,21 @@ assert.deepEqual(tasklessEnriched[0].contract.acceptanceCriteria, ["AC9"], "defa
 // Wiring pins: the detail composes enrichment through one function (lib
 // owns the topology); the handler only injects SDK and DB.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// The scope projection moved to its own module when the card's lock surfaces
+// needed a second read of the same row; the composition is still ONE, and the
+// assembly module no longer imports the evidence machine at all.
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail-scopes.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
 ].join("\n");
+assert.match(
+  readFileSync(join(root, "server/runtime/card-detail-scopes.ts"), "utf8"),
+  /export async function enrichScopes\(/,
+  "one module owns the scope projection the card renders",
+);
 assert.match(server, /enrichEntriesForDetail\(/, "card detail enriches through one composition");
 assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never touching TTL");
 const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");

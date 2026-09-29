@@ -106,7 +106,13 @@ change committed under the wrong type ships in no release.
 `FEATURES.md` lists every user-facing feature grouped by job-to-be-done.
 Any commit that adds, changes, or removes a user-facing feature must
 update `FEATURES.md` in the same commit — a feature without an entry
-does not exist. Deep operator/maintainer guides live in `docs/`
+does not exist. The same commit must update the PROSE that describes
+behaviour it changes, and so must any `docs/` file that documents the
+old behaviour: a documented example of an output the code no longer
+produces is a second source of truth, and it is read by the next
+person who goes looking for why a number is smaller than they expect.
+`FEATURES.md` carries quoted outputs (measured values, recorded return
+shapes) as evidence, so it drifts the moment a return shape changes. Deep operator/maintainer guides live in `docs/`
 (e.g. `docs/github-issues.md`) and must be linked from README or
 FEATURES — an unlinked doc does not exist either. The native Workflows
 boundary and the decision-routing policy are documented in

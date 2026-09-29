@@ -43,6 +43,7 @@ function harness({ cardValue, fresh = { ok: true, error: null } } = {}) {
       stop: async () => {},
     },
     errors: { cardNotFound: "not found" },
+    logCardComment: (...args) => calls.push(["comment", ...args]),
   };
   return { deps, calls, db };
 }
@@ -76,8 +77,38 @@ test("archived cards flip before spawn and publish only after the worker starts"
   assert.deepEqual(await restoreCard(deps, { cardId: "card-1" }), { ok: true, error: null });
   assert.deepEqual(calls[0], ["update", "card-1", { status: "in-progress" }, { restoreFromArchive: true }]);
   assert.deepEqual(calls[1], ["fresh", "card-1", "restart"]);
-  assert.deepEqual(calls[2][0], "publish");
-  assert.equal(db.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get("evt_q").resolved_at, null);
+  // The invariant is the ORDER, not an index: the publish must follow the
+  // spawn, or the panel repaints a card that has no worker behind it yet. A
+  // withheld-question trail sits between them and must not reorder them.
+  const kinds = calls.map(([kind]) => kind);
+  assert.ok(kinds.indexOf("publish") > kinds.indexOf("fresh"), "publish happens only after the worker starts");
+  assert.equal(kinds[kinds.length - 1], "publish", "and it is the last thing restore does");
+});
+
+// A withheld question with no trail is a decision that vanished for no stated
+// reason. The exit has to be named on the card, not just counted.
+test("a withheld question is trailed with its exit, and a card without one is quiet", async () => {
+  const withQuestion = harness({
+    cardValue: { id: "card-1", status: "archived", stage: "execution", last_error: "boom" },
+  });
+  withQuestion.db.prepare(
+    "INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, resolved_at, resolved_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run("evt_q", "card-1", "question", "Q?", "question:card-1:ask_1", 100, 200, "archived");
+  await restoreCard(withQuestion.deps, { cardId: "card-1" });
+  const note = withQuestion.calls.find(([kind]) => kind === "comment");
+  assert.ok(note, "the withheld question leaves a record");
+  assert.match(note[5], /1 archived question\(s\) left closed/, "it says how many, and what they were");
+  assert.match(note[5], /re-asks anything it still needs/, "and it names the exit rather than leaving homework unstated");
+
+  const clean = harness({
+    cardValue: { id: "card-1", status: "archived", stage: "execution", last_error: "boom" },
+  });
+  await restoreCard(clean.deps, { cardId: "card-1" });
+  assert.equal(
+    clean.calls.find(([kind]) => kind === "comment"),
+    undefined,
+    "a restore with nothing withheld says nothing — a trail line on every restore is noise",
+  );
 });
 
 test("a failed spawn rolls the status back instead of leaving a phantom wait", async () => {

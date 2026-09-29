@@ -3,6 +3,7 @@ import {
   frontmatterBlock,
   parseGapFrontmatter,
   escalatedGaps,
+  registryGaps,
   summarizeGaps,
   validateGapRegistry,
   gapsToTriageBatch,
@@ -36,8 +37,64 @@ assert.deepEqual(parseGapFrontmatter("# Report without frontmatter"), { found: f
 assert.deepEqual(escalatedGaps(clean).map((gap) => gap.description), ["Login rate limiter", "Session expiry"], "escalate rows selected");
 assert.deepEqual(escalatedGaps("# no frontmatter"), [], "no frontmatter means no scopes");
 
+// The card's list is the whole registry, not the escalated slice: a summary
+// counting every finding has to be able to show every finding.
+assert.deepEqual(
+  registryGaps(clean).map((gap) => [gap.description, gap.resolution]),
+  [
+    ["Login rate limiter", "escalate"],
+    ["Fixed import", "fixed"],
+    ["Rename helper", "documented"],
+    ["Session expiry", "escalate"],
+  ],
+  "every named row carries its disposition",
+);
+assert.deepEqual(registryGaps("# no frontmatter"), [], "no frontmatter means nothing to list");
+assert.deepEqual(
+  registryGaps(head("  - type: debt\n    impact: low\n    resolution: documented")),
+  [],
+  "a row with no description is a placeholder, not a finding",
+);
+assert.deepEqual(
+  registryGaps(head(`${row("a", "low", "fixed", "Same gap")}\n${row("b", "low", "fixed", "Same gap")}`))
+    .map((gap) => gap.description),
+  ["Same gap"],
+  "the same finding re-audited is one row, not two",
+);
+assert.deepEqual(
+  registryGaps(head(row("a", "low", "escalated", "Spelled both ways"))).map((gap) => gap.resolution),
+  ["escalate"],
+  "the escalated spelling normalizes to one disposition",
+);
+
 // Summary drives the card UI and the escalated-rate metric.
 assert.deepEqual(summarizeGaps(clean), { found: true, total: 4, fixed: 1, documented: 1, escalated: 2 }, "counts by resolution");
+
+// The tally and the list must be ONE accounting. These used to disagree, and
+// every disagreement is the reported symptom — "N gaps" above a shorter list:
+//   placeholder row  -> total 1, listed 0
+//   duplicate rows   -> total 2, listed 1
+//   same gap re-audited in a second round -> totals summed, listed once
+// `summarizeGaps` now derives from `registryGaps`, so these cannot drift.
+const placeholder = head("  - just a finding with no fields");
+assert.deepEqual(summarizeGaps(placeholder), { found: true, total: 0, fixed: 0, documented: 0, escalated: 0 },
+  "a placeholder is not a finding, so it is not counted either");
+assert.equal(summarizeGaps(placeholder).total, registryGaps(placeholder).length, "tally equals the list, always");
+
+const duplicated = head(`${row("a", "low", "fixed", "Same gap")}\n${row("b", "low", "fixed", "Same gap")}`);
+assert.equal(summarizeGaps(duplicated).total, 1, "a finding typed twice is one finding, in the tally too");
+assert.equal(summarizeGaps(duplicated).total, registryGaps(duplicated).length, "and the list agrees");
+
+// Round two re-audits the same finding. The caller SUMS per-critique totals
+// (critique-gap-state), so the two accountings only agree if each is deduped
+// and the caller dedupes too — which is the point: the header adds what the
+// list cannot show, so it must add the same thing the list counts.
+const sameGapRound2 = head(row("a", "medium", "documented", "Docs drifted"));
+assert.equal(
+  registryGaps(clean).length + registryGaps(sameGapRound2).length,
+  summarizeGaps(clean).total + summarizeGaps(sameGapRound2).total,
+  "each critique's tally equals its own list, so the caller can reconcile the sum",
+);
 assert.equal(summarizeGaps("# no frontmatter").found, false, "missing registry reported");
 
 // A clean registry passes; an empty one passes (clean audit, no gaps).

@@ -116,11 +116,29 @@ try {
   console.log("");
   console.log("=== INVARIANTS, against real rows ===");
 
+  // `every` over an EMPTY list is vacuously true, so this used to print PASS
+  // proving nothing once questions stopped being revived. A question is now
+  // withheld, so the honest check is: every row this run revived is either an
+  // error (which does return) or nothing at all, and no question is among them.
+  const revivedKinds = [...new Set(revived.map((r) => r.kind))];
+  const revivedQuestions = revived.filter((r) => r.kind === "question");
   console.log(
     `${revived.every((r) => r.resolved_reason === null) ? "PASS" : "FAIL"}  a revived row carries no stale reason` +
       (revived.some((r) => r.resolved_reason !== null)
         ? ` (violations: ${revived.filter((r) => r.resolved_reason !== null).map((r) => r.id).join(", ")})`
         : ""),
+  );
+  // A question belongs to the worker that asked it, and restore starts a fresh
+  // one, so it is withheld rather than revived (see #178). An empty `revived`
+  // must not read as a pass: assert the question is specifically ABSENT.
+  const archivedQuestions = before.filter((r) => r.kind === "question" && r.resolved_reason === "archived");
+  console.log(
+    `${archivedQuestions.length === revivedQuestions.length ? "PASS" : "FAIL"}  no archived question is revived` +
+      ` (${archivedQuestions.length} archived question(s), ${revivedQuestions.length} revived)`,
+  );
+  console.log(
+    `${revivedKinds.every((kind) => kind !== "question") ? "PASS" : "FAIL"}  the revived set is errors only` +
+      (revivedKinds.length ? ` (kinds: ${revivedKinds.join(", ")})` : " (nothing revived)"),
   );
 
   const closedNotByArchive = before.filter((r) => r.resolved_at !== null && r.resolved_reason !== "archived");

@@ -63,6 +63,18 @@ const FACT_HOMES = [
     evidence: /runOutcomeHint\(runs, active\)/,
     because: "it is the run section's hint, so the tally survives the section being closed",
   },
+  {
+    fact: "that this card is waiting on another card's file",
+    decidedIn: "components/detail/detail-hero.tsx",
+    // The hero decides the card's state, and contention is a state: the card is
+    // paused, and the reason is another card. The per-scope lock line is a
+    // different granularity, not a second copy — it answers "which scope, which
+    // file" for the scope being worked, the way the scope's own pills answer for
+    // its status. Both are derived from one record (lib/lock-blocked.mjs), so
+    // neither can be written with a different fact than the other.
+    evidence: /const contention = lockWaitHero\(detail\?\.fileLocks \?\? null\)/,
+    because: "a reader told 'the worker is idle with unfinished work' cannot tell a contention from a crash; naming the holder is the whole fix",
+  },
 ];
 
 const read = (relative) => readFileSync(join(fileURLToPath(import.meta.url), "..", "..", relative), "utf8");

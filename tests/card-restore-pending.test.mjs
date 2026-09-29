@@ -47,16 +47,32 @@ const result = reactivateRestorePending(db, {
   lastError: "Provider error 400: Internal server error",
   occurredAt: 300,
 });
+// A question belongs to the worker that asked it. Restore starts a FRESH
+// worker, which has never made that interaction, so its first question sync
+// resolves the row as `superseded` anyway — reopening it bought a badge that
+// appeared and vanished a second later, and an answer aimed at a thread with
+// none of the context the question was asked in. So the question is withheld
+// and COUNTED, which is what lets the caller name it and its exit.
+//
+// This assertion used to read `questionsReopened: 1`. It is the one place the
+// "never a partial restore" rule is narrowed on purpose, and the narrowing is
+// here so a future reader can see it was chosen, not inherited.
 assert.deepEqual(
   result,
-  { questionsReopened: 1, errorsReopened: 1, pausedReopened: 0, completedReopened: 0 },
-  "restore reactivates per kind: question and error return, paused re-derives, completed stays",
+  {
+    questionsReopened: 0,
+    questionsWithheld: 1,
+    errorsReopened: 1,
+    pausedReopened: 0,
+    completedReopened: 0,
+  },
+  "restore reactivates per kind: the error returns, the question is withheld and counted, paused re-derives, completed stays",
 );
 
 assert.deepEqual(
   row("evt_q"),
-  { resolved_at: null, resolved_reason: null, summary: "Choose one." },
-  "a returned question is open with no stale answered label",
+  { resolved_at: 200, resolved_reason: "archived", summary: "Choose one." },
+  "an archived question stays closed on restore — a fresh worker cannot answer it",
 );
 assert.deepEqual(
   row("evt_e"),

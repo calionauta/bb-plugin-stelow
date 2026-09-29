@@ -9,7 +9,18 @@ const scopes = [
   { id: "s2", name: "Apple Pay", status: "in-progress", tasks: [{ name: "t2", status: "in-progress" }, { name: "t3", status: "pending" }] },
 ];
 const questions = [{ title: "Ship it?", question: "Ship it?" }];
-const gaps = { matched: true, items: [{ description: "Missing test" }], fixed: 2, documented: 1, total: 4 };
+const gaps = {
+  matched: true,
+  items: [
+    { description: "Missing test", resolution: "escalate", scopeStatus: null },
+    { description: "Stale docs", resolution: "documented", scopeStatus: null },
+  ],
+  fixed: 2,
+  documented: 1,
+  total: 4,
+};
+// The header and the rollup must account for the same gaps, so the counters
+// describe MORE than the items carry: fixed+documented is 3, the list has 2.
 
 // Groups read by type with done/pending counts, from the same sources the
 // heroes read — scopes, tasks, questions, gaps, review. Nothing invented.
@@ -20,6 +31,34 @@ assert.deepEqual(byId.get("scopes"), { id: "scopes", label: "Scopes", open: ["Ap
 assert.deepEqual(byId.get("tasks"), { id: "tasks", label: "Tasks", open: ["t2", "t3"], doneCount: 1, total: 3 }, "tasks split across scopes");
 assert.deepEqual(byId.get("questions"), { id: "questions", label: "Questions", open: ["Ship it?"], doneCount: 0, total: 1 }, "questions list titles");
 assert.deepEqual(byId.get("gaps"), { id: "gaps", label: "Gaps", open: ["Missing test"], doneCount: 3, total: 4 }, "gaps count fixed+documented as done");
+
+// A documented finding is closed by its disposition, and an escalation closes
+// when its rework scope finishes — neither is work the reader is waiting on.
+const settledGaps = {
+  matched: true,
+  items: [
+    { description: "Missing test", resolution: "escalate", scopeStatus: "planned" },
+    { description: "Landed already", resolution: "escalate", scopeStatus: "done" },
+    { description: "Stale docs", resolution: "documented", scopeStatus: null },
+    { description: "Typo", resolution: "fixed", scopeStatus: null },
+  ],
+  fixed: 1,
+  documented: 1,
+  escalated: 2,
+  total: 4,
+};
+const settled = new Map(groupCardChecks({ questions: [], scopes: [], gaps: settledGaps, review: null }).map((group) => [group.id, group]));
+assert.deepEqual(settled.get("gaps").open, ["Missing test"], "only an escalation without a finished rework scope is open work");
+assert.equal(settled.get("gaps").total, 4, "the total still counts every finding the registry named");
+// done + open must equal total. This is the assertion that was missing: the
+// rollup counted only fixed+documented as done, so a settled escalation sat in
+// the total and in neither list, and the row read "1/4 open" against 1 name.
+assert.equal(
+  settled.get("gaps").doneCount + settled.get("gaps").open.length,
+  settled.get("gaps").total,
+  "every gap is either open or done — the rollup and the header account for the same findings",
+);
+assert.equal(settled.get("gaps").doneCount, 3, "fixed + documented + the escalation whose rework scope finished");
 
 // Groups with no applicable items resolve absent, never empty: review on
 // a card going nowhere is noise, and unmatched gaps stay invisible.

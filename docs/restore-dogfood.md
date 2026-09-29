@@ -41,11 +41,19 @@ restore would wrongly reopen.
 | card status | `archived` | `draft` | `archived` |
 | card stage | `triage` | `triage` | `triage` |
 | worker thread | none | **one** | one (in history) |
-| question (`archived`) | resolved | **open, reason cleared** | resolved `superseded` |
+| question (`archived`) | resolved | **still resolved** (withheld) | resolved `archived` |
 | question (`answered`) | resolved | **still resolved** | still resolved |
 | error (`archived`) | resolved | **open, reason cleared** | resolved `archived` |
 | control card | `archived`, error resolved | **unchanged** | unchanged |
 | open events on fixture cards | 0 | 1 (the error) | **0** |
+
+The question rows read as they do NOW. When this run first happened, restore
+reopened the archived question and the fresh worker superseded it a second
+later; the row then read "open, reason cleared" and "resolved `superseded`".
+That finding is decided — a question does not outlive the worker that asked it
+— and restore now withholds it and counts it as `questionsWithheld`. The
+"after restore" column above is the behaviour as it stands, and the reason is
+in the section below.
 
 Restore and re-archive both ran through the real RPCs — `restoreCard`, then
 `moveCard` — not through SQL.
@@ -105,31 +113,36 @@ unfixed here, and reported instead: the string is duplicated across seven
 call sites, so naming the exit means changing one source and seven literals, and
 that is a change to messages a dozen tests assert on.
 
-## The one invariant that did not hold, and why
+## The invariant that did not hold, and what was decided about it
 
 The question was reactivated correctly — restore's own UPDATE set
-`resolved_at = NULL, resolved_reason = NULL`, which the AFTER row shows. Then
-the **fresh worker superseded it**.
+`resolved_at = NULL, resolved_reason = NULL`, which the original run's AFTER row
+showed. Then the **fresh worker superseded it**.
 
-That is not a restore bug, and it is not a race. Restore deliberately stops the
-old thread and starts a new one, because the old thread's history "is not a valid
+That was not a restore bug, and not a race. Restore deliberately stops the old
+thread and starts a new one, because the old thread's history "is not a valid
 continuation". A pending question belongs to the thread that asked it. The new
 worker has no such interaction, so its question sync resolves it as
 `superseded` — which is the truth: nobody is waiting on that question any more.
 
-**The spec's invariants 2 and 3 are contradictory as written.** "A fresh worker,
+**The spec's invariants 2 and 3 were contradictory as written.** "A fresh worker,
 never the old thread" and "the question is live and answerable" cannot both hold
 for a question that was addressed to the old thread. The dogfood is what found
 it; a unit test against a synthetic worker could not, because the question would
 have stayed open for the length of the test.
 
-The question worth deciding is whether a question should survive the worker that
-asked it. If a card's pending question is meant to outlive its worker, the sync
-rule needs to recognise a restored card's questions as still live. That is a
-behaviour change, and it belongs in a card rather than in a bug fix — this run
-records the finding and changes nothing. Tracked as
-[#178](https://github.com/calionauta/bb-plugin-stelow/issues/178), which also
-carries the `superseded`-vs-badge-lies trade-off that decides it.
+**The decision: a question does not outlive the worker that asked it.** Tracked
+as [#178](https://github.com/calionauta/bb-plugin-stelow/issues/178), which
+laid out the trade-off — keeping the question live needs a second identity on
+the row (the asking thread) plus an exemption from the sync, on the path where
+`superseded` exists precisely to stop the badge lying about a dead thread.
+That trades one lie for another and buys it for a rare case, so restore now
+withholds the question and counts it (`questionsWithheld`) instead, trailing
+the count with the exit: the worker re-asks anything it still needs.
+
+This narrows the "never a partial restore" rule on purpose, and that narrowing
+is named in `FEATURES.md` and in `lib/card-restore-pending.mjs` so the next
+reader sees it was chosen rather than inherited.
 
 ## What this proves, and what it does not
 
@@ -137,9 +150,14 @@ It proves the feature works on real data: correct stage, fresh worker, per-kind
 reactivation, the `answered` case untouched, the error verbatim, no collateral
 damage, no leftover state, and terminality intact.
 
-It does not prove the question case, because that case cannot hold as specified.
-Restoring a card whose question belongs to a dead thread is a real scenario
-someone will hit, and it is still open.
+It does NOT prove the withhold decision at the host level: the run that
+collected this evidence pre-dates it, and the withhold itself is a pure
+per-kind rule exercised against a real SQLite database in
+`tests/card-restore-pending.test.mjs`. What a real host would still need to
+confirm is that the withheld count reaches the trail comment, which
+`tests/runtime-card-restore.test.mjs` covers with fakes. The scenario — a
+restored card whose question belonged to a dead thread — is now decided rather
+than open.
 
 ## Cost
 

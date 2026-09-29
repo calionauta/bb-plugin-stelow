@@ -21,7 +21,7 @@ export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type GapSummary = {
   matched: boolean; total: number; fixed: number; documented: number; escalated: number;
-  items: Array<{ description: string; scopeStatus: string | null }>;
+  items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
 };
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
@@ -89,8 +89,54 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
   );
 }
 
+/**
+ * How a gap reads once the critique is over. A disposition the registry
+ * recorded is a fact about the finding, so it is the primary mark; the rework
+ * scope only exists for an escalation, and is what a reader is waiting on when
+ * one is still open.
+ *
+ * `unknown` is a real state, not a defensive branch: the registry validator
+ * flags a row with a missing or unrecognised `resolution:` as a failure, but a
+ * failure is a REPORT and does not stop the card from rendering it. Indexing a
+ * record that lacks the key used to throw and take the whole open card down over
+ * a typo in one row of a YAML file.
+ */
+const GAP_RESOLUTION: Record<string, { label: string; dot: string; pill: string }> = {
+  fixed: { label: "Fixed", dot: "bg-emerald-500", pill: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+  documented: { label: "Documented", dot: "bg-muted-foreground/60", pill: "bg-muted text-muted-foreground" },
+  escalate: { label: "Escalated", dot: "bg-amber-500", pill: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
+  unknown: { label: "Unclassified", dot: "bg-amber-500/60", pill: "bg-muted text-muted-foreground" },
+};
+
 function GapItems({ items }: { items: GapSummary["items"] }) {
-  return <ul className="space-y-1 pt-2">{items.map((item) => <li key={item.description} className="flex items-start gap-2 text-xs"><span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && isDoneStatus(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} /><span className="flex-1">{item.description}</span>{item.scopeStatus ? <Pill tone={statusTone(item.scopeStatus)}><span className="mr-1">{statusGlyph(item.scopeStatus)}</span>{statusLabel(item.scopeStatus)}</Pill> : <span className="text-amber-700 dark:text-amber-300">no scope yet</span>}</li>)}</ul>;
+  return (
+    <ul className="space-y-1 pt-2">
+      {items.map((item) => {
+        const resolution = GAP_RESOLUTION[item.resolution] ?? GAP_RESOLUTION.unknown;
+        const scopeDone = item.scopeStatus !== null && isDoneStatus(item.scopeStatus);
+        return (
+          <li key={item.description} className="flex items-start gap-2 text-xs">
+            <span
+              aria-hidden
+              className={`mt-1.5 size-2 shrink-0 rounded-full ${scopeDone ? "bg-emerald-500" : resolution.dot}`}
+            />
+            <span className="flex-1">{item.description}</span>
+            {item.scopeStatus ? (
+              <Pill tone={statusTone(item.scopeStatus)}>
+                <span className="mr-1">{statusGlyph(item.scopeStatus)}</span>
+                {statusLabel(item.scopeStatus)}
+              </Pill>
+            ) : (
+              <Pill tone={resolution.pill}>{resolution.label}</Pill>
+            )}
+            {item.resolution === "escalate" && !item.scopeStatus ? (
+              <span className="text-amber-700 dark:text-amber-300">no scope yet</span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /**
@@ -102,6 +148,11 @@ function GapItems({ items }: { items: GapSummary["items"] }) {
  * history — gaps a past run recorded — so it starts closed and its tally lives
  * in the header, which is the same contract every other section on the card
  * already follows.
+ *
+ * The list carries every gap the registry named, not only the escalated ones.
+ * Gating it on `escalated > 0` made a critique of two documented gaps render a
+ * header reading "2 gaps" above an empty section: the tally counted findings,
+ * the body listed rework, and a reader could not reconcile them.
  */
 function BuildGaps({ summary }: { summary: GapSummary | null }) {
   const view = gapSummaryPresentation(summary);
@@ -122,7 +173,7 @@ function BuildGaps({ summary }: { summary: GapSummary | null }) {
       hint={tally}
       defaultOpen={summary.escalated > 0}
     >
-      {summary.escalated > 0 ? <GapItems items={summary.items} /> : null}
+      {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
       {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
       {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
     </DisclosureSection>
