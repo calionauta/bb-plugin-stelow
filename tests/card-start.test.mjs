@@ -214,9 +214,19 @@ assert.match(heroActions, /Not started — parked in Bucket/, "a parked card say
 // where it is. `stage` and `stagePhases` are what make a one-phase advance
 // distinguishable from a drag that skips the phases producing the target's
 // artifacts — without them the resolver was structurally unable to tell.
+const movePolicyCall = new RegExp(
+  [
+    "const decision = resolveCardMove\\(",
+    "\\s*card\\.kind,\\s*status,\\s*\\{[\\s\\S]*?",
+    "hasWorker: Boolean\\(card\\.worker_thread_id\\),[\\s\\S]*?",
+    "stage: card\\.stage,[\\s\\S]*?",
+    "stagePhases: deps\\.stagePhases,[\\s\\S]*?",
+    "\\}\\s*\\)",
+  ].join(""),
+);
 assert.match(
   server,
-  /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{[\s\S]*?hasWorker: Boolean\(card\.worker_thread_id\),[\s\S]*?stage: card\.stage,[\s\S]*?stagePhases: deps\.stagePhases,[\s\S]*?\}\s*\)/,
+  movePolicyCall,
   "the move policy knows whether the card started and where it is",
 );
 const parkedStart = /if \(card\.worker_thread_id\) return[\s\S]*?const started = await deps\.workers\.fresh\(cardId, "start"\);/;
