@@ -28,6 +28,11 @@ type CardUpdaterDeps = {
     dedupeKey: string,
     createdAt: number,
   ) => unknown;
+  // A failure need is identified by the card, not by the moment, so it has its
+  // own recorder: it collapses a repeat onto the open row and reopens a
+  // resolved one. Routing it through `recordInbox` is what let a repeat append a
+  // second row every time.
+  recordErrorInbox: (cardId: string, title: string, createdAt: number) => unknown;
   resolveInbox: (
     cardId: string,
     resolvedAt: number,
@@ -189,11 +194,9 @@ function recordNewFailure(
   current: WorkerCard,
 ): void {
   if (previous.activity === "error" || current.activity !== "error") return;
-  deps.recordInbox(
-    current,
-    "error",
+  deps.recordErrorInbox(
+    cardId,
     current.last_error || "Worker failed and needs attention.",
-    `error:${cardId}:${current.updated_at}`,
     current.updated_at,
   );
   const openQuestion = deps.db

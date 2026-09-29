@@ -36,6 +36,7 @@ function createCardWriters(
       now: deps.now,
       getCard: core.cardStore.getCard,
       recordInbox: core.inbox.record,
+      recordErrorInbox: core.inbox.recordError,
       resolveInbox: core.inbox.resolve,
       resolveAllInbox: core.inbox.resolveAll,
     }),

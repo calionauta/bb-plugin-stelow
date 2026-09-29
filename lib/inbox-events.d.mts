@@ -46,3 +46,4 @@ export declare function upsertPausedEvent(
   db: unknown,
   input: { cardId: string; summary: string; idleAt: number; nowMs: number; createId: () => string },
 ): boolean;
+

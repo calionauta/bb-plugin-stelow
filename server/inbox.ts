@@ -13,6 +13,10 @@ import {
   type InboxEventInput,
   type InboxResolutionReason,
 } from "../lib/inbox-events.mjs";
+import {
+  ensureInboxOccurrencesColumn,
+  recordErrorInboxEvent,
+} from "../lib/inbox-error-event.mjs";
 import { parseSeverityReasons } from "../lib/inbox-severity.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
@@ -89,6 +93,7 @@ export function runInboxMigrations(db: Db): void {
     ["holder_file", "TEXT"],
   ]);
   ensureInboxSeverityColumns(db);
+  ensureInboxOccurrencesColumn(db);
   db.prepare(`
     DELETE FROM inbox_events
     WHERE kind = 'completed'
@@ -344,6 +349,23 @@ export function createInboxServer(deps: InboxServerDeps) {
         createId: () => ctx.randomId("evt"),
       });
       if (touched) ctx.changed({ cardId });
+    },
+    // One open error row per card, for the same reason as upsertPaused: a
+    // worker that keeps failing is one thing to look at, not one thing per
+    // failure. Differs in the two ways the kind demands — it reopens a resolved
+    // row (a failure after someone dealt with the last one is a NEW need, and
+    // INSERT OR IGNORE would drop it), and it counts occurrences (the badge
+    // needs the repetition, and counting rows would only measure the bug).
+    recordError: (cardId: string, summary: string, occurredAt: number) => {
+      const result = recordErrorInboxEvent(ctx.db, {
+        id: ctx.randomId("evt"),
+        cardId,
+        kind: "error",
+        summary,
+        occurredAt,
+      });
+      ctx.changed({ cardId });
+      return result;
     },
     resolve: createResolver(ctx),
     resolveAll: createTerminalResolver(ctx),
