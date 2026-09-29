@@ -108,6 +108,20 @@ assert.equal(published.at(-1).payload.notificationId, question.id, "read refresh
 publications = published.length;
 assert.equal((await handlers.markNotificationRead({ notificationId: question.id })).ok, false, "read acknowledgement is idempotent");
 assert.equal(published.length, publications, "an unchanged read stays silent");
+// The other half, and the reason the item's own button can be reversible:
+// marking unread returns the update to attention, which archive deliberately
+// does not. Both are idempotent, so a double click publishes once.
+assert.equal((await handlers.markNotificationUnread({ notificationId: question.id })).ok, true, "unread clears the read stamp");
+assert.equal(
+  db.prepare("SELECT read_at FROM inbox_events WHERE id = ?").get(question.id).read_at,
+  null,
+  "the update is unread again, so it returns to Needs attention",
+);
+assert.equal((await handlers.markNotificationUnread({ notificationId: question.id })).ok, false, "unread acknowledgement is idempotent too");
+assert.equal(
+  db.prepare("SELECT archived_at FROM inbox_events WHERE id = ?").get(question.id).archived_at,
+  null,
+  "and neither direction touches the archive, which is the separate, one-way decision");
 assert.equal(
   (await handlers.markCardNotificationsRead({ cardId: "card_1", kind: "question" })).marked,
   false,

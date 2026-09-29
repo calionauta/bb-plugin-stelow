@@ -53,6 +53,11 @@ export const inboxRpcContract = defineRpcContract({
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
+  markNotificationUnread: {
+    experimental_description: "Mark one inbox event unread, so it returns to attention",
+    input: z.object({ notificationId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean() }),
+  },
   markCardNotificationsRead: {
     experimental_description: "Mark a card's events of one kind read",
     input: z.object({

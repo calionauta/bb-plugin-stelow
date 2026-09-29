@@ -143,7 +143,7 @@ const filteredEvents = [
 assert.equal(inboxFilterEntries(filteredEvents, "attention").length, 2, "Needs attention contains unresolved work and unread review requests");
 assert.equal(inboxFilterEntries(filteredEvents, "attention").length, filteredEvents.filter((event) => countsForInboxBadge(event)).length, "the primary Inbox list and sidebar badge use the same action set");
 assert.equal(inboxFilterEntries(filteredEvents, "resolved").length, 1, "Resolved history contains no-longer-actionable work");
-assert.equal(inboxFilterEntries(filteredEvents, "archived").length, 1, "Archived filter retains archived events");
+assert.equal(inboxFilterEntries(filteredEvents, "read").length, 2, "Read holds updates already seen, and only those");
 assert.equal(inboxFilterEntries(filteredEvents, "all").length, 3, "All contains every non-archived update including completions");
 
 db.close();

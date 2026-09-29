@@ -603,8 +603,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **Inbox** (`InboxPanel`, `listNotifications`). **Needs attention**
   (question/error/paused, whether already read), recent completions, an All-clear empty state,
-  resolved history last, archived; per-item read/archive/restore;
-  deep-links into card+event. The Resolved filter explains itself
+  resolved history last, read; per-item **Mark as read** / **Show again**
+  (the reversible pair, driven by read state); deep-links into card+event.
+  The vocabulary is a notification's, never a card's: an item says
+  **Set aside**, not *Archived*, and its filter is **Read**, not *Archived* —
+  "archive" is a card's fate, and a button on a notice that reads as an
+  action on the card it names is a wrong affordance. Marking read is a
+  timestamp, reversible, and touches no card; setting an item aside is the
+  separate one-way decision that remains available in Manage. The Resolved
+  filter explains itself
   (needed-you-once, cleared on its own) and each row names HOW it cleared
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
