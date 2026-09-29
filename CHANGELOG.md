@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.5...v0.57.6) (2026-09-29)
+
+
+### Bug Fixes
+
+* a drag could skip every phase between the card and the target ([75b106f](https://github.com/calionauta/bb-plugin-stelow/commit/75b106f7058a0c5c242fc2b3c16bef4c3017257f))
+* declare the card position the move policy now takes ([b95017a](https://github.com/calionauta/bb-plugin-stelow/commit/b95017a1fce22d7da5370bc80f7f2dcaf6c4d86d))
+* the design-reference doc points at a panel that does not exist ([fdb524c](https://github.com/calionauta/bb-plugin-stelow/commit/fdb524cb48bec1516663bebb43a8991fe76aada4))
+
 ## [0.57.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.4...v0.57.5) (2026-09-28)
 
 
