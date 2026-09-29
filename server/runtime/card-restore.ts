@@ -21,6 +21,13 @@ export type RestoreCardDeps = {
     }>;
   };
   errors: { cardNotFound: string };
+  logCardComment: (
+    cardId: string,
+    target: "card" | "scope" | "task",
+    targetId: string,
+    author: "user" | "agent",
+    body: string,
+  ) => void;
 };
 
 // No previous-status column exists, so the target is derived the same way
@@ -59,11 +66,27 @@ export async function restoreCard(
     deps.updateCard(cardId, previous);
     return { ok: false, error: started.error };
   }
-  reactivateRestorePending(deps.db, {
+  const reopened = reactivateRestorePending(deps.db, {
     cardId,
     lastError: card.last_error,
     occurredAt: deps.now(),
   });
+  // A withheld question needs its exit named, or the reader is left looking at
+  // a decision that vanished with no explanation. The exit is the worker: it
+  // re-asks if it still needs the answer.
+  if (reopened.questionsWithheld > 0) {
+    const held = reopened.questionsWithheld;
+    deps.logCardComment(
+      cardId,
+      "card",
+      cardId,
+      "user",
+      `Restored with ${held} archived question(s) left closed: a question belongs to the worker that asked it, `
+      + "and restore starts a fresh worker. "
+      + `Errors returned (${reopened.errorsReopened}); `
+      + "the worker re-asks anything it still needs a decision on.",
+    );
+  }
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }

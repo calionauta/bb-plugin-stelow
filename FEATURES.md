@@ -1089,10 +1089,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   prominent, never a drag — dragging an archived card still refuses).
   The card returns to the exact stage it was archived from with a fresh
   worker; the previous thread stays in Worker history. Pending items
-  return per kind — questions reopen, errors return carrying the stored
-  `last_error` verbatim, pauses re-derive from live state — while
-  completed deliveries stay read. If the fresh spawn fails, the status
-  rolls back instead of leaving a phantom wait.
+  return per kind — errors return carrying the stored `last_error`
+  verbatim, pauses re-derive from live state, completed deliveries stay
+  read — while **questions are withheld, and counted as
+  `questionsWithheld`**. A question belongs to the worker that asked it:
+  its identity is a thread interaction, and restore starts a fresh worker
+  on purpose. That worker's first question sync resolves the row as
+  `superseded` regardless, so reopening it bought a badge that appeared
+  and vanished a second later and an answer aimed at a thread with none
+  of the context the question was asked in. The withheld count is
+  trailed on the card with its exit ("the worker re-asks anything it
+  still needs a decision on"), so nothing disappears without a stated
+  reason. This is the one deliberate narrowing of the never-a-partial-
+  restore rule, and the test names it. If the fresh spawn fails, the
+  status rolls back instead of leaving a phantom wait.
 
   *Proven against the live database, 2026-09-28* (`card_19ny9eq3`, the
   accidental test archive, reproduced by `tests/fixtures/restore-dogfood.mjs`
