@@ -1113,12 +1113,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
   reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
   341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
-  the archive-resolved rows are exactly one question. Result:
-  `questionsReopened: 1, errorsReopened: 0, pausedReopened: 0,
-  completedReopened: 0` — `evt_yclvhua2` reopened with its reason cleared,
-  the 12 rows resolved before the archive stayed resolved, no event created
-  or deleted, globals unchanged, and the live database left byte-for-byte as
-  found.
+  the archive-resolved rows are exactly one question. Result under the
+  current contract: `questionsReopened: 0, questionsWithheld: 1,
+  errorsReopened: 0, pausedReopened: 0, completedReopened: 0` —
+  `evt_yclvhua2` stays resolved as `archived` (see below), the 12 rows
+  resolved before the archive stay resolved, no event is created or
+  deleted, globals unchanged, and the live database is left
+  byte-for-byte as found. The same run originally returned
+  `questionsReopened: 1` with the question reopened, which the dogfood
+  in [`docs/restore-dogfood.md`](docs/restore-dogfood.md) then showed
+  being superseded a second later by the fresh worker; the question is
+  now withheld instead.
 
   What this fixture does **not** prove: the host half. The status flip and
   the fresh worker spawn both need a running bb host, so "a new worker" is

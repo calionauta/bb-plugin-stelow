@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { blockedFileWait, lockBlockEvent, lockBlockSummary, lockBlockDedupeKey, lockWaitHero, scopeClaimLines } from "../lib/lock-blocked.mjs";
+import { blockedFileWait, lockBlockEvent, lockBlockSummary, lockBlockDedupeKey, lockWaitCopy, lockWaitHero, scopeClaimLines } from "../lib/lock-blocked.mjs";
 import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
@@ -165,6 +165,43 @@ test("the card's wait is derived from the same per-scope record the Inbox reads"
   assert.equal(blockedFileWait([{ blockedFiles: [] }], (id) => id), null, "a free card has no wait to show");
   assert.equal(blockedFileWait([], (id) => id), null, "no scopes is no wait");
   assert.equal(blockedFileWait(null, null), null, "junk is no wait, never a crash");
+  assert.equal(wait.internal, false, "a foreign holder makes this a cross-card wait, and holders links it");
+  assert.match(
+    lockWaitCopy(wait),
+    /at the latest/,
+    "the expiry the Inbox sentence promises is not dropped on the card: the lease is the backstop, stated the same way",
+  );
+});
+
+// A sibling scope of the same card is contention, but the reader cannot go
+// and unblock another card — and a sentence naming their own card would point
+// them at themselves. It is named as what it is, and offers no link.
+test("a wait on a sibling scope names the scope, not the reader's own card", () => {
+  const internal = blockedFileWait(
+    [{ blockedFiles: [{ file: "src/shared.ts", heldBy: "card_self", heldScope: "b1::scope-2", holderLabel: "another scope on this card", expiresAt: 2_000 }] }],
+    () => "This card",
+  );
+  assert.deepEqual(internal.files, ["src/shared.ts"], "the file is still named");
+  assert.deepEqual(internal.holders, [], "and there is no card to link to");
+  assert.equal(internal.internal, true, "the wait is internal");
+  assert.equal(internal.holderName, "another scope on this card", "not the reader's own card name");
+  assert.doesNotMatch(lockWaitCopy(internal), /This card/, "the sentence never blames the reader's own card");
+  assert.match(lockWaitCopy(internal), /another scope on this card/, "it names the real holder");
+
+  // A mixed wait: a sibling AND a foreign card. The foreign one is the lead
+  // (it is the one the reader can act on), but the sibling's file is still in
+  // `files`, because the card waits on all of them.
+  const mixed = blockedFileWait(
+    [
+      { blockedFiles: [{ file: "a.ts", heldBy: "card_self", heldScope: "b1::scope-2", holderLabel: "another scope on this card", expiresAt: 1_000 }] },
+      { blockedFiles: [{ file: "b.ts", heldBy: "card_other", heldScope: null, holderLabel: null, expiresAt: 2_000 }] },
+    ],
+    (id) => `name of ${id}`,
+  );
+  assert.deepEqual(mixed.files, ["a.ts", "b.ts"], "every file the card waits on is listed");
+  assert.deepEqual(mixed.holders, ["card_other"], "only foreign holders are linkable");
+  assert.equal(mixed.internal, false, "a foreign holder makes it a cross-card wait");
+  assert.match(lockWaitCopy(mixed), /name of card_other/, "and the lead holder is the actionable one");
 });
 
 test("a blocked card is named as waiting, not as stalled", () => {
@@ -176,6 +213,14 @@ test("a blocked card is named as waiting, not as stalled", () => {
   assert.match(hero.sub, /Restore cards/, "and the holder, by the name the caller resolved");
   assert.match(hero.sub, /no action needed/, "release is automatic; implying homework trains distrust");
   assert.equal(lockWaitHero(null), null, "a free card falls through to the generic idle branch");
+  // A real lease carries the backstop, which the Inbox's own sentence promises;
+  // an expiresAt of 0 is a lapsed/absent one and must not print a 1970 date.
+  const leased = lockWaitHero(blockedFileWait(
+    [{ blockedFiles: [{ file: "src/foo.ts", heldBy: "card_holder", expiresAt: Date.UTC(2026, 8, 28, 12) }] }],
+    () => "Restore cards",
+  ));
+  assert.match(leased.sub, /at the latest/, "a live lease is stated as the backstop");
+  assert.doesNotMatch(leased.sub, /1970/, "an absent lease never prints an epoch date");
   const many = lockWaitHero(blockedFileWait([
     { blockedFiles: [{ file: "a.ts", heldBy: "c1", expiresAt: 0 }] },
     { blockedFiles: [{ file: "b.ts", heldBy: "c2", expiresAt: 0 }] },

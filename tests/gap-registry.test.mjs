@@ -69,6 +69,32 @@ assert.deepEqual(
 
 // Summary drives the card UI and the escalated-rate metric.
 assert.deepEqual(summarizeGaps(clean), { found: true, total: 4, fixed: 1, documented: 1, escalated: 2 }, "counts by resolution");
+
+// The tally and the list must be ONE accounting. These used to disagree, and
+// every disagreement is the reported symptom — "N gaps" above a shorter list:
+//   placeholder row  -> total 1, listed 0
+//   duplicate rows   -> total 2, listed 1
+//   same gap re-audited in a second round -> totals summed, listed once
+// `summarizeGaps` now derives from `registryGaps`, so these cannot drift.
+const placeholder = head("  - just a finding with no fields");
+assert.deepEqual(summarizeGaps(placeholder), { found: true, total: 0, fixed: 0, documented: 0, escalated: 0 },
+  "a placeholder is not a finding, so it is not counted either");
+assert.equal(summarizeGaps(placeholder).total, registryGaps(placeholder).length, "tally equals the list, always");
+
+const duplicated = head(`${row("a", "low", "fixed", "Same gap")}\n${row("b", "low", "fixed", "Same gap")}`);
+assert.equal(summarizeGaps(duplicated).total, 1, "a finding typed twice is one finding, in the tally too");
+assert.equal(summarizeGaps(duplicated).total, registryGaps(duplicated).length, "and the list agrees");
+
+// Round two re-audits the same finding. The caller SUMS per-critique totals
+// (critique-gap-state), so the two accountings only agree if each is deduped
+// and the caller dedupes too — which is the point: the header adds what the
+// list cannot show, so it must add the same thing the list counts.
+const sameGapRound2 = head(row("a", "medium", "documented", "Docs drifted"));
+assert.equal(
+  registryGaps(clean).length + registryGaps(sameGapRound2).length,
+  summarizeGaps(clean).total + summarizeGaps(sameGapRound2).total,
+  "each critique's tally equals its own list, so the caller can reconcile the sum",
+);
 assert.equal(summarizeGaps("# no frontmatter").found, false, "missing registry reported");
 
 // A clean registry passes; an empty one passes (clean audit, no gaps).

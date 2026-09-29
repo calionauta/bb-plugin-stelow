@@ -28,7 +28,6 @@
     "components/ui/mobile-trigger.tsx:callback": 59,
     "components/ui/persistent-responsive-drawer-shell.tsx:PersistentResponsiveDrawerShell": 177,
     "components/worktree-cleanup-suggestion.tsx:WorktreeCleanupSuggestion": 58,
-    "lib/card-checks.mjs:groupCardChecks": 57,
     "lib/card-claims.mjs:acquireScopeClaims": 68,
     "lib/execution-route.mjs:evaluateScopeBatchPilot": 78,
     "lib/gap-registry.mjs:validateGapRegistry": 53,

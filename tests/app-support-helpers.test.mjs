@@ -13,6 +13,17 @@ const cards = [
 ];
 assert.equal(activeCardCount(cards), 2, "sidebar counts unresolved cards on the board only");
 assert.equal(activeCardCount([]), 0, "an empty board has no active cards");
+// Terminality is read off the column, so a terminal status is excluded for a
+// reason that survives a new terminal outcome being added to the catalog: this
+// pair of cards differ from the counted ones ONLY in status.
+assert.equal(
+  activeCardCount([
+    { id: "done", kind: "build", status: "completed", stage: "done", workerThreadId: "thr_a" },
+    { id: "archived", kind: "build", status: "archived", stage: "done", workerThreadId: "thr_b" },
+  ]),
+  0,
+  "a completed or archived card is history, whatever its stage or worker",
+);
 assert.equal(
   activeCardCount([{ id: "parked", kind: "build", status: "draft", stage: "triage", workerThreadId: null }]),
   0,

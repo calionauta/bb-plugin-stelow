@@ -253,6 +253,9 @@ export const cardDetailRpcContract = {
           holders: z.array(z.string()),
           holderCardId: z.string(),
           holderName: z.string(),
+          // True when the holder is a sibling scope of this same card: still
+          // contention, but not a card the reader can go and unblock.
+          internal: z.boolean(),
           expiresAt: z.number(),
         })
         .nullable(),

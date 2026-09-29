@@ -29,6 +29,7 @@ export type HeroDetailState = {
     holders: string[];
     holderCardId: string;
     holderName: string;
+    internal: boolean;
     expiresAt: number;
   } | null;
 } | null;

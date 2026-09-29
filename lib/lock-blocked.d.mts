@@ -17,14 +17,18 @@ export declare function lockBlockEvent(block: LockBlock): {
 
 export type BlockedFileWait = {
   files: string[];
+  /** Foreign holder card ids. Empty when `internal` — the holder is a sibling
+   * scope of this same card, which a reader cannot go and unblock. */
   holders: string[];
   holderCardId: string;
   holderName: string;
+  /** True when the holder is another scope of this card rather than another card. */
+  internal: boolean;
   expiresAt: number;
 };
 
 export declare function blockedFileWait(
-  scopes: Array<{ blockedFiles?: Array<{ file?: string; heldBy?: string; expiresAt?: number }> | null } | null> | null,
+  scopes: Array<{ blockedFiles?: Array<{ file?: string; heldBy?: string; holderLabel?: string | null; expiresAt?: number }> | null } | null> | null,
   resolveHolderName: (holderCardId: string) => string,
 ): BlockedFileWait | null;
 

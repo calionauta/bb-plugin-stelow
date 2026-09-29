@@ -8,6 +8,7 @@ import {
   CLAIM_TTL_MS,
   ensureCardClaimsTables,
   liveClaimsForWorkspace,
+  acquireScopeClaims,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
   sweepExpiredClaims,
@@ -114,7 +115,24 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
   acquireWorkspaceClaims(db, { cardId: "c1", workspacePath: WS, files: ["src/a.ts"], scope: "scope-1", nowMs: T0 });
   const live = liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 });
   assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-1", files: [], nowMs: T0 }).length, 1, "scope tag matches");
-  assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-9", files: ["src/a.ts"], nowMs: T0 }).length, 1, "file overlap matches");
+  // A row TAGGED for another scope is that scope's claim, not this one's. This
+  // used to read 1 — "file overlap matches" — which is how scope-1 came to
+  // render "Holding 1 file" for a file the registry had just refused it, with
+  // the Inbox reporting the same file as BB-LOCK-BLOCKED. File overlap is the
+  // ownership test only for an UNTAGGED claim, where the card is the holder.
+  assert.equal(
+    matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-9", files: ["src/a.ts"], nowMs: T0 }).length,
+    0,
+    "a row tagged for a different scope is not this scope's claim",
+  );
+  assert.equal(
+    matchScopeClaims(
+      [{ file_path: "src/a.ts", card_id: "c1", scope: null, expires_at: T0 + 1_000_000, fencing: 1 }],
+      { ownerId: "c1", scopeId: "scope-9", files: ["src/a.ts"], nowMs: T0 },
+    ).length,
+    1,
+    "an untagged claim is the card's, so overlap does match it",
+  );
   assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-9", files: ["src/z.ts"], nowMs: T0 }).length, 0, "unrelated misses");
   assert.equal(matchScopeClaims(live, { ownerId: "c2", scopeId: "scope-1", files: [], nowMs: T0 }).length, 0, "foreign cards miss");
   assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-1", files: [], nowMs: T0 + 1_900_000 }).length, 0, "expired leases miss");
@@ -139,8 +157,14 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
   assert.deepEqual(room.held.map((row) => row.file_path), ["src/own.ts"], "c1 sees the file it holds");
   assert.deepEqual(
     room.blocked,
-    [{ file: "src/shared.ts", heldBy: "c2", expiresAt: T0 + CLAIM_TTL_MS }],
-    "and the one it cannot have, named with its holder",
+    [{
+      file: "src/shared.ts",
+      heldBy: "c2",
+      heldScope: "other",
+      holderLabel: null,
+      expiresAt: T0 + CLAIM_TTL_MS,
+    }],
+    "and the one it cannot have, named with its holder and the scope it holds under; holderLabel null, since another card is another card",
   );
   const holders = new Set([...room.held.map((row) => row.file_path), ...room.blocked.map((row) => row.file)]);
   assert.equal(holders.size, 2, "the two halves never name the same file: a scope cannot hold what it is blocked on");
@@ -159,6 +183,46 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
     scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-9", files: [], nowMs: T0 }).blocked,
     [],
     "a scope that names no files is never blocked",
+  );
+}
+
+// --- A sibling scope of the SAME card is a distinct holder ----------------
+// `acquireScopeClaims` refuses a scope whose files a sibling scope holds, even
+// when both belong to one card, and parks the loser as BB-LOCK-BLOCKED. The
+// card's room has to agree, or the Inbox says blocked and the card says
+// holding — two answers to one question, which is the whole thing the room
+// exists to prevent.
+{
+  const db = new Database(":memory:");
+  ensureCardClaimsTables(db);
+  const WS = "/repo/sibling";
+  const T0 = 8_000_000;
+  const sibling = acquireScopeClaims(db, {
+    cardId: "c1", batchId: "b1", scopeId: "scope-2", files: ["src/shared.ts"], workspacePath: WS, nowMs: T0,
+  });
+  assert.equal(sibling.ok, true, "the first scope takes the file");
+  const loser = acquireScopeClaims(db, {
+    cardId: "c1", batchId: "b1", scopeId: "scope-1", files: ["src/shared.ts"], workspacePath: WS, nowMs: T0,
+  });
+  assert.equal(loser.ok, false, "the sibling is refused");
+  assert.match(loser.park[0].stderr, /BB-LOCK-BLOCKED/, "and the Inbox is told so");
+
+  const live = liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 });
+  const room = scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-1", files: ["src/shared.ts"], nowMs: T0 });
+  assert.deepEqual(room.held, [], "the refused scope holds nothing — it was refused");
+  assert.equal(room.blocked.length, 1, "and it is blocked on the file it wanted");
+  assert.equal(room.blocked[0].file, "src/shared.ts");
+  assert.equal(room.blocked[0].heldScope, "b1::scope-2", "naming the holder's scope, which is what the registry used");
+  assert.equal(
+    room.blocked[0].holderLabel,
+    "another scope on this card",
+    "so the card says a sibling scope, not another card — pointing the reader at their own card name would be a false accusation",
+  );
+  // And the holder still sees its own claim, by tag.
+  assert.deepEqual(
+    scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-2", files: ["src/shared.ts"], nowMs: T0 }).held.map((row) => row.file_path),
+    ["src/shared.ts"],
+    "the holder sees itself as the holder",
   );
 }
 

@@ -94,18 +94,25 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
  * recorded is a fact about the finding, so it is the primary mark; the rework
  * scope only exists for an escalation, and is what a reader is waiting on when
  * one is still open.
+ *
+ * `unknown` is a real state, not a defensive branch: the registry validator
+ * flags a row with a missing or unrecognised `resolution:` as a failure, but a
+ * failure is a REPORT and does not stop the card from rendering it. Indexing a
+ * record that lacks the key used to throw and take the whole open card down over
+ * a typo in one row of a YAML file.
  */
 const GAP_RESOLUTION: Record<string, { label: string; dot: string; pill: string }> = {
   fixed: { label: "Fixed", dot: "bg-emerald-500", pill: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
   documented: { label: "Documented", dot: "bg-muted-foreground/60", pill: "bg-muted text-muted-foreground" },
   escalate: { label: "Escalated", dot: "bg-amber-500", pill: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
+  unknown: { label: "Unclassified", dot: "bg-amber-500/60", pill: "bg-muted text-muted-foreground" },
 };
 
 function GapItems({ items }: { items: GapSummary["items"] }) {
   return (
     <ul className="space-y-1 pt-2">
       {items.map((item) => {
-        const resolution = GAP_RESOLUTION[item.resolution];
+        const resolution = GAP_RESOLUTION[item.resolution] ?? GAP_RESOLUTION.unknown;
         const scopeDone = item.scopeStatus !== null && isDoneStatus(item.scopeStatus);
         return (
           <li key={item.description} className="flex items-start gap-2 text-xs">
