@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.7](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.6...v0.57.7) (2026-09-29)
+
+
+### Bug Fixes
+
+* a worker that failed twice showed the reader the same card twice ([8fb4b8f](https://github.com/calionauta/bb-plugin-stelow/commit/8fb4b8f116b7d0554a16cbaceb3f0f90299da465))
+
 ## [0.57.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.5...v0.57.6) (2026-09-29)
 
 
