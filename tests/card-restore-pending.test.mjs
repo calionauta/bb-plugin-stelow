@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ensureInboxResolvedReasonColumn } from "../lib/inbox-events.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { reactivateRestorePending } from "../lib/card-restore-pending.mjs";
 
 const db = new Database(":memory:");
@@ -17,6 +18,7 @@ db.exec(`
   );
 `);
 ensureInboxResolvedReasonColumn(db);
+ensureInboxOccurrencesColumn(db);
 
 const insert = db.prepare(
   "INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, resolved_at, resolved_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

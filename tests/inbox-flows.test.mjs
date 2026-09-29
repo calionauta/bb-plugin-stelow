@@ -5,6 +5,7 @@ import {
   markQuestionsAnswered, resolveActionInboxEvents, resolveAllInboxEvents, syncQuestionInboxEvents,
   countsForInboxBadge, STALLED_ESCALATION_MS, escalatePausedSummary, refreshStalledPaused, stalledDays,
 } from "../lib/inbox-events.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -21,6 +22,7 @@ db.exec(`
   );
 `);
 ensureInboxResolvedReasonColumn(db);
+ensureInboxOccurrencesColumn(db);
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_1", "Launch Inbox", "launch-inbox", "project_1", "build");
 
 const paused = { id: "evt_paused", cardId: "card_1", kind: "paused", summary: "Paused.", dedupeKey: "paused:card_1:100", occurredAt: 100 };
@@ -221,6 +223,7 @@ archiveDb.exec(`
   );
 `);
 ensureInboxResolvedReasonColumn(archiveDb);
+ensureInboxOccurrencesColumn(archiveDb);
 archiveDb.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_arc", "Archived", "archived", "project_1", "build");
 insertInboxEvent(archiveDb, { id: "evt_arc_q", cardId: "card_arc", kind: "question", summary: "Q?", dedupeKey: "question:card_arc:1", occurredAt: 1 });
 insertInboxEvent(archiveDb, { id: "evt_arc_e", cardId: "card_arc", kind: "error", summary: "E!", dedupeKey: "error:card_arc:2", occurredAt: 2 });

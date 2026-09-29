@@ -3,6 +3,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { restoreCard, restoreTargetStatus } from "../server/runtime/card-restore.ts";
 import { ensureInboxResolvedReasonColumn } from "../lib/inbox-events.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { createCardOperationsHandlers } from "../server/runtime/card-operations.ts";
 
 function schema() {
@@ -20,6 +21,7 @@ function schema() {
     );
   `);
   ensureInboxResolvedReasonColumn(db);
+ensureInboxOccurrencesColumn(db);
   return db;
 }
 

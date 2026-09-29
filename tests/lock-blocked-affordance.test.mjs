@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { lockBlockEvent, lockBlockSummary, lockBlockDedupeKey } from "../lib/lock-blocked.mjs";
 import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents } from "../lib/inbox-events.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
 /**
  * A blocked file must name the blocker as something you can OPEN.
@@ -49,6 +50,7 @@ function database() {
     );
   `);
   ensureInboxResolvedReasonColumn(db);
+ensureInboxOccurrencesColumn(db);
   db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run(
     "card_blocked", "Blocked", "blocked", "project_1", "build",
   );

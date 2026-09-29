@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SEVERITY_ROUTINE, SEVERITY_ACTION, SEVERITY_ESCALATING, SEVERITY_STALL_MS, SEVERITY_OLD_MS, scoreEventSeverity, parseSeverityReasons } from "../lib/inbox-severity.mjs";
 import { ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshEventSeverity, countsForInboxBadge } from "../lib/inbox-events.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
 // Severity tiers reorder the queue without changing what counts: a 3-day
 // stall must outrank a fresh question while the badge keeps counting both.
@@ -52,6 +53,7 @@ db.exec(`CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT N
     archived_at INTEGER, resolved_at INTEGER, holder_card_id TEXT, holder_file TEXT
   );`);
 ensureInboxSeverityColumns(db);
+ensureInboxOccurrencesColumn(db);
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity"), "pre-tier databases gain the severity column");
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity_reasons"), "pre-tier databases gain the reasons column");
 db.prepare("INSERT INTO cards (id, display_name, name, project_id, kind) VALUES ('c1', 'C1', 'c1', 'p1', 'build')").run();
