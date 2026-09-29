@@ -117,9 +117,13 @@ test("rows that predate the stable key are folded, keeping the count they showed
   ensureInboxOccurrencesColumn(db);
 
   const rows = db.prepare("SELECT card_id, occurrences FROM inbox_events ORDER BY id").all();
+  // Two legacy rows for one card used to survive as two rows — the reader saw
+  // the same failure twice, and `error ×2` counted those rows rather than the
+  // failures. They fold onto one row whose count is their SUM (1+1=2, each
+  // defaulting to 1 because the column was just added), so the recurrence
+  // survives and the reader sees one item.
   assert.deepEqual(rows, [
     { card_id: "card-1", occurrences: 2 },
-    { card_id: "card-1", occurrences: 2 },
     { card_id: "card-2", occurrences: 1 },
-  ], "the folded card keeps the count it was already reporting; the lone one stays at 1");
+  ], "the folded card keeps every occurrence it was reporting; the lone one stays at 1");
 });

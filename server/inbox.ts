@@ -274,6 +274,18 @@ function createReadHandler(ctx: InboxContext) {
   );
 }
 
+// The other half of read state, and the reason the button on an item can be
+// reversible. Clearing `read_at` returns the update to attention — which
+// `archived_at` deliberately does not, because archive is how a person keeps
+// an item out of the way for good and `restoreNotification` is its only exit.
+function createUnreadHandler(ctx: InboxContext) {
+  return createEventUpdateHandler(
+    ctx,
+    "UPDATE inbox_events SET read_at = NULL WHERE id = ? AND read_at IS NOT NULL",
+    false,
+  );
+}
+
 function createCardReadHandler(ctx: InboxContext) {
   return async ({ cardId, kind }: { cardId: string; kind: InboxKind }) => {
     if (kind !== "completed") return { marked: false };
@@ -320,6 +332,7 @@ function createInboxHandlers(ctx: InboxContext, deps: InboxServerDeps) {
   return {
     listNotifications: createListHandler(ctx, deps),
     markNotificationRead: createReadHandler(ctx),
+    markNotificationUnread: createUnreadHandler(ctx),
     markCardNotificationsRead: createCardReadHandler(ctx),
     archiveNotification: createArchiveHandler(ctx),
     restoreNotification: createRestoreHandler(ctx),

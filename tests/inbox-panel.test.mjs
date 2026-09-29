@@ -45,8 +45,12 @@ assert.deepEqual(
   ["event-1", "event-4"],
   "unread-only filtering applies after the selected view",
 );
-assert.equal(inboxAction(attention), "archive", "active items archive");
-assert.equal(inboxAction(archived), "restore", "archived items restore");
+// The item's button is the reversible one, so it is driven by read state.
+// Keyed off the archive flag it offered "Mark as read" to something already
+// read, and offered "Show again" to a reader who had never seen the item.
+assert.equal(inboxAction(attention), "archive", "an unread item can be marked as read");
+assert.equal(inboxAction(read), "restore", "a read item can be marked unread again");
+assert.equal(inboxAction(archived), "archive", "a set-aside item is not the read toggle's business");
 assert.equal(inboxBadgeCount([attention, read, archived, resolved]), 2, "badge counts unread active action items, including unread completions");
 assert.equal(inboxLoadFailure("RPC failed", []), true, "a failed first load has a retryable failure state");
 assert.equal(inboxLoadFailure("RPC failed", [attention]), false, "a background refresh failure preserves stale content");
@@ -56,7 +60,16 @@ assert.equal(inboxPanelState(false, "RPC failed", [attention]), "content", "a re
 assert.equal(inboxPanelState(false, null, []), "content", "a successful empty load renders the empty state");
 
 assert.match(panel, /rpc\.call\("markNotificationRead"/, "opening an unread item acknowledges it before navigation");
-assert.match(panel, /rpc\.call\("archiveNotification"[\s\S]*rpc\.call\("restoreNotification"/, "the extracted panel owns both archive transitions");
+assert.match(
+  panel,
+  /rpc\.call\(method, \{ notificationId: entry\.id \}\)/,
+  "the item's own button owns both read transitions, and the archive RPC is not what it calls",
+);
+assert.doesNotMatch(
+  panel,
+  /onClick=\{[^}]*archiveNotification/,
+  "no action on an item routes through the archive RPC — archive is a card's word, not a notice's",
+);
 assert.match(panel, /notifyOnError: false[\s\S]*itemCountKey: "notifications"/, "Inbox load failures remain inline instead of producing a toast");
 assert.match(panel, /inboxVisibleEntries\(notifications, filter, unreadOnly\)/, "the rendered list uses the tested filter pipeline");
 assert.match(panel, /setUnreadOnly\(event\.target\.checked\)/, "the unread filter remains a user-controlled behavior");

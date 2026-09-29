@@ -10,7 +10,10 @@ assert.deepEqual(inboxEventPresentation(resolvedQuestion), { label: "Decision re
 assert.equal(isOpenInboxAction(resolvedQuestion), false);
 
 const archivedError = { kind: "error", occurredAt: 10, resolvedAt: null, archivedAt: 30 };
-assert.deepEqual(inboxEventPresentation(archivedError), { label: "Archived Inbox update", tone: "bg-muted text-muted-foreground", stateAt: 30, stateLabel: "Archived" });
+// "Set aside", not "Archived": a notification is a notice, and "Archived" is a
+// card's fate. Borrowing the word made an action on the update read as an
+// action on the card it names.
+assert.deepEqual(inboxEventPresentation(archivedError), { label: "Set aside", tone: "bg-muted text-muted-foreground", stateAt: 30, stateLabel: "Set aside" });
 assert.equal(isOpenInboxAction(archivedError), false);
 
 // A completion is never an action badge (nothing is blocked), but while it is

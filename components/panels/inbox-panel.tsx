@@ -46,24 +46,28 @@ const FILTERS: Array<{ id: InboxFilter; label: string; description: string }> = 
     description: "These needed you once, then cleared on their own — each says how "
       + "(answered, resumed, completed…). History is kept here.",
   },
-  { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
+  {
+    id: "read",
+    label: "Read",
+    description: "Updates you have already seen. Mark one unread to bring it back to attention.",
+  },
   { id: "all", label: "All", description: "All active Inbox updates, newest first." },
 ];
 
 const FILTER_DOT: Record<InboxFilter, string> = {
   attention: "bg-amber-500",
   resolved: "bg-emerald-500",
-  archived: "bg-zinc-500",
+  read: "bg-zinc-500",
   all: "bg-primary",
 };
 const FILTER_ACTIVE: Record<InboxFilter, string> = {
   attention: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   resolved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  archived: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  read: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
   all: "bg-primary/15 text-primary",
 };
 
-type InboxFilter = "attention" | "resolved" | "archived" | "all";
+type InboxFilter = "attention" | "resolved" | "read" | "all";
 
 function PanelSkeleton() {
   return (
@@ -109,6 +113,51 @@ function openNotification(
   };
 }
 
+// The two read transitions, as one pair.
+//
+// "Mark as read" is the read timestamp, not the archive one. Setting a
+// notification aside exists and stays available in Manage for the rare case of
+// clearing history, but a button on the item itself must be the reversible one:
+// archive is a card-shaped word, and the one-way decision has no business on
+// the reversible act.
+function readToggles(
+  rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
+  load: () => Promise<unknown>,
+) {
+  const call = (method: "markNotificationRead" | "markNotificationUnread") =>
+    async (entry: InboxNotification) => {
+      await rpc.call(method, { notificationId: entry.id });
+      await load();
+    };
+  return { markRead: call("markNotificationRead"), markUnread: call("markNotificationUnread") };
+}
+
+// The item's own read toggle, named for what it does to the update rather than
+// the card. "Mark as read" and "Show again" are the two halves of one
+// reversible act; the one-way "set aside" is a separate decision, available in
+// Manage, because a word that means a card's fate has no business on a notice.
+function ReadToggle({ action, onMarkRead, onMarkUnread }: {
+  action: "archive" | "restore";
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
+}) {
+  const markRead = action === "restore";
+  return (
+    <button
+      onClick={markRead ? onMarkUnread : onMarkRead}
+      title={markRead
+        ? "Put this update back where you will see it again"
+        : "Stop showing this update — the card is not affected"}
+      className={
+        "cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground "
+        + "hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      }
+    >
+      {markRead ? "Show again" : "Mark as read"}
+    </button>
+  );
+}
+
 /** The chip, bound to the router. The only thing the panel owns is where it goes. */
 function holderChipFor(navigate: ReturnType<typeof useBbNavigate>) {
   return (entry: InboxNotification): ReactNode => (
@@ -150,14 +199,14 @@ function InboxEntry({
   entry,
   onOpen,
   onHolderChip,
-  onArchive,
-  onRestore,
+  onMarkRead,
+  onMarkUnread,
 }: {
   entry: InboxNotification;
   onOpen: () => void;
   onHolderChip: (entry: InboxNotification) => ReactNode;
-  onArchive: () => void;
-  onRestore: () => void;
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
 }) {
   const copy = INBOX_COPY[entry.kind];
   const presentation = inboxEventPresentation(entry);
@@ -191,15 +240,7 @@ function InboxEntry({
           </span>
         </span>
       </button>
-      <button
-        onClick={action === "restore" ? onRestore : onArchive}
-        className={
-          "cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground "
-          + "hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        }
-      >
-        {action === "restore" ? "Restore" : "Archive"}
-      </button>
+      <ReadToggle action={action} onMarkRead={onMarkRead} onMarkUnread={onMarkUnread} />
     </div>
   );
 }
@@ -240,14 +281,7 @@ export function InboxPanel() {
       : selected.description;
 
   const open = openNotification(rpc, navigate, load);
-  const archive = async (entry: InboxNotification) => {
-    await rpc.call("archiveNotification", { notificationId: entry.id });
-    await load();
-  };
-  const restore = async (entry: InboxNotification) => {
-    await rpc.call("restoreNotification", { notificationId: entry.id });
-    await load();
-  };
+  const { markRead, markUnread } = readToggles(rpc, load);
 
   return (
     <div className="h-full overflow-auto bg-background p-4 md:p-6">
@@ -299,8 +333,8 @@ export function InboxPanel() {
                   entry={entry}
                   onOpen={() => void open(entry)}
                   onHolderChip={holderChipFor(navigate)}
-                  onArchive={() => void archive(entry)}
-                  onRestore={() => void restore(entry)}
+                  onMarkRead={() => void markRead(entry)}
+                  onMarkUnread={() => void markUnread(entry)}
                 />
               ))}
             </div>
