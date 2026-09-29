@@ -46,6 +46,10 @@ function updaterHarness(initial = card(), openQuestion = false) {
     now: () => 20,
     getCard: () => row,
     recordInbox: (...args) => calls.push(["record", ...args]),
+    // A failure need has its own recorder now: it collapses a repeat onto
+    // the open row instead of appending one per episode, which is the defect
+    // this test was unknowingly able to pass before.
+    recordErrorInbox: (...args) => calls.push(["recordError", ...args]),
     resolveInbox: (...args) => calls.push(["resolve", ...args]),
     resolveAllInbox: (...args) => calls.push(["resolveAll", ...args]),
   });
@@ -121,7 +125,7 @@ test("card update supersedes a fresh error when a question is already open", () 
   harness.updateCard("card_1", { activity: "error", last_error: "Failed" });
   assert.deepEqual(
     harness.calls.map(([name]) => name),
-    ["write", "record", "resolve", "publish"],
+    ["write", "recordError", "resolve", "publish"],
   );
   assert.deepEqual(harness.calls[2].slice(1), [
     "card_1",

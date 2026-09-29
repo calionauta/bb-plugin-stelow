@@ -63,22 +63,48 @@ assert.deepEqual(db.prepare("SELECT severity, severity_reasons FROM inbox_events
 assert.equal(insertInboxEvent(db, { id: "e1", cardId: "c1", kind: "error", summary: "s", dedupeKey: "e:1", occurredAt: now }), true, "first errors insert");
 assert.equal(db.prepare("SELECT severity FROM inbox_events WHERE id = 'e1'").get().severity, 1, "first errors act");
 assert.equal(insertInboxEvent(db, { id: "e2", cardId: "c1", kind: "error", summary: "s", dedupeKey: "e:2", occurredAt: now }), true, "second errors insert");
-assert.deepEqual(db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'e2'").get(), { severity: 2, severity_reasons: '["error ×2"]' }, "repeated errors escalate at write");
+// The repetition count is a fact about the EVENT now, not a count of rows.
+// This assertion is deliberately the opposite shape from the one it replaced:
+// a lone row that has recurred three times must escalate, which under a
+// row-counting scorer is impossible — there is nothing to count. Under the old
+// behaviour the score was a measurement of how many duplicate rows the bug had
+// produced, so a card whose worker fell over once but whose inbox had been
+// duplicated twice outranked a card that had actually failed twice.
+db.prepare("UPDATE inbox_events SET occurrences = 3 WHERE id = 'e1'").run();
+db.prepare("UPDATE inbox_events SET severity_reasons = ? WHERE id = 'e1'").run("[]");
+assert.equal(refreshEventSeverity(db, { cardId: "c1", nowMs: now }), 1, "the repetition crossing re-scores in place");
+assert.deepEqual(
+  db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'e1'").get(),
+  { severity: 2, severity_reasons: '["error ×3"]' },
+  "one row that recurred three times escalates, because the count is the event's own",
+);
 
 // Ordering: open escalations top every read; resolved history stays
 // chronological below them (a resolved old fire never outranks fresh work,
 // and a fresh completion still reads as the recent update).
 db.prepare("INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, severity, severity_reasons) VALUES ('old', 'c1', 'paused', 's', 'old:1', 1, 2, '[]')").run();
-assert.deepEqual(listInboxEvents(db, false).map((row) => row.id), ["e2", "old", "q1", "e1"], "open escalations top (newest first within a tier), then lower tiers newest-first");
+// e1 leads because it is the row that recurred. Under the row-counting scorer
+// the order was decided by which duplicate happened to be inserted second, so
+// the queue could promote a failure that had happened once over one that had
+// happened three times.
+assert.deepEqual(
+  listInboxEvents(db, false).map((row) => row.id),
+  ["e1", "old", "q1", "e2"],
+  "open escalations top (newest first within a tier), then lower tiers newest-first",
+);
 db.prepare("UPDATE inbox_events SET resolved_at = ? WHERE id = 'old'").run(now);
-assert.deepEqual(listInboxEvents(db, false).map((row) => row.id), ["e2", "q1", "e1", "old"], "resolved history sinks below open items, newest first");
+assert.deepEqual(listInboxEvents(db, false).map((row) => row.id), ["e1", "q1", "e2", "old"], "resolved history sinks below open items, newest first");
 
 // Sweep recompute: age crossings upgrade in place with fresh reasons and
 // report the count for realtime publishing; idempotent on re-run.
 db.prepare("INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, severity, severity_reasons) VALUES ('aging', 'c1', 'paused', 's', 'aging:1', ?, 1, '[]')").run(now - SEVERITY_STALL_MS - 1000);
-assert.equal(refreshEventSeverity(db, { cardId: "c1", nowMs: now }), 2, "crossings upgrade (aging pause by age, first error by repetition since)");
+assert.equal(refreshEventSeverity(db, { cardId: "c1", nowMs: now }), 1, "the aging pause upgrades; e1 already carries its own repetition score");
 assert.deepEqual(db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'aging'").get(), { severity: 2, severity_reasons: '["stalled 3d"]' }, "upgrades carry fresh reasons");
-assert.deepEqual(db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'e1'").get(), { severity: 2, severity_reasons: '["error ×2"]' }, "repetition counts re-evaluate on sweep, not just at write");
+assert.deepEqual(
+  db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'e1'").get(),
+  { severity: 2, severity_reasons: '["error ×3"]' },
+  "the sweep re-derives from the row's own count, not from how many error rows exist",
+);
 assert.equal(refreshEventSeverity(db, { cardId: "c1", nowMs: now }), 0, "re-running without new aging changes nothing");
 assert.equal(refreshEventSeverity(db, { cardId: "absent", nowMs: now }), 0, "unknown cards upgrade nothing");
 

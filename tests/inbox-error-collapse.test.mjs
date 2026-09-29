@@ -3,32 +3,17 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import {
   ensureInboxOccurrencesColumn,
-  ensureInboxResolvedReasonColumn,
-  ensureInboxSeverityColumns,
   errorInboxDedupeKey,
   recordErrorInboxEvent,
-} from "../lib/inbox-events.mjs";
+} from "../lib/inbox-error-event.mjs";
+import { inboxDatabase } from "./helpers/inbox-schema.mjs";
 
-function schema() {
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE cards (id TEXT PRIMARY KEY);
-    CREATE TABLE inbox_events (
-      id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
-      summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL,
-      read_at INTEGER, archived_at INTEGER, resolved_at INTEGER, resolved_reason TEXT,
-      severity INTEGER NOT NULL DEFAULT 1, severity_reasons TEXT NOT NULL DEFAULT '[]',
-      holder_card_id TEXT, holder_file TEXT,
-      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-    );
-  `);
-  ensureInboxResolvedReasonColumn(db);
-  ensureInboxSeverityColumns(db);
-  ensureInboxOccurrencesColumn(db);
+const schema = () => {
+  const db = inboxDatabase();
   db.prepare("INSERT INTO cards VALUES ('card-1')").run();
   db.prepare("INSERT INTO cards VALUES ('card-2')").run();
   return db;
-}
+};
 
 const fail = (cardId, at, summary = "Worker failed.") => ({
   id: `evt-${at}`,
