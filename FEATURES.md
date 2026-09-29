@@ -421,7 +421,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
-  an update badge when a plugin update is known). One shared update signal
+  an update badge when a plugin update is known). A tab count is the cards
+  its own board holds: terminal outcomes are out, and so is the Bucket —
+  the Bucket is not a rendered column and carries its own count on its own
+  header button, so counting it made the Build tab read 5 beside a board
+  holding one card, with the same parked card visible in two places.
+  One shared update signal
   (BB candidate or newer GitHub release, `updateAvailableFrom`) drives the
   sidebar accessory, the About tab badge, the About header, and the status
   box from a single store: the first `buildInfo` read fills it, and a forced
