@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.8](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.7...v0.57.8) (2026-09-29)
+
+
+### Bug Fixes
+
+* five places the card told the reader something the code did not do ([#184](https://github.com/calionauta/bb-plugin-stelow/issues/184)) ([4dcdbe9](https://github.com/calionauta/bb-plugin-stelow/commit/4dcdbe9ffeef9e564872c7fc3946d6c35cabdfd9))
+
+  - **A room called a sibling scope's file this scope's own.** A file belonging to
+    another scope was attributed to the scope being viewed, so the room count and
+    the file list disagreed with each other.
+  - **A restored question was reopened and superseded a second later.** Restoring
+    from the archive re-activated the pending question with its own resolution, and
+    the next pass overwrote it — the reason it was restored was lost.
+  - **A lock was visible in the Inbox and invisible on the card.** The Inbox
+    surfaced an active lock that the card's own workflow progress never showed.
+  - **A track tab counted cards its own board does not show.** The tab number
+    included cards the board filtered out, so the count and the list disagreed.
+  - **The gap tally counted findings the card could not list.** A gap that could
+    not be attached to a scope was counted in the total and then absent from the
+    list beneath it.
+
 ## [0.57.7](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.6...v0.57.7) (2026-09-29)
 
 
