@@ -6,7 +6,12 @@
 - `npm run typecheck` — must be green before committing.
 - `npm test` — full suite; must be green.
 - `node scripts/sync-stelow-assets.mjs` — manual skill/data sync (pinned commit; then `npm run reload`).
-- `grep dist/` — confirm the bundle actually contains the change; the reload version string is unreliable.
+- `grep dist/` — confirm the bundle actually contains the change; the reload
+  version string is unreliable. Grep for a distinctive *string the change
+  itself emits*, not a filename or symbol: a filename is present whether or
+  not the new logic reached it. For synced content, grep the shipped
+  `dist/skills/<file>` — the only proof the upstream change reached users,
+  since a `skills/` diff in git proves only that someone committed it.
 
 ## Edit discipline (agent tooling traps)
 
@@ -26,6 +31,25 @@
 ## Don'ts
 
 - Never restart `bb-daemon.service` to reload this plugin — it terminates active BB threads.
+- Never assume the checkout is still yours: this repo is shared between
+  threads, and another one can change the checked-out branch or leave commits
+  on it while you work. Re-read `git branch --show-current` and `git status`
+  immediately before every commit, push, and rebase. The failure is silent —
+  a commit meant for your branch lands on theirs, and a rebase rewrites work
+  that was never yours.
+- Commits you find already on `master` (or any shared ref) belong to another
+  thread. They are not yours to push, tag, or release: open a branch from
+  `origin/master`, rebase them onto it, and PR them. Finding work
+  committed-but-unpushed is not permission to publish it.
+- Never `git reset` (with or without `--hard`) to "realign" a checkout another
+  thread may be using: reset moves the branch pointer and leaves the working
+  tree describing the *old* commit, so the next build silently runs stale code
+  and the next `git status` shows a `package.json`/`CHANGELOG.md` nobody
+  edited. Realign with `git pull --ff-only` on the branch you actually want,
+  or a fresh worktree.
+- Never `git push --force` to `master` to undo a bad push;
+  `--force-with-lease` on a ref you pushed yourself is the only force allowed
+  here, and only to restore a commit you just published.
 - Never stop threads or delete data in `bb.onDispose` — it fires on every hot-reload, not just uninstall; killing workers massacres in-flight work.
 - Never hand-edit `skills/` or `data/stelow` — both sync from upstream and are overwritten without warning; fix upstream and let the sync propagate.
 - Never tag or `gh release create` from a laptop — on master the merged release PR is the release (release-please); the frozen 0.3 line (`v0.3.80`–`v0.3.88`) is the only exception (direct tags, never merged).
@@ -51,6 +75,30 @@
 - After syncing a live checkout, run `npm run reload` so the server
   re-registers skill trees. A spawn landing on a just-swapped tree 404s
   until rescan — start-phase failures auto-retry (bounded), then inbox.
+
+**An upstream tag does not trigger the sync — the workflow listens for
+`repository_dispatch` (`stelow-release`), not for a release.** Tagging
+upstream and declaring victory leaves the plugin pinned to the previous
+commit with no error anywhere. After cutting an upstream release, either
+dispatch it yourself or watch for the bot and do not assume:
+
+```bash
+gh api -X POST repos/calionauta/bb-plugin-stelow/dispatches \
+  -f event_type=stelow-release -F 'client_payload[commit]=<tag-or-ref>'
+```
+
+Then confirm the pin actually moved (`data/stelow-source.json` on
+`master`) before calling the two repos consistent.
+
+**Sync-owned content that disagrees with upstream is a bug in the
+plugin, and it is invisible until the next sync silently reverts it.**
+The drift shows up as an uncommitted diff in `skills/`/`data/`, or as a
+commit whose content matches nothing in the pinned ref — check with
+`git show master:skills/<file>` against the upstream ref rather than
+trusting the commit message. The fix is always upstream-first (fix
+methodology in `calionauta/stelow`, cut a release, dispatch the sync);
+committing the local edit makes the plugin disagree with its own pin
+until the next bot run.
 
 ## Transitions are enforced in one place
 
@@ -215,6 +263,16 @@ generated notes); merging it cuts the `vX.Y.Z` tag and the GitHub
 release. The merge is the release — never tag or `gh release create`
 from a laptop.
 
+**Never push to `master` directly — branch, then PR, always.** Every
+release rule above is written for a merged PR, and a direct push breaks
+them silently: the squash commit's subject is the *branch's last commit*
+rather than a PR title chosen for the change type, so a batch of `fix:`
+commits that carries a `feat:` ships as a patch with the feature absent
+from the notes. It also leaves no review point, which is the one thing
+the release process is built on. Pushing and then reverting with
+`--force-with-lease` works, but it publishes a wrong master first —
+avoid it rather than repairing it.
+
 Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
 confirm CI is green on it. Keep feature commits separate; the release
@@ -287,6 +345,18 @@ through the release workflow's own `release-as` input
 (`gh workflow run release.yml -f release-as=<version>`), never by
 editing `package.json` in the release PR, which release-please
 overwrites.
+
+**A squash merge destroys the evidence you would use to check the
+work landed, so verify by content, not by commit message.** After a
+squash, `git log --grep="<commit subject>"` finds the *PR title* and
+tells you nothing about whether the individual fixes are present —
+several unrelated `fix:` subjects collapse into one line. To confirm
+work reached `master`, read the files (`git show master:<path>`, the
+`gh api repos/.../contents/<path>?ref=<tag>` shape for a release, or
+`git show --stat <merge>`) and look for the behaviour. This is the
+only check that distinguishes "the commit is there" from "the change
+is there", and a batch of unrelated fixes under one title is exactly
+where the difference hides.
 
 Release notes come from commit messages: `feat:`/`fix:` (plus `perf:`
 and `BREAKING CHANGE:`) bump the version and appear in the notes;
