@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { lockBlockEvent, lockBlockSummary, lockBlockDedupeKey } from "../lib/lock-blocked.mjs";
+import { blockedFileWait, lockBlockEvent, lockBlockSummary, lockBlockDedupeKey, lockWaitHero, scopeClaimLines } from "../lib/lock-blocked.mjs";
 import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
@@ -138,4 +138,83 @@ test("the old formatter is gone, not merely unused", () => {
   for (const file of ["server/runtime/claim-coordination.ts", "server/runtime/cli/cli-deps.ts", "server/runtime/wiring/cli-surfaces.ts"]) {
     assert.doesNotMatch(read(file), /lockBlockedSummary/, `${file} still carries the formatter that dropped the id`);
   }
+});
+
+/**
+ * The card knew a scope had claims and nothing else.
+ *
+ * The file names were dropped at the boolean on the way to the panel, so the
+ * open card could say "files claimed" and never say which files, and said
+ * nothing at all about the case a reader most needs: another card is holding
+ * a file this one is waiting on. The Inbox had that the whole time, on a
+ * different screen — one fact, two surfaces, and the card was the one that
+ * could not be used.
+ */
+test("the card's wait is derived from the same per-scope record the Inbox reads", () => {
+  const scopes = [
+    { blockedFiles: [{ file: "src/foo.ts", heldBy: "card_holder", expiresAt: 2_000 }] },
+    { blockedFiles: [{ file: "src/bar.ts", heldBy: "card_holder", expiresAt: 1_000 }] },
+    { blockedFiles: [{ file: "src/baz.ts", heldBy: "card_other", expiresAt: 3_000 }] },
+  ];
+  const wait = blockedFileWait(scopes, (id) => `name of ${id}`);
+  assert.deepEqual(wait.files, ["src/foo.ts", "src/bar.ts", "src/baz.ts"], "every blocked file is named, in the order the scopes report them");
+  assert.deepEqual(wait.holders, ["card_holder", "card_other"], "every holder is carried, so the card can link all of them");
+  assert.equal(wait.holderCardId, "card_holder", "the holder blocking the most files leads the sentence");
+  assert.equal(wait.holderName, "name of card_holder", "the name is resolved by the caller, the id is never parsed from prose");
+  assert.equal(wait.expiresAt, 3_000, "the latest lease is the one that matters for the backstop");
+  assert.equal(blockedFileWait([{ blockedFiles: [] }], (id) => id), null, "a free card has no wait to show");
+  assert.equal(blockedFileWait([], (id) => id), null, "no scopes is no wait");
+  assert.equal(blockedFileWait(null, null), null, "junk is no wait, never a crash");
+});
+
+test("a blocked card is named as waiting, not as stalled", () => {
+  const wait = blockedFileWait([{ blockedFiles: [{ file: "src/foo.ts", heldBy: "card_holder", expiresAt: 0 }] }], () => "Restore cards");
+  const hero = lockWaitHero(wait);
+  assert.equal(hero.kind, "paused", "it is still a paused card, with the reason attached");
+  assert.match(hero.title, /waiting on a file/i);
+  assert.match(hero.sub, /src\/foo\.ts/, "the sentence names the file");
+  assert.match(hero.sub, /Restore cards/, "and the holder, by the name the caller resolved");
+  assert.match(hero.sub, /no action needed/, "release is automatic; implying homework trains distrust");
+  assert.equal(lockWaitHero(null), null, "a free card falls through to the generic idle branch");
+  const many = lockWaitHero(blockedFileWait([
+    { blockedFiles: [{ file: "a.ts", heldBy: "c1", expiresAt: 0 }] },
+    { blockedFiles: [{ file: "b.ts", heldBy: "c2", expiresAt: 0 }] },
+  ], (id) => id));
+  assert.match(many.sub, /2 files/, "several files are counted, not listed as a wall of paths");
+  assert.match(many.sub, /2 other cards/, "and several holders are counted too, rather than blaming one");
+});
+
+test("a scope says WHICH files, and a fault looks like a fault", () => {
+  // The regression this pins: "files claimed" and "no live file claim" shipped
+  // in the same muted paragraph, a dot apart, so a defect read as a footnote.
+  const held = scopeClaimLines({ claimFiles: ["src/a.ts", "src/b.ts"], blockedFiles: [], claimed: true, status: "in-progress" });
+  assert.deepEqual(held.map((row) => row.tone), ["held"], "holding files is one quiet line");
+  assert.match(held[0].text, /2 files: src\/a\.ts, src\/b\.ts/, "and it names them");
+  assert.equal(held[0].title, "src/a.ts · src/b.ts", "the full list survives in the tooltip, not the sentence");
+
+  const many = scopeClaimLines({ claimFiles: ["a", "b", "c", "d"], claimed: true, status: "done" });
+  assert.match(many[0].text, /\+1 more/, "a long list truncates rather than pushing the task list off the card");
+  assert.equal(many[0].title, "a · b · c · d", "and truncation never loses the names");
+
+  const blocked = scopeClaimLines({
+    claimFiles: ["src/mine.ts"],
+    blockedFiles: [{ file: "src/theirs.ts", heldBy: "card_holder" }],
+    claimed: true,
+    status: "in-progress",
+  });
+  assert.deepEqual(blocked.map((row) => row.tone), ["held", "blocked"], "holding your own file and waiting on another are two different facts");
+  assert.match(blocked[1].text, /src\/theirs\.ts/, "the blocked line names the file");
+  assert.match(blocked[1].title, /card_holder/, "and the holder's id, which is the link target");
+
+  const missing = scopeClaimLines({ claimFiles: [], blockedFiles: [], claimed: false, status: "in-progress" });
+  assert.deepEqual(missing.map((row) => row.tone), ["missing"], "running with no claim is a fault, so it says so");
+  // A scope with no state dir has `claimed: null`. Absence of a state to read
+  // is not the same as holding nothing, so it must never become a fault.
+  assert.deepEqual(
+    scopeClaimLines({ claimFiles: [], blockedFiles: [], claimed: null, status: "in-progress" }),
+    [],
+    "an unknown claim is silence, never an accusation",
+  );
+  assert.deepEqual(scopeClaimLines({ claimed: false, status: "done" }), [], "a finished scope does not need a lease to have finished");
+  assert.deepEqual(scopeClaimLines(null), [], "junk rows nothing");
 });

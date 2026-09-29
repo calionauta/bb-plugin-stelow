@@ -1,4 +1,5 @@
 import { archivedCardDetailPresentation } from "../../lib/card-detail-presentation.mjs";
+import { lockWaitHero } from "../../lib/lock-blocked.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 // Detail hero: one status reading per card — decision, error, paused,
@@ -20,6 +21,16 @@ export type HeroDetailState = {
   pendingQuestions: Array<unknown>;
   expiredQuestions: Array<unknown>;
   card: { needsAttention: boolean; stallCount: number };
+  /** The card's file-claim wait, when another live card holds one of its
+   * files. Read only where it decides the hero — see the contention branch in
+   * `workerHero`. Same shape the server derives (lib/lock-blocked.mjs). */
+  fileLocks?: {
+    files: string[];
+    holders: string[];
+    holderCardId: string;
+    holderName: string;
+    expiresAt: number;
+  } | null;
 } | null;
 
 export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
@@ -72,18 +83,7 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
   // period), never for the routine seconds-long idle between agent turns.
   // Firing it on every turn would cry wolf and teach the signal to be ignored.
   // Fresh idles still get the subtle resume row in the calm hero below.
-  if (card.activity === "idle" && card.workerThreadId != null && detail?.card.needsAttention) {
-    const stalls = detail?.card.stallCount ?? 0;
-    return {
-      kind: "paused",
-      title: "Paused",
-      sub: stalls >= 3
-        ? `Stalled ${stalls} times in ${stageLabel(card.stage)} with no progress — inspect the thread before retrying, or restart fresh.`
-        : card.lastError
-          ? "The worker failed with unfinished work. Retry continues in place; restart begins fresh from triage."
-          : "The worker is idle with unfinished work. Resume continues in place; restart begins fresh from triage.",
-    };
-  }
+  if (isKnownStall(card, detail)) return stalledHero(card, detail);
   if (card.activity === "running") {
     return {
       kind: "working",
@@ -92,6 +92,35 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
     };
   }
   return null;
+}
+
+function isKnownStall(card: HeroCardState, detail: HeroDetailState): boolean {
+  return card.activity === "idle" && card.workerThreadId != null && detail?.card.needsAttention === true;
+}
+
+/**
+ * Why an idle card is idle, and what to do about it.
+ *
+ * Contention outranks a generic stall: the idle has a KNOWN cause that
+ * resolves on its own, and a reader told "the worker is idle with unfinished
+ * work" goes looking for a crash that is not there. The contention state is
+ * decided in lib/lock-blocked.mjs — the same module, and the same record, the
+ * Inbox row derives from — so the card does not write a second version of that
+ * sentence.
+ */
+function stalledHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
+  const contention = lockWaitHero(detail?.fileLocks ?? null);
+  if (contention) return contention;
+  const stalls = detail?.card.stallCount ?? 0;
+  return {
+    kind: "paused",
+    title: "Paused",
+    sub: stalls >= 3
+      ? `Stalled ${stalls} times in ${stageLabel(card.stage)} with no progress — inspect the thread before retrying, or restart fresh.`
+      : card.lastError
+        ? "The worker failed with unfinished work. Retry continues in place; restart begins fresh from triage."
+        : "The worker is idle with unfinished work. Resume continues in place; restart begins fresh from triage.",
+  };
 }
 
 // Rest states: parked with no worker, or a calm default that names the

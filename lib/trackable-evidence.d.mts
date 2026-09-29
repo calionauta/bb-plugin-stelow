@@ -49,6 +49,11 @@ export interface EnrichClaim {
   file_path?: string;
   expires_at?: number;
 }
+export interface EnrichBlockedFile {
+  file: string;
+  heldBy: string;
+  expiresAt: number;
+}
 export declare function enrichEntriesForDetail<T extends { id?: string; tasks?: unknown }>(options?: {
   entries?: T[] | null;
   defaultKind?: string | null;
@@ -58,4 +63,4 @@ export declare function enrichEntriesForDetail<T extends { id?: string; tasks?: 
   isLapsed?: ((entry: T) => boolean) | null;
   readContract?: ((relPath: string) => Promise<string | null>) | null;
   nowMs?: number;
-}): Promise<T[]>;
+}): Promise<Array<T & { claimed: boolean | null; claimFiles: string[]; blockedFiles: EnrichBlockedFile[] }>>;

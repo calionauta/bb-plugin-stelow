@@ -5,14 +5,15 @@ import {
   addClaimWaiters,
   checkWorkspaceClaims,
   clearClaimWaiters,
+  CLAIM_TTL_MS,
   ensureCardClaimsTables,
   liveClaimsForWorkspace,
-  matchScopeClaims,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
   sweepExpiredClaims,
   waitersForFiles,
 } from "../lib/card-claims.mjs";
+import { matchScopeClaims, scopeClaimRoom } from "../lib/scope-claim-room.mjs";
 import { isClaimTerminal } from "../lib/card-terminal.mjs";
 
 // Full claim lifecycle at the lib level, mirroring exactly the calls
@@ -118,6 +119,47 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
   assert.equal(matchScopeClaims(live, { ownerId: "c2", scopeId: "scope-1", files: [], nowMs: T0 }).length, 0, "foreign cards miss");
   assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-1", files: [], nowMs: T0 + 1_900_000 }).length, 0, "expired leases miss");
   assert.deepEqual(matchScopeClaims(null, { ownerId: "c1", scopeId: "scope-1" }), [], "junk rows miss");
+}
+
+// --- The room: one pass names what a scope holds AND what blocks it -------
+// The card used to know a scope had claims and nothing else — the file names
+// were dropped at the boolean. So the room is a projection, not a filter: a
+// scope can only be shown holding a file it is not also blocked on.
+{
+  const db = new Database(":memory:");
+  ensureCardClaimsTables(db);
+  const WS = "/repo/room";
+  const T0 = 7_000_000;
+  // c2 is already working on the shared file; c1's scope-1 names it plus one of
+  // its own, and has claimed only its own.
+  acquireWorkspaceClaims(db, { cardId: "c2", workspacePath: WS, files: ["src/shared.ts"], scope: "other", nowMs: T0 });
+  acquireWorkspaceClaims(db, { cardId: "c1", workspacePath: WS, files: ["src/own.ts"], scope: "scope-1", nowMs: T0 });
+  const live = liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 });
+  const room = scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-1", files: ["src/own.ts", "src/shared.ts"], nowMs: T0 });
+  assert.deepEqual(room.held.map((row) => row.file_path), ["src/own.ts"], "c1 sees the file it holds");
+  assert.deepEqual(
+    room.blocked,
+    [{ file: "src/shared.ts", heldBy: "c2", expiresAt: T0 + CLAIM_TTL_MS }],
+    "and the one it cannot have, named with its holder",
+  );
+  const holders = new Set([...room.held.map((row) => row.file_path), ...room.blocked.map((row) => row.file)]);
+  assert.equal(holders.size, 2, "the two halves never name the same file: a scope cannot hold what it is blocked on");
+  assert.deepEqual(
+    scopeClaimRoom(live, { ownerId: "c2", scopeId: "other", files: ["src/shared.ts"], nowMs: T0 }).blocked,
+    [],
+    "the holder is blocked on nothing",
+  );
+  assert.deepEqual(
+    scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-1", files: ["src/own.ts", "src/shared.ts"], nowMs: T0 + CLAIM_TTL_MS }).blocked,
+    [],
+    "an expired lease blocks nothing",
+  );
+  assert.deepEqual(scopeClaimRoom(null, { ownerId: "c1" }), { held: [], blocked: [] }, "junk rows block nothing");
+  assert.deepEqual(
+    scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-9", files: [], nowMs: T0 }).blocked,
+    [],
+    "a scope that names no files is never blocked",
+  );
 }
 
 console.log("claims-lifecycle: ok");

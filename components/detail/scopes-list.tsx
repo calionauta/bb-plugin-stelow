@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { isDoneStatus } from "../../lib/trackables.mjs";
+import { scopeClaimLines, type ScopeClaimTone } from "../../lib/lock-blocked.mjs";
 import { orderScopes, statusRank } from "../../lib/scope-order.mjs";
 
 // Scope list: dependency-ordered scopes with waiting markers, per-task
@@ -22,6 +23,8 @@ export type ScopeListTask = {
   dependsOn?: string[] | null;
 };
 
+export type ScopeBlockedFile = { file: string; heldBy: string; expiresAt: number };
+
 export type ScopeListScope = {
   id: string;
   name: string;
@@ -34,6 +37,8 @@ export type ScopeListScope = {
   tasks: ScopeListTask[];
   conditions?: Array<{ type: string; message: string }> | null;
   claimed?: boolean | null;
+  claimFiles?: string[];
+  blockedFiles?: ScopeBlockedFile[];
   contract?: { acceptanceCriteria: string[] } | null;
   blockedBy?: string[] | null;
   dependsOn?: string[] | null;
@@ -74,6 +79,48 @@ function ScopeTasks({ tasks, fns }: { tasks: ScopeListTask[]; fns: ScopeStatusFn
   );
 }
 
+/**
+ * Which line needs a decision, and which is only history. The judgement lives
+ * in lib/lock-blocked.mjs (`scopeClaimLines`); this maps its tone to the card's
+ * existing vocabulary, so a fault can never ship in the muted grey that
+ * "files claimed" and "no live file claim" once shared.
+ */
+const CLAIM_TONE_CLASS: Record<ScopeClaimTone, string> = {
+  held: "text-muted-foreground",
+  blocked: "text-amber-700 dark:text-amber-300",
+  missing: "text-amber-700 dark:text-amber-300",
+};
+const CLAIM_TONE_GLYPH: Record<ScopeClaimTone, string> = { held: "●", blocked: "⛔", missing: "○" };
+
+/**
+ * The file claims, as a reader would ask for them: which files, and who holds
+ * the ones this scope cannot have.
+ */
+function ScopeClaimLine({ scope }: { scope: ScopeListScope }) {
+  const rows = scopeClaimLines({
+    claimFiles: scope.claimFiles,
+    blockedFiles: scope.blockedFiles,
+    claimed: scope.claimed,
+    status: scope.status,
+  });
+  if (rows.length === 0) return null;
+  return (
+    <>
+      {rows.map((row) => (
+        <p
+          key={`${row.tone}:${row.text}`}
+          className={`mt-1 text-[11px] ${CLAIM_TONE_CLASS[row.tone]}`}
+          title={row.title}
+          role={row.tone === "held" ? undefined : "note"}
+        >
+          <span aria-hidden>{CLAIM_TONE_GLYPH[row.tone]} </span>
+          {row.text}
+        </p>
+      ))}
+    </>
+  );
+}
+
 // Below the summary: conditions, record/claim evidence, acceptance
 // criteria, and the task list.
 function ScopeBody({ scope, fns }: { scope: ScopeListScope; fns: ScopeStatusFns }) {
@@ -84,12 +131,12 @@ function ScopeBody({ scope, fns }: { scope: ScopeListScope; fns: ScopeStatusFns 
           {scope.conditions.map((condition) => <p key={condition.type} className="text-[11px] text-amber-700 dark:text-amber-300" role="note">{condition.message}</p>)}
         </div>
       ) : null}
-      {scope.record || scope.claimed !== null ? (
+      <ScopeClaimLine scope={scope} />
+      {scope.record ? (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          {scope.record ? (scope.record.verified === true ? "✓ verified" : scope.record.verified === false ? "⚠ record unverified" : "record without verdict") : null}
-          {scope.record && typeof scope.record.filesCount === "number" ? ` · ${scope.record.filesCount} files` : null}
-          {scope.record && typeof scope.record.commandsCount === "number" ? ` · ${scope.record.commandsCount} commands` : null}
-          {scope.claimed === true ? " · ● files claimed" : scope.claimed === false && scope.status === "in-progress" ? " · ○ no live file claim" : null}
+          {scope.record.verified === true ? "✓ verified" : scope.record.verified === false ? "⚠ record unverified" : "record without verdict"}
+          {typeof scope.record.filesCount === "number" ? ` · ${scope.record.filesCount} files` : null}
+          {typeof scope.record.commandsCount === "number" ? ` · ${scope.record.commandsCount} commands` : null}
         </p>
       ) : null}
       {scope.contract && scope.contract.acceptanceCriteria.length > 0 ? (

@@ -658,6 +658,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the waiting cards with an agent-only nudge when the files free. Done,
   archive, cancel, and delete release every claim; expired leases are
   reaped on the reconcile sweep.
+- **A lock is visible on the card, not only in the Inbox.** The open card
+  says which files a scope holds, by name, and which file another live card
+  is holding from it. It used to say "files claimed" and never say which
+  files, and it showed nothing at all about the case a reader most needs —
+  another card is holding a file this one is waiting on — while the Inbox,
+  on another screen, knew all of it. One read now feeds both: the claim
+  room (`lib/scope-claim-room.mjs`) names in one pass what a scope holds
+  and what it cannot have, so the card can never show a scope holding a
+  file it is also waiting on, and `lib/lock-blocked.mjs` derives the
+  Inbox row, the card's wait, and the scope line from that same record
+  rather than each writing its own sentence. A card blocked by contention
+  says so in the hero — it is paused on another card, not stalled — with
+  the holder named, and the scope line marks the wait in amber instead of
+  the muted grey that "files claimed" and "no live file claim" once shared,
+  which made a defect read as a footnote. A scope with no state dir has an
+  unknown claim, and unknown is never a fault.
 - **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory

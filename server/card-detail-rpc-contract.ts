@@ -114,6 +114,14 @@ export const cardDetailRpcContract = {
             z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() }),
           ),
           claimed: z.boolean().nullable(),
+          // The files themselves, not a tally: which files this card holds,
+          // and which of its scope's files another live card holds. Null
+          // `claimed` with empty lists means the card has no state dir to
+          // read claims from, which is not the same as holding nothing.
+          claimFiles: z.array(z.string()),
+          blockedFiles: z.array(
+            z.object({ file: z.string(), heldBy: z.string(), expiresAt: z.number() }),
+          ),
           tasks: z.array(
             z.object({
               id: z.string(),
@@ -233,6 +241,19 @@ export const cardDetailRpcContract = {
               provenance: z.array(z.string()),
             }),
           ),
+        })
+        .nullable(),
+      // Which of this card's files another live card holds, derived from the
+      // same enriched scopes the card renders. Null when nothing is blocked —
+      // the hero reads it to say WHY it is idle instead of the generic
+      // "unfinished work" that is true of every stalled card.
+      fileLocks: z
+        .object({
+          files: z.array(z.string()),
+          holders: z.array(z.string()),
+          holderCardId: z.string(),
+          holderName: z.string(),
+          expiresAt: z.number(),
         })
         .nullable(),
       artifacts: z.array(

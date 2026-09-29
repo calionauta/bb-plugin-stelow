@@ -11,6 +11,7 @@ import { splitActionState } from "../../lib/split-proposal.mjs";
 import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
 import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
@@ -64,6 +65,8 @@ export type DetailParts = {
     reviewGates: string[];
   };
   scopeXray: ScopeXray | null;
+  /** The card-level file-claim wait, derived from `scopes`. Null when free. */
+  fileLocks: BlockedFileWait | null;
 };
 
 export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
@@ -98,6 +101,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     }),
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
     scopeXray: parts.scopeXray,
+    fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
     workerHistory: parts.workerHistory,
     executionRuns: deps.executionLifecycle.detailList(card.id),
