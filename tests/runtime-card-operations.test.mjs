@@ -126,14 +126,17 @@ test("parked phase move writes the checkpoint before spawn and rolls it back on 
   cardValue.worker_thread_id = null;
   cardValue.stage = "triage";
   cardValue.status = "draft";
+  // `planning`, not `execution`: a drag may only reach the NEXT phase, and this
+  // test is about the spawn rollback, not about phase distance. Reaching the
+  // spawn is the precondition for the behaviour under test.
   assert.deepEqual(
-    await handlers.moveCard({ cardId: "card-1", status: "execution" }),
+    await handlers.moveCard({ cardId: "card-1", status: "planning" }),
     { ok: false, error: "spawn failed" },
   );
   assert.deepEqual(calls[0], [
     "update",
     "card-1",
-    { stage: "execution", status: "in-progress" },
+    { stage: "planning", status: "in-progress" },
   ]);
   assert.deepEqual(calls[1], ["fresh", "card-1", "start"]);
   assert.deepEqual(calls[2], [
@@ -147,12 +150,14 @@ test("parked phase move publishes only after the worker starts", async () => {
   const { handlers, calls, cardValue } = harness();
   cardValue.worker_thread_id = null;
 
+  // The card is at `execution`, so `review` is the next phase. `analysis` would
+  // now refuse as a rewind, which is a different test (card-move-phase-order).
   assert.deepEqual(
-    await handlers.moveCard({ cardId: "card-1", status: "analysis" }),
+    await handlers.moveCard({ cardId: "card-1", status: "review" }),
     { ok: true, error: null },
   );
   assert.deepEqual(calls, [
-    ["update", "card-1", { stage: "analysis", status: "in-progress" }],
+    ["update", "card-1", { stage: "review", status: "in-progress" }],
     ["fresh", "card-1", "start"],
     ["publish", "card-state", { cardId: "card-1" }],
   ]);

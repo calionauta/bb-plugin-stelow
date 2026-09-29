@@ -194,29 +194,18 @@ async function moveCard(
   }
   const decision = resolveCardMove(card.kind, status, {
     hasWorker: Boolean(card.worker_thread_id),
+    // The card's real position. Without it the resolver cannot tell a one-phase
+    // advance from a jump over the phases that produce the artifacts the target
+    // is meant to review, and it used to permit the jump.
+    stage: card.stage,
+    stagePhases: deps.stagePhases,
+    phaseEntryStages: deps.phaseEntryStages,
   });
   if (!decision.ok) return { ok: false, error: decision.error };
   const sameColumn = decision.move.type === "status"
     ? card.status === decision.move.status
     : card.stage === phaseEntryStage(deps, decision.move.phase);
   if (sameColumn) return { ok: true, error: null };
-  // Already inside that phase, but further along it. Re-entering would write the
-  // phase's ENTRY stage over the card's real one — a card mid-`planning` at
-  // `plan-gate` would silently teleport back to `critique`, reporting success,
-  // with no confirm and nothing to undo. Dragging is the most accidental gesture
-  // in this UI; it must not be able to rewind a workflow. Stage progress moves
-  // by doing the work, and going back is the explicit restart affordance, which
-  // confirms and says what it discards.
-  if (decision.move.type === "phase" && deps.stagePhases[card.stage] === decision.move.phase) {
-    return {
-      ok: false,
-      error: [
-        `This card is already in ${status} (at ${card.stage}).`,
-        `Re-entering the phase would reset it to ${phaseEntryStage(deps, decision.move.phase)}`,
-        "— restart it instead if that is what you want.",
-      ].join(" "),
-    };
-  }
   if (decision.move.type === "status")
     return moveStatus(deps, card, cardId, decision.move.status);
   return movePhase(deps, card, cardId, decision.move.phase);

@@ -210,10 +210,14 @@ assert.equal((detailStartSource.match(/rpc\.call\("startWorker"/g) ?? []).length
 assert.match(heroActions, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
+// The policy needs THREE facts about the card, not one: whether it started, and
+// where it is. `stage` and `stagePhases` are what make a one-phase advance
+// distinguishable from a drag that skips the phases producing the target's
+// artifacts — without them the resolver was structurally unable to tell.
 assert.match(
   server,
-  /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{\s*hasWorker: Boolean\(card\.worker_thread_id\),\s*\}\s*\)/,
-  "the move policy knows whether the card already started",
+  /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{[\s\S]*?hasWorker: Boolean\(card\.worker_thread_id\),[\s\S]*?stage: card\.stage,[\s\S]*?stagePhases: deps\.stagePhases,[\s\S]*?\}\s*\)/,
+  "the move policy knows whether the card started and where it is",
 );
 const parkedStart = /if \(card\.worker_thread_id\) return[\s\S]*?const started = await deps\.workers\.fresh\(cardId, "start"\);/;
 assert.match(server, parkedStart, "entering a build phase starts a parked card");
