@@ -91,19 +91,28 @@ test("a failed spawn rolls the status back instead of leaving a phantom wait", a
   ]);
 });
 
-test("dragging an archived card still refuses — terminality for automated paths does not move", async () => {
+// Deps complete enough that REMOVING the guard would produce real writes rather
+// than a crash. A terminality test whose fixtures are too thin to move a card
+// passes for the wrong reason — the same way a drag to a non-existent board
+// column proves the schema instead of the rule.
+function moveHarness(cardValue) {
   const calls = [];
-  const cardValue = { id: "card-1", kind: "build", status: "archived", stage: "execution", worker_thread_id: "thread-1" };
   const handlers = createCardOperationsHandlers({
     db: { prepare: () => ({ get: () => null }) },
     bb: { realtime: { publish: (...args) => calls.push(["publish", ...args]) } },
     now: () => 300,
     getCard: () => cardValue,
-    workers: { fresh: async () => ({ ok: true, error: null }), stop: async () => {} },
+    workers: {
+      fresh: async (...args) => {
+        calls.push(["fresh", ...args]);
+        return { ok: true, error: null };
+      },
+      stop: async () => {},
+    },
     updateCard: (...args) => calls.push(["update", ...args]),
     releaseClaims: async () => {},
     recordStageEvent: () => {},
-    cardStageSlug: async () => "execution",
+    cardStageSlug: async () => cardValue.stage,
     fetchPendingAsks: async () => [],
     openExpiredQuestionIds: () => [],
     logCardComment: () => "comment-1",
@@ -111,12 +120,39 @@ test("dragging an archived card still refuses — terminality for automated path
     buildNudge: () => "continue",
     buildContinueInput: (text) => [{ type: "text", mentions: [], text }],
     splitRequestNudge: "propose split",
-    phaseEntryStages: { execution: "execution" },
+    phaseEntryStages: { analysis: "shape", planning: "shape", execution: "execution" },
+    stagePhases: { shape: "analysis", critique: "planning", execution: "execution" },
     errors: { cardNotFound: "not found", cardArchived: "archived" },
   });
-  assert.deepEqual(await handlers.moveCard({ cardId: "card-1", status: "in-progress" }), {
-    ok: false,
-    error: "archived",
-  });
+  return { handlers, calls };
+}
+
+test("dragging an archived card refuses on both tracks — terminality for automated paths does not move", async () => {
+  // One card per kind, because the two tracks take different branches of the
+  // move resolver: a phase target for build, a status target for lightweight. A
+  // guard placed inside the resolver would cover one and miss the other, so
+  // asserting only the build card would let that regression ship green.
+  const build = { id: "card-1", kind: "build", status: "archived", stage: "execution", worker_thread_id: "thread-1" };
+  const research = { id: "card-2", kind: "research", status: "archived", stage: "research", worker_thread_id: "thread-2" };
+
+  for (const [cardValue, target] of [[build, "analysis"], [research, "doing"]]) {
+    const { handlers, calls } = moveHarness(cardValue);
+    assert.deepEqual(
+      await handlers.moveCard({ cardId: cardValue.id, status: target }),
+      { ok: false, error: "archived" },
+      `${cardValue.kind} card dragged to ${target} must refuse`,
+    );
+    // Nothing at all: no status write, no worker spawn, no claim release.
+    assert.deepEqual(calls, [], `${cardValue.kind} refusal must be inert`);
+  }
+});
+
+test("an archived card dropped back on its own column is a no-op, not a violation", async () => {
+  // The most common drag in this UI is nudging a card a few pixels and letting
+  // go where it already sat. Answering "This card is archived" for a move that
+  // changes nothing teaches people that the guard is noise.
+  const cardValue = { id: "card-1", kind: "build", status: "archived", stage: "execution", worker_thread_id: "thread-1" };
+  const { handlers, calls } = moveHarness(cardValue);
+  assert.deepEqual(await handlers.moveCard({ cardId: "card-1", status: "archived" }), { ok: true, error: null });
   assert.deepEqual(calls, []);
 });

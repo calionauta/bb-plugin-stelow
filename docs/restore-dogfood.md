@@ -10,8 +10,22 @@ The spec named `card_19ny9eq3` — a build card, archived, stage `triage`, one
 unanswered question, a stored `last_error`. It does not exist. The live DB holds
 **13 cards, 12 archived, 0 questions closed by an archive**. The population the
 spec described ("19 archived cards hold an unanswered question and 15 of those
-also carry a `last_error`") is gone, and the four most recent plugin snapshots
-do not contain the card either, so it predates them.
+also carry a `last_error`") is gone.
+
+**The deletion is unexplained, and the reason is not age.** An earlier draft of
+this file concluded from the four most recent plugin snapshots also lacking the
+card that it predated them. That is backwards, and it matters: the snapshots run
+2026-09-22 → 09-23, while a `.backup` of the same database taken at 19:19 on
+2026-09-28 holds all 66 cards **including `card_19ny9eq3`**. So the card was
+created after the snapshots and deleted after 19:19, not before the snapshots.
+53 of 65 archived cards are gone and the 12 survivors are scattered across
+2026-09-05 → 09-24, so a date filter does not describe it either. `recovery_audits`
+is empty and deletion is a hard delete, so the data carries no author. What is
+*not* ruled out is this repo: the run behind this document used the real
+`restoreCard` and `moveCard` RPCs against the live database, and its cleanup of
+the two fixture cards is the one write path in it that the read-only fixture
+`tests/fixtures/restore-dogfood.mjs` cannot vouch for. Treat the cause as open
+until someone confirms whether the deletion was intended.
 
 So the fixture was rebuilt to the same profile rather than substituted with
 whatever survived. `card_dogfood_restore` is a build card, archived, stage
@@ -52,9 +66,44 @@ Restore and re-archive both ran through the real RPCs — `restoreCard`, then
    `answered` question stayed resolved, and the fixture leaves **zero** open
    events when re-archived.
 
-Terminality, the regression the feature was most likely to cause: dragging the
-re-archived card to `in-progress` was **refused** by `moveCard`. Restore is not a
-move target, and nothing automated carries the key.
+### Terminality, re-tested properly
+
+The first attempt at this check dragged the re-archived card to `in-progress`.
+It came back `rpc input validation failed` — and that proved nothing. `in-progress`
+is not a board column at all; zod rejected it at the schema, one layer before the
+terminality guard could run. Reading that refusal as terminality holding would
+have been the exact failure this file exists to prevent: an error that agrees with
+the assertion for the wrong reason.
+
+Re-tested with real columns, on one card of each kind, because `resolveCardMove`
+routes build and lightweight tracks through different branches — a phase target
+for build, a status target for research:
+
+| card kind | target column | result |
+|---|---|---|
+| build, archived | `analysis` (phase) | refused — *This card is archived.* |
+| build, archived | `execution` (phase) | refused — *This card is archived.* |
+| research, archived | `doing` (status) | refused — *This card is archived.* |
+| research, archived | `done` (status) | refused — *This card is archived.* |
+| build, archived | `archived` (no-op) | **accepted** |
+
+Both cards were byte-identical afterwards. The guard is in front of the
+`resolveCardMove` call, not inside it, so it holds for every track without each
+track remembering it — which is the right place, and the reason a fourth column
+would have been covered too.
+
+The no-op row is the guard's other half and it matters: a person nudging an
+archived card a few pixels and releasing it where it already sat must not be told
+the card is archived, for a move that changes nothing.
+
+**And the refusal names no exit.** *This card is archived.* is the whole message.
+The blueprint's own rule is that every refusal names the valid way forward, and
+this one does not — a deadlock with a good error message, which is the failure
+mode the other half of this feature exists to prevent. The door exists (Restore,
+under the card's manage menu); the refusal just does not point at it. Left
+unfixed here, and reported instead: the string is duplicated across seven
+call sites, so naming the exit means changing one source and seven literals, and
+that is a change to messages a dozen tests assert on.
 
 ## The one invariant that did not hold, and why
 
@@ -78,7 +127,9 @@ The question worth deciding is whether a question should survive the worker that
 asked it. If a card's pending question is meant to outlive its worker, the sync
 rule needs to recognise a restored card's questions as still live. That is a
 behaviour change, and it belongs in a card rather than in a bug fix — this run
-records the finding and changes nothing.
+records the finding and changes nothing. Tracked as
+[#178](https://github.com/calionauta/bb-plugin-stelow/issues/178), which also
+carries the `superseded`-vs-badge-lies trade-off that decides it.
 
 ## What this proves, and what it does not
 
