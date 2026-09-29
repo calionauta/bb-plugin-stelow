@@ -1710,8 +1710,18 @@ one input, one artifact.*
   rework, re-runs the critique, and only then returns to audit for
   `done`. `done` refuses while escalations lack scopes or linked
   scopes stay open. The mother card shows the loop in Gaps &
-  rework (counts, per-escalation scope status, lead/cycle time via
-  `gapSummary`); rework scopes carry a rework pill naming their gap.
+  rework (counts, per-gap disposition and scope status, lead/cycle
+  time via `gapSummary`); rework scopes carry a rework pill naming
+  their gap. The section lists every gap the registry named, not
+  only the escalated ones: a critique of two documented gaps used to
+  render a header reading "2 gaps" above an empty section, because
+  the tally counted findings while the body listed rework. A fixed
+  or documented gap shows its own disposition; an escalation shows
+  its rework scope, and "no scope yet" while it waits for one. The
+  Checks rollup counts only escalations that still need work — a
+  documented gap and an escalation whose rework scope finished are
+  both settled, and listing them as open told the reader a card was
+  waiting on findings nobody has to act on.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card

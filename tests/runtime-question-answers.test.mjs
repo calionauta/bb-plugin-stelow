@@ -315,6 +315,11 @@ test("gap summary links escalated gaps and reports unscoped ones", () => {
       matched: true,
       failures: [],
       totals: { total: 3, fixed: 1, documented: 1, escalated: 1 },
+      gaps: [
+        { description: "Need retry", resolution: "escalate" },
+        { description: "Need logs", resolution: "escalate" },
+        { description: "Typo", resolution: "fixed" },
+      ],
       escalated: [{ description: "Need retry" }, { description: "Need logs" }],
       auditGapScopes: [{
         id: "scope_1",
@@ -331,6 +336,35 @@ test("gap summary links escalated gaps and reports unscoped ones", () => {
   assert.equal(summary.unscoped, 1);
   assert.equal(summary.items[0].scopeStatus, "planned");
   assert.equal(summary.done, true);
+});
+
+// The tally counts every finding; the list has to be able to account for it.
+// This is the card that read "2 gaps" above an empty section: both findings
+// were documented, so the escalated-only list had nothing to show.
+test("gap summary lists documented and fixed findings, not only escalations", () => {
+  const summary = buildGapSummary(
+    card({ status: "completed" }),
+    {
+      matched: true,
+      failures: [],
+      totals: { total: 2, fixed: 0, documented: 2, escalated: 0 },
+      gaps: [
+        { description: "Docs drifted", resolution: "documented" },
+        { description: "Naming is wrong", resolution: "documented" },
+      ],
+      escalated: [],
+      auditGapScopes: [],
+      critiqueText: "critique",
+    },
+    { leadMs: 10, cycleMs: 20 },
+    (status) => status === "done",
+  );
+  assert.equal(summary.total, 2, "the header count is unchanged");
+  assert.deepEqual(
+    summary.items.map((item) => [item.description, item.resolution, item.scopeStatus]),
+    [["Docs drifted", "documented", null], ["Naming is wrong", "documented", null]],
+    "both documented gaps are listed, and a non-escalation never claims a rework scope",
+  );
 });
 
 test("quality seal never trusts an unknown artifact path", async () => {

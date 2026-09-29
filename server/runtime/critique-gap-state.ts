@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { contractForBuildArtifact } from "../../lib/artifact-contracts.mjs";
 import { parseArtifactManifest, resolveArtifactPath } from "../../lib/artifact-manifest.mjs";
-import { escalatedGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import { escalatedGaps, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Workspace = { path: string; hostId: string | null };
@@ -12,6 +12,9 @@ export type CritiqueGapState = {
   matched: boolean;
   failures: string[];
   totals: GapTotals;
+  /** Every finding the registry named, with its disposition. The card lists
+   * these; `escalated` is the subset the rework loop consumes. */
+  gaps: Array<{ description: string; resolution: string }>;
   escalated: Array<{ description: string }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
@@ -27,6 +30,7 @@ type CritiqueDeps = {
 type CritiqueAccumulator = {
   failures: string[];
   totals: GapTotals;
+  gaps: Array<{ description: string; resolution: string }>;
   escalated: Array<{ description: string }>;
   critiqueTexts: string[];
 };
@@ -36,6 +40,7 @@ function emptyGapState(): CritiqueGapState {
     matched: false,
     failures: [],
     totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+    gaps: [],
     escalated: [],
     auditGapScopes: [],
     critiqueText: "",
@@ -46,6 +51,7 @@ function emptyAccumulator(): CritiqueAccumulator {
   return {
     failures: [],
     totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+    gaps: [],
     escalated: [],
     critiqueTexts: [],
   };
@@ -64,6 +70,16 @@ function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
     const description = String(gap.description ?? "").trim();
     if (description && !target.escalated.some((entry) => entry.description === description)) {
       target.escalated.push({ description });
+    }
+  }
+}
+
+// Every finding, deduplicated across the critique rounds a card accumulated.
+// A gap re-audited in a later round is the same finding, not a second one.
+function addRegistryGaps(target: CritiqueAccumulator, content: string) {
+  for (const gap of registryGaps(content)) {
+    if (!target.gaps.some((entry) => entry.description === gap.description)) {
+      target.gaps.push({ description: gap.description, resolution: gap.resolution });
     }
   }
 }
@@ -97,6 +113,7 @@ async function collectCritique(
       result.failures.push(`FAIL ${fields.label ?? fields.path}: ${failure.detail}`);
     }
     addGapTotals(result.totals, summarizeGaps(content));
+    addRegistryGaps(result, content);
     addEscalatedGaps(result, content);
   }
   return matched ? result : null;
@@ -139,6 +156,7 @@ export function createCritiqueGapState(deps: CritiqueDeps) {
       matched: true,
       failures: critique.failures,
       totals: critique.totals,
+      gaps: critique.gaps,
       escalated: critique.escalated,
       auditGapScopes: auditGapScopes(deps, workspace.path, card.id),
       critiqueText: critique.critiqueTexts.join("\n\n"),

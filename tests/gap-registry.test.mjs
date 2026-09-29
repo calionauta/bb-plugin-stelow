@@ -3,6 +3,7 @@ import {
   frontmatterBlock,
   parseGapFrontmatter,
   escalatedGaps,
+  registryGaps,
   summarizeGaps,
   validateGapRegistry,
   gapsToTriageBatch,
@@ -35,6 +36,36 @@ assert.deepEqual(parseGapFrontmatter("# Report without frontmatter"), { found: f
 // Only escalate rows become new scopes.
 assert.deepEqual(escalatedGaps(clean).map((gap) => gap.description), ["Login rate limiter", "Session expiry"], "escalate rows selected");
 assert.deepEqual(escalatedGaps("# no frontmatter"), [], "no frontmatter means no scopes");
+
+// The card's list is the whole registry, not the escalated slice: a summary
+// counting every finding has to be able to show every finding.
+assert.deepEqual(
+  registryGaps(clean).map((gap) => [gap.description, gap.resolution]),
+  [
+    ["Login rate limiter", "escalate"],
+    ["Fixed import", "fixed"],
+    ["Rename helper", "documented"],
+    ["Session expiry", "escalate"],
+  ],
+  "every named row carries its disposition",
+);
+assert.deepEqual(registryGaps("# no frontmatter"), [], "no frontmatter means nothing to list");
+assert.deepEqual(
+  registryGaps(head("  - type: debt\n    impact: low\n    resolution: documented")),
+  [],
+  "a row with no description is a placeholder, not a finding",
+);
+assert.deepEqual(
+  registryGaps(head(`${row("a", "low", "fixed", "Same gap")}\n${row("b", "low", "fixed", "Same gap")}`))
+    .map((gap) => gap.description),
+  ["Same gap"],
+  "the same finding re-audited is one row, not two",
+);
+assert.deepEqual(
+  registryGaps(head(row("a", "low", "escalated", "Spelled both ways"))).map((gap) => gap.resolution),
+  ["escalate"],
+  "the escalated spelling normalizes to one disposition",
+);
 
 // Summary drives the card UI and the escalated-rate metric.
 assert.deepEqual(summarizeGaps(clean), { found: true, total: 4, fixed: 1, documented: 1, escalated: 2 }, "counts by resolution");

@@ -29,6 +29,8 @@ export function parseGapFrontmatter(text: unknown): { found: boolean; gaps: GapE
 
 export function escalatedGaps(text: unknown): GapEntry[];
 
+export function registryGaps(text: unknown): Array<{ description: string; resolution: string }>;
+
 export function summarizeGaps(text: unknown): GapSummary;
 
 export function validateGapRegistry(text: unknown): GapFailure[];

@@ -9,7 +9,7 @@ type GapSummary = {
   fixed: number;
   documented: number;
   escalated: number;
-  items: Array<{ description: string; scopeStatus: string | null }>;
+  items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number;
   unscoped: number;
   leadMs: number | null;
@@ -48,9 +48,16 @@ export function buildGapSummary(
   timeline: Timeline,
   isDoneStatus: (status: string) => boolean,
 ): GapSummary {
-  const linked = state.escalated.map((gap) => {
-    const scope = state.auditGapScopes.find((entry) => entry.gap === gap.description);
-    return { description: gap.description, scopeStatus: scope?.status ?? null };
+  // Every finding the registry named, not just the escalated slice. Only an
+  // escalation gets a rework scope, so `scopeStatus` stays null for the rest —
+  // and a fixed or documented gap still appears, carrying the disposition that
+  // closed it. A list that showed only escalations could not account for a
+  // total that counts all of them.
+  const items = state.gaps.map((gap) => {
+    const scope = gap.resolution === "escalate"
+      ? state.auditGapScopes.find((entry) => entry.gap === gap.description)
+      : undefined;
+    return { description: gap.description, resolution: gap.resolution, scopeStatus: scope?.status ?? null };
   });
   return {
     matched: true,
@@ -58,7 +65,7 @@ export function buildGapSummary(
     fixed: state.totals.fixed,
     documented: state.totals.documented,
     escalated: state.totals.escalated,
-    items: linked,
+    items,
     pendingScopes: state.auditGapScopes.filter((scope) => !isDoneStatus(scope.status)).length,
     unscoped: state.escalated.filter(
       (gap) => !state.auditGapScopes.some((scope) => scope.gap === gap.description),

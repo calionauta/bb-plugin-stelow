@@ -55,10 +55,16 @@ const inheritedBaseline = [
   // of the report — removing a sibling function from this file is what brought
   // this entry into view, not anything that happened to groupCardChecks. I first
   // recorded that as an unexplained suppression; it is the gate working, and the
-  // note now says so.
-  "lib/card-checks.mjs:groupCardChecks#1: 57 lines (baseline 57)",
+  // note now says so. The parenthesised number stays the fork point's 57 while
+  // the function is down to 53: the gap-item filter moved to its own function
+  // when the Checks rollup had to tell an open escalation from a settled one.
+  "lib/card-checks.mjs:groupCardChecks#1: 53 lines (baseline 57)",
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (recorded 78)",
+  // Same rule, the other way: lib/gap-registry.mjs was untouched until the gap
+  // list started reading the whole registry, and that edit brought its 53-line
+  // validateGapRegistry into the report. Unchanged debt, newly visible.
+  "lib/gap-registry.mjs:validateGapRegistry#1: 53 lines (baseline 53)",
   "lib/scope-batch-cancel.mjs:cancelBatch#1: 76 lines (recorded 76)",
   "lib/scope-batch-cleanup.mjs:finishScope#1: 51 lines (recorded 51)",
   "lib/scope-map.mjs:validateScopeMap#1: 54 lines (recorded 54)",

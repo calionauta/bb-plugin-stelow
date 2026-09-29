@@ -9,7 +9,16 @@ const scopes = [
   { id: "s2", name: "Apple Pay", status: "in-progress", tasks: [{ name: "t2", status: "in-progress" }, { name: "t3", status: "pending" }] },
 ];
 const questions = [{ title: "Ship it?", question: "Ship it?" }];
-const gaps = { matched: true, items: [{ description: "Missing test" }], fixed: 2, documented: 1, total: 4 };
+const gaps = {
+  matched: true,
+  items: [
+    { description: "Missing test", resolution: "escalate", scopeStatus: null },
+    { description: "Stale docs", resolution: "documented", scopeStatus: null },
+  ],
+  fixed: 2,
+  documented: 1,
+  total: 4,
+};
 
 // Groups read by type with done/pending counts, from the same sources the
 // heroes read — scopes, tasks, questions, gaps, review. Nothing invented.
@@ -20,6 +29,25 @@ assert.deepEqual(byId.get("scopes"), { id: "scopes", label: "Scopes", open: ["Ap
 assert.deepEqual(byId.get("tasks"), { id: "tasks", label: "Tasks", open: ["t2", "t3"], doneCount: 1, total: 3 }, "tasks split across scopes");
 assert.deepEqual(byId.get("questions"), { id: "questions", label: "Questions", open: ["Ship it?"], doneCount: 0, total: 1 }, "questions list titles");
 assert.deepEqual(byId.get("gaps"), { id: "gaps", label: "Gaps", open: ["Missing test"], doneCount: 3, total: 4 }, "gaps count fixed+documented as done");
+
+// A documented finding is closed by its disposition, and an escalation closes
+// when its rework scope finishes — neither is work the reader is waiting on.
+const settledGaps = {
+  matched: true,
+  items: [
+    { description: "Missing test", resolution: "escalate", scopeStatus: "planned" },
+    { description: "Landed already", resolution: "escalate", scopeStatus: "done" },
+    { description: "Stale docs", resolution: "documented", scopeStatus: null },
+    { description: "Typo", resolution: "fixed", scopeStatus: null },
+  ],
+  fixed: 1,
+  documented: 1,
+  escalated: 2,
+  total: 4,
+};
+const settled = new Map(groupCardChecks({ questions: [], scopes: [], gaps: settledGaps, review: null }).map((group) => [group.id, group]));
+assert.deepEqual(settled.get("gaps").open, ["Missing test"], "only an escalation without a finished rework scope is open work");
+assert.equal(settled.get("gaps").total, 4, "the total still counts every finding the registry named");
 
 // Groups with no applicable items resolve absent, never empty: review on
 // a card going nowhere is noise, and unmatched gaps stay invisible.
