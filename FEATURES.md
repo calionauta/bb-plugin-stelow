@@ -1076,7 +1076,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   *Proven against the live database, 2026-09-28* (`card_19ny9eq3`, the
   accidental test archive, reproduced by `tests/fixtures/restore-dogfood.mjs`
   on a `.backup` snapshot of `~/.bb/plugins/stelow/data.db`, inside a
-  transaction that is rolled back). Before: `status=archived`,
+  transaction that is rolled back; the second, real-RPC run and the invariant
+  that could not hold are in [`docs/restore-dogfood.md`](docs/restore-dogfood.md)).
+  Before: `status=archived`,
   `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
   reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
   341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
