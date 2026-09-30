@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.59.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.2...v0.59.0) (2026-09-30)
+
+
+### Features
+
+* a card the host is holding is held, not paused ([#205](https://github.com/calionauta/bb-plugin-stelow/issues/205)) ([1c0df62](https://github.com/calionauta/bb-plugin-stelow/commit/1c0df628e26b49c46bdba2fe75572b943f27bf97))
+
 ## [0.58.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.1...v0.58.2) (2026-09-30)
 
 
