@@ -116,7 +116,11 @@ function record(deps: TitleBurstDeps, cardId: string, outcome: TitleOutcome, con
   try {
     deps.comment(cardId, body);
   } catch {
-    // A record that cannot be written is not a reason to fail delivery.
+    // A record that cannot be written is not a reason to fail delivery — but it
+    // IS a reason the tally is now short. Say so, or the failure disappears
+    // exactly the way this card was opened to end.
+    deps.log(`title ${cardId}: ${outcome} could NOT be recorded — ${body}`);
+    return false;
   }
   return true;
 }

@@ -98,7 +98,15 @@ function stubs(options, rows, sink) {
   return {
     // A fresh copy per read: a shared object would let a later mutation be
     // visible to an earlier snapshot and hide the very race under test.
-    getCard: (id) => { const r = rows.get(id); return r ? { ...r } : undefined; },
+    getCard: (id) => {
+      const r = rows.get(id);
+      // A race that lands AT a read, not between polls. Polls are the only
+      // thing the status script can express, and every untested guard sits at a
+      // read, so the fixture could not reach them without this hook.
+      options.reads = (options.reads ?? 0) + 1;
+      if (options.onRead && options.reads === options.onRead.at) options.onRead.mutate(rows.get(id));
+      return r ? { ...r } : undefined;
+    },
     isArchivedCard: (c) => c.status === "archived",
     getCardByWorkerThread: () => undefined,
     getGenerationPresetId: () => (options.generationPreset === null ? null : "gen-1"),
@@ -111,7 +119,7 @@ function stubs(options, rows, sink) {
       return { id: `draft-${sink.spawns.length}` };
     },
     stopThread: async (id) => { sink.stops.push(id); },
-    comment: (id, body) => sink.comments.push({ id, body }),
+    comment: (id, body) => { if (options.commentThrows) throw new Error("comment write refused"); sink.comments.push({ id, body }); },
     log: (m) => sink.logs.push(m),
     publish: (event, payload) => sink.events.push({ event, payload }),
     stateDir: async () => null,
@@ -155,6 +163,48 @@ test("a rename landing in the retry-guard window is not overwritten", () => {
   // GAP-2: the pre-retry guard is load-bearing and was untested. The rename
   // lands after attempt 1 classified, so only the guard can stop the retry.
   const f = fixture({ statuses: [...Array(24).fill("running"), "__rename__", "idle"] });
+  return f.server.suggestCardName("card-1").then(() => {
+    assert.equal(f.card().display_name, "Human title", "the retry must not overwrite a human's name");
+  });
+});
+
+test("a record that cannot be written is logged, and no empty surface is refreshed", () => {
+  // SCOPE-5's done criterion: a throwing comment must produce internal_error
+  // evidence rather than vanishing. Before this it threw silently, logged
+  // nothing, and still published — reloading a surface with nothing on it.
+  const f = fixture({ statuses: ["running", "running"], commentThrows: true });
+  return f.server.suggestCardName("card-1").then(() => {
+    assert.equal(f.comments.length, 0, "the write was refused");
+    assert.ok(
+      f.logs.some((line) => line.includes("could NOT be recorded")),
+      "the failed record leaves evidence",
+    );
+    assert.equal(f.events.length, 0, "no publish for a record that never landed");
+  });
+});
+
+test("a card archived AT the record read takes no write", () => {
+  // The read-index race. Polls cannot express it; the guard can only be
+  // exercised here, and it is load-bearing.
+  // no_output is recordable and not retryable, so record() actually runs; a
+  // delivered outcome returns at the isRecordable branch before the read.
+  const f = fixture({
+    statuses: ["idle"],
+    output: "",
+    onRead: { at: 3, mutate: (row) => { row.status = "archived"; } },
+  });
+  return f.server.suggestCardName("card-1").then(() => {
+    assert.equal(f.comments.length, 0, "an archived card must not receive an agent record");
+  });
+});
+
+test("a rename landing AT the retry guard stops the retry", () => {
+  // The other read-index race. Without the guard the retry spawns and writes
+  // its title over the human's name.
+  const f = fixture({
+    statuses: [...Array(24).fill("running"), "idle"],
+    onRead: { at: 3, mutate: (row) => { row.display_name = "Human title"; } },
+  });
   return f.server.suggestCardName("card-1").then(() => {
     assert.equal(f.card().display_name, "Human title", "the retry must not overwrite a human's name");
   });
