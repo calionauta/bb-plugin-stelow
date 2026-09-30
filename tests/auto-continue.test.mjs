@@ -249,9 +249,14 @@ const syncDir = join(dirname(fileURLToPath(import.meta.url)), "../server/runtime
 // The idle policy and the terminal-stage park are two modules now: the done
 // nudge reads the same persisted completion state the auto-continue guard does,
 // so both belong in the corpus these pins read.
+// The turn scan now lives in stelow-turn-verbs.ts, its own module beside the
+// sentence it derives. It is in this corpus because these pins are about the
+// scan itself: which events it reads, and that exactly one fetch happens.
+const turnVerbsSource = readFileSync(join(syncDir, "stelow-turn-verbs.ts"), "utf8");
 const threadSyncSource = [
   readFileSync(join(syncDir, "build-thread-sync.ts"), "utf8"),
   readFileSync(join(syncDir, "build-thread-terminal.ts"), "utf8"),
+  turnVerbsSource,
 ].join("\n");
 const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");
 const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");
@@ -270,14 +275,31 @@ assert.match(
   /const input = buildContinueInput\([\s\S]*?buildContinueNudge\(deps\.interfacePick\)[\s\S]*?"private"[\s\S]*?sendAgentInput/,
   "auto-continue sends the shared continue nudge privately in place",
 );
+const budgetAt = autoBlock.indexOf("const next = nextAutoContinue({");
 const successOrder = [
-  "const sent = await sendAgentInput",
-  "const next = nextAutoContinue({",
-  "deps.updateCard(",
-  "return true",
-].map((token) => autoBlock.indexOf(token));
+  autoBlock.indexOf("const dispatch = await sendAgentInput"),
+  autoBlock.indexOf('if (dispatch.delivery === "queued") {'),
+  budgetAt,
+  // Scoped past the budget so the queued branch's own `updateCard` (which is
+  // what projects the hold) cannot be mistaken for the one that records it.
+  autoBlock.indexOf("deps.updateCard(", budgetAt),
+  autoBlock.indexOf("return true", budgetAt),
+];
 assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
 assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
+// The budget must sit BEHIND the queued branch, not merely after the send. On
+// card_e3u00eb4 (2026-09-30) a dispatch the host held was recorded as a resume
+// because `threads.send` does not throw when it queues, so ten held nudges
+// spent the whole budget and the card parked itself as if a person were
+// needed. Any reordering that lets the queued branch fall through to the
+// budget write brings that back.
+const queuedBranch = autoBlock.slice(autoBlock.indexOf('if (dispatch.delivery === "queued") {'));
+assert.match(queuedBranch, /holdUpdates\(snapshot\.lastOutput\)/, "a queued dispatch projects the hold");
+assert.doesNotMatch(
+  queuedBranch.slice(0, queuedBranch.indexOf("const next = nextAutoContinue")),
+  /nextAutoContinue|auto_continue_count/,
+  "a dispatch the host held spends no auto-continue budget",
+);
 assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
 assert.match(cardCopySource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
 assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");
@@ -305,7 +327,7 @@ assert.match(threadSyncSource, /lastTurnStelowCalls\(events\)/, "a silent stop s
 // sync. The options below are the whole point of the pin: narrowing the type
 // list would silently drop the turn boundary the scan windows on.
 const advanceEventPattern = new RegExp([
-  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: snapshot\.card\.worker_thread_id,`,
+  String.raw`threads\.events\.list\(\{[\s\S]*?threadId,`,
   String.raw`[\s\S]*?order: "desc",[\s\S]*?limit: "100",`,
   String.raw`[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]`,
 ].join(""));

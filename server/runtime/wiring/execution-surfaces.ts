@@ -23,6 +23,7 @@ import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-ma
 import { createResearchTrackSync } from "../research-track-sync.js";
 import type { HostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { createBuildThreadSync } from "../build-thread-sync.js";
+import { readHostHold } from "../worker-hold.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
@@ -228,9 +229,15 @@ function buildWorktreeCleanup(core: RuntimeCore) {
  * on the lifecycle they share.
  */
 function buildThreadSync(core: RuntimeCore) {
-  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
-  const readStreaks = createReadStreaks(bb);
-  const trackSync = createResearchTrackSync({
+  return {
+    trackSync: buildTrackSync(core),
+    syncThreadState: buildBuildSync(core, buildTrackSync(core)),
+  };
+}
+
+function buildTrackSync(core: RuntimeCore) {
+  const { bb, db, now, getCard, updateCard, workers } = core;
+  return createResearchTrackSync({
     bb,
     db,
     now,
@@ -243,6 +250,9 @@ function buildThreadSync(core: RuntimeCore) {
     recordStageEvent: core.ledger.recordStageEvent,
     markThreadRunning: core.trackProjection.markThreadRunning,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     noteAgentOutput: core.trackProjection.noteAgentOutput,
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
@@ -251,23 +261,14 @@ function buildThreadSync(core: RuntimeCore) {
     exploreArtifact: core.researchArtifacts.exploreArtifact,
     idleAttentionMs: IDLE_ATTENTION_MS,
   });
-  const syncThreadState = createBuildThreadSync(
-    buildSyncDeps(core, trackSync, readStreaks),
-  );
-  return { trackSync, syncThreadState };
 }
 
-/** The build-card sync's deps, named in one place so `buildThreadSync` reads
- * as a list of collaborators rather than a wall of wiring. */
-type ResearchTrackSync = ReturnType<typeof createResearchTrackSync>;
-
-function buildSyncDeps(
-  core: RuntimeCore,
-  trackSync: ResearchTrackSync,
-  readStreaks: HostReadStreak,
-) {
+/** The build-card sync's deps, named in one place so `buildBuildSync` reads as a
+ * list of collaborators rather than a wall of wiring. */
+function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTrackSync>) {
   const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
-  return {
+  const readStreaks = createReadStreaks(bb);
+  return createBuildThreadSync({
     bb,
     db,
     now,
@@ -279,7 +280,10 @@ function buildSyncDeps(
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
-    applyFailed: (cardId: string, threadId: string, error: string | null) =>
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
+    applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,
     recordInbox: core.recordInboxEvent,
@@ -292,7 +296,7 @@ function buildSyncDeps(
     noteUnreadable: readStreaks.unreadable,
     noteReadable: readStreaks.readable,
     forgetUnreadable: readStreaks.forget,
-  };
+  });
 }
 
 /**
