@@ -11,6 +11,7 @@ import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
 import { CurrentStagePill } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
+import { FileOccupancy } from "./file-occupancy";
 import { ScopeXray } from "./scope-xray";
 import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
@@ -270,6 +271,7 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
         {card.stage === "select" && !archivedPresentation ? <p className="text-xs text-muted-foreground">Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.</p> : null}
         <ScopeSyncWarning card={card} detail={detail} />
         <CardChecks card={card} detail={detail} gaps={gaps} />
+        {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} /> : null}
         {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
         {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : <p className="text-xs text-muted-foreground">{emptyScopes}</p>}
         <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />

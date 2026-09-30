@@ -647,6 +647,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Never demotes, resolves, or re-judges; failures keep deterministic
   tiers standing. An item with no reason list yet counts as unjudged, so
   the sweep reaches items the deterministic tiers wrote first.
+- **Concurrency, before it collides.** Two scopes of one card fan out only when
+  their transitive file sets are pairwise disjoint, and a scope that declared
+  no `target_files` now **refuses the batch** rather than counting as an empty
+  set: an unknown footprint is not a smaller one, and two unknown footprints
+  are not known to be disjoint. That refusal carries its own code
+  (`PARTITION_UNDECLARED`, naming the scopes) because it is a different fact
+  from an overlap and a reader who cannot tell them apart cannot fix either.
+  A single undeclared scope still runs — there is nothing for it to be
+  disjoint from. On top of the same claim ledger the lock protocol already
+  keeps, the card shows **Shared files**: which of its files another card also
+  holds, which scope, and when the lease ends. It is the state *before* a
+  collision, which the lock wall cannot report because it only speaks once one
+  has happened; it renders nothing under a managed worktree — isolation is why
+  there is nothing to say — and a lapsed lease is named as lapsed rather than
+  shown as held.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask

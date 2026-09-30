@@ -15,8 +15,13 @@ export interface ScopePartitionOverlap {
 }
 export interface ScopePartitions {
   admitted: boolean;
-  code: "PARTITION_OVERLAP" | "PARTITIONS_DISJOINT";
+  /** `PARTITION_UNDECLARED` is a refusal, not an overlap: a scope with no
+   *  expandable files is an unknown footprint, and two unknown footprints are
+   *  not known to be disjoint. */
+  code: "PARTITION_OVERLAP" | "PARTITION_UNDECLARED" | "PARTITIONS_DISJOINT";
   overlaps: ScopePartitionOverlap[];
+  /** Present only on `PARTITION_UNDECLARED`: the scopes that declared nothing. */
+  undeclared?: string[];
   partitions: Record<string, string[]>;
 }
 export declare function expandScopeFiles(scope: ScopePartitionScope | null | undefined): string[];

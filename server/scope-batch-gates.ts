@@ -37,7 +37,7 @@ export function scopeStartGate(
   db: ScopeBatchDb,
   args: { cardId: string; scopeId: string; workspacePath: string; scopes: BatchScope[] },
 ): { ok: true; coordinated: boolean }
-  | { ok: false; code: string; reason: string; conflicts?: unknown } {
+  | { ok: false; code: string; reason: string; conflicts?: unknown; undeclared?: string[] } {
   const batches = batchIdsForCard(db, args.cardId);
   if (batches.length === 0) return { ok: true, coordinated: false };
   const batchId = batches[0]!;
@@ -48,6 +48,14 @@ export function scopeStartGate(
   });
   const admission = admitScopeBatchRun(starting ? [...siblings, starting] : siblings);
   if (!admission.admitted) {
+    if (admission.code === "PARTITION_UNDECLARED") {
+      return {
+        ok: false,
+        code: "PARTITION_UNDECLARED",
+        reason: `scope ${args.scopeId} or a sibling declared no target files, so the batch cannot prove it is disjoint; it refuses before any spawn.`,
+        undeclared: admission.undeclared,
+      };
+    }
     return {
       ok: false,
       code: "PARTITION_OVERLAP",
