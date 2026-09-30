@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./creation-settings";
+import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
 import { StartImmediatelyCheck } from "../start-immediately-check";
@@ -87,7 +88,7 @@ function CreateExploreSettings({ stages, stage, onStage, stageAttention, explore
   onOpenPresets: () => void;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div className="grid gap-1.5">
         <span className="text-xs font-medium text-foreground">Choose a technique</span>
         <StrategyPicker strategies={stages} value={stage} onChange={onStage} groupName="stage-pick" attentionSignal={stageAttention} noun="techniques" legend="Technique" />
@@ -106,6 +107,7 @@ export type CreateExploreDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeProjectId: string | null;
+  validProjectIds?: string[];
   stages: ResearchStrategyOption[];
   explorePreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
   hasBandPreset: boolean;
@@ -113,17 +115,23 @@ export type CreateExploreDialogProps = {
   onOpenPresets: () => void;
 };
 
-export function CreateExploreDialog({ open, onOpenChange, activeProjectId, stages, explorePreset, hasBandPreset, bucketGallery, onOpenPresets }: CreateExploreDialogProps) {
-  const submit = useCreateExploreSubmit({ activeProjectId, onClose: () => onOpenChange(false) });
-
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (next) submit.resetOnOpen();
-  }
+export function CreateExploreDialog({
+  open,
+  onOpenChange,
+  activeProjectId,
+  validProjectIds,
+  stages,
+  explorePreset,
+  hasBandPreset,
+  bucketGallery,
+  onOpenPresets,
+}: CreateExploreDialogProps) {
+  const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
+  const submit = useCreateExploreSubmit({ activeProjectId: seedProjectId, onClose: () => onOpenChange(false) });
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
+    <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
+      <DialogContent fullscreenOnMobile className="overflow-y-auto overflow-x-hidden sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Start new exploration</DialogTitle>
             <DialogDescription>Pick one technique below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
@@ -142,7 +150,7 @@ export function CreateExploreDialog({ open, onOpenChange, activeProjectId, stage
           onOpenPresets={onOpenPresets}
         />
         <NewThreadComposer
-          defaultProjectId={activeProjectId ?? undefined}
+          defaultProjectId={seedProjectId ?? undefined}
           defaultProviderId={explorePreset?.providerId}
           defaultModel={explorePreset?.modelId}
           defaultReasoningLevel={explorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
@@ -151,7 +159,7 @@ export function CreateExploreDialog({ open, onOpenChange, activeProjectId, stage
           placeholder="What should Stelow explore?"
           layout="contained"
           draftKey="stelow-explore-create"
-          onSubmit={(request) => submit.start(request)}
+          onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
       </DialogContent>
     </Dialog>

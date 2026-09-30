@@ -20,7 +20,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   composer remembers the last used selection.
   The fixed-height dialog with inner scroll never jumps. Bordered
   settings sections visibly contain the controls. BB's own Project, Environment,
-  branch, and provider/model controls are authoritative: Stelow forwards the
+  branch, and provider/model controls are authoritative: the Project picker
+  opens on the last project used (falling back to the board project when that
+  pick is gone), Stelow forwards the
   chosen checkout unchanged and keeps later workers in it, and forwards the
   chosen provider/model/reasoning/permission to the spawn — a choice
   differing from the analysis band preset is pinned as the card's preset
