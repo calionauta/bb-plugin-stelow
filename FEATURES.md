@@ -1844,6 +1844,20 @@ one input, one artifact.*
   documented gap and an escalation whose rework scope finished are
   both settled, and listing them as open told the reader a card was
   waiting on findings nobody has to act on.
+  A scope the audit deliberately set aside is `skipped`, and
+  `skipped` is resolved everywhere this loop counts: the `done`
+  gate, the `verify` advisory, the batch writer's refusal check and
+  `gapSummary`'s `pendingScopes`. The count is the one a reader
+  actually sees, so it is the one with its own regression test
+  (`tests/gap-summary-skipped-scope.test.mjs`) — the advisory warning
+  was tested while the number was not, which meant the defect could
+  have been fixed in one surface and shipped in the other: a card
+  whose whole finding was "obsolete as a rework scope here" read
+  "1 scope still open" under a fix already written. The predicate
+  `isSkippedStatus` is required on both `buildGapSummary` and its
+  deps, not defaulted: `() => false` let a caller that forgot it get
+  the old counting with no error anywhere, the same failure one
+  layer down.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card

@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Stelow",
-    "description": "Stelow turns humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks (opportunity mapping, JTBD, discovery, market analysis), then deliver through an orchestrated workflow — Shape Up proposals, interface alternatives with explicit trade-offs before any code, technical plans broken into typed scopes with dependencies and spikes up front, gated reviews, and agent workers executing scope by scope. One board, one inbox that only interrupts when you are needed.",
+    "description": "Stelow turns humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks (opportunity mapping, JTBD, discovery, market analysis), then deliver through an orchestrated workflow \u2014 Shape Up proposals, interface alternatives with explicit trade-offs before any code, technical plans broken into typed scopes with dependencies and spikes up front, gated reviews, and agent workers executing scope by scope. One board, one inbox that only interrupts when you are needed.",
     "branding": {
       "icon": "Star"
     },
@@ -105,7 +105,7 @@
     "security:production": "npm audit --omit=dev --audit-level=high",
     "security:full": "npm audit --audit-level=high",
     "test:question-staleness": "node tests/question-staleness.test.mjs",
-    "test:question-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-question-answers.test.mjs",
+    "test:question-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-question-answers.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/gap-summary-skipped-scope.test.mjs",
     "test:card-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-card-state.test.mjs tests/runtime-card-handlers.test.mjs tests/runtime-card-promotion.test.mjs",
     "test:cli-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-cli-commands.test.mjs tests/runtime-cli-ask.test.mjs tests/runtime-cli-advisory.test.mjs tests/runtime-cli-review.test.mjs tests/runtime-cli-done-gates.test.mjs",
     "test:research-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-research-index.test.mjs tests/runtime-research-fanout.test.mjs tests/runtime-research-strategy.test.mjs",
