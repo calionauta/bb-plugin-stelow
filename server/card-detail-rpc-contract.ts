@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EXPOSURE_REASONS } from "../lib/shared-checkout-exposure.mjs";
 import { attachmentSchema, askOptionSchema, statusSchema } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
 
@@ -36,7 +37,9 @@ export const cardDetailRpcContract = {
       threads: z.number(),
       files: z.array(z.string()),
       lines: z.array(z.string()),
-      reason: z.enum(["isolated", "no-checkout", "no-threads", "no-overlap", "unavailable", "shared"]),
+      // One list, owned by lib/: a reason the schema does not know cannot be
+      // returned, and a reason with no schema cannot have a sentence.
+      reason: z.enum(EXPOSURE_REASONS),
     }),
   },
   cardDetail: {

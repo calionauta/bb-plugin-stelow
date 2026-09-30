@@ -3,6 +3,7 @@ import test from "node:test";
 import { createCardDetailHandler } from "../server/runtime/card-detail.ts";
 import { createCardMutationHandlers } from "../server/runtime/card-mutations.ts";
 import { createCardLifecycleHandlers } from "../server/runtime/card-lifecycle.ts";
+import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
 function card(overrides = {}) {
   return {
@@ -221,7 +222,10 @@ test("intent ownership refusal remains a negative control", async () => {
     await handlers.updateCardIntent({ cardId: row.id, intent: "bugfix" }),
     {
       ok: false,
-      error: "Workflow state ownership cannot be verified. Reseed this card before changing its workflow type.",
+      // The shared sentence plus this gate's own tail. Asserted as the
+      // concatenation so a change to either half is a change to the refusal,
+      // not a silently drifting copy of it.
+      error: `${OWNERSHIP_UNVERIFIED} Reseed this card before changing its workflow type.`,
     },
   );
 });

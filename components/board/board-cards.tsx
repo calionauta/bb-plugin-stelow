@@ -13,6 +13,7 @@ import {
   BuildStatusPills,
   DoingNowPill,
   LightweightStatusPills,
+  ReviewChip,
   ScopeStrip,
   attentionLabel,
 } from "../dashboard/build-status-pills";
@@ -69,15 +70,7 @@ export function CardMetaRows({ card }: { card: BoardCardItem }) {
         <div className="mt-2 max-w-full"><DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /></div>
       ) : null}
       {cardNeedsReview(card) ? (
-        <div
-          className={
-            "mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 "
-            + "text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
-          }
-        >
-          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-          <span>Review</span>
-        </div>
+        <div className="mt-2"><ReviewChip /></div>
       ) : null}
       {card.activity === "idle" ? (
         <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div>

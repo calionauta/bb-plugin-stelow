@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  EXPOSURE_REASONS,
   dirtyPathsFromPorcelain,
   sharedCheckoutExposure,
+  sharedCheckoutVerdict,
   threadsSharingCheckout,
 } from "../lib/shared-checkout-exposure.mjs";
 
@@ -167,6 +170,92 @@ for (const [label, extra] of [
     [],
     "a card with no checkout path asks nothing",
   );
+}
+
+// The reader's sentence for a checked answer. Every reason in the exported list
+// has to produce one, because a reason with no sentence falls back to whatever
+// the fallback copy says — which is how "no readable checkout" and "nobody
+// measured the overlap" both used to render as a clean checkout.
+{
+  for (const reason of EXPOSURE_REASONS) {
+    const text = sharedCheckoutVerdict({ isolated: false, threads: 1, files: [], lines: [], reason });
+    assert.equal(typeof text, "string", `reason ${reason} answers with a sentence`);
+  }
+}
+
+// The load-bearing half of that: an answer nobody measured must never render as
+// a measured clean one. `no-checkout` is the card with nothing to read at all,
+// and the other three are the reasons where the check ran and could not finish.
+{
+  for (const reason of ["unknown-footprint", "unreadable-tree", "unavailable", "no-checkout"]) {
+    const text = sharedCheckoutVerdict({ isolated: false, threads: 2, files: [], lines: [], reason });
+    assert.doesNotMatch(
+      text,
+      /No other agent is working/,
+      `${reason} is not a clean checkout, and must not read as one`,
+    );
+  }
+}
+
+// The two answers that ARE clean say so plainly, and the two that carry their
+// own lines say nothing here — duplicating them would be two homes for one fact.
+{
+  assert.equal(sharedCheckoutVerdict({ reason: "isolated", threads: 0, lines: [] }), "");
+  assert.match(
+    sharedCheckoutVerdict({ reason: "shared", threads: 1, files: ["src/a.ts"], lines: ["a line"] }),
+    /^$/,
+    "a shared checkout's lines already say it",
+  );
+  assert.match(
+    sharedCheckoutVerdict({ reason: "no-threads", threads: 0, lines: [] }),
+    /No other agent is working in this checkout\.$/,
+  );
+  assert.match(
+    sharedCheckoutVerdict({ reason: "no-overlap", threads: 3, lines: [] }),
+    /none of the files you hold are dirty there/,
+    "others are in here; none of my files are involved",
+  );
+}
+
+// The count is carried into the sentence, so "there are agents here" is a fact
+// the reader gets even when no file could be compared.
+{
+  const one = sharedCheckoutVerdict({ reason: "unknown-footprint", threads: 1, files: [], lines: [] });
+  const many = sharedCheckoutVerdict({ reason: "unknown-footprint", threads: 4, files: [], lines: [] });
+  assert.match(one, /^1 other agent is in this checkout\./);
+  assert.match(many, /^4 other agents are in this checkout\./);
+}
+
+// A reason this function has never heard of says nothing. A wrong sentence
+// reads as a fact; silence reads as a missing sentence, which is the honest
+// failure and the one a reader can go and ask about.
+{
+  assert.equal(sharedCheckoutVerdict({ reason: "invented-later", threads: 1, files: [], lines: [] }), "");
+  assert.equal(sharedCheckoutVerdict(null), "");
+}
+
+// One home for this copy. The reader used to carry its own two-branch fallback,
+// which handed every reason it did not recognise — a card with no readable
+// checkout, and everything measured-unknown — the same clean sentence. The
+// function above is the only place a verdict sentence may be written down.
+{
+  const component = readFileSync(
+    new URL("../components/detail/file-occupancy.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    component,
+    /sharedCheckoutVerdict/,
+    "the reader delegates to the shared verdict rather than choosing a sentence",
+  );
+  for (const reason of EXPOSURE_REASONS) {
+    const text = sharedCheckoutVerdict({ isolated: false, threads: 1, files: [], lines: [], reason });
+    if (!text) continue;
+    assert.ok(
+      !component.includes(text),
+      `the reader must not hold a second copy of the ${reason} sentence: "${text}"`,
+    );
+  }
 }
 
 console.log("shared checkout exposure test ok: another thread in this checkout, and which of my files it dirtied");

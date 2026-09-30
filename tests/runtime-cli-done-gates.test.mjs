@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   auditableBuildDone,
@@ -156,4 +159,61 @@ test("a build done with depth, linked rework, a recorded test run, and a receipt
   );
   assert.deepEqual(callsNamed(calls, "stage").map(([, , stage]) => stage), ["done"]);
   assert.equal(callsNamed(calls, "releaseClaims").length, 1);
+});
+
+// A refusal nobody can find is not a refusal the worker can act on. The
+// worker reads stderr in its own turn and then the turn ends — the CLI never
+// wrote it to the card, so the card's history had no trace of the eight gates
+// that turned `done` down. card_hh2nwqs4 parked with ten skipped rework
+// scopes and nothing on the card saying so.
+//
+// One seam around the whole gate chain covers all eight refusals, including
+// the two that return a `refuse({…})` object rather than a bare exit code. The
+// prefix is what keeps these greppable and distinguishable from worker prose.
+test("a refused done leaves the refusal on the card, and a completing one does not", async () => {
+  const refused = cliHarness({
+    files: { "/w/.stelow/state/state.md": "current_stage: audit\n" },
+    docDepths: [
+      { label: "Product Spec", path: "docs/spec-product.md", failures: ["no competitor table"] },
+    ],
+  });
+  const refusal = await refused.invoke(["done"]);
+  assert.equal(refusal.exitCode, 1);
+
+  const trail = callsNamed(refused.calls, "comment");
+  assert.equal(trail.length, 1, "one comment per refused invocation, not one per gate");
+  const body = String(trail[0][5]);
+  assert.match(body, /^bb stelow done refused: /, "the trail says which command produced it");
+  assert.match(body, /no competitor table/, "and carries the gate's own refusal verbatim");
+
+  // The completing path must stay silent: a card whose history says "done was
+  // refused" on the turn that completed it is its own kind of lie.
+  const accepted = cliHarness(auditableBuildDone());
+  assert.equal((await accepted.invoke(["done"])).exitCode, 0);
+  assert.deepEqual(
+    callsNamed(accepted.calls, "comment"),
+    [],
+    "a done that completes has nothing to refuse",
+  );
+});
+
+// `done` reads the card's OWN state and never asks who else is in the
+// directory. This is a refusal to add such a gate, pinned as a test because the
+// idea is reasonable: a card completing work in a checkout another agent is
+// using sounds like a collision worth blocking. It is not — the card that
+// would wait has nothing to answer the wait with, no way to know when the
+// stranger leaves, and a done gate is the last place a card should acquire a
+// dependency on a fact outside its own state. If this ever needs to change,
+// the change is a product decision about what completion owes a shared tree,
+// not an edit to this file.
+test("the done path never consults who else is in the checkout", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-build.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    source,
+    /sharedCheckout|threadsSharingCheckout|listBbThreads|thread list/,
+    "done completes a card from its own state; a stranger's presence is not a done gate",
+  );
 });

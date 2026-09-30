@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createInspectionCommand } from "../server/runtime/cli-inspection.ts";
+import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
 const card = {
   id: "card-1",
@@ -121,7 +122,9 @@ test("inspection family refuses archived cards and unverified owned state", asyn
   });
   assert.deepEqual(await unverified(["playbook", "--card", "card-1"], {}), {
     exitCode: 1,
-    stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
+    // The shared sentence, not a copy: the client recognises this exact string
+    // to decide that a retry cannot help, so a second copy here is the drift.
+    stderr: OWNERSHIP_UNVERIFIED,
   });
 });
 

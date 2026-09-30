@@ -47,3 +47,26 @@ export declare function sharedCheckoutExposure(input?: {
   checkoutPath?: string | null;
   excludeThreadId?: string | null;
 }): SharedCheckoutExposure;
+
+/**
+ * Every answer the report can give, as the one list the RPC schema, the
+ * server's type and the reader's copy all derive from.
+ */
+export declare const EXPOSURE_REASONS: readonly [
+  "isolated", "no-checkout", "no-threads", "no-overlap",
+  "unavailable", "shared", "unknown-footprint", "unreadable-tree",
+];
+
+/** The report shape `sharedCheckoutVerdict` reads. */
+export interface SharedCheckoutVerdictReport {
+  isolated: boolean;
+  threads: number;
+  files: string[];
+  lines: string[];
+  reason: (typeof EXPOSURE_REASONS)[number];
+}
+
+/** One sentence for a checked answer, or "" when its lines already say it. */
+export declare function sharedCheckoutVerdict(
+  report: SharedCheckoutVerdictReport | null | undefined,
+): string;

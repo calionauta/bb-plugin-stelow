@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { createInboxServer, runInboxMigrations } from "../server/inbox.ts";
+import { hasPendingReview } from "../lib/inbox-events.mjs";
 
 function createDb() {
   const db = new Database(":memory:");
@@ -170,6 +171,116 @@ const owned = await handlers.getNotification({
   cardId: "card_1",
 });
 assert.equal(owned.notification.id, completedId, "the owning card reads its event");
+
+// How opening a card satisfies a review request the card itself carries.
+//
+// The premise under test: opening the card IS the satisfying action, so the
+// write is keyed to that and to nothing else. That was worth a test of its
+// own because an incident memo got it backwards — it recorded that opening a
+// card does NOT mark the notification read, and that false premise would have
+// justified "fixing" a shipped behaviour that was already correct.
+//
+// Verified before writing this, not assumed: `cardDetail` has exactly ONE call
+// site (`build-detail-body.tsx`), and its hook is mounted only by the three
+// detail-route adapters. There is no prefetch, so no write can be spent on a
+// card the reader never chose. That is why this tests the write, not the read.
+const reviewDb = new Database(":memory:");
+reviewDb.exec(`
+  PRAGMA foreign_keys = ON;
+  CREATE TABLE cards (
+    id TEXT PRIMARY KEY,
+    display_name TEXT,
+    name TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'build'
+  );
+`);
+runInboxMigrations(reviewDb);
+let reviewId = 0;
+const reviewInbox = createInboxServer({
+  db: reviewDb,
+  now: () => 2_000,
+  randomId: (prefix) => `${prefix}_review_${(reviewId += 1)}`,
+  publish: () => {},
+  listProjects: async () => [{ id: "project_1", name: "Project One" }],
+});
+reviewDb.prepare("INSERT INTO cards VALUES ('card_r', 'Reviewed', 'reviewed', 'project_1', 'build')").run();
+reviewDb.prepare("INSERT INTO cards VALUES ('card_x', 'Archived', 'archived', 'project_1', 'build')").run();
+reviewDb.prepare("INSERT INTO cards VALUES ('card_o', 'Other kinds', 'other-kinds', 'project_1', 'build')").run();
+
+reviewInbox.record({ id: "card_r" }, "completed", "Done.", "completed:card_r", 10);
+const reviewRow = reviewDb.prepare("SELECT id FROM inbox_events WHERE card_id = 'card_r'").get().id;
+assert.equal(
+  hasPendingReview(reviewDb, "card_r"),
+  true,
+  "a completion nobody opened is the review request the card carries",
+);
+assert.equal(
+  (await reviewInbox.handlers.markCardNotificationsRead({ cardId: "card_r", kind: "completed" })).marked,
+  true,
+  "opening the card clears the review request",
+);
+assert.equal(
+  hasPendingReview(reviewDb, "card_r"),
+  false,
+  "the board's predicate and the write agree: after opening, no review is pending",
+);
+assert.equal(
+  (await reviewInbox.handlers.markCardNotificationsRead({ cardId: "card_r", kind: "completed" })).marked,
+  false,
+  "re-opening a card whose completion is already read changes nothing — the write is idempotent",
+);
+assert.equal(
+  hasPendingReview(reviewDb, "card_r"),
+  false,
+  "a second open cannot resurrect a review that opening already satisfied",
+);
+assert.equal(
+  reviewDb.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get(reviewRow).resolved_at,
+  null,
+  "opening is a read, not a resolution: the completion's own lifecycle is untouched",
+);
+
+// Archiving is terminal for the card, so an archived completion must never
+// accept a read — the card is unreachable, and recording a read for it would
+// be recording that somebody saw work nobody can now open.
+reviewInbox.record({ id: "card_x" }, "completed", "Done.", "completed:card_x", 20);
+const archivedCompletion = reviewDb.prepare("SELECT id FROM inbox_events WHERE card_id = 'card_x'").get().id;
+await reviewInbox.handlers.archiveNotification({ notificationId: archivedCompletion });
+assert.equal(
+  (await reviewInbox.handlers.markCardNotificationsRead({ cardId: "card_x", kind: "completed" })).marked,
+  false,
+  "an archived card's completion is not marked read — the read would claim a sighting nobody can make",
+);
+assert.equal(
+  reviewDb.prepare("SELECT read_at FROM inbox_events WHERE id = ?").get(archivedCompletion).read_at,
+  null,
+  "no read stamp is recorded against an archived completion",
+);
+
+// Only the completion kind rides the open. An unread question, error or pause
+// is cleared by ANSWERING or by acting — never by looking at the card — so
+// this guard is the reason opening a card does not silence live work.
+for (const kind of ["question", "error", "paused"]) {
+  reviewInbox.record({ id: "card_o" }, kind, `${kind} happened.`, `${kind}:card_o`, 30);
+}
+assert.equal(
+  (await reviewInbox.handlers.markCardNotificationsRead({ cardId: "card_o", kind: "question" })).marked,
+  false,
+  "opening a card never marks its unresolved question read — answering it does",
+);
+assert.equal(
+  reviewDb.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND read_at IS NOT NULL").get("card_o").count,
+  0,
+  "no kind other than the completion is marked read by opening the card",
+);
+assert.equal(
+  (await reviewInbox.handlers.markCardNotificationsRead({ cardId: "card_absent", kind: "completed" })).marked,
+  false,
+  "a card with no completion has nothing to mark, and reports honestly",
+);
+reviewDb.close();
+
 db.close();
 
 const legacyDb = new Database(":memory:");

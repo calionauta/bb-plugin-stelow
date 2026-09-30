@@ -154,7 +154,7 @@ function buildSharedCheckoutExposure(core: RuntimeCore) {
     db: core.db,
     getCard: core.getCard,
     cardWorkspace: core.cardWorkspace,
-    dirtyStatusIn: core.git.dirtyStatusIn,
+    dirtyStatusResultIn: core.git.dirtyStatusResultIn,
     listThreads: listBbThreads,
     now: core.now,
   });

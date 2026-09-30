@@ -22,3 +22,4 @@ export declare function shouldDoneNudge(options: {
 }): { proceed: boolean; reason: string };
 export declare function resetAutoContinue(): { count: number; stage: null };
 export declare function lastTurnAdvancedStages(events: unknown): boolean;
+export declare function lastTurnStelowCalls(events: unknown): { advanced: boolean; done: boolean; doneFailed: boolean };

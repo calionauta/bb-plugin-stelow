@@ -306,6 +306,7 @@ function BuildDetailLayout({
         state={lifecycle}
         cardDisplayName={card?.displayName ?? null}
         cardStage={card?.stage ?? null}
+        cardLastError={card?.lastError ?? null}
       />
     </div>
   );

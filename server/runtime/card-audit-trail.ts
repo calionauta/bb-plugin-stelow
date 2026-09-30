@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { AUDIT_TRAIL_FILE, auditTrailOutcome } from "../../lib/audit-trail-contract.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "../../lib/recon-receipt.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Workspace = { path: string; hostId: string | null };
@@ -21,10 +22,11 @@ type AuditDeps = {
   errors: { cardNotFound: string; workspaceUnavailable: string };
 };
 
-type UnavailableDetail =
-  | string
-  | "Only Build cards carry an audit trail."
-  | "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.";
+/** Why the trail could not be read. Plain `string` rather than a union of the
+ * sentences that reach it: the two callers are a card that is not a Build card
+ * and an ownership refusal, and the second now comes from one shared constant
+ * anyway. A union here was a second list to forget when the words changed. */
+type UnavailableDetail = string;
 
 export function createAuditTrailStatus(deps: AuditDeps) {
   return ({ cardId }: { cardId: string }) => auditTrailStatus(deps, cardId);
@@ -39,7 +41,7 @@ async function auditTrailStatus(deps: AuditDeps, cardId: string) {
   const stateDir = card.dir_hash
     ? await deps.workflowStateDir(workspace.path, card).catch(() => null)
     : null;
-  if (!stateDir) return unavailable(ownershipRefusal());
+  if (!stateDir) return unavailable(OWNERSHIP_UNVERIFIED);
   const run = await deps.runHelper(
     ["audit-trail", "check", "--strict", "--json"],
     workspace.path,
@@ -65,10 +67,6 @@ function unavailable(detail: UnavailableDetail) {
     contract: null,
     recon: null,
   };
-}
-
-function ownershipRefusal() {
-  return "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.";
 }
 
 function snapshotHead(result: unknown): string | null {
