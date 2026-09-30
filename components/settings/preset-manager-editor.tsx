@@ -22,6 +22,20 @@ export type PresetManagerEditorProps = {
 };
 
 /**
+ * Editing a built-in keeps its own environment. Flipping the built-in default's
+ * kind would re-route every auto-started worker through `firstWorktreePreset`,
+ * un-park the automation gate, and become the inherited kind of every preset
+ * created afterwards — a cascade the field's own help text names, so the
+ * control is disabled rather than silently consequential.
+ */
+function isBuiltInEdit(props: PresetManagerEditorProps): boolean {
+  if (!props.form.id) return false;
+  return props.presets.some(
+    (preset) => preset.id === props.form.id && preset.builtIn,
+  );
+}
+
+/**
  * What the dialog is for: the presets that exist, and the form that edits one.
  * The header says the same thing as the list below it, so it lives with the list
  * rather than above the routing sections the human usually came for.
@@ -32,9 +46,9 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
       <DialogHeader>
         <DialogTitle>Manage agent presets</DialogTitle>
         <DialogDescription>
-          Presets set the provider, model, reasoning level, and permission
-          mode used when a card starts its worker thread. Research
-          investigations use the research phase preset.
+          Presets set the provider, model, reasoning level, permission mode, and
+          whether cards work in an isolated worktree. Research investigations use
+          the research phase preset.
         </DialogDescription>
       </DialogHeader>
       <PresetManagerList
@@ -47,6 +61,7 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
       />
       <PresetManagerFormView
         form={props.form}
+        builtIn={isBuiltInEdit(props)}
         formOpen={props.formOpen}
         busy={props.busy}
         message={props.message}

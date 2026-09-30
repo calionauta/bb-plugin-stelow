@@ -157,7 +157,7 @@ const noop = () => {};
 {
   const managerForm = {
     id: null, name: "  ", providerId: "x", modelId: "m",
-    reasoningLevel: "high", permissionMode: "ask", environmentKind: "local",
+    reasoningLevel: "high", permissionMode: "ask", environmentKind: "new-worktree",
   };
   const state = { form: managerForm, setForm: noop };
   const rpc = rpcDouble({ upsertPreset: { preset: { id: "p9", name: "Fast" } } });
@@ -183,7 +183,7 @@ const noop = () => {};
   });
   assert.deepEqual(named.find("upsertPreset").args, {
     id: null, name: "Fast", providerId: "x", modelId: "m", reasoningLevel: "high",
-    permissionMode: "ask", environmentKind: "local", baseBranch: null, machineId: null, instructions: "",
+    permissionMode: "ask", environmentKind: "new-worktree", baseBranch: null, machineId: null, instructions: "",
   }, "the saved name is trimmed and the unmanaged fields are explicit nulls");
   assert.deepEqual(saved, ["changed"], "a successful save refreshes the list");
   // The saved id is what makes the next save an update rather than a copy.
@@ -195,6 +195,38 @@ const noop = () => {};
     onChanged: async () => {},
   });
   assert.equal(named.calls.at(-1).args.id, "p9", "an existing preset is sent with its id, so the save updates it");
+}
+
+// A stored environment the schema never produced is refused here rather than
+// at the RPC. This is reachable, not theoretical: upgraded installs add the
+// column with ALTER TABLE and no CHECK, and the CLI casts its flag blindly. The
+// RPC's zod enum would turn it into a raw validation string in the form's one
+// message line, so the refusal must name the value and both options instead.
+//
+// `permissionMode: "ask"` above is ALSO outside its enum
+// (accept-edits | auto | full). It is deliberately left alone: this card
+// validates the environment kind only, and quietly widening the rule to cover
+// permission mode would change behaviour nobody asked about.
+{
+  const stale = rpcDouble({ upsertPreset: { preset: { id: "p9", name: "Stale" } } });
+  const messages = [];
+  const staleForm = {
+    id: null, name: "Stale", providerId: "x", modelId: "m",
+    reasoningLevel: "high", permissionMode: "ask", environmentKind: "local",
+  };
+  await savePreset(stale, {
+    state: { form: staleForm, setForm: noop },
+    setBusy: noop,
+    setMessage: (message) => messages.push(message),
+    onChanged: async () => {},
+  });
+  assert.equal(messages.length, 1, "an unrecognised environment is refused once");
+  assert.match(
+    messages[0],
+    /"local".*isolated worktree/s,
+    "the refusal names the value it could not accept and the option that replaces it",
+  );
+  assert.deepEqual(stale.names(), [], "and the value never reaches the server");
 }
 
 // A new preset starts from the default's fields, and the id and name are cleared

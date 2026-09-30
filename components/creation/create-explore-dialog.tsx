@@ -18,6 +18,7 @@ import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./
 import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
+import { useSeededComposerEnvironment } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 
 // Explore creation dialog: technique picker plus deferred start. Owns its
@@ -109,7 +110,7 @@ export type CreateExploreDialogProps = {
   activeProjectId: string | null;
   validProjectIds?: string[];
   stages: ResearchStrategyOption[];
-  explorePreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
+  explorePreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; name: string } | null;
   hasBandPreset: boolean;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: React.ReactNode };
   onOpenPresets: () => void;
@@ -128,6 +129,7 @@ export function CreateExploreDialog({
 }: CreateExploreDialogProps) {
   const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
   const submit = useCreateExploreSubmit({ activeProjectId: seedProjectId, onClose: () => onOpenChange(false) });
+  const seededEnvironment = useSeededComposerEnvironment(explorePreset?.environmentKind, open);
 
   return (
     <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
@@ -155,6 +157,7 @@ export function CreateExploreDialog({
           defaultModel={explorePreset?.modelId}
           defaultReasoningLevel={explorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
           defaultPermissionMode={explorePreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+          defaultEnvironment={seededEnvironment}
           initialPrompt={submit.prompt}
           placeholder="What should Stelow explore?"
           layout="contained"

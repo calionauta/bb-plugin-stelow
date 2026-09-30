@@ -1,11 +1,13 @@
-import { DisclosureChevron } from "../disclosure";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { PresetExecutionPicker } from "./preset-execution-picker";
+import {
+  PresetManagerFormBody,
+  PresetManagerFormToggle,
+} from "./preset-manager-form-body";
 import type { PresetManagerForm } from "./preset-manager-types";
 
 type PresetManagerFormProps = {
   form: PresetManagerForm;
+  builtIn: boolean;
   formOpen: boolean;
   busy: boolean;
   message: string | null;
@@ -19,6 +21,7 @@ type PresetManagerFormProps = {
 
 export function PresetManagerFormView({
   form,
+  builtIn,
   formOpen,
   busy,
   message,
@@ -41,51 +44,19 @@ export function PresetManagerFormView({
               New preset
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-expanded={formOpen}
-            aria-controls="preset-form-body"
-            onClick={onToggle}
-            title={
-              formOpen ? "Collapse the preset form" : "Expand the preset form"
-            }
-          >
-            <DisclosureChevron open={formOpen} />
-            {formOpen ? "Hide" : "Show"}
-          </Button>
+          <PresetManagerFormToggle open={formOpen} onToggle={onToggle} />
         </div>
       </div>
       {formOpen ? (
-        <div id="preset-form-body">
-          <div className="grid gap-2">
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              <span>Name</span>
-              <Input
-                value={form.name}
-                onChange={(event) =>
-                  onChange({ ...form, name: event.target.value })
-                }
-                placeholder="e.g. Default"
-              />
-            </label>
-            <PresetExecutionPicker
-              value={form}
-              onChange={(next) => onChange({ ...form, ...next })}
-            />
-          </div>
-          {message ? (
-            <p className="mt-2 text-xs text-muted-foreground">{message}</p>
-          ) : null}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={onClose}>
-              Close
-            </Button>
-            <Button size="sm" disabled={busy} onClick={onSave}>
-              {busy ? "Working…" : form.id ? "Save changes" : "Create preset"}
-            </Button>
-          </div>
-        </div>
+        <PresetManagerFormBody
+          form={form}
+          builtIn={builtIn}
+          busy={busy}
+          message={message}
+          onChange={onChange}
+          onSave={onSave}
+          onClose={onClose}
+        />
       ) : null}
     </div>
   );
