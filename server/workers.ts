@@ -10,65 +10,31 @@ import { createWorkerRetry } from "./workers-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
-import type { WorkerCard, WorkerScheduler, WorkerSpawnArgs } from "./workers-types.js";
+import {
+  continuingEnvironment,
+  workerEnvironmentOf,
+  type PresetParams,
+  type ThreadEnvironment,
+} from "./workers-environment.js";
+import type {
+  Preset,
+  RespawnOptions,
+  RespawnPreparation,
+  WorkerCard,
+  WorkerScheduler,
+  WorkerSpawnArgs,
+} from "./workers-types.js";
 
 export { runWorkerMigrations } from "./workers-migrations.js";
-export type { WorkerCard } from "./workers-types.js";
+// Re-exported so the callers that already imported these from here keep
+// working; the declarations moved to workers-types.ts so the replacement
+// module can name them without importing this file back.
+export type { WorkerCard, Preset, RespawnOptions, RespawnPreparation } from "./workers-types.js";
+export type { PresetParams } from "./workers-environment.js";
+export { workerEnvironment } from "./workers-environment.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
-type ThreadEnvironment = SpawnArgs["environment"];
-
-export type Preset = {
-  id: string;
-  name: string;
-  provider_id: string;
-  model_id: string;
-  reasoning_level: string;
-  permission_mode: string;
-  environment_kind: string;
-  base_branch: string | null;
-  machine_id: string | null;
-  instructions: string;
-};
-
-export type PresetParams = {
-  providerId: string;
-  modelId: string;
-  reasoningLevel: string;
-  permissionMode: string;
-  environmentKind: string;
-  baseBranch: string | null;
-  machineId: string | null;
-  instructions: string;
-};
-
-export type RespawnOptions = {
-  strategyId?: string;
-  flavor?: "restart" | "append";
-  roundNo?: number;
-  roundStamp?: string;
-  roundFile?: string;
-  previousProjectId?: string | null;
-};
-
-export type RespawnPreparation =
-  | { error: string }
-  | {
-    prompt: string;
-    input?: SpawnArgs["input"];
-    projectPath: string;
-    workspace: { path: string; hostId: string | null } | null;
-  };
-
-export type { WorkerHistoryEntry } from "./workers-history.js";
-
-type WorkerEnvironment = {
-  id?: string;
-  path?: string | null;
-  hostId?: string | null;
-  status?: string;
-};
 
 export type WorkerDeps = {
   db: Db;
@@ -91,18 +57,6 @@ export type WorkerDeps = {
   retryDelayMs?: (attempt: number) => number;
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
 };
-
-export function workerEnvironment(
-  source: { path: string; hostId: string },
-  params: Pick<PresetParams, "environmentKind" | "machineId">,
-  forceWorkspaceHost = false,
-): ThreadEnvironment {
-  if (forceWorkspaceHost || params.environmentKind === "project-default") {
-    const hostId = forceWorkspaceHost ? source.hostId : (params.machineId ?? source.hostId);
-    return { type: "host" as const, hostId, workspace: { type: "unmanaged" as const, path: source.path } };
-  }
-  return { type: "project-default" as const };
-}
 
 function recordThread(
   deps: WorkerDeps,
@@ -136,31 +90,6 @@ async function lineage(deps: WorkerDeps, input: LineageInput): Promise<void> {
       }),
     );
   } catch { /* audit-only */ }
-}
-
-async function workerEnvironmentOf(
-  deps: WorkerDeps,
-  card: WorkerCard,
-): Promise<WorkerEnvironment | null> {
-  if (!card.worker_thread_id) return null;
-  try {
-    const thread = await deps.bb.sdk.threads.get({ threadId: card.worker_thread_id });
-    const environmentId = (thread as { environmentId?: unknown }).environmentId;
-    if (typeof environmentId !== "string" || !environmentId) return null;
-    const environment = await deps.bb.sdk.environments.get({ environmentId });
-    return environment?.status === "ready" && environment.path ? environment : null;
-  } catch {
-    return null;
-  }
-}
-
-async function continuingEnvironment(
-  deps: WorkerDeps,
-  card: WorkerCard,
-  fallback: ThreadEnvironment,
-): Promise<ThreadEnvironment> {
-  const environment = await workerEnvironmentOf(deps, card).catch(() => null);
-  return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
 }
 
 function continuationText(card: WorkerCard): string {

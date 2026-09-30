@@ -20,7 +20,6 @@ const source = [
   readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/platform.ts"), "utf8"),
 ].join("\n");
-const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const exploreSource = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
@@ -80,10 +79,17 @@ assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project 
 assert.ok(workerFirst < sourceFallback, "the worker's environment must be tried before the project source");
 assert.match(checkout, /environment\?\.path/, "a worker environment without a path must fall through, not win empty");
 assert.match(checkout, /environmentId: environment\.id/, "the exact BB environment must travel with the checkout");
-const workerEnv = workersSource.slice(
-  workersSource.indexOf("async function workerEnvironmentOf("),
-  workersSource.indexOf("async function continuingEnvironment("),
+// `workerEnvironmentOf` moved to server/workers-environment.ts when replacing a
+// worker became its own module. The rule is about the CHECK, not about which
+// file holds it, so the pin follows the function rather than the old path —
+// pointing it back at workers.ts would make it slice an empty string and pass
+// on a check that no longer exists.
+const environmentSource = readFileSync(join(root, "server", "workers-environment.ts"), "utf8");
+const workerEnv = environmentSource.slice(
+  environmentSource.indexOf("export async function workerEnvironmentOf("),
+  environmentSource.indexOf("export async function continuingEnvironment("),
 );
+assert.ok(workerEnv.length > 0, "workerEnvironmentOf is present in workers-environment.ts");
 assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environment is not a checkout to preview");
 assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 

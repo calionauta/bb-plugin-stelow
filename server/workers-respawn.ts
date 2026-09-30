@@ -1,22 +1,40 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { replaceCardWorker } from "./workers-spawn.js";
 import { beginRespawn, endRespawn } from "./workers-respawn-guard.js";
-import { workerEnvironment } from "./workers.js";
-import type { Preset, RespawnOptions, RespawnPreparation, WorkerDeps } from "./workers.js";
-import type { WorkerCard } from "./workers-types.js";
+import {
+  continuingEnvironment,
+  workerEnvironment,
+  type PresetParams,
+  type ThreadEnvironment,
+} from "./workers-environment.js";
+import type { Preset, RespawnOptions, RespawnPreparation, WorkerCard } from "./workers-types.js";
 
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
-type ThreadEnvironment = SpawnArgs["environment"];
+type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 /**
  * What replacing a worker reads.
  *
- * `WorkerDeps` plus the three closures that live in `workers.ts` and would
- * otherwise have to be exported to be called from here: the lineage and card
- * ledger writers, and the environment resolver. Narrowing the slice is what
- * lets the whole replacement be driven in a test with a double.
+ * Declared here rather than imported, because the module that owns the wiring
+ * (`workers.ts`) is the one that calls this: importing its dependency type back
+ * would be a cycle, and the architecture gate refuses those. Declaring the
+ * slice is also what lets the whole replacement be driven in a test with a
+ * double — which a re-exported `WorkerDeps` would not.
  */
-export type RespawnDeps = WorkerDeps & {
+export type RespawnDeps = {
+  db: Db;
+  bb: BbPluginApi;
+  now: () => number;
+  getCard: (cardId: string) => WorkerCard | undefined;
+  updateCard: (cardId: string, fields: Record<string, unknown>) => void;
+  getPreset: (presetId: string) => Preset | null;
+  presetParams: (preset: Preset) => PresetParams;
+  prepareRespawn: (
+    card: WorkerCard,
+    preset: Preset,
+    reason: string,
+    options?: RespawnOptions,
+  ) => Promise<RespawnPreparation>;
   recordThread: (cardId: string, threadId: string, presetId: string | null, reason: string) => unknown;
   lineage: (input: {
     rootPath: string;
@@ -26,6 +44,7 @@ export type RespawnDeps = WorkerDeps & {
     reason: string;
   }) => Promise<void>;
   continuingEnvironment: (card: WorkerCard, fallback: ThreadEnvironment) => Promise<ThreadEnvironment>;
+  errors: { cardNotFound: string; presetNotFound: string };
 };
 
 export type RespawnOutcome = { ok: boolean; error?: string; threadId?: string };
