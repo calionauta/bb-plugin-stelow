@@ -100,6 +100,11 @@ const server = [
   readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
   readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
+  // The restart spawn moved here when replacing a worker became its own
+  // module. It is listed because the rule below is about the SITES that must
+  // pin their sources, not about one file: drop this line and the restart
+  // spawn silently falls back to the environment's own sources.
+  readFileSync(join(root, "server/workers-respawn.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
   readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),

@@ -9,6 +9,7 @@ import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
+import { respawn, type RespawnDeps } from "./workers-respawn.js";
 import type { WorkerCard, WorkerScheduler, WorkerSpawnArgs } from "./workers-types.js";
 
 export { runWorkerMigrations } from "./workers-migrations.js";
@@ -18,7 +19,7 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 type ThreadEnvironment = SpawnArgs["environment"];
 
-type Preset = {
+export type Preset = {
   id: string;
   name: string;
   provider_id: string;
@@ -69,7 +70,7 @@ type WorkerEnvironment = {
   status?: string;
 };
 
-type WorkerDeps = {
+export type WorkerDeps = {
   db: Db;
   bb: BbPluginApi;
   now: () => number;
@@ -162,123 +163,6 @@ async function continuingEnvironment(
   return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
 }
 
-async function linkPreviousWorker(
-  deps: WorkerDeps,
-  card: WorkerCard,
-  threadId: string,
-  previousProjectId?: string | null,
-): Promise<void> {
-  if (!card.worker_thread_id) return;
-  try {
-    const tag = "@previous-worker";
-    const body = `Continuity link — ${tag} is the archived worker this thread replaces. Consult it if state.md is thin.`;
-    const start = body.indexOf(tag);
-    const resource = {
-      kind: "thread" as const,
-      label: `Stelow: ${card.display_name ?? card.name} (previous)`,
-      threadId: card.worker_thread_id,
-      projectId: previousProjectId ?? card.project_id,
-    };
-    await deps.bb.sdk.threads.send({
-      threadId,
-      mode: "auto",
-      input: [{
-        type: "text",
-        text: body,
-        mentions: [{ start, end: start + tag.length, resource }],
-      }],
-    });
-  } catch { /* the prompt already names the previous thread */ }
-}
-
-function fallbackEnvironment(
-  card: WorkerCard,
-  prepared: Extract<RespawnPreparation, { prompt: string }>,
-  params: PresetParams,
-): ThreadEnvironment {
-  if (!prepared.workspace) return { type: "project-default" as const };
-  const source = {
-    path: prepared.workspace.path,
-    hostId: prepared.workspace.hostId ?? "",
-  };
-  return workerEnvironment(source, params, card.workspace_kind === "exploratory");
-}
-
-type Replacement = {
-  card: WorkerCard;
-  preset: Preset;
-  reason: string;
-  options: RespawnOptions | undefined;
-  prepared: Extract<RespawnPreparation, { prompt: string }>;
-};
-
-async function replaceWorker(
-  deps: WorkerDeps,
-  replacement: Replacement,
-): Promise<{ ok: boolean; threadId: string }> {
-  const { card, preset, reason, options, prepared } = replacement;
-  const params = deps.presetParams(preset);
-  const environment = await continuingEnvironment(
-    deps,
-    card,
-    fallbackEnvironment(card, prepared, params),
-  );
-  const thread = await replaceCardWorker(deps.bb, {
-    projectId: card.project_id,
-    environment,
-    visibility: "hidden",
-    title: `Stelow: ${card.display_name ?? card.name}`,
-    providerId: params.providerId,
-    model: params.modelId,
-    reasoningLevel: params.reasoningLevel as SpawnArgs["reasoningLevel"],
-    permissionMode: params.permissionMode as SpawnArgs["permissionMode"],
-    executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-    ...(prepared.input ? { input: prepared.input } : { prompt: prepared.prompt }),
-  }, card.worker_thread_id);
-  deps.updateCard(card.id, {
-    worker_thread_id: thread.id,
-    worker_preset_id: preset.id,
-    preset_restart_pending: 0,
-    activity: "running",
-    last_error: null,
-    updated_at: deps.now(),
-  });
-  recordThread(deps, card.id, thread.id, preset.id, reason);
-  if (card.dir_hash) {
-    void lineage(deps, {
-      rootPath: prepared.projectPath,
-      dirHash: card.dir_hash,
-      threadId: thread.id,
-      presetId: preset.id,
-      reason,
-    });
-  }
-  await linkPreviousWorker(deps, card, thread.id, options?.previousProjectId);
-  return { ok: true, threadId: thread.id };
-}
-
-async function respawn(
-  deps: WorkerDeps,
-  cardId: string,
-  presetId: string,
-  reason = "band-swap",
-  options?: RespawnOptions,
-): Promise<{ ok: boolean; error?: string; threadId?: string }> {
-  const card = deps.getCard(cardId);
-  if (!card) return { ok: false, error: deps.errors.cardNotFound };
-  const preset = deps.getPreset(presetId);
-  if (!preset) return { ok: false, error: deps.errors.presetNotFound };
-  const prepared = await deps.prepareRespawn(card, preset, reason, options);
-  if ("error" in prepared) return { ok: false, error: prepared.error };
-  try {
-    return await replaceWorker(deps, { card, preset, reason, options, prepared });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Respawn failed.";
-    deps.updateCard(cardId, { activity: "error", last_error: message });
-    return { ok: false, error: message };
-  }
-}
-
 function continuationText(card: WorkerCard): string {
   if (card.kind === "research") return "continuing the research";
   if (card.kind === "explore") return "continuing the explore run";
@@ -298,7 +182,7 @@ async function fresh(
   }
   const effective = deps.getReliablePreset(bandForCardKindStage(card.kind, card.stage), cardId);
   const previousThreadId = card.worker_thread_id;
-  const result = await respawn(deps, cardId, effective.id, reason);
+  const result = await respawn(respawnDeps(deps), cardId, effective.id, reason);
   if (!result.ok) return { ok: false, error: result.error ?? null };
   const presetName = deps.getPreset(effective.id)?.name ?? effective.id;
   const trail = reason === "start" || !previousThreadId
@@ -310,6 +194,22 @@ async function fresh(
   resetSpawnRetry(deps.db, cardId);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
+}
+
+/**
+ * The three closures `workers-respawn.ts` needs from here.
+ *
+ * They stay private to this file and are handed over as a slice rather than
+ * exported individually: the replacement is the only caller, and an export is a
+ * promise that somebody else might start relying on.
+ */
+function respawnDeps(deps: WorkerDeps): RespawnDeps {
+  return {
+    ...deps,
+    recordThread: (cardId, threadId, presetId, reason) => recordThread(deps, cardId, threadId, presetId, reason),
+    lineage: (input) => lineage(deps, input),
+    continuingEnvironment: (card, fallback) => continuingEnvironment(deps, card, fallback),
+  };
 }
 
 async function failedCause(deps: WorkerDeps, threadId: string): Promise<string | null> {
@@ -346,7 +246,7 @@ function workerFacade(
     continuingEnvironment: (card: WorkerCard, fallback: ThreadEnvironment) =>
       continuingEnvironment(deps, card, fallback),
     respawn: (cardId: string, presetId: string, reason?: string, options?: RespawnOptions) =>
-      respawn(deps, cardId, presetId, reason, options),
+      respawn(respawnDeps(deps), cardId, presetId, reason, options),
     fresh: (cardId: string, reason: "start" | "restart") => fresh(deps, cardId, reason),
     scheduleRespawn: respawnScheduler.schedule,
     applyFailed: retry.applyFailed,
@@ -374,7 +274,7 @@ export function createWorkers(deps: WorkerDeps) {
   const history = createWorkerHistory(deps.db, deps.bb);
   const respawnScheduler = createRespawnScheduler(
     scheduler,
-    (cardId, presetId) => { void respawn(deps, cardId, presetId); },
+    (cardId, presetId) => { void respawn(respawnDeps(deps), cardId, presetId); },
   );
   return workerFacade(deps, retry, history, respawnScheduler);
 }
