@@ -177,8 +177,8 @@ async function enrichCard(
 async function liveActivity(
   deps: CardsDeps,
   row: WorkerCard,
-): Promise<"idle" | "running" | "awaiting-answer" | "error"> {
-  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";
+): Promise<"idle" | "running" | "awaiting-answer" | "error" | "held"> {
+  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
   if (activity === "error" || !row.worker_thread_id) return activity;
   const pending = await deps.fetchPendingQuestions(row.worker_thread_id);
   return pending.length > 0 || deps.openExpiredQuestionIds(row.id).length > 0
@@ -189,7 +189,7 @@ async function liveActivity(
 function attentionState(
   deps: CardsDeps,
   row: WorkerCard,
-  activity: "idle" | "running" | "awaiting-answer" | "error",
+  activity: "idle" | "running" | "awaiting-answer" | "error" | "held",
 ): "question" | "error" | "idle" | null {
   if (isClaimTerminal(row.status)) {
     return activity === "awaiting-answer" ? "question" : null;

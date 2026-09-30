@@ -22,7 +22,7 @@ function harness(options = {}) {
   return { handlers: createCardOperationsHandlers(deps), calls, cardValue };
 }
 
-function testDeps(calls, cardValue, { live = null, fresh = { ok: true, error: null } }) {
+function testDeps(calls, cardValue, { live = null, fresh = { ok: true, error: null }, held = null, heldOnSend = null }) {
   return {
     db: {
       prepare: () => ({
@@ -32,7 +32,7 @@ function testDeps(calls, cardValue, { live = null, fresh = { ok: true, error: nu
         },
       }),
     },
-    bb: testBb(calls, live),
+    bb: testBb(calls, live, held, heldOnSend),
     getCard: () => cardValue,
     workers: testWorkers(calls, fresh),
     updateCard: (...args) => calls.push(["update", ...args]),
@@ -64,13 +64,26 @@ function testDeps(calls, cardValue, { live = null, fresh = { ok: true, error: nu
   };
 }
 
-function testBb(calls, live) {
+function testBb(calls, live, held, heldOnSend) {
+  const row = heldOnSend ?? held;
   return {
     sdk: {
       threads: {
+        // The host answers a dispatch with a discriminated union. A fake that
+        // returns nothing would make every caller read the missing field as a
+        // dispatch, which is the bug this suite exists to keep fixed.
         send: async () => {
           calls.push("send");
           if (live) throw live;
+          return row
+            ? { ok: true, delivery: "queued", queuedMessage: row }
+            : { ok: true, delivery: "sent" };
+        },
+        queuedMessages: {
+          list: async () => {
+            calls.push("queue.list");
+            return held ? [held] : [];
+          },
         },
       },
     },
@@ -90,14 +103,18 @@ function testWorkers(calls, fresh) {
   };
 }
 
-test("retry sends first, then resets the card and publishes its live state", async () => {
+test("retry reads the hold, then sends, resets the card and publishes its live state", async () => {
   const { handlers, calls } = harness();
   assert.deepEqual(await handlers.retryWorker({ cardId: "card-1" }), {
     ok: true,
     error: null,
   });
-  assert.equal(calls[0], "send");
-  assert.deepEqual(calls[1], [
+  // The queue read comes FIRST, before the send. That order is the fix: a retry
+  // that sends before checking would queue a second copy of a message the host
+  // is already holding, which is what card_e3u00eb4's ten stacked nudges were.
+  assert.equal(calls[0], "queue.list");
+  assert.equal(calls[1], "send");
+  assert.deepEqual(calls[2], [
     "update",
     "card-1",
     {
@@ -107,7 +124,7 @@ test("retry sends first, then resets the card and publishes its live state", asy
       auto_continue_stage: null,
     },
   ]);
-  assert.deepEqual(calls[2], ["publish", "card-state", { cardId: "card-1" }]);
+  assert.deepEqual(calls[3], ["publish", "card-state", { cardId: "card-1" }]);
 });
 
 test("retry send failure is a negative control and never records a false resume", async () => {
@@ -116,7 +133,47 @@ test("retry send failure is a negative control and never records a false resume"
     ok: false,
     error: "send failed",
   });
-  assert.deepEqual(calls, ["send"]);
+  assert.deepEqual(calls, ["queue.list", "send"]);
+  assert.equal(calls.some(([name]) => name === "update"), false, "a failed send never records a resume");
+});
+
+// The hold the card used to hide behind a Resume button. The refusal has to
+// name the way out, because a refusal that only says "no" is a deadlock with a
+// good error message.
+const hostHoldRow = {
+  id: "qmsg_1",
+  waitingOn: {
+    kind: "plugin",
+    pluginId: "concurrency-limit",
+    reason: "4 of 4 running on host ubuntu-8gb-hel1-1",
+  },
+};
+
+test("retry refuses a held card, names the release, and never sends", async () => {
+  const { handlers, calls } = harness({ held: hostHoldRow });
+  const result = await handlers.retryWorker({ cardId: "card-1" });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /4 of 4 running on host ubuntu-8gb-hel1-1/);
+  assert.match(result.error, /no action needed/, "the refusal names what releases it");
+  assert.deepEqual(calls, ["queue.list"], "nothing is queued a second time");
+});
+
+// The narrow window: the hold read said clear, then the host filled up between
+// the read and the send. The card must land on the hold, not on `running`.
+test("a retry the host queues lands on held, not on running", async () => {
+  const { handlers, calls } = harness({ held: null, heldOnSend: hostHoldRow });
+  const result = await handlers.retryWorker({ cardId: "card-1" });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /no action needed/);
+  const update = calls.find(([name]) => name === "update");
+  assert.equal(update[2].activity, "held", "the card is held, so it must not claim to be running");
+  assert.equal(
+    Object.hasOwn(update[2], "auto_continue_count"),
+    false,
+    "a dispatch the host held spends no auto-continue budget",
+  );
 });
 
 test("parked phase move writes the checkpoint before spawn and rolls it back on failure", async () => {

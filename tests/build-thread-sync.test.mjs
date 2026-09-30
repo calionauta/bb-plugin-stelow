@@ -8,6 +8,7 @@ import {
 import { card, harness } from "./helpers/build-thread-sync-harness.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
+
 test("active build sync projects state metadata and running activity", async () => {
   const fixture = harness(card());
   await fixture.sync(fixture.row().id);

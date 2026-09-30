@@ -8,11 +8,13 @@ import {
 } from "../scopes.js";
 import { workflowStateRelativeDir } from "../../lib/workflow-state-identity.mjs";
 import { blockedFileWait } from "../../lib/lock-blocked.mjs";
+import { holdSentence } from "../../lib/host-hold.mjs";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
 import { enrichScopes } from "./card-detail-scopes.js";
 import { assembleDetail } from "./card-detail-presentation.js";
+import { readHostHold } from "./worker-hold.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];
@@ -128,20 +130,35 @@ async function loadDetailInputs(
   );
   const activity = effectiveActivity(card, pending.length + expiredQuestions.length);
   const preset = deps.getReliablePreset(presetBand(card), card.id);
-  const [workerHistory, questionStaleness] = await Promise.all([
+  const [workerHistory, questionStaleness, hold] = await Promise.all([
     deps.workers.history(cardId),
     deps.stalenessForQuestions(cardId, [...pending, ...expiredQuestions]),
+    readHold(deps, card),
   ]);
   const stageSkips = await readStageSkips(deps, card, workspace.path);
   const scopeXray = await readScopeXray(deps, card, workspace.path);
   return {
     card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
-    workerHistory, questionStaleness, stageSkips, scopeXray,
+    workerHistory, questionStaleness, stageSkips, scopeXray, hold,
     // Derived from the SAME enriched scopes the card renders, so the hero's
     // wait and each scope's lock line are two views of one record.
     fileLocks: blockedFileWait(enrichedScopes, (holderCardId) => holderDisplayName(deps, holderCardId)),
   };
+}
+
+/**
+ * The host's hold on this card, or null.
+ *
+ * Read here, on the detail, rather than on the board: the board would pay one
+ * queue call per card to learn a state the 45s sync already wrote to
+ * `activity`, and the reason is only worth a round trip to someone who has
+ * opened the card to ask. The board says "waiting on the host"; this says why.
+ */
+async function readHold(deps: CardDetailDeps, card: WorkerCard) {
+  if (!card.worker_thread_id) return null;
+  const hold = await readHostHold(deps.bb, card.worker_thread_id);
+  return hold ? { ...hold, summary: holdSentence(hold) } : null;
 }
 
 /** The holder's display name for the wait sentence. The id stays the link target. */

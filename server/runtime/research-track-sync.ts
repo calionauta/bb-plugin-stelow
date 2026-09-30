@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import type { ResearchReadiness } from "./research-artifacts.js";
@@ -23,6 +24,7 @@ export type ResearchTrackSyncDeps = TrackSyncDepsBase & {
   db: Db;
   markThreadRunning: (card: WorkerCard, lastOutput: string | null) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
+  readHold: (card: WorkerCard) => Promise<HostHold | null>;
   noteAgentOutput: (card: WorkerCard, lastOutput: string | null) => void;
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   escalateIfStalled: (cardId: string) => void;
@@ -115,6 +117,13 @@ async function sweepTrack(
       if (questionIds === null) return;
       if (questionIds.length > 0) {
         deps.updateCard(card.id, questionWaitUpdates(lastOutput));
+      } else if (await deps.readHold(card)) {
+        // The host owns the next dispatch, so this is not a settled track and
+        // not a park. The same rule the build sync applies, for the same
+        // reason: these tracks do not auto-continue, so they never grew the
+        // duplicate-nudge pile, but a held card still must not be reported as
+        // an idle one asking for a retry it does not need.
+        deps.updateCard(card.id, holdUpdates(lastOutput));
       } else {
         await onSettled(deps, card, lastOutput);
       }
