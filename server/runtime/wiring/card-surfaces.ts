@@ -23,6 +23,7 @@ import { githubIssuesEnabled, type GithubAutomation } from "../../github-issues.
 import { githubUnavailableStatus } from "../../github-status.js";
 import { createWorkspacesRecovery } from "../../workspaces-recovery.js";
 import { cancelScopeBatchRun } from "../../scope-batch.js";
+import { createSharedCheckoutReader, listBbThreads } from "../shared-checkout.js";
 import { createCardDetailHandler } from "../card-detail.js";
 import { createCardMutationHandlers } from "../card-mutations.js";
 import { cancelCardScopeBatches, createCardLifecycleHandlers } from "../card-lifecycle.js";
@@ -63,6 +64,7 @@ export function createCardSurfaces(deps: CardSurfaceDeps) {
     cards,
     workspacesRecovery,
     cardDetail: buildCardDetail(core, execution),
+    sharedCheckoutExposure: buildSharedCheckoutExposure(core),
     cardMutations: buildCardMutations(core),
     cardLifecycle: buildCardLifecycle(core, execution),
     cardOperations: buildCardOperations(core),
@@ -136,6 +138,29 @@ function buildWorkspacesRecovery(
 }
 
 /** The detail view: everything one card shows, in one read. */
+/**
+ * Who else is working in this card's checkout, and which of the files it holds
+ * are dirty there.
+ *
+ * A reader, not a guard: it refuses nothing and resolves nothing. It exists
+ * because the claim ledger can only see cards, and a card whose preset falls
+ * back to `project-default` shares the project checkout with every other thread
+ * in it. The reader is cached for 30s because the thread list is a host-wide
+ * fact and costs ~0.6s, and it is wired to the one module that reads working
+ * trees so both answers describe the same checkout.
+ */
+function buildSharedCheckoutExposure(core: RuntimeCore) {
+  const reader = createSharedCheckoutReader({
+    db: core.db,
+    getCard: core.getCard,
+    cardWorkspace: core.cardWorkspace,
+    dirtyStatusIn: core.git.dirtyStatusIn,
+    listThreads: listBbThreads,
+    now: core.now,
+  });
+  return ({ cardId }: { cardId: string }) => reader.reportFor(cardId);
+}
+
 function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
   const { bb, db, now, presetServer, workers } = core;
   return createCardDetailHandler({

@@ -103,6 +103,47 @@ async function dropLinkedWorktree(
   }
 }
 
+/**
+ * The one porcelain invocation every surface reads a working tree through.
+ *
+ * `-z` so a path is NUL-delimited and a path containing a space or a quote
+ * needs no unquoting, `core.quotepath=false` so a non-ASCII name arrives as
+ * itself, and `status.relativePaths=false` so paths are relative to the
+ * repository root — which is the same shape the claim ledger stores, so the
+ * two halves of "which files are mine" cannot disagree about what a file is
+ * called. Two definitions of this command is how that would happen.
+ */
+export function porcelainStatusArgs(): string[] {
+  return [
+    "-c",
+    "core.quotepath=false",
+    "-c",
+    "status.relativePaths=false",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+  ];
+}
+
+/**
+ * The dirty paths of a working tree, raw — parsing belongs to the caller,
+ * because only the caller knows whether it wants counts, patches or names.
+ * Fail-soft: a non-Git path or a git error reads as nothing dirty, never as
+ * an error, because every surface here reports and the caller names the fix.
+ */
+async function dirtyStatus(
+  runGit: typeof runGitIn,
+  checkoutPath: string,
+): Promise<string> {
+  try {
+    const result = await runGit(checkoutPath, porcelainStatusArgs(), 4 * 1024 * 1024);
+    return result.ok ? result.stdout : "";
+  } catch {
+    return "";
+  }
+}
+
 /** What git can say about a path: root, branch, HEAD, dirty file count. */
 async function recoveryGitEvidence(
   runGit: typeof runGitIn,
@@ -272,6 +313,7 @@ export function createGitEvidence(deps: GitEvidenceDeps) {
       recoveryGitEvidence(runGitIn, path),
     gitTouchedSince: (gitRoot: string, fromHead: string) =>
       gitTouchedSince(runGitIn, gitRoot, fromHead),
+    dirtyStatusIn: (checkoutPath: string) => dirtyStatus(runGitIn, checkoutPath),
     discardEvidence: createDiscardEvidence({
       db: deps.db,
       cardWorkspace: deps.cardWorkspace,

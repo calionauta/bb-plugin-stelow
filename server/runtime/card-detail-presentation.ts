@@ -13,6 +13,7 @@ import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
 import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
+import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
 import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
@@ -90,7 +91,7 @@ function detailFileOccupancy(
   card: { id: string; dir_hash?: string | null },
   workspace: { path: string | null },
 ) {
-  const isolated = typeof workspace.path === "string" && workspace.path.includes(`sw-${card.id}`);
+  const isolated = isManagedWorktree(workspace.path, card.id);
   if (isolated) return { isolated: true, lines: [] as string[], shared: 0 };
   const workspacePath = resolveClaimCheckout({ checkoutPath: workspace.path }) ?? null;
   if (!workspacePath) return { isolated: false, lines: [] as string[], shared: 0 };

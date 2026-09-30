@@ -6,6 +6,7 @@ import { summarizeSemDiff } from "../../lib/sem-summary.mjs";
 import { summarizeSemImpact } from "../../lib/sem-impact.mjs";
 import { summarizeTestGate, summarizeQualityDelta } from "../../lib/ripwire-gates.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import { porcelainStatusArgs as statusArgs } from "./git-evidence.js";
 
 type ExecFile = typeof execFile;
 type Checkout = { path: string; hostId: string | null } | null;
@@ -199,18 +200,7 @@ function trackedFile(
   };
 }
 
-function statusArgs(): string[] {
-  return [
-    "-c",
-    "core.quotepath=false",
-    "-c",
-    "status.relativePaths=false",
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-  ];
-}
+
 
 function untrackedFiles(status: string, root: string, hostId: string): DiffFile[] {
   const files: DiffFile[] = [];
