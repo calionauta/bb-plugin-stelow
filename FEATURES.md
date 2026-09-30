@@ -1377,6 +1377,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the done instruction (budgeted), then pauses with the instruction on
   the card — completed cards read "Done — ready to review", never a lit
   audit with no next step.
+- **A park at audit says which park it is** (`auditPauseReason`,
+  `server/runtime/build-thread-terminal.ts`). The done nudge is budgeted at
+  `MAX_DONE_NUDGES`, and the pause notice used to read "resume continues the
+  worker with that instruction" whether or not there was any instruction left
+  to give. On a card whose budget was already spent and whose done gate
+  refused for a reason no resume could touch, that sentence taught a reader to
+  press Resume again. The pause now names the spent budget and says the
+  refusal on the card is the thing to change; a card waiting on an open
+  question says so; everything else keeps the plain sentence. The nudge itself
+  closes the two dead ends it kept producing: when `done` refuses, do not mark
+  the blocking work done to get past it, and do not end the turn with a
+  question in prose — a prose question is invisible to the host, so the card
+  parks with nothing answerable. Name the blocker in a card comment, or open
+  `bb stelow ask` so the card carries a question someone can answer.
 - **`bb stelow review` (opt-in, `lib/review-verdict.mjs`).** Independent
   artifact review on explicit invocation only — no band default, no
   silent fallback: without a designated reviewer preset the command
