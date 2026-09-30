@@ -51,9 +51,16 @@ export function projectRunningState(
   questionIds: string[],
 ): Record<string, unknown> {
   if (questionIds.length > 0) return questionWaitUpdates(lastOutput);
+  // A projection that just re-read the card's own state file supersedes
+  // whatever the last failure said. Without this the text is permanent: only
+  // the resume paths cleared it, so a card that failed once — even for a
+  // reason the host itself caused — kept telling the reader "Reseed this
+  // card" days later, next to a worker that was never reseeded and never
+  // needed to be.
   const updates: Record<string, unknown> = {
     activity: "running",
     last_assistant_text: lastOutput,
+    last_error: null,
     status: statusForNewCardWork({
       kind: card.kind,
       status: card.status,

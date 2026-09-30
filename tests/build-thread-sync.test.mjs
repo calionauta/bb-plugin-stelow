@@ -93,6 +93,11 @@ function createSyncDeps(calls, getCurrent, options) {
     getCard: () => current,
     cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
     workflowStateDir: async () => options.stateDir === null ? null : "/project/.stelow/run",
+    resolveWorkflowStateDir: async () => {
+      if (options.stateDir === null) return { kind: "unowned" };
+      if (options.stateDir === "unreadable") return { kind: "unreadable" };
+      return { kind: "resolved", path: "/project/.stelow/run", state: options.state ?? "name: Useful\nintent: feature\ncurrent_stage: planning\n" };
+    },
     updateCard: (_id, fields) => {
       calls.push(["update", fields]);
       current = { ...current, ...fields };
@@ -131,7 +136,7 @@ test("active build sync projects state metadata and running activity", async () 
   assert.equal(projectStateMetadata(card(), "name: Other\nintent: feature\n").intent, null);
   assert.deepEqual(
     projectRunningState(card(), "planning", "working", []),
-    { activity: "running", last_assistant_text: "working", status: "triage", stage: "planning" },
+    { activity: "running", last_assistant_text: "working", last_error: null, status: "triage", stage: "planning" },
   );
   const running = fixture.calls.find(
     ([name, fields]) => name === "update" && fields.activity === "running",
@@ -139,6 +144,7 @@ test("active build sync projects state metadata and running activity", async () 
   assert.deepEqual(running[1], {
     activity: "running",
     last_assistant_text: "working",
+    last_error: null,
     status: "triage",
     stage: "planning",
   });
@@ -303,4 +309,45 @@ test("terminal and unverifiable ownership refusals are negative controls", async
     unverifiable.calls.find(([name]) => name === "update")[1].last_error,
     /ownership cannot be verified/,
   );
+});
+
+// Two regressions with the same trigger and the same minute, and the fix has to
+// tell them apart. `host-daemon.48.log` on 2026-09-30 recorded 26 event-loop
+// stalls between 09:36:42 and 09:41:47 (max delay 29.6s) plus timed-out host
+// RPCs; three cards flipped to the ownership error in the same second
+// (09:40:37) and recovered on their own 71s later. The card had not lost its
+// state — the host had stopped answering, and the sync turned a transport
+// failure into a verdict about the card, an inbox error, and a card frozen on
+// its last projection because the refusal returns before anything else runs.
+test("an unreadable workspace is not a verdict about the card's state", async () => {
+  const fixture = harness(card({ dir_hash: "hash_1", stage: "planning" }), { stateDir: "unreadable" });
+  await fixture.sync(fixture.row().id);
+
+  assert.deepEqual(
+    fixture.calls.filter(([name]) => name === "update"),
+    [],
+    "a read the host never answered writes nothing — no error, no activity, no inbox",
+  );
+  assert.equal(
+    fixture.calls.some(([name]) => name === "thread.get"),
+    false,
+    "an unreadable workspace is not a reason to stop syncing a live worker forever",
+  );
+});
+
+test("a verified projection clears the failure the last tick reported", async () => {
+  const fixture = harness(
+    card({
+      dir_hash: "hash_1",
+      activity: "idle",
+      last_error: "Workflow state ownership cannot be verified. Reseed this card; "
+        + "project-root state is intentionally ignored.",
+    }),
+    { status: "active" },
+  );
+  await fixture.sync(fixture.row().id);
+
+  const update = fixture.calls.find(([name, fields]) => name === "update" && fields.activity === "running");
+  assert.equal(update[1].last_error, null, "the reseed instruction outlived the failure that wrote it");
+  assert.equal(fixture.row().last_error, null);
 });

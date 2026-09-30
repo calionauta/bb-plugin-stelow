@@ -1520,6 +1520,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
+- **State ownership is a verdict, not a failed read**
+  (`resolveWorkflowStateDir`, `server/runtime/workflow-state.ts`). Resolving a
+  card's state dir needs two records to agree — the `stelow.json` entry naming
+  the workflow, and the `state.md` naming the same owner back. That answer
+  comes in three shapes now, because the caller acts differently on each:
+  `resolved` (with the blob the ownership check already read, so nobody asks
+  the host twice about a file that can change between reads), `unowned` (the
+  records disagree — a verdict, and the card gets the reseed refusal), and
+  `unreadable` (the host did not answer — not a verdict about the card). The
+  periodic card sync skips an unreadable tick entirely instead of freezing the
+  card on its last projection with an error the host caused, and a verified
+  projection clears `last_error`, so a failure the host recovered from stops
+  being displayed days later next to a worker that never needed reseeding.
+  Measured case: 26 daemon event-loop stalls on 2026-09-30 09:36–09:41 (max
+  delay 29.6s) turned three live cards into the ownership refusal in the same
+  second; all three recovered on their own 71s later.
 - **Host-served playbook** (`bb stelow playbook [--card]`,
   `lib/playbook.mjs`). The card's state file, transitions, and the
   ordered reading list for its current stage as exact paths — workers

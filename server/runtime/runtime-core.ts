@@ -29,7 +29,11 @@ import { loadBoard, boardFromRoot } from "./board-read.js";
 import { roundRelPath } from "./card-seams.js";
 import { strategyList, strategyRounds } from "./track-projection.js";
 import { stripMessageDirectives } from "./message-text.js";
-import { workflowStateDir, ensureProjectArtifacts } from "./workflow-state.js";
+import {
+  resolveWorkflowStateDir,
+  workflowStateDir,
+  ensureProjectArtifacts,
+} from "./workflow-state.js";
 import { runHelper } from "./helper-script.js";
 import { projectRoot } from "./root-paths.js";
 import { BUILD_INFO } from "../plugin-paths.js";
@@ -82,6 +86,7 @@ export function createRuntimeCore(bb: BbPluginApi) {
     loadBoard,
     boardFromRoot,
     workflowStateDir,
+    resolveWorkflowStateDir,
     ensureProjectArtifacts,
     runHelper,
     projectRoot,
