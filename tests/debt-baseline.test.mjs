@@ -75,6 +75,11 @@ const inheritedBaseline = [
   "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
   "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
   "tests/server-cards.test.mjs:callback#4: 82 lines (baseline 84)",
+  // Recorded at 83 in scripts/source-debt.json and unchanged here: this card
+  // inverts assertions in this file but must not grow the harness, so the new
+  // fixtures live in their own files. The entry appears only because editing
+  // this file makes the gate report its existing debt.
+  "tests/server-drafting.test.mjs:harness#1: 83 lines (baseline 83)",
 ];
 
 function git(...command) {
