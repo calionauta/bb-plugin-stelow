@@ -219,23 +219,76 @@ const rowSource = readFileSync(
   // auto-started worker and every preset created afterwards.
   assert.match(
     fieldSource,
-    /disabled=\{busy \|\| builtIn\}/,
-    "the control is disabled while saving and for built-in presets",
+    /disabled=\{disabled\}/,
+    "the control's disabled state is driven by the busy and built-in conditions",
+  );
+  assert.match(
+    fieldSource,
+    /const disabled = busy \|\| builtIn;/,
+    "and those two conditions are what combine to produce it",
+  );
+  // A pointer cursor on a permanently disabled control promises a click that
+  // never lands — which is the built-in case, every time.
+  assert.match(
+    fieldSource,
+    /cursor-default/,
+    "the control drops the pointer cursor when it cannot be clicked",
+  );
+}
+
+// The explanation carries the built-in cascade and the out-of-enum value, and
+// those sentences are the ONLY place either fact appears. If they do not reach
+// assistive tech, a screen-reader user meets a disabled control with no reason.
+{
+  assert.match(
+    fieldSource,
+    /aria-describedby=\{HELP_ID\}/,
+    "the input points at its explanation so it is announced on demand",
+  );
+  assert.match(
+    fieldSource,
+    /id=\{HELP_ID\}/,
+    "and the explanation carries the id that reference resolves to",
+  );
+}
+
+// Focus must be perceivable per WCAG 2.2. The spec named ChoiceCards' treatment
+// as the house style, and no global outline reset exists in this repo, so the
+// control supplies its own.
+{
+  assert.match(
+    fieldSource,
+    /focus-visible:outline/,
+    "the checkbox carries its own visible focus treatment",
   );
 }
 
 // Touch targets are a house rule that AGENTS.md admits is stated but untested.
-// Counted here so a future edit cannot quietly drop it.
+//
+// COUNTED, not presence-matched. A presence grep over the whole file passes on a
+// control whose JSX lost both classes and whose only remaining occurrence is
+// the word inside a comment — which is exactly how this assertion was found
+// green on a broken control during verification. Counting inside the JSX
+// distinguishes a class-order refactor from a dropped class.
 {
-  assert.match(
-    fieldSource,
-    /min-h-11/,
-    "the control's label carries the house minimum touch target",
+  const count = (needle) => fieldSource.split(needle).length - 1;
+  assert.ok(
+    count("min-h-11") >= 1,
+    `the control's label carries the house minimum touch target (found ${count("min-h-11")})`,
+  );
+  // The label and the input are both clickable, so both must resolve a pointer.
+  // The cursor is one interpolated variable, so the assertion counts where it is
+  // APPLIED (two className sites) rather than how many times the word appears —
+  // a count of the literal alone would pass on a label that dropped it.
+  const applied = fieldSource.match(/className=\{`[^`]*\$\{cursor\}/g) ?? [];
+  assert.ok(
+    applied.length >= 2,
+    `the label and the input each carry the pointer cursor (found ${applied.length} sites)`,
   );
   assert.match(
     fieldSource,
-    /cursor-pointer/,
-    "the clickable carries a pointer cursor, which Tailwind v4 does not imply",
+    /disabled \? "cursor-default" : "cursor-pointer"/,
+    "and the cursor drops to a default when the control cannot be clicked",
   );
 }
 
@@ -260,8 +313,66 @@ const rowSource = readFileSync(
   );
 }
 
+// The seed is wired into THREE dialogs, and each one must actually pass it.
+//
+// Counted per dialog rather than once over the folder: a single assertion that
+// "some dialog seeds the composer" stays green when one dialog silently stops
+// doing it, which is precisely the mutation verification performed — deleting
+// the prop from the Explore dialog alone left every suite green.
+const DIALOGS = [
+  "create-build-dialog.tsx",
+  "create-research-dialog.tsx",
+  "create-explore-dialog.tsx",
+];
+for (const dialog of DIALOGS) {
+  const source = readFileSync(join(root, "components/creation", dialog), "utf8");
+  assert.match(
+    source,
+    /useSeededComposerEnvironment\(/,
+    `${dialog} reads the preset's environment kind`,
+  );
+  assert.match(
+    source,
+    /defaultEnvironment=\{seededEnvironment\}/,
+    `${dialog} hands the seed to the composer`,
+  );
+  // The reset key is what makes "reopening re-reads the preset" true. The hook
+  // sits ABOVE <Dialog>, and Radix unmounts DialogContent on close — not the
+  // component holding the hook — so a mount-once capture would survive a close
+  // and a reopen and keep showing a stale preset.
+  assert.match(
+    source,
+    /useSeededComposerEnvironment\([^)]*,\s*open\)/,
+    `${dialog} re-reads the preset on reopen rather than capturing once per panel mount`,
+  );
+}
+{
+  // And the hook itself must hold the capture rather than recompute per render.
+  // The mapper's frozen constant is the first line of defence; this is the
+  // second, and it is the one AC 3 names.
+  const hook = readFileSync(
+    join(root, "components/creation/composer-environment-seed.ts"),
+    "utf8",
+  );
+  assert.match(
+    hook,
+    /captured\.current\?\.open !== open/,
+    "the capture is keyed on the dialog's open state, so a reopen re-reads the preset",
+  );
+  assert.match(
+    hook,
+    /useRef/,
+    "the capture survives re-renders, so a person who touched the picker keeps their pick",
+  );
+  assert.doesNotMatch(
+    hook,
+    /return presetEnvironmentSeed\(environmentKind\);/,
+    "the hook never recomputes per render, which is the re-seed defence AC 3 depends on",
+  );
+}
+
 console.log(
   "preset environment seed test ok: the mapping is total and reference-stable, "
-  + "an unknown kind is refused locally, and the control is a checkbox that claims "
-  + "only a worktree",
+  + "an unknown kind is refused locally, the control is a checkbox that claims "
+  + "only a worktree, and all three dialogs seed the composer on every open",
 );

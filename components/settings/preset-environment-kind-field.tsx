@@ -2,6 +2,7 @@ import { ISOLATED_WORKTREE_LABEL } from "../isolated-worktree-check";
 import { isKnownEnvironmentKind, type PresetManagerForm } from "./preset-manager-types";
 
 const WORKTREE_KIND = "new-worktree";
+const HELP_ID = "preset-environment-kind-help";
 
 export type PresetEnvironmentKindFieldProps = {
   form: PresetManagerForm;
@@ -34,15 +35,31 @@ export function PresetEnvironmentKindField({
   onChange,
 }: PresetEnvironmentKindFieldProps) {
   const isolated = form.environmentKind === WORKTREE_KIND;
-  const unrecognised = !isKnownEnvironmentKind(form.environmentKind);
+  const disabled = busy || builtIn;
+  // A pointer cursor on a permanently disabled control promises a click that
+  // will never land. `disabled:cursor-default` is what makes the state legible
+  // without a second visual treatment.
+  const cursor = disabled ? "cursor-default" : "cursor-pointer";
+  const help = explain({
+    isolated,
+    unrecognised: !isKnownEnvironmentKind(form.environmentKind),
+    builtIn,
+    kind: form.environmentKind,
+  });
   return (
     <div className="flex flex-col gap-1">
-      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+      <label className={`flex min-h-11 ${cursor} items-center gap-2 text-xs text-muted-foreground`}>
         <input
           type="checkbox"
-          className="size-4 cursor-pointer"
+          className={`size-4 ${cursor} focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`}
           checked={isolated}
-          disabled={busy || builtIn}
+          disabled={disabled}
+          // The sentences below are the only carrier of the built-in cascade and
+          // the out-of-enum value, so they must reach assistive tech. A
+          // described-by keeps them OUT of the accessible name, so the control
+          // is announced as "Isolated worktree" and the explanation is read on
+          // demand — rather than folding two sentences into the name.
+          aria-describedby={HELP_ID}
           onChange={(event) =>
             onChange({
               ...form,
@@ -52,7 +69,7 @@ export function PresetEnvironmentKindField({
         />
         <span className="text-foreground">{ISOLATED_WORKTREE_LABEL}</span>
       </label>
-      <p className="text-xs text-muted-foreground">{explain(isolated, unrecognised, builtIn, form.environmentKind)}</p>
+      <p id={HELP_ID} className="text-xs text-muted-foreground">{help}</p>
     </div>
   );
 }
@@ -62,12 +79,17 @@ export function PresetEnvironmentKindField({
  * what BB does, not what the card will get: BB resolves its own default, and
  * that default is not this plugin's to promise.
  */
-function explain(
-  isolated: boolean,
-  unrecognised: boolean,
-  builtIn: boolean,
-  kind: string,
-): string {
+function explain({
+  isolated,
+  unrecognised,
+  builtIn,
+  kind,
+}: {
+  isolated: boolean;
+  unrecognised: boolean;
+  builtIn: boolean;
+  kind: string;
+}): string {
   if (builtIn) {
     return "Built-in presets keep their own environment. Duplicate it to change this.";
   }

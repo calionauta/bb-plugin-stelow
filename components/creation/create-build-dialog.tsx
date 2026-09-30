@@ -188,7 +188,7 @@ export function CreateBuildDialog({
           <DialogDescription>Describe the outcome, problem, or change. Planning depth and review checkpoints below start from the board defaults — keep them or adjust, then submit.</DialogDescription>
         </DialogHeader>
         {submit.error ? <CreateCardAlert message={submit.error} /> : null}
-<CreateBuildComposer
+        <CreateBuildComposer
           seedProjectId={seedProjectId}
           analysisPreset={analysisPreset}
           seededEnvironment={seededEnvironment}
