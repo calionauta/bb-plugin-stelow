@@ -1094,6 +1094,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   in Decision API mode, a confident "no real progress" judgment vetoes the
   resume (the card pauses instead); every other outcome keeps the
   heuristic standing — the veto saves turns, never spends them.
+  The park that ends auto-continue names the turn that produced it, from
+  the finished turn's own Stelow verbs (`lastTurnStelowCalls`, read once
+  per idle sync): a turn that ran `bb stelow done` and had the gate refuse
+  it is told the refusal is the last thing on the card and that resuming
+  repeats it; a `done` that came back clean is a different sentence again,
+  because a gate that passed must not be described as one that refused.
+  That signal chooses words only — the nudge budget still governs whether
+  the worker is resumed, so a refused `done` is resumed exactly as before.
+  A refused `done` also leaves a card comment carrying the gate's stderr
+  (`bb stelow done refused: …`), which is the record the park sentence
+  points at; all eight build refusals go through that one seam, including
+  the two that return a `refuse({…})` object. Prose stays invisible: a
+  worker that stops having run nothing, asked nothing and committed
+  nothing gives the host no verifiable fact, and classifying prose to
+  manufacture a sentence for it is a classifier on the authority path.
 - **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
@@ -1110,7 +1125,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comments kept. Resolves the reliable-tier preset like any fresh start
   (card pin, reliable override, band, default). A reseed restarts the
   workflow, not the human's review choices: the card's current appetite
-  and gate set carry over.
+  and gate set carry over. It is also what an unverified-ownership card is
+  told to use, and a refused `done` now leaves the gate's own stderr as a
+  card comment for a reader deciding between this and a retry.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.

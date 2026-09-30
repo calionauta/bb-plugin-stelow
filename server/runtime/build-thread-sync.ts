@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import {
-  lastTurnAdvancedStages,
+  lastTurnStelowCalls,
   nextAutoContinue,
   shouldAutoContinue,
 } from "../../lib/auto-continue.mjs";
@@ -19,7 +19,7 @@ import {
   projectThreadError,
   shouldSyncThread,
 } from "./thread-state-projection.js";
-import { syncTerminalIdle } from "./build-thread-terminal.js";
+import { syncTerminalIdle, type StelowCalls } from "./build-thread-terminal.js";
 import { recordPausedAfter } from "./paused-inbox.js";
 import { sendAgentInput } from "./thread-send.js";
 import type { WorkflowStateResolution } from "./workflow-state.js";
@@ -251,12 +251,15 @@ async function syncIdle(
     return false;
   }
   const transitioning = snapshot.card.activity !== "idle";
+  // One fetch, two readers: the terminal park names what the finished turn ran,
+  // the resume below reads the same window for its advance scan.
+  const calls = await readStelowCalls(deps, snapshot);
   if (snapshot.stage === "audit") {
-    const resumed = await syncTerminalIdle(deps, snapshot, transitioning);
+    const resumed = await syncTerminalIdle(deps, snapshot, transitioning, calls);
     if (!resumed) noteFreshOutput(deps, snapshot);
     return resumed;
   }
-  const resumed = await resumeWithProgress(deps, snapshot, transitioning);
+  const resumed = await resumeWithProgress(deps, snapshot, transitioning, calls);
   if (!resumed) noteFreshOutput(deps, snapshot);
   return resumed;
 }
@@ -265,8 +268,9 @@ async function resumeWithProgress(
   deps: BuildThreadSyncDeps,
   snapshot: ThreadSnapshot,
   transitioning: boolean,
+  calls: StelowCalls,
 ): Promise<boolean> {
-  const progressed = await detectProgress(deps, snapshot);
+  const progressed = detectProgress(snapshot, calls);
   const decision = shouldAutoContinue({
     status: snapshot.status,
     stage: snapshot.stage,
@@ -285,24 +289,32 @@ async function resumeWithProgress(
   return false;
 }
 
-async function detectProgress(
+/** The finished turn's Stelow verbs, read once per idle sync. `null` means
+ * "don't know" — no thread, or a failed read — and both readers treat that as
+ * nothing to report rather than as progress or as a refusal. */
+async function readStelowCalls(
   deps: BuildThreadSyncDeps,
   snapshot: ThreadSnapshot,
-): Promise<boolean> {
-  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
-    return true;
-  }
+): Promise<StelowCalls> {
+  if (!snapshot.card.worker_thread_id) return null;
   try {
-    const recent = await deps.bb.sdk.threads.events.list({
-      threadId: snapshot.card.worker_thread_id!,
+    const events = await deps.bb.sdk.threads.events.list({
+      threadId: snapshot.card.worker_thread_id,
       order: "desc",
       limit: "100",
       types: ["turn/completed", "turn/started", "item/completed"],
     });
-    return lastTurnAdvancedStages(recent);
+    return lastTurnStelowCalls(events);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
+  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
+    return true;
+  }
+  return calls?.advanced ?? false;
 }
 
 async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): Promise<boolean> {

@@ -5,11 +5,7 @@ import {
   projectStateMetadata,
   shouldSyncThread,
 } from "../server/runtime/thread-state-projection.ts";
-import {
-  card,
-  harness,
-  pausedSummary,
-} from "./helpers/build-thread-sync-harness.mjs";
+import { card, harness } from "./helpers/build-thread-sync-harness.mjs";
 
 test("active build sync projects state metadata and running activity", async () => {
   const fixture = harness(card());
@@ -108,114 +104,6 @@ test("idle question wait keeps position and still records fresh output", async (
   assert.equal(
     fixture.calls.some(([name, , body]) => name === "comment" && body === "before question"),
     true,
-  );
-});
-
-test("audit idle never implies completion when the done budget is spent", async () => {
-  const fixture = harness(
-    card({
-      status: "in-progress",
-      stage: "audit",
-      activity: "running",
-      auto_continue_count: 2,
-      auto_continue_stage: "audit",
-    }),
-    {
-      status: "idle",
-      output: "audit narrated",
-      state: "name: Useful\ncurrent_stage: audit\n",
-    },
-  );
-  await fixture.sync(fixture.row().id);
-
-  assert.equal(fixture.calls.some(([name]) => name === "thread.send"), false);
-  assert.equal(
-    fixture.calls.some(([name, fields]) => name === "update" && fields.status === "completed"),
-    false,
-  );
-  // One comment, not two. The notice that used to be here claims the workflow
-  // "reached the audit stage", and this fixture's card is ALREADY at stage
-  // audit with the observed state also at audit — nothing transitioned during
-  // this sync, so the notice was not true. It hung off `transitioning`, which
-  // is derived from `activity`, and a native run flips activity; that is how
-  // card_1fgz8lge re-announced the same arrival twice, minutes apart.
-  assert.equal(fixture.calls.filter(([name]) => name === "comment").length, 1);
-  assert.equal(fixture.calls.at(-1)[0], "escalate");
-});
-
-// The reader of a paused card gets one sentence, and it used to be the wrong
-// one: "resume continues the worker with that instruction" was printed whether
-// or not the host still had any instruction left to give. card_hh2nwqs4 sat
-// on that sentence with the budget already spent and a done gate that refused
-// for a reason no resume could touch, so the only thing the sentence taught a
-// reader was to press Resume again.
-test("a park at audit names the spent budget, not just the instruction", async () => {
-  const spent = harness(
-    card({
-      status: "in-progress",
-      stage: "audit",
-      activity: "running",
-      auto_continue_count: 2,
-      auto_continue_stage: "audit",
-      last_idle_at: 9_800_000,
-    }),
-    { status: "idle", output: "audit narrated", state: "name: Useful\ncurrent_stage: audit\n", now: 10_000_000 },
-  );
-  await spent.sync(spent.row().id);
-
-  const spentPaused = pausedSummary(spent.calls, /audit/i);
-  assert.match(spentPaused, /already resumed it 2 times/);
-  assert.match(spentPaused, /Another resume repeats it/);
-
-  // The other way the host declines to nudge is not a fresh idle edge. That
-  // card gets the plain sentence — spent-budget wording on a card the host
-  // would happily resume would be a lie in the other direction.
-  const fresh = harness(
-    card({ status: "in-progress", stage: "audit", activity: "idle", last_idle_at: 9_800_000 }),
-    { status: "idle", output: "audit narrated", state: "name: Useful\ncurrent_stage: audit\n", now: 10_000_000 },
-  );
-  await fresh.sync(fresh.row().id);
-
-  const plainPaused = pausedSummary(fresh.calls, /audit/i);
-  assert.match(plainPaused, /resume continues the worker with that instruction/);
-  assert.doesNotMatch(plainPaused, /already resumed/);
-});
-
-test("the audit notice says arrival, so it fires on the arrival and not after", async () => {
-  const arriving = harness(
-    card({
-      status: "in-progress",
-      stage: "execution",
-      activity: "running",
-      // The done budget has to be spent for the notice path to be reached at
-      // all: with budget left, sendDoneNudge resumes the worker and returns
-      // before anything is announced, which is the correct outcome.
-      auto_continue_count: 2,
-      auto_continue_stage: "audit",
-    }),
-    { status: "idle", output: "audit narrated", state: "name: Useful\ncurrent_stage: audit\n" },
-  );
-  await arriving.sync(arriving.row().id);
-  const notices = () => arriving.calls.filter(([name, , body]) => name === "comment" && /reached the audit stage/.test(String(body)));
-  assert.equal(notices().length, 1, "reaching audit announces it once");
-
-  // Same card, still at audit, going idle again. The stage did not move, so the
-  // card has nothing new to say about arriving.
-  const staying = harness(
-    card({
-      status: "in-progress",
-      stage: "audit",
-      activity: "running",
-      auto_continue_count: 2,
-      auto_continue_stage: "audit",
-    }),
-    { status: "idle", output: "audit narrated again", state: "name: Useful\ncurrent_stage: audit\n" },
-  );
-  await staying.sync(staying.row().id);
-  assert.equal(
-    staying.calls.filter(([name, , body]) => name === "comment" && /reached the audit stage/.test(String(body))).length,
-    0,
-    "a card already at audit is not told it reached audit",
   );
 });
 

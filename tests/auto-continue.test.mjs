@@ -8,6 +8,7 @@ import {
   MAX_DONE_NUDGES,
   ensureAutoContinueColumns,
   lastTurnAdvancedStages,
+  lastTurnStelowCalls,
   nextAutoContinue,
   resetAutoContinue,
   shouldAutoContinue,
@@ -159,6 +160,88 @@ assert.equal(lastTurnAdvancedStages("nope"), false, "non-array history reads as 
 assert.equal(lastTurnAdvancedStages([{ type: "turn/completed", data: {} }, null, { nope: 1 }]), false, "odd shapes never throw, they just miss");
 assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing");
 
+// The same window, read for what it says about `done` instead of `advance`.
+// This is the signal the audit park is missing today: a worker that ran
+// `bb stelow done` and had the gate refuse it is not waiting for an
+// instruction, and the sentence it used to get named none of that.
+//
+// Every case below is one where the naive scan lies, so the whole point of the
+// `done` predicate is that it is narrower than the event list it walks.
+const doneItem = (command, status = "completed", exitCode) => ({
+  type: "item/completed",
+  data: { item: { type: "commandExecution", command, status, ...(exitCode === undefined ? {} : { exitCode }) } },
+});
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow done", "failed", 1)]),
+  { advanced: false, done: true, doneFailed: true },
+  "a failed done is the refused gate, exit code or status alike",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow done")]),
+  { advanced: false, done: true, doneFailed: false },
+  "a done that came back clean still means the card is not complete",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow done", "completed", 0)]),
+  { advanced: false, done: true, doneFailed: false },
+  "an explicit zero exit is not a refusal",
+);
+// This is the shape a real refusal has: the command ran and the shell
+// succeeded, so the item's own status is "completed", and the non-zero exit
+// code is the CLI saying no. Reading only the item status would call every
+// refused done a clean one — the opposite of the truth, and it would put the
+// "the card is not complete" sentence on a card whose gate had a reason.
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow done", "completed", 1)]),
+  { advanced: false, done: true, doneFailed: true },
+  "a non-zero exit under a completed status is still the gate refusing",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelong done", "failed", 1)]),
+  { advanced: false, done: false, doneFailed: false },
+  "a typo'd verb never reached the gate, so it is not a gate refusal",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow ask")]),
+  { advanced: false, done: false, doneFailed: false },
+  "asking is not completing",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, advanceItem("bb stelow advance shape")]),
+  { advanced: true, done: false, doneFailed: false },
+  "an advance is still an advance through the shared window",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, doneItem("bb stelow done --help"), doneItem("bb stelow done --dry-run")]),
+  { advanced: false, done: false, doneFailed: false },
+  "a probe is a probe: --help and --dry-run never reach the gate",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([
+    ...lastTurn,
+    { type: "item/completed", data: { item: { type: "agentMessage", text: "should I run done now?" } } },
+  ]),
+  { advanced: false, done: false, doneFailed: false },
+  "a worker that merely asks about done in prose has run nothing",
+);
+assert.deepEqual(
+  lastTurnStelowCalls([
+    ...lastTurn,
+    { type: "turn/started", data: {} },
+    doneItem("bb stelow done", "failed", 1),
+  ]),
+  { advanced: false, done: false, doneFailed: false },
+  "a done two turns back describes a park that already happened",
+);
+const stringDone = { type: "item/completed", data: JSON.stringify(doneItem("bb stelow done").data) };
+assert.deepEqual(
+  lastTurnStelowCalls([...lastTurn, stringDone, { type: "turn/started", data: {} }]),
+  { advanced: false, done: true, doneFailed: false },
+  "string-encoded event data is tolerated here too",
+);
+assert.deepEqual(lastTurnStelowCalls("nope"), { advanced: false, done: false, doneFailed: false }, "non-array history is don't-know");
+assert.deepEqual(lastTurnStelowCalls([]), { advanced: false, done: false, doneFailed: false }, "empty history ran nothing");
+
 // Server contract: the idle branch sends the shared nudge privately only after
 // a successful send, while manual recovery sends the same transport publicly.
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
@@ -216,9 +299,13 @@ assert.equal(
 );
 assert.match(protocolsSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
-assert.match(threadSyncSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
+assert.match(threadSyncSource, /lastTurnStelowCalls\(events\)/, "a silent stop scans the finished turn for the verbs it ran");
+// The fetch moved out of `detectProgress` into one `readStelowCalls` shared by
+// the advance scan and the terminal park, so the window is read once per idle
+// sync. The options below are the whole point of the pin: narrowing the type
+// list would silently drop the turn boundary the scan windows on.
 const advanceEventPattern = new RegExp([
-  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: snapshot\.card\.worker_thread_id!,`,
+  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: snapshot\.card\.worker_thread_id,`,
   String.raw`[\s\S]*?order: "desc",[\s\S]*?limit: "100",`,
   String.raw`[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]`,
 ].join(""));
@@ -227,5 +314,10 @@ assert.match(
   advanceEventPattern,
   "the scan reads turn boundaries and completions only",
 );
+assert.equal(
+  (threadSyncSource.match(/threads\.events\.list\(/g) ?? []).length,
+  1,
+  "one fetch per idle sync: two readers cannot see two different windows",
+);
 
-console.log("auto-continue test ok: decision matrix, budget, migration, advance scan, shared nudge, prompt discipline");
+console.log("auto-continue test ok: decision matrix, budget, migration, advance and done scan, shared nudge, prompt discipline");

@@ -48,6 +48,37 @@ export async function doneBuild(
   card: WorkerCard,
   questionPending: boolean,
 ): Promise<CliResult> {
+  const result = await runDoneBuild(deps, exportRunBundle, card, questionPending);
+  if (result.exitCode === 0) return result;
+  // A refusal with no record is invisible to everyone but the worker's own
+  // turn. card_hh2nwqs4 ran done, was refused, and parked on a card whose
+  // history had no trace of why — so the park sentence had nothing to point
+  // at. One seam covers all eight refusal sites, including the two that return
+  // a `refuse({…})` object rather than a bare exit code.
+  //
+  // Accepted trade-off: a worker looping `done` leaves a comment per attempt.
+  // That is the point — the loop is bounded by MAX_DONE_NUDGES — and a single
+  // summary comment would hide exactly the repetition an operator needs to see.
+  try {
+    deps.logCardComment(
+      card.id,
+      "card",
+      card.id,
+      "agent",
+      `bb stelow done refused: ${result.stderr}`,
+    );
+  } catch {
+    /* a refusal must never be lost because the trail could not take it */
+  }
+  return result;
+}
+
+async function runDoneBuild(
+  deps: CliDeps,
+  exportRunBundle: ExportRunBundle,
+  card: WorkerCard,
+  questionPending: boolean,
+): Promise<CliResult> {
   const gates = await readBuildGates(deps, card);
   if ("refusal" in gates) return gates.refusal;
   const { projectPath, currentStage, stateDir, stateBlob, trackedScopes } = gates;
