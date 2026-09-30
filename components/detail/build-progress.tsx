@@ -5,6 +5,8 @@ import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { statusTone } from "../../lib/detail-presentation.mjs";
 import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
+import { scopeEmptyState } from "../../lib/scope-xray-presentation.mjs";
+import { TEXT_META } from "../../lib/design-tokens";
 import { isDoneStatus } from "../../lib/trackables.mjs";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
@@ -228,10 +230,25 @@ function ProgressDisclosure({ card, archivedPresentation, artifactTotal, default
   return <DisclosureSection title={archivedPresentation?.workflow.title ?? "Workflow progress"} subtitle={archivedPresentation ? undefined : positioned ? "where this card is" : <>where this card is · <CurrentStagePill stage={card.stage} /></>} hint={archivedPresentation?.workflow.hint ?? hint} action={action} defaultOpen={defaultOpen}>{children}</DisclosureSection>;
 }
 
-function emptyScopeCopy(card: BuildCard, archived: string | undefined): string {
-  if (archived) return archived;
-  if (card.status === "completed") return "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking.";
-  return "No scopes broken down yet — the agent is still shaping the card.";
+/**
+ * Why the card has no tracked scopes.
+ *
+ * The condition used to be `detail.scopes.length === 0`, which is not the
+ * condition for "this card has no scope map". The tracker is written at
+ * `execution`; the map is approved at `scope`. So a card holding an approved
+ * seven-scope map and no tracker yet printed the seven scopes from the X-ray
+ * and "No scopes broken down yet — the agent is still shaping the card" four
+ * lines below — both true, both about the word "scopes", and together a
+ * contradiction. The rule now asks the map, which is the thing the sentence
+ * is actually about. See lib/scope-xray-presentation.mjs.
+ */
+function emptyScopeCopy(card: BuildCard, detail: BuildDetail, archived: string | undefined): string | null {
+  return scopeEmptyState({
+    hasMap: detail.scopeXray !== null,
+    tracked: detail.scopes.length,
+    cardStatus: card.status,
+    archived,
+  }) ?? "";
 }
 
 function ScopesProgress({ detail }: { detail: BuildDetail }) {
@@ -264,7 +281,7 @@ function TimelineProgress({ card, detail, intentLabels, onPick }: { card: BuildC
 export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, intentLabels, onOpenArtifacts, onPickStage, onViewFile }: BuildProgressProps) {
   const gaps = useGapSummary(card.id);
   const progress = summarizeScopeProgress(detail.scopes);
-  const emptyScopes = emptyScopeCopy(card, archivedPresentation?.workflow.emptyScopes);
+  const emptyScopes = emptyScopeCopy(card, detail, archivedPresentation?.workflow.emptyScopes);
   return (
     <>
       <ProgressDisclosure card={card} archivedPresentation={archivedPresentation} artifactTotal={artifactTotal} defaultOpen={defaultOpen} onOpenArtifacts={onOpenArtifacts} progress={progress}>
@@ -273,7 +290,7 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
         <CardChecks card={card} detail={detail} gaps={gaps} />
         {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} /> : null}
         {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
-        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : <p className="text-xs text-muted-foreground">{emptyScopes}</p>}
+        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
         <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
         <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
       </ProgressDisclosure>
