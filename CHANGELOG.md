@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.58.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.1...v0.58.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* a skipped rework scope is resolved everywhere, including the count on the card ([#202](https://github.com/calionauta/bb-plugin-stelow/issues/202)) ([a22f16b](https://github.com/calionauta/bb-plugin-stelow/commit/a22f16b955af90ff89d4fd45443d62a2bf862aac))
+* the shared checkout, a refused done and the review chip each say what was measured ([#201](https://github.com/calionauta/bb-plugin-stelow/issues/201)) ([f2daa0c](https://github.com/calionauta/bb-plugin-stelow/commit/f2daa0c5c82b0a3d60b733b5c631efff955615d0))
+
 ## [0.58.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.0...v0.58.1) (2026-09-30)
 
 
