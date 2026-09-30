@@ -3,7 +3,10 @@ import { isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { resolveCardMove } from "../../lib/card-move.mjs";
 import { splitActionState } from "../../lib/split-proposal.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { holdSentence, holdUpdates } from "../../lib/host-hold.mjs";
 import { restoreCard } from "./card-restore.js";
+import { sendAgentInput, sendError } from "./thread-send.js";
+import { readHostHold } from "./worker-hold.js";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -84,28 +87,37 @@ async function retryWorker(
       error: "This card is completed — comment on it to reopen, or restart fresh.",
     };
   }
-  try {
-    await deps.bb.sdk.threads.send({
-      threadId: card.worker_thread_id,
-      mode: "auto",
-      input: deps.buildContinueInput(deps.buildNudge(card), "public"),
-    });
-    const reset = deps.resetAutoContinue();
-    deps.updateCard(cardId, {
-      activity: "running",
-      last_error: null,
-      auto_continue_count: reset.count,
-      auto_continue_stage: reset.stage,
-    });
-    deps.bb.realtime.publish("card-state", { cardId });
-    return { ok: true, error: null };
-  } catch (error) {
-    return { ok: false, error: retrySendError(error) };
+  // The card is held, so its next message is already queued and waiting for the
+  // host. Resuming would queue a SECOND copy of a message that is about to be
+  // delivered on its own — the button the card used to show in exactly this
+  // state. Refuse, and name what releases it: a refusal without an exit is a
+  // deadlock with a good error message.
+  const hold = await readHostHold(deps.bb, card.worker_thread_id);
+  if (hold) return { ok: false, error: holdSentence(hold) };
+  const dispatch = await sendAgentInput(
+    deps.bb,
+    card,
+    deps.buildContinueInput(deps.buildNudge(card), "public"),
+  );
+  if (dispatch.delivery === "refused") {
+    return { ok: false, error: dispatch.error };
   }
-}
-
-function retrySendError(error: unknown): string {
-  return error instanceof Error ? error.message : "Could not reach the worker thread.";
+  if (dispatch.delivery === "queued") {
+    // The host took it between the read and the send. Same card state as any
+    // other hold, and the budget is untouched for the same reason.
+    deps.updateCard(cardId, holdUpdates(card.last_assistant_text));
+    deps.bb.realtime.publish("card-state", { cardId });
+    return { ok: false, error: holdSentence(dispatch.hold) };
+  }
+  const reset = deps.resetAutoContinue();
+  deps.updateCard(cardId, {
+    activity: "running",
+    last_error: null,
+    auto_continue_count: reset.count,
+    auto_continue_stage: reset.stage,
+  });
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
 }
 
 function startWorker(
@@ -145,7 +157,7 @@ async function requestSplitProposal(
       input: [{ type: "text", text: deps.splitRequestNudge, mentions: [] }],
     });
   } catch (error) {
-    return { ok: false, error: retrySendError(error) };
+    return { ok: false, error: sendError(error) };
   }
   deps.logCardComment(
     cardId,

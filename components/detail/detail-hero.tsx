@@ -7,7 +7,7 @@ import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 // three detail bodies render around it. Priority order is the contract:
 // archived first, then open questions, then failure, then lifecycle.
 
-export type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
+export type HeroKind = "decision" | "error" | "paused" | "held" | "working" | "calm";
 
 export type HeroCardState = {
   activity: string;
@@ -32,6 +32,9 @@ export type HeroDetailState = {
     internal: boolean;
     expiresAt: number;
   } | null;
+  /** The host's hold on the card's next dispatch, with its sentence already
+   * derived server-side (lib/host-hold.mjs). Null when nothing is held. */
+  hostHold?: { summary: string | null } | null;
 } | null;
 
 export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
@@ -65,6 +68,15 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
       title: `Waiting — ${stageLabel(card.stage)}`,
       sub: "The agent is preparing a question. Nothing needs you yet.",
     };
+  }
+  // The host owns the next dispatch, so this is checked before every idle
+  // branch. A held card is not stuck and not failed — it is a card whose
+  // message is already queued, and the sentence says so in the host's own
+  // words rather than offering a recovery for a card that is already on its
+  // way. Falls through to the calm hero when the record is unreadable, so a
+  // missed read can never invent a state.
+  if (card.activity === "held" && detail?.hostHold?.summary) {
+    return { kind: "held", title: `Waiting on the host — ${stageLabel(card.stage)}`, sub: detail.hostHold.summary };
   }
   if (card.activity === "error") {
     return {
@@ -149,6 +161,11 @@ export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: bo
   decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
   error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
   paused: { wrap: "border-amber-500/40 bg-amber-500/5", dot: "bg-amber-500", alert: false },
+  // Held reads between paused and calm on purpose: it is a real wait, so it
+  // gets a visible surface, but nothing is wrong, so it borrows calm's neutral
+  // border rather than paused's amber. Amber here would ask for a decision the
+  // reader cannot make.
+  held: { wrap: "border-border bg-muted/40", dot: "bg-muted-foreground", alert: false },
   working: { wrap: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500", alert: false },
   calm: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: false },
 };

@@ -79,7 +79,7 @@ export const cardRpcContract = {
           status: statusSchema,
           stage: z.string(),
           workerThreadId: z.string().nullable(),
-          activity: z.enum(["idle", "running", "awaiting-answer", "error"]),
+          activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
           lastError: z.string().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),

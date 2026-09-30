@@ -69,10 +69,28 @@ const ACTIVITY_PILL_CLASS: Record<string, string> = {
   running: "stelow-activity-working",
   "awaiting-answer": "stelow-activity-waiting",
   error: "stelow-activity-error",
+  held: "stelow-activity-onhold",
 };
-const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answer": "⏳", error: "✗" };
-const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
-const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
+const ACTIVITY_GLYPH: Record<string, string> = {
+  running: "●",
+  "awaiting-answer": "⏳",
+  error: "✗",
+  held: "⏸",
+};
+const ACTIVITY_LABEL: Record<string, string> = {
+  idle: "Paused",
+  running: "Working",
+  "awaiting-answer": "Waiting for you",
+  error: "Failed",
+  held: "Waiting on the host",
+};
+const ACTIVITY_TITLE: Record<string, string> = {
+  running: "Worker is actively working",
+  "awaiting-answer": "Waiting for your answer",
+  error: "Worker failed. Needs attention.",
+  held: "The host has this card's next message queued and has not dispatched it yet. "
+    + "The card continues on its own — nothing to do.",
+};
 
 export function ReviewChip() {
   return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
@@ -185,6 +203,12 @@ export function BuildStatusPills({ card, statusTone, intentLabel }: {
       ? <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
       : <Pill title="Not started — parked in Bucket. Nothing runs until you start it.">Not started</Pill>) : null}
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
-    {card.activity === "awaiting-answer" ? <ActivityPill activity={card.activity} /> : null}
+    {/* The two states a reader must be able to tell apart from across the
+        board without opening anything: someone is waiting on THEM, or the host
+        is holding the card and it will move by itself. Everything else stays
+        on the card. */}
+    {card.activity === "awaiting-answer" || card.activity === "held"
+      ? <ActivityPill activity={card.activity} />
+      : null}
   </>;
 }

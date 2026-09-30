@@ -19,6 +19,7 @@ import {
   nextAutoContinue,
   shouldDoneNudge,
 } from "../../lib/auto-continue.mjs";
+import { holdUpdates } from "../../lib/host-hold.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import { recordPausedAfter } from "./paused-inbox.js";
 import { agentText, sendAgentInput } from "./thread-send.js";
@@ -60,7 +61,15 @@ export async function syncTerminalIdle(
   transitioning: boolean,
 ): Promise<boolean> {
   const nudge = await sendDoneNudge(deps, snapshot, transitioning);
-  if (nudge.sent) return true;
+  if (nudge.outcome === "resumed") return true;
+  // The host took the done instruction and is holding it. The read above saw
+  // no hold, so this is the window closing between the two: the card is not
+  // parked, and parking it here would ask a reader to unstick a queue the host
+  // is about to release on its own.
+  if (nudge.outcome === "held") {
+    deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    return true;
+  }
   // This notice claims a stage was REACHED, so it is gated on the stage moving.
   // It hung off `transitioning`, which is derived from `activity` — and a native
   // run flips activity, so one card re-announced the same arrival twice.
@@ -107,8 +116,17 @@ instruction and stopped. Another resume repeats it, so read the refusal on the c
   return "At audit, waiting for the worker to run `bb stelow done` — resume continues the worker with that instruction.";
 }
 
-/** The nudge's own verdict: whether it resumed the worker, and why not. */
-type DoneNudge = { sent: boolean; reason: string };
+/**
+ * The nudge's own verdict. Three outcomes, because "did not resume" is two
+ * different things: the host refused the message (nothing is pending, the card
+ * really is parked) or the host took it and is holding it (something IS pending
+ * and the card is not parked at all). Collapsing them is what made a held card
+ * read as a park.
+ */
+type DoneNudge =
+  | { outcome: "resumed" }
+  | { outcome: "held" }
+  | { outcome: "parked"; reason: string };
 
 async function sendDoneNudge(
   deps: TerminalIdleDeps,
@@ -123,13 +141,16 @@ async function sendDoneNudge(
     autoCount: snapshot.card.auto_continue_count ?? 0,
     autoStage: snapshot.card.auto_continue_stage ?? null,
   });
-  if (!decision.proceed) return { sent: false, reason: decision.reason };
-  const sent = await sendAgentInput(
+  if (!decision.proceed) return { outcome: "parked", reason: decision.reason };
+  const dispatch = await sendAgentInput(
     deps.bb,
     snapshot.card,
     [agentText(deps.auditDoneNudge)],
   );
-  if (!sent) return { sent: false, reason: "the worker thread did not accept the message" };
+  if (dispatch.delivery === "refused") {
+    return { outcome: "parked", reason: "the worker thread did not accept the message" };
+  }
+  if (dispatch.delivery === "queued") return { outcome: "held" };
   const next = nextAutoContinue({
     stage: snapshot.stage,
     autoCount: snapshot.card.auto_continue_count ?? 0,
@@ -144,5 +165,5 @@ async function sendDoneNudge(
   };
   if (snapshot.lastOutput != null) fields.last_assistant_text = snapshot.lastOutput;
   deps.updateCard(snapshot.card.id, fields);
-  return { sent: true, reason: "resumed with the done instruction" };
+  return { outcome: "resumed" };
 }

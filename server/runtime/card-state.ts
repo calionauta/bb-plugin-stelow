@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { clearClaimWaiters, waitersForFiles } from "../../lib/card-claims.mjs";
 import { isClaimTerminal } from "../../lib/card-terminal.mjs";
+import { HELD_ACTIVITY } from "../../lib/host-hold.mjs";
 import { stripArchivedResuscitation } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
@@ -164,7 +165,12 @@ function resolveAttentionEvents(
     deps.resolveInbox(cardId, current.updated_at, ["question", "error", "paused"], "completed");
     return;
   }
-  if (current.activity === "running") {
+  // A card that is moving again closes its own open rows, whether the host is
+  // the one moving it or a person is. `held` is in this list because a hold is
+  // the host taking the card back: the queued message is on its way, so a
+  // `paused` row left open beside it is a notification about a problem the
+  // host is already solving.
+  if (current.activity === "running" || current.activity === HELD_ACTIVITY) {
     deps.resolveInbox(cardId, current.updated_at, ["error", "paused"], "resumed");
   }
 }

@@ -22,6 +22,7 @@ import { createWorktreeCleanup } from "../../worktree-cleanup.js";
 import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-map-approval.js";
 import { createResearchTrackSync } from "../research-track-sync.js";
 import { createBuildThreadSync } from "../build-thread-sync.js";
+import { readHostHold } from "../worker-hold.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus } from "../../../lib/trackables.mjs";
@@ -226,8 +227,13 @@ function buildWorktreeCleanup(core: RuntimeCore) {
  * on the lifecycle they share.
  */
 function buildThreadSync(core: RuntimeCore) {
-  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
-  const trackSync = createResearchTrackSync({
+  const trackSync = buildTrackSync(core);
+  return { trackSync, syncThreadState: buildBuildSync(core, trackSync) };
+}
+
+function buildTrackSync(core: RuntimeCore) {
+  const { bb, db, now, getCard, updateCard, workers } = core;
+  return createResearchTrackSync({
     bb,
     db,
     now,
@@ -240,6 +246,9 @@ function buildThreadSync(core: RuntimeCore) {
     recordStageEvent: core.ledger.recordStageEvent,
     markThreadRunning: core.trackProjection.markThreadRunning,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     noteAgentOutput: core.trackProjection.noteAgentOutput,
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
@@ -248,7 +257,11 @@ function buildThreadSync(core: RuntimeCore) {
     exploreArtifact: core.researchArtifacts.exploreArtifact,
     idleAttentionMs: IDLE_ATTENTION_MS,
   });
-  const syncThreadState = createBuildThreadSync({
+}
+
+function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTrackSync>) {
+  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
+  return createBuildThreadSync({
     bb,
     db,
     now,
@@ -260,6 +273,9 @@ function buildThreadSync(core: RuntimeCore) {
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,
@@ -271,7 +287,6 @@ function buildThreadSync(core: RuntimeCore) {
     auditDoneNudge: AUDIT_DONE_NUDGE,
     idleAttentionMs: IDLE_ATTENTION_MS,
   });
-  return { trackSync, syncThreadState };
 }
 
 /** Register the boot reconcile and the interval that keeps it honest. */

@@ -157,6 +157,15 @@ details.stelow-border-running {
   animation: stelow-breathe 1.8s ease-in-out infinite;
 }
 
+/* Held by the host: deliberately inert. The card is not working, but nothing
+   is wrong with it either, so it gets no breathing and no alarm colour — a
+   state the reader cannot act on must not look like one they should. */
+.stelow-activity-onhold {
+  border-color: hsl(240 5% 60% / 0.5);
+  color: hsl(240 10% 35%);
+  background: hsl(240 5% 50% / 0.07);
+}
+
 .dark .stelow-activity-onhold {
   border-color: hsl(240 5% 60% / 0.5);
   color: hsl(240 10% 70%);
