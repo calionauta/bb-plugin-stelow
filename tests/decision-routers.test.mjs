@@ -15,6 +15,7 @@ const server = [
   readFileSync(join(root, "server/runtime/runtime-services.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/git-evidence.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/build-thread-terminal.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");

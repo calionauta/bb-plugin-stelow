@@ -17,6 +17,7 @@ const server = [
   serverRoot,
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/build-thread-terminal.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/thread-send.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   publicationContract,

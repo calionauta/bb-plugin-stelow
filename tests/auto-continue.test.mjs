@@ -162,7 +162,14 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 // Server contract: the idle branch sends the shared nudge privately only after
 // a successful send, while manual recovery sends the same transport publicly.
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
-const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
+const syncDir = join(dirname(fileURLToPath(import.meta.url)), "../server/runtime");
+// The idle policy and the terminal-stage park are two modules now: the done
+// nudge reads the same persisted completion state the auto-continue guard does,
+// so both belong in the corpus these pins read.
+const threadSyncSource = [
+  readFileSync(join(syncDir, "build-thread-sync.ts"), "utf8"),
+  readFileSync(join(syncDir, "build-thread-terminal.ts"), "utf8"),
+].join("\n");
 const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");
 const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
