@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.58.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.11...v0.58.0) (2026-09-30)
+
+
+### Features
+
+* name the agents a claim ledger cannot see ([#194](https://github.com/calionauta/bb-plugin-stelow/issues/194)) ([619fec2](https://github.com/calionauta/bb-plugin-stelow/commit/619fec22d773cb8e68607bf4354b151dde06a300))
+
 ## [0.57.11](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.10...v0.57.11) (2026-09-30)
 
 
