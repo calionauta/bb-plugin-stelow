@@ -687,9 +687,39 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
     as two lines, and never says *which* agent touched *which* file — a shared
     working tree has no per-agent ownership, and inventing one would be a
     confident lie. So the lines read `src/a.ts is dirty in a shared working tree`.
-  - A host that cannot be read says so (`Could not read this host's threads`) and
-    is never reported as "nobody is there", because a missing check and a clean
-    one are different answers and the reader must be able to tell them apart.
+    Only the **count** of other threads is reported, not their ids or titles: the
+    count is what tells a reader whether to look further, and naming threads this
+    check cannot attribute anything to would invite exactly the attribution the
+    first bullet refuses.
+  - The four questions are asked in **one order, and an unmeasurable fact
+    outranks whatever sits behind it**. How many other agents share the checkout
+    is a question about the host alone — it reads the cached list, costs no
+    subprocess, and is true whatever this card holds — so it is asked first, and
+    everything after it is only reachable if there is somebody to compare
+    against. An empty checkout is therefore reported as `no-threads` whatever the
+    card claims, and costs no `git status`. This ordering is load-bearing rather
+    than cosmetic: claims are empty at rest, so a report that asked the file
+    question first answered "nothing overlaps" for every card on the host and
+    suppressed the thread count that was already sitting in the cached list.
+  - **An answer nobody measured is named, never rendered as a clean one.** A card
+    that has claimed no files gets `unknown-footprint` — *"1 other agent is in this
+    checkout. This card has not claimed any files, so nothing here can say whether
+    their work overlaps yours."* — and a claim ledger that could not be read lands
+    on the same answer, because it measured nothing. `no-checkout` (a card with no
+    checkout Stelow can read) and `unavailable` (a host that could not be read) say
+    the same thing about themselves. The family is one exported list,
+    `EXPOSURE_REASONS`, which the RPC schema, the server's type and this copy all
+    derive from — a reason invented in one place and forgotten in another is a
+    reason the reader is shown somebody else's answer for. `unreadable-tree`
+    completes it: a working tree that could not be read is overlap-unknown, not
+    overlap-none. None of them renders as *"No other agent is working in this
+    checkout."*
+  - The file list stays **this card's claims only**, intersected with what is dirty
+    in the shared tree; it is never the whole dirty set.
+  - Two declared limits. The on-disk `bb stelow lock` lives inside each card's own
+    state directory, so by itself it gives **no cross-card protection** — it
+    protects a card against its own repeat runs. And nothing here mediates a worker
+    running `git reset --hard`, or any other command that rewrites a shared tree.
   - It is a **report, not a guard**: it refuses nothing, resolves nothing, and
     changes no decision.
 - **Question recovery.** A worker may wait only for a real card form: a live

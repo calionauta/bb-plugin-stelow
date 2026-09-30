@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { z } from "zod";
 import type { rpcContract } from "../../server";
+import { sharedCheckoutVerdict } from "../../lib/shared-checkout-exposure.mjs";
 import { DisclosureSection } from "../disclosure";
 
 // Who else is in this card's files, asked on purpose rather than reported after
@@ -33,13 +35,10 @@ export type FileOccupancyView = {
   shared: number;
 };
 
-type Exposure = {
-  isolated: boolean;
-  threads: number;
-  files: string[];
-  lines: string[];
-  reason: "isolated" | "no-checkout" | "no-threads" | "no-overlap" | "unavailable" | "shared";
-};
+// Derived from the RPC, not restated. A hand-written copy of the report type
+// is a second place to forget a reason, and a reason missing here typechecked
+// fine and rendered as somebody else's answer.
+type Exposure = z.infer<typeof rpcContract.sharedCheckoutExposure.output>;
 
 const NO_OTHERS = "No other card holds these files.";
 
@@ -90,12 +89,15 @@ export function FileOccupancy({ occupancy, cardId }: {
 // What the check found, in the reader's terms. A check that ran and found
 // nothing says so; silence would be indistinguishable from a check that never
 // happened, which is the ambiguity this section exists to remove.
+//
+// The sentence comes from lib/, next to the reasons it maps, because the two
+// must not drift: the local copy of this used to give every reason it did not
+// recognise — including a card with no readable checkout, and both of the
+// answers that mean "this was not measured" — the same clean bill of health.
 function CheckedVerdict({ report }: { report: Exposure }) {
   if (report.lines.length > 0) return null;
-  const text = report.reason === "unavailable"
-    ? "Could not read this host's threads, so nothing is known about other agents here."
-    : "No other agent is working in this checkout.";
-  return <p className="text-xs text-muted-foreground">{text}</p>;
+  const text = sharedCheckoutVerdict(report);
+  return text ? <p className="text-xs text-muted-foreground">{text}</p> : null;
 }
 
 // One call per reader, never on the open-card path. The server caches the
