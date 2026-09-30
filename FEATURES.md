@@ -1181,6 +1181,37 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   planning" and the run said "planning-research" and nothing on screen connected
   them. A run waiting on a decision still yields to an open question — that
   card is one the user is already in.
+- **A failed run holds the stage, and Retry run is the door**
+  (`lib/failed-run-gate.mjs`, `server/execution-lifecycle-retry.ts`,
+  `server/execution-advance-preflight.ts`). On card_cbnihg4c the `scope-map`
+  run failed with *"the recipe produced no task outputs"* and an empty staging
+  directory, and the card advanced to Tech planning anyway — so `Failed · scope`
+  sat in Execution runs while the card was two stages on, reading as a
+  contradiction with no way to tell whether the scope work had happened. The
+  preflight both entry points share now refuses to leave a stage whose **newest**
+  run failed, and the refusal names the door: `Retry run to try it again —
+  the card cannot leave the stage until a run of it succeeds.`
+  "Newest for the **stage**" is the whole design, and it is what makes the hold
+  survivable. A retry writes a newer run, so the hold releases the moment the
+  retry starts and re-tightens by itself if the retry fails too — nothing to
+  clear and nothing to reconcile, where a rule keyed on *"a failed run exists"*
+  would need a way to delete the failed row, and **nothing in this plugin does
+  that**. The gate is not scoped to the card for the same reason: a card that
+  failed three stages ago and moved on cleanly is not stuck. `cancelled` is
+  deliberately not a blocking state — a person cancelling a run is a decision,
+  not a failure, and holding a stage on it would make Stop a dead end.
+  `Retry run` appears on a **failed** row, the row the gate points at, and starts
+  a fresh run of the same recipe at the card's current stage through the **same**
+  launch rule every other start uses — so it inherits that rule's refusals
+  (unknown recipe, wrong stage, a card that already owns a live run, a host
+  without the capability) instead of growing a second set. It refuses a run from
+  a stage the card has since left, naming the stage and the way back, because
+  re-running that recipe would write the old stage's artifacts over work the
+  card has since done. The failed run is left untouched: terminal states accept
+  no transitions, and rewriting history to make a retry look tidy would mean the
+  card could no longer show what actually happened. A refusal from the launch is
+  shown to the reader rather than swallowed, because a retry that is declined
+  leaves the card exactly where it was.
 - **One card, one coordinator thread, one pending band swap**
   (`server/workers-respawn-guard.ts`, `server/workers-respawn.ts`,
   `server/workers-scheduler.ts`). A card owns one `worker_thread_id`, and

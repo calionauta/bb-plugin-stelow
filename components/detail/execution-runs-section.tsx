@@ -13,7 +13,9 @@ type ExecutionRunsSectionProps = {
   runs: ExecutionRun[];
   focusRunId: string | null;
   stoppingRunId: string | null;
+  retryingRunId: string | null;
   onCancel: (runId: string) => void | Promise<void>;
+  onRetry: (runId: string) => void | Promise<void>;
 };
 
 const stateLabel: Record<string, string> = {
@@ -85,39 +87,85 @@ function runOutcomeHint(runs: ExecutionRun[], active: number): string {
   return parts.length > 0 ? parts.join(" · ") : `${runs.length} queued`;
 }
 
-/** What a person can do with a run: open its transcript, or stop it. */
-function RunActions({
-  card,
-  run,
-  active,
-  stopping,
-  onCancel,
+/**
+ * One action button on a run row.
+ *
+ * Three controls shared a hand-written `<button>` each, differing only in tone
+ * and label — which is how "min-h-11 and a cursor-pointer on every clickable"
+ * became three places to remember instead of one. The tone is a name, not a
+ * class, so a fourth action cannot invent a fourth shape.
+ */
+function RunButton({
+  tone = "plain",
+  label,
+  busyLabel,
+  title,
+  busy,
+  onClick,
 }: {
-  card: ExecutionRunsSectionProps["card"];
+  tone?: "plain" | "destructive" | "primary";
+  label: string;
+  busyLabel?: string;
+  title?: string;
+  busy?: boolean;
+  onClick: () => void;
+}) {
+  const toneClass = {
+    plain: "hover:bg-muted",
+    destructive: "text-destructive hover:bg-muted",
+    primary: "font-medium text-primary hover:bg-muted",
+  }[tone];
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={busy}
+      className={`min-h-11 cursor-pointer rounded-md border px-3 text-xs ${toneClass}`}
+      onClick={onClick}
+    >
+      {busy && busyLabel ? busyLabel : label}
+    </button>
+  );
+}
+
+type RunActionProps = Pick<ExecutionRunsSectionProps, "card"> & {
   run: ExecutionRun;
   active: boolean;
   stopping: boolean;
+  retrying: boolean;
   onCancel: ExecutionRunsSectionProps["onCancel"];
-}) {
+  onRetry: (runId: string) => void | Promise<void>;
+};
+
+/** What a person can do with a run: open its transcript, stop it, or retry it. */
+function RunActions({ card, run, active, stopping, retrying, onCancel, onRetry }: RunActionProps) {
   const navigate = useBbNavigate();
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        className="min-h-11 cursor-pointer rounded-md border px-3 text-xs hover:bg-muted"
-        onClick={() => goToExecutionRun(navigate, card, run)}
-      >
-        Open
-      </button>
+      <RunButton label="Open" onClick={() => goToExecutionRun(navigate, card, run)} />
       {active ? (
-        <button
-          type="button"
-          className="min-h-11 cursor-pointer rounded-md border px-3 text-xs text-destructive hover:bg-muted"
-          disabled={stopping}
+        <RunButton
+          tone="destructive"
+          label="Stop"
+          busyLabel="Stopping…"
+          busy={stopping}
           onClick={() => void onCancel(run.id)}
-        >
-          {stopping ? "Stopping…" : "Stop"}
-        </button>
+        />
+      ) : null}
+      {/* The door in the failed-run hold. A stage whose newest run failed cannot
+          be advanced out of, and the refusal names "Retry run" — so this button
+          is what makes that sentence true rather than a dead end. It appears on
+          a FAILED row specifically: that is the row the gate points at, and the
+          only one a person can usefully try again. */}
+      {run.normalizedStatus === "failed" ? (
+        <RunButton
+          tone="primary"
+          label="Retry run"
+          busyLabel="Retrying…"
+          busy={retrying}
+          title={`Run ${run.recipeId} again at this stage`}
+          onClick={() => void onRetry(run.id)}
+        />
       ) : null}
     </div>
   );
@@ -194,13 +242,17 @@ function ExecutionRunRow({
   run,
   focusRunId,
   stoppingRunId,
+  retryingRunId,
   onCancel,
+  onRetry,
 }: {
   card: ExecutionRunsSectionProps["card"];
   run: ExecutionRun;
   focusRunId: string | null;
   stoppingRunId: string | null;
+  retryingRunId: string | null;
   onCancel: ExecutionRunsSectionProps["onCancel"];
+  onRetry: ExecutionRunsSectionProps["onRetry"];
 }) {
   const waiting = waitingForYou(run);
   const [open, setOpen] = useState(focusRunId === run.id);
@@ -220,8 +272,10 @@ function ExecutionRunRow({
         waiting={waiting}
         open={open}
         stopping={stoppingRunId === run.id}
+        retrying={retryingRunId === run.id}
         onToggle={() => setOpen((value) => !value)}
         onCancel={onCancel}
+        onRetry={onRetry}
       />
       {/* The details sit OUTSIDE the header flex line, so a long failure reason
           wraps under the whole row instead of being squeezed between the
@@ -238,16 +292,20 @@ function RunHeader({
   waiting,
   open,
   stopping,
+  retrying,
   onToggle,
   onCancel,
+  onRetry,
 }: {
   card: ExecutionRunsSectionProps["card"];
   run: ExecutionRun;
   waiting: ReturnType<typeof waitingForYou>;
   open: boolean;
   stopping: boolean;
+  retrying: boolean;
   onToggle: () => void;
   onCancel: ExecutionRunsSectionProps["onCancel"];
+  onRetry: ExecutionRunsSectionProps["onRetry"];
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -263,7 +321,9 @@ function RunHeader({
         run={run}
         active={["queued", "running", "needs_input"].includes(run.normalizedStatus)}
         stopping={stopping}
+        retrying={retrying}
         onCancel={onCancel}
+        onRetry={onRetry}
       />
     </div>
   );
@@ -283,7 +343,7 @@ function RunHeader({
  * CLOSED once nothing is running, and the header keeps the tally visible so
  * closing it costs the reader the outcomes and nothing else.
  */
-export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
+export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, retryingRunId, onCancel, onRetry }: ExecutionRunsSectionProps) {
   const active = runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length;
   if (runs.length === 0) return null;
   // A deep link names a run. Landing on a section that is not showing that run
@@ -305,7 +365,9 @@ export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, on
             run={run}
             focusRunId={focusRunId}
             stoppingRunId={stoppingRunId}
+            retryingRunId={retryingRunId}
             onCancel={onCancel}
+            onRetry={onRetry}
           />
         ))}
       </div>

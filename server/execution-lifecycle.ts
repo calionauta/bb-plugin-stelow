@@ -1,5 +1,6 @@
 import { listExecutionRuns, projectExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { createLifecycleResumer } from "./execution-lifecycle-resume.js";
+import { createLifecycleRetrier } from "./execution-lifecycle-retry.js";
 import { createLifecycleStarter } from "./execution-lifecycle-start.js";
 import { createLifecycleStopper } from "./execution-lifecycle-stop.js";
 import type { LifecycleDeps } from "./execution-lifecycle-types.js";
@@ -25,6 +26,7 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
   const stop = createLifecycleStopper(shared);
   const resume = createLifecycleResumer({ ...shared, listRuns: (cardId) => listExecutionRuns(deps.db, cardId) });
   const start = createLifecycleStarter(shared);
+  const retry = createLifecycleRetrier(shared);
 
   return {
     list: (cardId: string) => listExecutionRuns(deps.db, cardId),
@@ -38,6 +40,7 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
         runs: listExecutionRuns(deps.db, cardId),
       }),
       cancelExecutionRun: stop.cancelExecutionRun,
+      retryExecutionRun: retry.retryExecutionRun,
     },
   };
 }

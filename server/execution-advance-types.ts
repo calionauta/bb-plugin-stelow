@@ -25,6 +25,8 @@ export type SyncedScopes = { syncedCount: number | null; refusal: string | null;
 
 export type AdvanceDeps = {
   errors: { cardNotFound: string; cardArchived: string; workspaceUnavailable: string };
+  /** The execution ledger, read by the failed-run hold in the preflight. */
+  db: unknown;
   getCard: (cardId: string) => WorkerCard | undefined;
   getCardByWorkerThread: (threadId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;

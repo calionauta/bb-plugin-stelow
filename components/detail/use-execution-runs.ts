@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
 import { executionRunFocus, executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import type { rpcContract } from "../../server";
 
@@ -39,24 +40,67 @@ export function useExecutionRuns(cardId: string, focusRunId: string | null) {
   const rpc = useRpc<typeof rpcContract>();
   const [runs, setRuns] = useState<ExecutionRun[]>([]);
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const load = useCallback(async () => {
     const result = await rpc.call("executionRuns", { cardId });
     setRuns(result.runs as ExecutionRun[]);
   }, [cardId, rpc]);
 
   useEffect(() => { void load().catch(() => undefined); }, [load]);
-  // A deep link has to be observable, or "Open" is a button that does nothing.
-  // Two things made it invisible: the scroll asked for the "nearest" block,
-  // which is defined to move nothing when the target is already on screen, and
-  // the focus was told not to scroll. So opening a run while the Execution runs
-  // section was already visible produced no motion and no change at all — the
-  // card did navigate, and the reader saw precisely nothing. Centering brings
-  // the run to the middle of the viewport every time, and the opened row draws a
-  // ring so it is obvious WHICH run.
-  //
-  // The target comes from the shared helper, not a hand-written id: a run
-  // waiting on a person aims at the card's question section, and hardcoding
-  // `execution-run-<id>` there found nothing and silently did nothing.
+  useRunFocus(runs, focusRunId);
+
+  const cancel = useCallback(async (runId: string) => {
+    setStoppingRunId(runId);
+    try {
+      await rpc.call("cancelExecutionRun", { runId });
+      await load();
+    } finally {
+      setStoppingRunId(null);
+    }
+  }, [load, rpc]);
+
+  /**
+   * Try a failed run again — the door in the failed-run stage hold.
+   *
+   * The refusal is surfaced rather than swallowed, because a retry that the
+   * server declines (the card moved on, another run is live, the host cannot
+   * provide the recipe) leaves the card exactly where it was, and a button that
+   * does nothing without saying why is how a hold becomes a wedge. `sonner` is
+   * already this app's toast, so a refusal is one line the reader can act on.
+   */
+  const retry = useCallback(async (runId: string) => {
+    setRetryingRunId(runId);
+    try {
+      const result = await rpc.call("retryExecutionRun", { runId });
+      if (!result.ok) {
+        toast.error(result.error ?? "The run could not be retried.");
+        return;
+      }
+      await load();
+    } finally {
+      setRetryingRunId(null);
+    }
+  }, [load, rpc]);
+
+  return { runs, stoppingRunId, retryingRunId, cancel, retry };
+}
+
+/**
+ * Follow a deep link to the run it names, or "Open" is a button that does nothing.
+ *
+ * Two things made it invisible: the scroll asked for the "nearest" block, which
+ * is defined to move nothing when the target is already on screen, and the focus
+ * was told not to scroll. So opening a run while the Execution runs section was
+ * already visible produced no motion and no change at all — the card did
+ * navigate, and the reader saw precisely nothing. Centering brings the run to
+ * the middle of the viewport every time, and the opened row draws a ring so it
+ * is obvious WHICH run.
+ *
+ * The target comes from the shared helper, not a hand-written id: a run waiting
+ * on a person aims at the card's question section, and hardcoding
+ * `execution-run-<id>` there found nothing and silently did nothing.
+ */
+function useRunFocus(runs: ExecutionRun[], focusRunId: string | null): void {
   useEffect(() => {
     if (!focusRunId) return;
     const run = runs.find((entry) => entry.id === focusRunId);
@@ -71,16 +115,4 @@ export function useExecutionRuns(cardId: string, focusRunId: string | null) {
     target?.scrollIntoView({ block: "center" });
     (target ?? document.getElementById(executionRunRowId(focusRunId) ?? ""))?.focus();
   }, [focusRunId, runs]);
-
-  const cancel = useCallback(async (runId: string) => {
-    setStoppingRunId(runId);
-    try {
-      await rpc.call("cancelExecutionRun", { runId });
-      await load();
-    } finally {
-      setStoppingRunId(null);
-    }
-  }, [load, rpc]);
-
-  return { runs, stoppingRunId, cancel };
 }

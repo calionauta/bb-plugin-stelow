@@ -78,7 +78,9 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         runs={view.execution.runs}
         focusRunId={view.focusRunId}
         stoppingRunId={view.execution.stoppingRunId}
+        retryingRunId={view.execution.retryingRunId}
         onCancel={view.execution.cancel}
+        onRetry={view.execution.retry}
       />
       {/* Review tools are the reason to open a finished card, and they used to
           sit below Artifacts and the workflow map — six sections down, past the

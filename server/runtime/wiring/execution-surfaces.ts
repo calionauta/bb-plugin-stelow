@@ -172,7 +172,7 @@ function buildAdvance(
   native: ReturnType<typeof buildNative>,
   scopeMapApproved: (stateDir: string | null) => Promise<boolean>,
 ) {
-  const { bb, getCard, cardWorkspace, updateCard, presetServer, workers } = core;
+  const { bb, db, getCard, cardWorkspace, updateCard, presetServer, workers } = core;
   const ERRORS = core.ERRORS;
   return createExecutionAdvance({
     errors: {
@@ -180,6 +180,7 @@ function buildAdvance(
       cardArchived: ERRORS.cardArchived,
       workspaceUnavailable: ERRORS.workspaceUnavailable,
     },
+    db,
     getCard,
     getCardByWorkerThread: core.ledger.getCardByWorkerThread,
     cardWorkspace,

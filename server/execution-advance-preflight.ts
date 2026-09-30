@@ -6,6 +6,7 @@
  * stage that did not open needs a reason someone can read later.
  */
 import { advanceExecutionGates } from "../lib/build-gates.mjs";
+import { blockingFailedRun, failedRunRefusal } from "../lib/failed-run-gate.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { buildRegistry, canStart, dependencyCycles } from "../lib/trackable-relations.mjs";
 import { latestSpecTech, loadCardScopes } from "./scopes.js";
@@ -16,7 +17,7 @@ import type {
 } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
-type PreflightDeps = Pick<AdvanceDeps, "runHelper" | "native" | "reworkNote" | "recordExecutionEntry" | "scopeMapApproved">;
+type PreflightDeps = Pick<AdvanceDeps, "db" | "runHelper" | "native" | "reworkNote" | "recordExecutionEntry" | "scopeMapApproved">;
 
 export type PreflightInput = {
   card: WorkerCard;
@@ -51,6 +52,13 @@ export async function prepareAdvance(
   input: PreflightInput,
 ): Promise<PreparedOrRefusal> {
   if (input.dryRun) return { route: null, note: "", evidence: "" };
+  // A stage whose newest native run failed holds the card here. It sits ABOVE
+  // every other preflight because it is the only check about something that
+  // already happened rather than about whether the next stage may open — and
+  // because the one refusal on this path that a reader cannot route around
+  // belongs to the work that was lost, not to the work that is next.
+  const failed = blockingFailedRun(deps.db, input.card.id, input.card.stage);
+  if (failed) return { error: failedRunRefusal(failed) };
   if (input.stage !== "execution") return routePreflight(deps, input, "", null);
   const loopNote = input.includeRework ? await deps.reworkNote(input.card) : "";
   const scopes = await syncExecutionScopes(deps, input.card, input.rootPath, input.stateDir);
