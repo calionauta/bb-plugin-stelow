@@ -76,7 +76,11 @@ type SharedCheckoutDeps = {
   db: Db;
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<{ path: string | null } | null>;
-  dirtyStatusIn: (checkoutPath: string) => Promise<string>;
+  /**
+   * The dirty paths, and whether the read happened. A report that treats an
+   * unreadable working tree as a clean one is stating a fact it never measured.
+   */
+  dirtyStatusResultIn: (checkoutPath: string) => Promise<{ ok: boolean; status: string }>;
   listThreads: () => Promise<unknown[]>;
   now: () => number;
 };
@@ -164,7 +168,13 @@ async function exposureReport(
   // thing as an empty relation. The count of others is still worth reporting.
   if (held.length === 0) return { ...EMPTY("unknown-footprint"), threads: others.length };
   // The one `git status`, spent only on the question that can be answered by it.
-  const dirty = await deps.dirtyStatusIn(input.checkoutPath).catch(() => "");
+  // A tree that could not be read is `unreadable-tree`, not `no-overlap`: an
+  // unmeasurable overlap is not a measured absence of one, and on a shared
+  // checkout the two are the difference between a clean answer and a blind one.
+  const tree = await deps.dirtyStatusResultIn(input.checkoutPath)
+    .catch(() => ({ ok: false, status: "" }));
+  if (!tree.ok) return { ...EMPTY("unreadable-tree"), threads: others.length };
+  const dirty = tree.status;
   const exposure = sharedCheckoutExposure({
     heldFiles: held,
     dirtyPaths: dirty,

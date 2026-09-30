@@ -30,13 +30,14 @@ const claim = (cardId, file) => ({
 
 function reader(overrides = {}) {
   const calls = { list: 0, git: 0 };
+  const dirty = overrides.dirty ?? " M src/a.ts\0";
   const deps = {
     db: fakeDb([claim("card_1", "src/a.ts")]),
     getCard: (id) => (id === "card_1" ? { id } : undefined),
     cardWorkspace: async () => ({ path: overrides.worktree ? "/w/sw-card_1" : CHECKOUT }),
-    dirtyStatusIn: async () => {
+    dirtyStatusResultIn: async () => {
       calls.git += 1;
-      return overrides.dirty ?? " M src/a.ts\0";
+      return { ok: true, status: dirty };
     },
     listThreads: async () => {
       calls.list += 1;
@@ -158,6 +159,28 @@ function reader(overrides = {}) {
   assert.deepEqual(report.files, ["src/a.ts"]);
 }
 
+// A working tree that could not be read is not a working tree with nothing in
+// it. The two differ by exactly the measurement that did not happen, and this
+// report's whole claim is that it does not state facts it never took.
+{
+  const unreadable = reader({
+    deps: { dirtyStatusResultIn: async () => ({ ok: false, status: "" }) },
+  });
+  const failed = await unreadable.api.reportFor("card_1");
+  assert.equal(failed.reason, "unreadable-tree", "a tree that could not be read measured no overlap");
+  assert.equal(failed.threads, 1, "and the host's thread count is still reportable");
+  assert.notEqual(failed.reason, "no-overlap", "which is a different claim entirely");
+
+  // The inverse on the same fixture, so the two answers cannot be conflated:
+  // one clean `git status` with no output really is a clean tree.
+  const readable = reader({
+    deps: { dirtyStatusResultIn: async () => ({ ok: true, status: "" }) },
+  });
+  const clean = await readable.api.reportFor("card_1");
+  assert.equal(clean.reason, "no-overlap", "a readable tree with no dirty held file is a measured clean answer");
+  assert.equal(clean.threads, 1);
+}
+
 // Fail-soft is the contract of this surface: it is a report, and a report that
 // errors is worse than one that says nothing, because the reader cannot tell
 // which one they are looking at.
@@ -168,10 +191,6 @@ function reader(overrides = {}) {
   const report = await broken.api.reportFor("card_1");
   assert.equal(report.reason, "unavailable", "a host that cannot answer says so, and does not throw");
   assert.deepEqual(report.lines, []);
-
-  const noGit = reader({ deps: { dirtyStatusIn: async () => { throw new Error("not a repo"); } } });
-  const gitFail = await noGit.api.reportFor("card_1");
-  assert.equal(gitFail.reason, "no-overlap", "an unreadable working tree is not exposure");
 
   // A ledger that cannot be read is the same shape of gap: this card's claim set
   // is unknown, so its overlap is unmeasured. Reporting `no-overlap` here would
