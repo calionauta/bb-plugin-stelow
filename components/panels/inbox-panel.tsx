@@ -3,6 +3,7 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePanelData } from "../panel/panel-state-hooks";
 import { HolderChip } from "./inbox-holder-chip";
+import { ItemActions } from "./inbox-item-actions";
 import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
 import {
   INBOX_EVENT_LABELS,
@@ -124,38 +125,17 @@ function readToggles(
   rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
   load: () => Promise<unknown>,
 ) {
-  const call = (method: "markNotificationRead" | "markNotificationUnread") =>
+  const call = (method: "markNotificationRead" | "markNotificationUnread" | "archiveNotification" | "restoreNotification") =>
     async (entry: InboxNotification) => {
       await rpc.call(method, { notificationId: entry.id });
       await load();
     };
-  return { markRead: call("markNotificationRead"), markUnread: call("markNotificationUnread") };
-}
-
-// The item's own read toggle, named for what it does to the update rather than
-// the card. "Mark as read" and "Show again" are the two halves of one
-// reversible act; the one-way "set aside" is a separate decision, available in
-// Manage, because a word that means a card's fate has no business on a notice.
-function ReadToggle({ action, onMarkRead, onMarkUnread }: {
-  action: "archive" | "restore";
-  onMarkRead: () => void;
-  onMarkUnread: () => void;
-}) {
-  const markRead = action === "restore";
-  return (
-    <button
-      onClick={markRead ? onMarkUnread : onMarkRead}
-      title={markRead
-        ? "Put this update back where you will see it again"
-        : "Stop showing this update — the card is not affected"}
-      className={
-        "cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground "
-        + "hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-      }
-    >
-      {markRead ? "Show again" : "Mark as read"}
-    </button>
-  );
+  return {
+    markRead: call("markNotificationRead"),
+    markUnread: call("markNotificationUnread"),
+    setAside: call("archiveNotification"),
+    bringBack: call("restoreNotification"),
+  };
 }
 
 /** The chip, bound to the router. The only thing the panel owns is where it goes. */
@@ -195,19 +175,50 @@ function InboxEntryHeader({ entry, label, stateLabel }: {
   );
 }
 
+// What the item says, in the order a reader needs it: who it is about, what
+// it says, why it escalated, and when. Split from the row so the row owns
+// only the click targets.
+function InboxEntryBody({ entry, presentation, onHolderChip }: {
+  entry: InboxNotification;
+  presentation: ReturnType<typeof inboxEventPresentation>;
+  onHolderChip: (entry: InboxNotification) => ReactNode;
+}) {
+  return (
+    <span className="min-w-0">
+      <InboxEntryHeader entry={entry} label={presentation.label} stateLabel={presentation.stateLabel} />
+      <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>
+      {entry.holderCardId ? onHolderChip(entry) : null}
+      {entry.severityReasons.length > 0 && entry.resolvedAt == null ? (
+        <span className="mt-1 block text-xs text-muted-foreground">
+          {entry.severityReasons.slice(0, 3).join(" · ")}
+        </span>
+      ) : null}
+      <span className="mt-1 block text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>
+        {entry.projectName} · {inboxEventTime(entry)}
+      </span>
+    </span>
+  );
+}
+
+type InboxEntryProps = {
+  entry: InboxNotification;
+  onOpen: () => void;
+  onHolderChip: (entry: InboxNotification) => ReactNode;
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
+  onSetAside: () => void;
+  onBringBack: () => void;
+};
+
 function InboxEntry({
   entry,
   onOpen,
   onHolderChip,
   onMarkRead,
   onMarkUnread,
-}: {
-  entry: InboxNotification;
-  onOpen: () => void;
-  onHolderChip: (entry: InboxNotification) => ReactNode;
-  onMarkRead: () => void;
-  onMarkUnread: () => void;
-}) {
+  onSetAside,
+  onBringBack,
+}: InboxEntryProps) {
   const copy = INBOX_COPY[entry.kind];
   const presentation = inboxEventPresentation(entry);
   const action = inboxAction(entry);
@@ -226,21 +237,20 @@ function InboxEntry({
         >
           {copy.icon}
         </span>
-        <span className="min-w-0">
-          <InboxEntryHeader entry={entry} label={presentation.label} stateLabel={presentation.stateLabel} />
-          <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>
-          {entry.holderCardId ? onHolderChip(entry) : null}
-          {entry.severityReasons.length > 0 && entry.resolvedAt == null ? (
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {entry.severityReasons.slice(0, 3).join(" · ")}
-            </span>
-          ) : null}
-          <span className="mt-1 block text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>
-            {entry.projectName} · {inboxEventTime(entry)}
-          </span>
-        </span>
+        <InboxEntryBody
+          entry={entry}
+          presentation={presentation}
+          onHolderChip={onHolderChip}
+        />
       </button>
-      <ReadToggle action={action} onMarkRead={onMarkRead} onMarkUnread={onMarkUnread} />
+      <ItemActions
+        entry={entry}
+        action={action}
+        onMarkRead={onMarkRead}
+        onMarkUnread={onMarkUnread}
+        onSetAside={onSetAside}
+        onBringBack={onBringBack}
+      />
     </div>
   );
 }
@@ -281,7 +291,7 @@ export function InboxPanel() {
       : selected.description;
 
   const open = openNotification(rpc, navigate, load);
-  const { markRead, markUnread } = readToggles(rpc, load);
+  const { markRead, markUnread, setAside, bringBack } = readToggles(rpc, load);
 
   return (
     <div className="h-full overflow-auto bg-background p-4 md:p-6">
@@ -335,6 +345,8 @@ export function InboxPanel() {
                   onHolderChip={holderChipFor(navigate)}
                   onMarkRead={() => void markRead(entry)}
                   onMarkUnread={() => void markUnread(entry)}
+                  onSetAside={() => void setAside(entry)}
+                  onBringBack={() => void bringBack(entry)}
                 />
               ))}
             </div>

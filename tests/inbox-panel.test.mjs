@@ -67,9 +67,24 @@ assert.match(
 );
 assert.doesNotMatch(
   panel,
-  /onClick=\{[^}]*archiveNotification/,
-  "no action on an item routes through the archive RPC — archive is a card's word, not a notice's",
+  /archiveNotification[\s\S]{0,40}Stop showing this update/,
+  "the archive RPC is not dressed as 'you are done with this' — the item's read action must not read as the archive",
 );
+
+// Read and handled are different facts, which is why an item has TWO actions.
+// Collapsing them into one made "Mark as read" look broken: the item stayed in
+// Needs attention (correct — it still needs action) and the badge did not move,
+// so the click read as a no-op. Both actions are back, named for the update.
+const actions = readFileSync(new URL("../components/panels/inbox-item-actions.tsx", import.meta.url), "utf8");
+assert.match(actions, /Mark as read/, "the read action is named for the update, not the card");
+assert.match(actions, /Set aside/, "and the dismissal the reader actually wanted is still reachable");
+assert.match(actions, /Bring back/, "with its way back, because set-aside is reversible");
+assert.match(
+  actions,
+  /still needs you[\s\S]*Read filter/,
+  "the read action says the item stays and where it goes — a click that appears to do nothing is a phantom affordance",
+);
+assert.doesNotMatch(actions, />[^<]*Archive[^<]*</, "no card-word survives in anything a reader sees");
 assert.match(panel, /notifyOnError: false[\s\S]*itemCountKey: "notifications"/, "Inbox load failures remain inline instead of producing a toast");
 assert.match(panel, /inboxVisibleEntries\(notifications, filter, unreadOnly\)/, "the rendered list uses the tested filter pipeline");
 assert.match(panel, /setUnreadOnly\(event\.target\.checked\)/, "the unread filter remains a user-controlled behavior");
