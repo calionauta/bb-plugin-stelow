@@ -668,6 +668,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   has happened; it renders nothing under a managed worktree — isolation is why
   there is nothing to say — and a lapsed lease is named as lapsed rather than
   shown as held.
+- **Other agents in the same checkout.** The claim ledger can only see cards: a
+  thread outside Stelow never acquires a claim. That is not a rare corner, because
+  a card's spawn environment comes from its preset and the built-in fallback
+  preset is `project-default` — the **shared project checkout** — so a host with
+  no New-worktree preset configured puts every card in one working tree. The same
+  **Shared files** section therefore carries a second, cross-thread half, and it
+  is the half that finds the collision nobody claimed:
+  - **Check for other agents** is a control, not a fact. It costs a
+    `bb thread list --json` (~0.6s) plus one `git status` of the checkout, so it
+    is spent when the reader asks and never on the open-card path.
+  - A card in a **managed worktree** answers `isolated` before any subprocess, and
+    the section does not render — isolation is the reason there is nothing to look
+    for, and a scan that could never find anything is theatre that costs 700ms.
+  - The host thread list is **cached for 30s**, because it is a fact about the
+    host and not about a card; opening a card twice costs one call.
+  - The answer names **who is here** and **which of the files you hold are dirty**,
+    as two lines, and never says *which* agent touched *which* file — a shared
+    working tree has no per-agent ownership, and inventing one would be a
+    confident lie. So the lines read `src/a.ts is dirty in a shared working tree`.
+  - A host that cannot be read says so (`Could not read this host's threads`) and
+    is never reported as "nobody is there", because a missing check and a clean
+    one are different answers and the reader must be able to tell them apart.
+  - It is a **report, not a guard**: it refuses nothing, resolves nothing, and
+    changes no decision.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask

@@ -63,6 +63,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...cards.cardLifecycle,
     ...cards.cardOperations,
     cardDetail: cards.cardDetail as never,
+    sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),
     board: cards.cards.handlers.board as never,

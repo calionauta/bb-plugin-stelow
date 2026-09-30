@@ -271,7 +271,7 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
         {card.stage === "select" && !archivedPresentation ? <p className="text-xs text-muted-foreground">Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.</p> : null}
         <ScopeSyncWarning card={card} detail={detail} />
         <CardChecks card={card} detail={detail} gaps={gaps} />
-        {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} /> : null}
+        {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} /> : null}
         {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
         {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : <p className="text-xs text-muted-foreground">{emptyScopes}</p>}
         <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />

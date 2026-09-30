@@ -15,6 +15,30 @@ const boundaryShapeSchema = z.object({
 });
 
 export const cardDetailRpcContract = {
+  /**
+   * The cross-thread half of "who is in this card's files".
+   *
+   * A SEPARATE call, and the reason is cost. Answering it needs a
+   * `bb thread list --json` (~0.6s) and a `git status` of the checkout, and
+   * a card's spawn environment is `project-default` for every host without a
+   * New-worktree preset — so folding this into `cardDetail` would put a
+   * subprocess on the open-card path for a section that starts closed and that
+   * most readers never open. Asked when the reader asks.
+   *
+   * A managed worktree answers `isolated` without a subprocess at all, because
+   * isolation is the reason there is nothing to report.
+   */
+  sharedCheckoutExposure: {
+    experimental_description: "Other BB threads sharing this card's checkout, and which of its held files are dirty there",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      isolated: z.boolean(),
+      threads: z.number(),
+      files: z.array(z.string()),
+      lines: z.array(z.string()),
+      reason: z.enum(["isolated", "no-checkout", "no-threads", "no-overlap", "unavailable", "shared"]),
+    }),
+  },
   cardDetail: {
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
