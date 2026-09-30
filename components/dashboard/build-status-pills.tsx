@@ -74,8 +74,31 @@ const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answe
 const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
 const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
 
-export function ReviewChip() {
-  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
+// The review request, not a workflow position. Three decisions are load
+// bearing here, and none of them is the styling:
+//
+// - NO DOT. A dot is this vocabulary's "here is a position" tell — the stage
+//   pill, the activity pill and the attention chip all carry one — and on a
+//   terminal card the stage pill is deliberately suppressed (see
+//   BuildStatusPills), so a dot left the chip sitting in the vacated slot and
+//   reading as the card's next checkpoint instead of a request about work
+//   that is already finished.
+// - NOT the bare word "Review". `review` is a phase in the stage catalog and
+//   BUILD_BOARD_COLUMN_LABELS spreads PHASE_LABELS, so the board already has a
+//   column header that reads "Review". A chip with that word is a position
+//   that does not exist.
+// - ONE component for the tile and the list row. The board tile used to carry
+//   a private copy of this chip, a dot and a type size away from the list
+//   row, which is exactly the drift the shared-vocabulary rule exists to
+//   prevent and the one rule no test could see.
+//
+// `label` exists so a surface that has a more specific sentence can supply it,
+// but the default is the one name this request gets: "Ready for review" is
+// already what the Inbox calls the same row (FEATURES.md, Recover), and a
+// request with two names is one the reader has to reconcile.
+export function ReviewChip({ label = "Ready for review" }: { label?: string }) {
+  const cls = "rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300";
+  return <span title="Open this card to clear it." className={cls}>{label}</span>;
 }
 
 export function attentionLabel(activity: string): string {

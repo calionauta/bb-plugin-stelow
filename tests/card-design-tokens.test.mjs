@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
-import { codeLinesOf as stripComments } from "./helpers/source-code.mjs";
+import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
 
 /**
  * The card's vocabulary must be named, or it cannot be checked.
@@ -45,6 +45,54 @@ function codeLinesOf(relative) {
 }
 
 const ALL = componentFiles().map((file) => file.replace(`${repoRoot}/`, ""));
+
+/**
+ * One function's own source, from its `export function NAME(` up to the brace
+ * that closes it. Extracting the block is what makes a rule about its body a
+ * rule about the body: a lazy `[\s\S]*?` to the end of the file would let a
+ * later sibling's dot satisfy a "this chip has no dot" check, which is a
+ * green test for a chip that has one.
+ */
+function functionSource(relative, name) {
+  const block = read(relative).match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`));
+  assert.ok(block, `${name} must exist as an exported function in ${relative}`);
+  return block[0];
+}
+
+test("a chip that asks for something never borrows the position vocabulary", () => {
+  // The review chip marks a REQUEST about finished work, so it must not use
+  // the tells that mean "here is a position". The stage pill, the activity
+  // pill and the attention chip all carry a dot, and on a terminal card the
+  // stage pill is suppressed on purpose — which left the review chip alone in
+  // the vacated slot, reading as the card's next checkpoint.
+  assert.doesNotMatch(
+    functionSource("components/dashboard/build-status-pills.tsx", "ReviewChip"),
+    /aria-hidden/,
+    "the review chip carries no dot. A dot in this vocabulary means a position, and this chip asks for a look at finished work",
+  );
+  assert.doesNotMatch(
+    codeOf(read("components/board/board-cards.tsx")),
+    /bg-emerald-500\/15/,
+    "the board tile re-spelled the shared review chip and drifted a dot and a type size away from the list row",
+  );
+});
+
+test("the review chip's label is not a workflow phase name", () => {
+  // `review` is a phase in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
+  // spreads PHASE_LABELS, so the board already carries a column header that
+  // reads "Review". A chip wearing that word is a position that does not
+  // exist. Read the label out of the component and the phase labels out of
+  // the catalog, so neither side can drift without failing here.
+  const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
+  const chipLabel = read("components/dashboard/build-status-pills.tsx")
+    .match(/export function ReviewChip\(\{ label = "([^"]+)"/)?.[1];
+  assert.ok(chipLabel, "ReviewChip must default its label, so this check reads the shipped word rather than a copy of it");
+  const phaseLabels = catalog.phases.map((phase) => phase.label);
+  assert.ok(
+    !phaseLabels.includes(chipLabel),
+    `the review chip's label is not a workflow phase name; \`review\` is one, and the board already has a column header that says Review. Got "${chipLabel}"`,
+  );
+});
 
 test("the vocabulary is named, and the names are the ones in use", () => {
   const disclosure = read("components/disclosure.tsx");

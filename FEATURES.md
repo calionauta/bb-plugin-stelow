@@ -1070,6 +1070,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   actions its primary filter lists. The review marker rides the completion's
   own read state: `bb stelow done` writes it unread, opening the card clears
   it, and the board listens to `inbox-changed` so the marker never lingers.
+  One `ReviewChip` serves the board tile and the list row — the tile used to
+  carry a private copy that had drifted a dot and a type size away, which is
+  the drift the shared-vocabulary rule exists to prevent and the one rule no
+  test could see. The chip carries **no dot**: in this vocabulary a dot means
+  "here is a position" (the stage pill, the activity pill and the attention
+  chip all have one), and on a terminal card the stage pill is deliberately
+  suppressed, which left the review chip alone in the vacated slot and reading
+  as the card's next checkpoint. It reads **Ready for review** — the Inbox's
+  existing words for the same row — because `review` is a phase in the stage
+  catalog and the board already has a column header that says Review, so a
+  chip wearing that word is a position that does not exist. It also carries the
+  one affordance it never had: *Open this card to clear it.*
 - **Auto-continue** (`syncThreadState`, `lib/auto-continue.mjs`). A worker
   that narrates progress and stops idles after every stage (the provider
   ends a turn on any final text). While the finished turn left fresh
