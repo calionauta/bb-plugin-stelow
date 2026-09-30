@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.58.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.0...v0.58.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* an audit card that parks no longer says resume when there is nothing left to resume ([#197](https://github.com/calionauta/bb-plugin-stelow/issues/197)) ([f6dc5a7](https://github.com/calionauta/bb-plugin-stelow/commit/f6dc5a7e3c66bf1d1a049ecfc15ece4edd4b31d8))
+
 ## [0.58.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.11...v0.58.0) (2026-09-30)
 
 
