@@ -113,9 +113,14 @@ test("the run list is a disclosure, not a permanently-open stack of rows", () =>
     section.includes("<DisclosureSection"),
     "a card with a dozen finished runs must not push everything else a dozen rows down the page",
   );
+  // Open unless the section is `live` or `blocking` — the same rule every other
+  // section on the card follows. A deep link names a run; a run in flight is
+  // live; a run that FAILED and is holding the card at its stage is blocking,
+  // and leaving that one shut would hide the Retry button that the advance
+  // refusal tells the reader to press. Finished history still starts closed.
   assert.ok(
-    /useState\(active > 0 \|\| focusRunId !== null\)/.test(section),
-    "it opens while work is in flight and when a deep link names a run; finished history starts closed",
+    /useState\(active > 0 \|\| focusRunId !== null \|\| blockingRunId !== null\)/.test(section),
+    "it opens while work is in flight, when a deep link names a run, and when a run is blocking the card; finished history starts closed",
   );
   assert.ok(
     /hint=\{runOutcomeHint\(runs, active\)\}/.test(section),

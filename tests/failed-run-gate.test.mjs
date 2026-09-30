@@ -31,7 +31,7 @@ function ledger() {
   return db;
 }
 
-const run = (db, { id, stage = "scope", status = "failed", recipe = "scope-map", error = "no task outputs" }) => {
+const run = (db, { id, stage = "scope", status = "failed", recipe = "scope-map", error = "no task outputs", at }) => {
   createExecutionRun(db, {
     id,
     cardId: "card_1",
@@ -49,6 +49,11 @@ const run = (db, { id, stage = "scope", status = "failed", recipe = "scope-map",
   if (status !== "queued") {
     db.prepare("UPDATE execution_runs SET normalized_status = ?, error_code = ? WHERE id = ?")
       .run(status, error, id);
+  }
+  // An explicit created_at is how a test asks for a TIE, which is the only way
+  // to exercise the tiebreak at all.
+  if (at !== undefined) {
+    db.prepare("UPDATE execution_runs SET created_at = ? WHERE id = ?").run(at, id);
   }
   return id;
 };
@@ -91,10 +96,31 @@ test("a newer successful run releases the hold — this is the door", () => {
 test("a retry that fails again re-tightens the hold by itself", () => {
   // Without this, a card could be nudged past a stage by a retry that did no
   // better — the hold would be a one-shot warning rather than a rule.
+  //
+  // The two runs are given the SAME created_at on purpose. That is the case the
+  // `rowid DESC` tiebreak exists for, and leaving it to chance is what made this
+  // test flaky: with real timestamps the two runs land in different
+  // milliseconds, `created_at DESC` alone already orders them correctly, and the
+  // mutation "drop the tiebreak" then passes four times out of five. A test that
+  // catches a bug by luck is a test that will eventually ship it.
   const db = ledger();
-  run(db, { id: "exec_1", status: "failed" });
-  run(db, { id: "exec_2", status: "failed" });
-  assert.equal(blockingFailedRun(db, "card_1", "scope")?.id, "exec_2", "the newest failure holds, not the oldest");
+  run(db, { id: "exec_1", status: "failed", at: 1_000 });
+  run(db, { id: "exec_2", status: "failed", at: 1_000 });
+  assert.equal(
+    blockingFailedRun(db, "card_1", "scope")?.id,
+    "exec_2",
+    "with equal timestamps, the newest INSERTED run is the one that speaks",
+  );
+});
+
+test("the tiebreak is what resolves an equal-timestamp tie", () => {
+  // Named separately so that dropping `rowid DESC` fails a test whose entire
+  // subject IS the tiebreak, rather than one that also asserts things it would
+  // pass anyway.
+  const db = ledger();
+  run(db, { id: "exec_first", status: "failed", at: 5_000 });
+  run(db, { id: "exec_second", status: "failed", at: 5_000 });
+  assert.equal(blockingFailedRun(db, "card_1", "scope")?.id, "exec_second");
 });
 
 test("a live run at the stage is not a failed run", () => {

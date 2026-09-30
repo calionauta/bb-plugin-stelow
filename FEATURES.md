@@ -1212,6 +1212,39 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card could no longer show what actually happened. A refusal from the launch is
   shown to the reader rather than swallowed, because a retry that is declined
   leaves the card exactly where it was.
+  The card is **told** which run blocks (`detail.card.blockingRun`) rather than
+  re-deriving the rule in the UI, so the button and the gate cannot disagree.
+  That one fact decides two affordances: the Execution runs section **opens**
+  when a run is blocking — the card's own rule is that a section starts closed
+  unless it is `live` or `blocking`, and a closed section hid the very button the
+  refusal names — and **Retry run** appears on the blocking row only, never on a
+  failed run from a stage the card has left, which would only ever answer with an
+  error. The hold also fires on `--dry-run`, which is how a worker asks "may I
+  advance?" before committing: with the hold below the short-circuit the probe
+  said yes, the worker acted, and the real advance refused — so the one tool
+  meant to prevent the mistake was the one place it did not fire.
+  The run list names each run by the **stage label the card already uses**
+  ("Tech planning"), not the host's recipe slug. It read
+  `planning-research / Running · planning` while every other surface said
+  "Tech planning", and nothing on screen connected them — the same word meaning
+  two things, which is the mistake the Scope X-ray made in the other direction.
+- **A run the host stops answering about eventually fails**
+  (`server/execution-reconcile-run.ts`, `lib/execution-run-ledger.mjs`). The
+  liveness rule trusts the ledger, the ledger is written in exactly one place,
+  and that place used to return an error and change nothing. A run whose host
+  went away therefore stayed `running` in the database **forever**, and the
+  liveness rule — faithfully reading a stale row — held the card as "the run is
+  working now" indefinitely: no button, no inbox row, no park. A wedge wearing
+  the costume of a fix, introduced by the fix above and closed by this.
+  An unanswerable host now opens a decaying window (generous — ten minutes,
+  because this is a recovery path and not a latency budget), an answered poll
+  closes it, and a window that never closes fails the run — a state the card can
+  show, the stage gate can hold on, and Retry can act on. The clock starts at the
+  **first** failure, not at the run's start, so restarting the plugin cannot
+  condemn a healthy long-running workflow. `reconcile_failed_at` is the
+  reconciler's own bookkeeping and is deliberately **not** projected to the card:
+  a reader is told "the host stopped answering" through the run's reason, not
+  through a timestamp they would have to compare against a clock.
 - **One card, one coordinator thread, one pending band swap**
   (`server/workers-respawn-guard.ts`, `server/workers-respawn.ts`,
   `server/workers-scheduler.ts`). A card owns one `worker_thread_id`, and

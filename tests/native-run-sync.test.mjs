@@ -173,9 +173,15 @@ test("a run that has finished releases the card back to the idle path", async ()
   );
 });
 
-test("a run waiting on a decision still yields to an open question", async () => {
-  // needs_input with an open question is a card the user is already in: the
-  // question is what the hero should show, so the run must not paper over it.
+test("a card with an open question shows the question, not the run", async () => {
+  // This is a question-branch test, and it is worth having — but it was NAMED
+  // and COMMENTED as a run-guard test, and it is not one. With the whole run
+  // guard deleted it still passed, because `syncIdle` returns on an open
+  // question BEFORE the guard is reached. Claiming coverage the test does not
+  // have is how a real gap hides behind a green suite.
+  //
+  // The run guard's own `needs_input` nuance is pinned where it is reachable:
+  // in `native-run.test.mjs`, against `keepsCardRunning` directly.
   const fixture = harness(
     card({ status: "in-progress", stage: "planning", activity: "running" }),
     {
@@ -193,5 +199,10 @@ test("a run waiting on a decision still yields to an open question", async () =>
     fixture.calls.some(([name]) => name === "thread.send"),
     false,
     "a question is the thing to show, not a nudge",
+  );
+  assert.equal(
+    fixture.calls.some(([name, fields]) => name === "update" && fields.activity === "running"),
+    false,
+    "and the card does not claim to be working past a question it is asking",
   );
 });

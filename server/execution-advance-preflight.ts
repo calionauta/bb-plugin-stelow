@@ -51,14 +51,23 @@ export async function prepareAdvance(
   deps: PreflightDeps,
   input: PreflightInput,
 ): Promise<PreparedOrRefusal> {
-  if (input.dryRun) return { route: null, note: "", evidence: "" };
-  // A stage whose newest native run failed holds the card here. It sits ABOVE
-  // every other preflight because it is the only check about something that
-  // already happened rather than about whether the next stage may open — and
-  // because the one refusal on this path that a reader cannot route around
-  // belongs to the work that was lost, not to the work that is next.
+  // A stage whose newest native run failed holds the card here, and this check
+  // sits ABOVE the dry-run short-circuit on purpose.
+  //
+  // A `--dry-run` is how a worker asks "may I advance?" before committing to
+  // anything. With the hold below the short-circuit, the dry run said yes, the
+  // worker acted on it, and the real advance refused — so the one probe built to
+  // prevent the mistake was the one place it did not fire, and the card learned
+  // about a gate by hitting it rather than by being told. Reading the ledger is
+  // free and mutates nothing, so there is nothing for a dry run to protect here.
+  //
+  // It also sits above every other preflight because it is the only check about
+  // something that already happened, rather than about whether the next stage may
+  // open — and the one refusal on this path a reader cannot route around belongs
+  // to the work that was lost, not to the work that is next.
   const failed = blockingFailedRun(deps.db, input.card.id, input.card.stage);
   if (failed) return { error: failedRunRefusal(failed) };
+  if (input.dryRun) return { route: null, note: "", evidence: "" };
   if (input.stage !== "execution") return routePreflight(deps, input, "", null);
   const loopNote = input.includeRework ? await deps.reworkNote(input.card) : "";
   const scopes = await syncExecutionScopes(deps, input.card, input.rootPath, input.stateDir);

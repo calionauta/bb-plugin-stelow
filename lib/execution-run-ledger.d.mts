@@ -38,6 +38,15 @@ export interface ExecutionRun {
   boundaryQuestion: string | null;
   boundaryContract: BoundaryContract | null;
   createdAt: number;
+  /**
+   * When the host first stopped answering about this run. Null while it answers.
+   *
+   * Not public: it is the reconciler's own bookkeeping for a decaying liveness
+   * signal, and a reader is told "the host stopped answering" through
+   * `errorCode` once the window passes — not through a timestamp that would
+   * only make them compute whether it has passed.
+   */
+  reconcileFailedAt?: number | null;
 }
 export type PublicExecutionRun = Pick<ExecutionRun,
   "id" | "cardId" | "runId" | "recipeId" | "stage" | "sourceHash" | "adapter" | "workspaceId" |
@@ -55,4 +64,10 @@ export function markExecutionNeedsInputSent(db: any, id: string, at?: number): E
 export function markExecutionResumeRequested(db: any, id: string, at?: number): ExecutionRun;
 export function resumeArtifactRoot(artifactRoot: string): string;
 export function resetExecutionBoundary(db: any, id: string): ExecutionRun;
+
+/** When the host FIRST stopped answering about this run; null while it answers. */
+export function markReconcileFailed(db: any, id: string, at: number): ExecutionRun;
+
+/** The host answered again; the unreachable window closes. */
+export function markReconcileReached(db: any, id: string): ExecutionRun;
 export function cancelExecutionRuns(db: any, cardId: string, reason?: string): number;

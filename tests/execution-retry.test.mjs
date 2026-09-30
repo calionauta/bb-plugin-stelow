@@ -84,13 +84,15 @@ function seed(db, { id = "exec_1", stage = "scope", status = "failed", recipe = 
 function deps(db, current, options = {}) {
   const comments = [];
   const started = [];
+  const published = [];
   return {
     calls: comments,
     started,
+    published,
     db,
     getCard: () => current,
     logComment: (cardId, targetId, body) => comments.push([cardId, targetId, body]),
-    publishCard: () => {},
+    publishCard: (cardId) => published.push(cardId),
     native: {
       startNativeStageForCard: async (c, recipeId, context, expectedStage) => {
         started.push({ recipeId, stage: expectedStage, prompt: context.prompt });
@@ -123,22 +125,49 @@ test("the retry is recorded on the card, naming the run it replaces", async () =
   assert.ok(comment, "the retry is traceable from the card");
   assert.match(comment[2], /Retrying the scope-map run that failed/);
   assert.match(comment[2], /exec_1/, "and it names the run it is replacing");
+  assert.deepEqual(d.published, ["card_1"], "and the card is republished, so the list repaints");
 });
 
-test("a run that is still working cannot be retried", async () => {
+test("a card a stage ahead of its run refuses to retry it, and launches nothing", async () => {
+  // This is the test that makes `card.stage` and `run.stage` distinguishable at
+  // all. When they AGREE — which is the only time a retry proceeds — swapping
+  // one for the other is unobservable, so a suite that only ever retries a
+  // matching pair cannot tell which one the launch reads. Here they differ, the
+  // retry must be refused, and NOTHING may be launched: a guard that refuses in
+  // the message but still dispatches would re-run an old stage's recipe over
+  // work the card has since done.
   const db = ledger();
-  seed(db, { status: "running" });
-  const result = await retryExecutionRun(deps(db, card(), []), "exec_1");
-  assert.equal(result.ok, false);
-  assert.match(result.error, /still working/i, "the reader is told it is not stuck");
+  seed(db, { id: "exec_1", stage: "critique", recipe: "plan-critique" });
+
+  const ahead = deps(db, card({ stage: "execution" }));
+  const refused = await retryExecutionRun(ahead, "exec_1");
+  assert.equal(refused.ok, false, "a card a stage ahead of the run must not retry it");
+  assert.deepEqual(ahead.started, [], "and must not have launched anything");
+
+  // And the matching case, so the suite still covers the happy path with a
+  // stage that is NOT the fixture default.
+  const parked = deps(db, card({ stage: "critique" }));
+  const result = await retryExecutionRun(parked, "exec_1");
+  assert.equal(result.ok, true, "a card parked on the run's stage may retry it");
+  assert.deepEqual(
+    parked.started,
+    [{ recipeId: "plan-critique", stage: "critique", prompt: "Build it" }],
+  );
 });
 
-test("a run that already succeeded cannot be retried", async () => {
+test("a state is named in the reader's words, never the raw enum", async () => {
+  // Every other fixture here uses `running` and `succeeded`, which are spelled
+  // IDENTICALLY in the label map — so returning the raw enum passed every one of
+  // them. `needs_input` is the only status whose label differs from its value,
+  // and it is the one that matters most: it is the state where a person is being
+  // asked something, and `needs_input` is not a phrase anyone reads.
   const db = ledger();
-  seed(db, { status: "succeeded" });
-  const result = await retryExecutionRun(deps(db, card(), []), "exec_1");
+  seed(db, { id: "exec_1", status: "failed" });
+  db.prepare("UPDATE execution_runs SET normalized_status='needs_input' WHERE id='exec_1'").run();
+  const result = await retryExecutionRun(deps(db, card()), "exec_1");
   assert.equal(result.ok, false);
-  assert.match(result.error, /already finished/i);
+  assert.doesNotMatch(result.error, /needs_input/, "the raw enum never reaches the reader");
+  assert.match(result.error, /waiting on a decision/, "and the reader gets words instead");
 });
 
 test("a run from a stage the card has left is refused, and says how to reach it", async () => {

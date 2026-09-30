@@ -62,7 +62,7 @@ function CardKindContent({ cardId, inboxEventId, view }: BuildContentProps) {
 
 function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
   const { card, detail } = view;
-  if (!card) return null;
+  if (!card || !detail) return null;
   const hero = heroFor(card, detail);
   const presetStale = isWorkerPresetStale(card, detail);
   return (
@@ -79,6 +79,7 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         focusRunId={view.focusRunId}
         stoppingRunId={view.execution.stoppingRunId}
         retryingRunId={view.execution.retryingRunId}
+        blockingRunId={detail.card.blockingRun?.id ?? null}
         onCancel={view.execution.cancel}
         onRetry={view.execution.retry}
       />

@@ -48,11 +48,26 @@ test("a run waiting on a boundary yields to an open question", () => {
 });
 
 test("the newest live run is the one that speaks", () => {
-  // listExecutionRuns orders by created_at DESC, so index 0 is the newest. A
-  // card with a live run and an older terminal one must read as live.
-  const runs = [run(), run({ id: "exec_0", normalizedStatus: "succeeded" })];
-  assert.equal(liveRun(runs).id, "exec_1");
+  // BOTH runs are live. The previous version made the second one terminal, so it
+  // was filtered out before `live[0]` and `live[live.length - 1]` could ever
+  // disagree — the test named the ordering and never exercised it, and inverting
+  // the index passed. A live run behind a live run is the only case that can
+  // tell them apart, so that is the case this uses.
+  const runs = [run(), run({ id: "exec_0", recipeId: "older" })];
+  assert.equal(liveRun(runs).id, "exec_1", "the first of two live runs is the one that speaks");
   assert.equal(keepsCardRunning(runs, 0), true);
+});
+
+test("a finished run is never the live one, however recent", () => {
+  // The state set itself, which the outcome tests above could not pin: a
+  // `succeeded` or `cancelled` run added to LIVE_STATES passed every other
+  // assertion here, because the branches downstream happened to mask it. Only a
+  // test that asks `liveRun` DIRECTLY about a finished run closes that.
+  for (const normalizedStatus of ["succeeded", "failed", "cancelled"]) {
+    assert.equal(liveRun([run({ normalizedStatus })]), null, normalizedStatus);
+  }
+  assert.equal(liveRun([run({ normalizedStatus: "needs_input" })])?.id, "exec_1");
+  assert.equal(liveRun([run({ normalizedStatus: "queued" })])?.id, "exec_1");
 });
 
 test("no runs means nothing keeps the card running", () => {

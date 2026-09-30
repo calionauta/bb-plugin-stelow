@@ -14,6 +14,7 @@ import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
 import type { HostHold } from "../../lib/host-hold.mjs";
 import type { NativeRunRef } from "../../lib/native-run.mjs";
+import type { BlockingRun } from "../../lib/failed-run-gate.mjs";
 import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
@@ -79,6 +80,10 @@ export type DetailParts = {
   /** The card's live native run, with its derived sentence. Null when no run
    * owns the card. Read on the detail only — see readNativeRun. */
   nativeRun: (NativeRunRef & { summary: string | null }) | null;
+  /** The failed run holding the card at its current stage, or null. The card is
+   * told this rather than re-deriving it, so its affordances cannot disagree
+   * with the advance gate. */
+  blockingRun: BlockingRun | null;
 };
 
 /**
@@ -147,6 +152,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
     nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
     workerHistory: parts.workerHistory,
@@ -243,6 +249,7 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
     lastError: card.last_error,
     hostHold: parts.hold,
     nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
   };
