@@ -54,6 +54,39 @@ test("verify --tests records the run against the observed Git identity", async (
   assert.equal(insert[2][3], "/w");
 });
 
+// Regression pin: a SKIPPED rework scope is resolved, not open. `verify`
+// warned "rework loop open ... finish it" for scopes that were deliberately
+// set aside, naming work as unfinished that the card had already closed out.
+// Same rule the done gate applies (lib/trackables.mjs: skipped is "explicitly
+// set aside", and done-gates treat it as resolved).
+test("verify does not warn that a skipped rework scope is open", async () => {
+  const { invoke } = cliHarness({
+    testCommand: { command: "npm", args: ["test"], display: "npm test" },
+    hostTests: { exitCode: 0, output: "3 passing" },
+    gapState: {
+      matched: true,
+      failures: [],
+      totals: { total: 3, fixed: 1, documented: 1, escalated: 1 },
+      escalated: [{ description: "checkout ignores promo codes" }],
+      auditGapScopes: [
+        {
+          id: "scope-7",
+          name: "handle promo codes",
+          status: "skipped",
+          gap: "checkout ignores promo codes",
+        },
+      ],
+    },
+  });
+  const result = await invoke(["verify", "--tests"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.doesNotMatch(
+    `${result.stdout}${result.stderr}`,
+    /rework loop open/,
+    "a skipped rework scope is resolved, not open",
+  );
+});
+
 test("verify --tests refuses a checkout with no conventional test command", async () => {
   const { invoke, calls } = cliHarness({ testCommand: null });
   const result = await invoke(["verify", "--tests"]);

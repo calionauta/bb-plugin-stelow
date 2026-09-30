@@ -24,7 +24,7 @@ import { createResearchTrackSync } from "../research-track-sync.js";
 import { createBuildThreadSync } from "../build-thread-sync.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
@@ -325,7 +325,7 @@ async function auditReworkNote(
   const gaps = await critiqueGapState(card).catch(() => null);
   if (!gaps?.matched) return "";
   const open = (gaps.auditGapScopes ?? []).filter(
-    (scope) => !isDoneStatus(scope.status),
+    (scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status),
   );
   return open.length > 0
     ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`

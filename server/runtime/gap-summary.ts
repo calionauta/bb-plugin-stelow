@@ -23,6 +23,10 @@ type GapSummaryDeps = {
   summarizeTimeline: (events: StageEvent[], input: { createdAt: number; endAt: number }) => Timeline;
   critiqueGapState: (card: WorkerCard) => Promise<CritiqueGapState>;
   isDoneStatus: (status: string) => boolean;
+  // Required here for the same reason it is required on the function below: an
+  // optional dep is a dep a caller can forget, and forgetting it restores the
+  // bug this dep exists to fix.
+  isSkippedStatus: (status: string) => boolean;
   now: () => number;
 };
 
@@ -47,6 +51,11 @@ export function buildGapSummary(
   state: CritiqueGapState,
   timeline: Timeline,
   isDoneStatus: (status: string) => boolean,
+  // Required, not defaulted. A default of `() => false` means a caller that
+  // forgets the dep gets the old behaviour - every skipped scope counted as
+  // open - with no error anywhere, which is the exact defect this fixes. The
+  // optional call goes with it: there is nothing left to be optional.
+  isSkippedStatus: (status: string) => boolean,
 ): GapSummary {
   // Every finding the registry named, not just the escalated slice. Only an
   // escalation gets a rework scope, so `scopeStatus` stays null for the rest —
@@ -66,7 +75,11 @@ export function buildGapSummary(
     documented: state.totals.documented,
     escalated: state.totals.escalated,
     items,
-    pendingScopes: state.auditGapScopes.filter((scope) => !isDoneStatus(scope.status)).length,
+    // Skipped is resolved, not pending (lib/trackables.mjs): a set-aside scope
+    // must not inflate the open count the card shows.
+    pendingScopes: state.auditGapScopes.filter(
+      (scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status),
+    ).length,
     unscoped: state.escalated.filter(
       (gap) => !state.auditGapScopes.some((scope) => scope.gap === gap.description),
     ).length,
@@ -95,6 +108,6 @@ export function createGapSummary(deps: GapSummaryDeps) {
         done: card.status === "completed",
       };
     }
-    return buildGapSummary(card, state, timeline, deps.isDoneStatus);
+    return buildGapSummary(card, state, timeline, deps.isDoneStatus, deps.isSkippedStatus);
   };
 }
