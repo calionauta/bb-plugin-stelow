@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.57.10](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.9...v0.57.10) (2026-09-30)
+
+
+### Bug Fixes
+
+* an undeclared scope refuses the batch, and the card shows who shares its files ([#190](https://github.com/calionauta/bb-plugin-stelow/issues/190)) ([efa6755](https://github.com/calionauta/bb-plugin-stelow/commit/efa6755409bb7f8094c67a7f5da3cd88b275831f))
+
 ## [0.57.9](https://github.com/calionauta/bb-plugin-stelow/compare/v0.57.8...v0.57.9) (2026-09-29)
 
 
