@@ -255,6 +255,7 @@ function buildThreadSync(core: RuntimeCore) {
     getCard,
     cardWorkspace,
     workflowStateDir: core.workflowStateDir,
+    resolveWorkflowStateDir: core.resolveWorkflowStateDir,
     updateCard,
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,

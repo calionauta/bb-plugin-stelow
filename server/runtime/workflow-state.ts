@@ -26,38 +26,84 @@ const WORKSPACE_TRANSITIONS =
   "skills/stelow-workflow-orchestrator/references/transitions.md";
 
 /**
+ * What a state-directory lookup learned, kept apart because "the records
+ * disagree" and "the host would not answer" are different facts and only one
+ * of them is a verdict about the card.
+ *
+ * `unreadable` is the fail-open direction on purpose. Every read here goes
+ * through the host, and the host can be slow, busy or mid-restart — a stalled
+ * event loop turns every file read into a timeout. Reporting that as a
+ * verdict accuses a card of losing its state when the truth is that nobody
+ * asked successfully, so a caller that only wants the path gets null (as
+ * before) and a caller that must name a reason gets to say which of the two
+ * happened.
+ */
+export type WorkflowStateResolution =
+  | { kind: "resolved"; path: string; state: string }
+  | { kind: "unreadable" }
+  | { kind: "unowned" };
+
+/**
  * Resolve a card's state directory only when both persisted ownership records
  * agree. A matching name or dirHash alone is deliberately insufficient:
  * projects can contain repeated requests and converted exploratory
  * workspaces.
+ *
+ * The state blob travels with the verdict because the ownership check has
+ * already read it, and a caller that wants the blob should not have to ask
+ * the host a second time for a file that can change between the two reads.
  */
+export async function resolveWorkflowStateDir(
+  bb: BbPluginApi,
+  rootPath: string,
+  workflowId: string,
+  dirHash: string,
+): Promise<WorkflowStateResolution> {
+  const workflows = await bb.sdk.files
+    .read({ path: join(rootPath, "stelow.json") })
+    .then((file) => trackingWorkflows(file.content))
+    .catch(() => null);
+  if (!workflows) return { kind: "unreadable" };
+  const workflow = workflowEntryForOwner(workflows, workflowId, dirHash);
+  const relativeDir = workflowStateRelativeDir(workflow);
+  if (!relativeDir) return { kind: "unowned" };
+  const path = join(rootPath, relativeDir);
+  const state = await bb.sdk.files
+    .read({ path: join(path, "state.md") })
+    .then((file) => file.content)
+    .catch(() => null);
+  if (state === null) return { kind: "unreadable" };
+  return ownsWorkflowState(state, workflowId)
+    ? { kind: "resolved", path, state }
+    : { kind: "unowned" };
+}
+
+/**
+ * The `workflows` array of a tracking file, or null when it cannot be read as
+ * one. A file the host refused, a truncated write and a JSON scalar are all
+ * "we do not know what this project recorded" — none of them is evidence that
+ * a card lost its owner.
+ */
+function trackingWorkflows(content: string): unknown[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return array((parsed as { workflows?: unknown }).workflows);
+}
+
+/** The path half of `resolveWorkflowStateDir`, for callers that only need it. */
 export async function workflowStateDir(
   bb: BbPluginApi,
   rootPath: string,
   workflowId: string,
   dirHash: string,
 ): Promise<string | null> {
-  try {
-    const tracking = await readJson(
-      bb.sdk.files,
-      join(rootPath, "stelow.json"),
-    );
-    const workflow = workflowEntryForOwner(
-      array(tracking?.workflows),
-      workflowId,
-      dirHash,
-    );
-    const relativeDir = workflowStateRelativeDir(workflow);
-    if (!relativeDir) return null;
-    const stateDir = join(rootPath, relativeDir);
-    const state = await bb.sdk.files
-      .read({ path: join(stateDir, "state.md") })
-      .then((file) => file.content)
-      .catch(() => null);
-    return ownsWorkflowState(state, workflowId) ? stateDir : null;
-  } catch {
-    return null;
-  }
+  const resolution = await resolveWorkflowStateDir(bb, rootPath, workflowId, dirHash);
+  return resolution.kind === "resolved" ? resolution.path : null;
 }
 
 /**

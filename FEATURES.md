@@ -1368,11 +1368,29 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   build only at `audit`, with every scope done, completed, or explicitly
   skipped (open scopes refuse, naming each one — done certifies finished
   work, not walked-past work), research/explore only with a passing `verify`
-  and no pending question. Every refusal names the fix. The old
+  and no pending question. The same reading governs the audit-gap rework
+  gate: a rework scope the audit deliberately set aside is `skipped`, which
+  is resolved, so it never appears in the "still open" refusal — a card
+  whose whole finding was "obsolete as a rework scope here" is finishable
+  without anyone lying about it. Every refusal names the fix. The old
   audit-idle auto-complete is gone: an audit-idle worker is resumed with
   the done instruction (budgeted), then pauses with the instruction on
   the card — completed cards read "Done — ready to review", never a lit
   audit with no next step.
+- **A park at audit says which park it is** (`auditPauseReason`,
+  `server/runtime/build-thread-terminal.ts`). The done nudge is budgeted at
+  `MAX_DONE_NUDGES`, and the pause notice used to read "resume continues the
+  worker with that instruction" whether or not there was any instruction left
+  to give. On a card whose budget was already spent and whose done gate
+  refused for a reason no resume could touch, that sentence taught a reader to
+  press Resume again. The pause now names the spent budget and says the
+  refusal on the card is the thing to change; a card waiting on an open
+  question says so; everything else keeps the plain sentence. The nudge itself
+  closes the two dead ends it kept producing: when `done` refuses, do not mark
+  the blocking work done to get past it, and do not end the turn with a
+  question in prose — a prose question is invisible to the host, so the card
+  parks with nothing answerable. Name the blocker in a card comment, or open
+  `bb stelow ask` so the card carries a question someone can answer.
 - **`bb stelow review` (opt-in, `lib/review-verdict.mjs`).** Independent
   artifact review on explicit invocation only — no band default, no
   silent fallback: without a designated reviewer preset the command
@@ -1516,6 +1534,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
+- **State ownership is a verdict, not a failed read**
+  (`resolveWorkflowStateDir`, `server/runtime/workflow-state.ts`). Resolving a
+  card's state dir needs two records to agree — the `stelow.json` entry naming
+  the workflow, and the `state.md` naming the same owner back. That answer
+  comes in three shapes now, because the caller acts differently on each:
+  `resolved` (with the blob the ownership check already read, so nobody asks
+  the host twice about a file that can change between reads), `unowned` (the
+  records disagree — a verdict, and the card gets the reseed refusal), and
+  `unreadable` (the host did not answer — not a verdict about the card). The
+  periodic card sync skips an unreadable tick entirely instead of freezing the
+  card on its last projection with an error the host caused, and a verified
+  projection clears `last_error`, so a failure the host recovered from stops
+  being displayed days later next to a worker that never needed reseeding.
+  Measured case: 26 daemon event-loop stalls on 2026-09-30 09:36–09:41 (max
+  delay 29.6s) turned three live cards into the ownership refusal in the same
+  second; all three recovered on their own 71s later.
 - **Host-served playbook** (`bb stelow playbook [--card]`,
   `lib/playbook.mjs`). The card's state file, transitions, and the
   ordered reading list for its current stage as exact paths — workers

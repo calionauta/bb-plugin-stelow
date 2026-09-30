@@ -5,7 +5,6 @@ import {
   lastTurnAdvancedStages,
   nextAutoContinue,
   shouldAutoContinue,
-  shouldDoneNudge,
 } from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
@@ -20,7 +19,10 @@ import {
   projectThreadError,
   shouldSyncThread,
 } from "./thread-state-projection.js";
-import { agentText, sendAgentInput } from "./thread-send.js";
+import { syncTerminalIdle } from "./build-thread-terminal.js";
+import { recordPausedAfter } from "./paused-inbox.js";
+import { sendAgentInput } from "./thread-send.js";
+import type { WorkflowStateResolution } from "./workflow-state.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type CardUpdate = Record<string, unknown>;
@@ -37,6 +39,12 @@ type BuildThreadSyncDeps = {
     workflowId: string,
     dirHash: string,
   ) => Promise<string | null>;
+  resolveWorkflowStateDir: (
+    bb: BbPluginApi,
+    rootPath: string,
+    workflowId: string,
+    dirHash: string,
+  ) => Promise<WorkflowStateResolution>;
   updateCard: (cardId: string, fields: CardUpdate) => void;
   syncResearch: (card: WorkerCard) => Promise<void>;
   syncExplore: (card: WorkerCard) => Promise<void>;
@@ -97,15 +105,21 @@ async function readBuildThread(
   deps: BuildThreadSyncDeps,
   card: WorkerCard,
 ): Promise<ThreadSnapshot | null> {
-  const stateBlob = await readStateBlob(deps, card);
-  if (card.dir_hash && !stateBlob) {
+  const state = await readStateBlob(deps, card);
+  if (state.kind === "unresolved") {
     deps.updateCard(card.id, {
       activity: "error",
       last_error: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
     });
     return null;
   }
-  const metadata = projectStateMetadata(card, stateBlob);
+  // An unreadable workspace is nobody's verdict. Returning here leaves the
+  // card on its last verified projection instead of overwriting it with a
+  // failure the host caused, and the next tick (45s) asks again. Silently is
+  // the honest answer: a card that has been syncing for hours has nothing new
+  // to say because one read timed out.
+  if (state.kind === "unreadable") return null;
+  const metadata = projectStateMetadata(card, state.blob);
   applyIntent(deps, card, metadata.intent);
   const thread = await deps.bb.sdk.threads.get({ threadId: card.worker_thread_id! });
   healPreset(deps, card, thread);
@@ -121,18 +135,45 @@ async function readBuildThread(
   };
 }
 
+/**
+ * The card's own state file, and whether the host answered at all.
+ *
+ * Three answers, because the caller acts differently on each: a blob it can
+ * project, "the ownership records disagree" (a verdict — the card lost its
+ * state), and "nobody answered" (not a verdict — the host was busy, slow or
+ * restarting, and the card is left alone).
+ */
 async function readStateBlob(
   deps: BuildThreadSyncDeps,
   card: WorkerCard,
-): Promise<string | null> {
+): Promise<
+  | { kind: "read"; blob: string }
+  | { kind: "unresolved" }
+  | { kind: "unreadable" }
+> {
   const workspace = await deps.cardWorkspace(card);
-  if (!workspace?.path) return null;
-  const stateDir = card.dir_hash
-    ? await deps.workflowStateDir(deps.bb, workspace.path, card.id, card.dir_hash)
-    : null;
-  if (card.dir_hash && !stateDir) return null;
-  const path = stateDir ? join(stateDir, "state.md") : join(workspace.path, "state.md");
-  return deps.bb.sdk.files.read({ path }).then((file) => file.content).catch(() => null);
+  if (!workspace?.path) return { kind: "unreadable" };
+  if (card.dir_hash) {
+    const resolution = await deps.resolveWorkflowStateDir(
+      deps.bb,
+      workspace.path,
+      card.id,
+      card.dir_hash,
+    );
+    // `unowned` is the only verdict the lookup can reach, and it is the one
+    // this caller turns into the reseed refusal. The other two answers are
+    // carried through under the same names so no caller has to know that a
+    // "could not be read" is not a "could not be resolved".
+    if (resolution.kind === "resolved") return { kind: "read", blob: resolution.state };
+    return resolution.kind === "unowned"
+      ? { kind: "unresolved" }
+      : { kind: "unreadable" };
+  }
+  const blob = await deps.bb.sdk.files
+    .read({ path: join(workspace.path, "state.md") })
+    .then((file) => file.content)
+    .catch(() => null);
+  return blob === null ? { kind: "unreadable" } : { kind: "read", blob };
 }
 
 function healPreset(deps: BuildThreadSyncDeps, card: WorkerCard, thread: unknown): void {
@@ -190,84 +231,13 @@ async function syncIdle(
   }
   const transitioning = snapshot.card.activity !== "idle";
   if (snapshot.stage === "audit") {
-    const resumed = await syncAuditIdle(deps, snapshot, transitioning);
+    const resumed = await syncTerminalIdle(deps, snapshot, transitioning);
     if (!resumed) noteFreshOutput(deps, snapshot);
     return resumed;
   }
   const resumed = await resumeWithProgress(deps, snapshot, transitioning);
   if (!resumed) noteFreshOutput(deps, snapshot);
   return resumed;
-}
-
-async function syncAuditIdle(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-  transitioning: boolean,
-): Promise<boolean> {
-  if (await sendDoneNudge(deps, snapshot, transitioning)) return true;
-  // This notice claims a stage was REACHED, so it is gated on the stage moving.
-  // It hung off `transitioning`, which is derived from `activity` — and a native
-  // run flips activity, so one card re-announced the same arrival twice.
-  const enteredAudit = snapshot.stage === "audit" && snapshot.card.stage !== "audit";
-  if (snapshot.card.status !== "completed" && enteredAudit) {
-    deps.logComment(
-      snapshot.card.id,
-      "The workflow reached the audit stage, but the card completes only when the worker " +
-      "runs `bb stelow done` (verified in code — build at audit, never past a pending " +
-      "question). Resume continues the worker with that instruction; nothing is done until done runs.",
-    );
-  }
-  const idleAt = snapshot.card.last_idle_at ?? deps.now();
-  deps.updateCard(snapshot.card.id, {
-    activity: "idle",
-    last_assistant_text: snapshot.lastOutput,
-    last_idle_at: idleAt,
-    stage: snapshot.stage,
-  });
-  recordPausedAfter(
-    deps,
-    snapshot.card.id,
-    idleAt,
-    "At audit, waiting for the worker to run `bb stelow done` — resume continues it with that instruction.",
-  );
-  return false;
-}
-
-async function sendDoneNudge(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-  transitioning: boolean,
-): Promise<boolean> {
-  const decision = shouldDoneNudge({
-    status: snapshot.status,
-    cardStatus: snapshot.card.status,
-    questionPending: false,
-    transitioningIntoIdle: transitioning,
-    autoCount: snapshot.card.auto_continue_count ?? 0,
-    autoStage: snapshot.card.auto_continue_stage ?? null,
-  });
-  if (!decision.proceed) return false;
-  const sent = await sendAgentInput(
-    deps.bb,
-    snapshot.card,
-    [agentText(deps.auditDoneNudge)],
-  );
-  if (!sent) return false;
-  const next = nextAutoContinue({
-    stage: snapshot.stage,
-    autoCount: snapshot.card.auto_continue_count ?? 0,
-    autoStage: snapshot.card.auto_continue_stage ?? null,
-  });
-  const fields: CardUpdate = {
-    activity: "running",
-    last_idle_at: null,
-    last_error: null,
-    auto_continue_count: next.count,
-    auto_continue_stage: next.stage,
-  };
-  if (snapshot.lastOutput != null) fields.last_assistant_text = snapshot.lastOutput;
-  deps.updateCard(snapshot.card.id, fields);
-  return true;
 }
 
 async function resumeWithProgress(
@@ -359,6 +329,7 @@ function persistStandardIdle(
   deps.updateCard(snapshot.card.id, {
     activity: "idle",
     last_assistant_text: snapshot.lastOutput,
+    last_error: null,
     last_idle_at: idleAt,
   });
   if (idleAt == null) return;
@@ -371,18 +342,6 @@ function persistStandardIdle(
     idleAt,
     `Idle with unfinished work — retry continues in place, restart begins fresh.${suffix}`,
   );
-}
-
-function recordPausedAfter(
-  deps: BuildThreadSyncDeps,
-  cardId: string,
-  idleAt: number,
-  message: string,
-): void {
-  if (!idleAt || deps.now() - idleAt < deps.idleAttentionMs) return;
-  const current = deps.getCard(cardId);
-  if (!current || current.status === "archived" || current.status === "completed") return;
-  deps.recordInbox(current, "paused", message, `paused:${cardId}:${idleAt}`, idleAt);
 }
 
 function noteFreshOutput(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): void {
