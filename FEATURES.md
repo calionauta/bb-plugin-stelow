@@ -1109,6 +1109,32 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   worker that stops having run nothing, asked nothing and committed
   nothing gives the host no verifiable fact, and classifying prose to
   manufacture a sentence for it is a classifier on the authority path.
+- **A held card is not a paused card** (`lib/host-hold.mjs`,
+  `server/runtime/worker-hold.ts`). The host can take a card's next message
+  and decline to dispatch it — the concurrency limit is full, the host went
+  offline, a permission interaction is open. The message is already on its way
+  and the host releases it on its own, so the card is neither stalled nor
+  failed: it is **held**, its own activity value. The card then says so, in
+  the host's own words (`Waiting on the host: 4 of 4 running on host
+  ubuntu-8gb-hel1-1. The host dispatches it as soon as it can — no action
+  needed.`), shows no amber attention chip, and offers **no Retry** — the
+  button used to sit there for ten minutes and queue a second copy of the
+  message already waiting. A held card raises **no inbox event**; the one rule
+  is that anything the host resumes by itself gets no button and no row, and
+  only what a person can move gets both. Hold detection covers every wait the
+  host names, on all three tracks: the research/explore sweep applies it too,
+  because those tracks never grew the duplicate-nudge pile (they do not
+  auto-continue) but a held card must not be reported as an idle one asking
+  for a retry nobody needs.
+  The delivery verdict is what makes this possible, and it is the whole fix:
+  `threads.send` answers with `{delivery:"sent"}` or `{delivery:"queued"}` and
+  does not throw for the second, so the plugin used to read a held dispatch as
+  a resume. That one word claimed the card was `running` on an idle thread,
+  spent the auto-continue budget on turns that never started (ten identical
+  nudges on card_e3u00eb4 before the budget ran out and the card parked
+  itself), and then presented the result as a pause needing a person. Now a
+  queued delivery projects the hold and **spends no budget**, and a held card
+  is never nudged at all — the pending message is the pending work.
 - **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,

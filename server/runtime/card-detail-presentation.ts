@@ -12,6 +12,7 @@ import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
+import type { HostHold } from "../../lib/host-hold.mjs";
 import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
@@ -59,7 +60,7 @@ export type DetailParts = {
   fileEnvironmentId: string | null;
   scopes: unknown[];
   artifacts: unknown[];
-  activity: "idle" | "running" | "awaiting-answer" | "error";
+  activity: "idle" | "running" | "awaiting-answer" | "error" | "held";
   preset: Preset;
   workerHistory: unknown[];
   questionStaleness: Map<string, Staleness>;
@@ -71,6 +72,9 @@ export type DetailParts = {
   scopeXray: ScopeXray | null;
   /** The card-level file-claim wait, derived from `scopes`. Null when free. */
   fileLocks: BlockedFileWait | null;
+  /** The host's hold on the card's next dispatch, with its derived sentence.
+   * Null when the thread is free. Read on the detail only — see readHold. */
+  hold: (HostHold & { summary: string | null }) | null;
 };
 
 /**
@@ -208,6 +212,7 @@ function detailCard(
     workerThreadId: card.worker_thread_id,
     activity: parts.activity,
     lastError: card.last_error,
+    hostHold: parts.hold,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
     presetName: preset.name,

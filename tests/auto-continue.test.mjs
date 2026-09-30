@@ -270,14 +270,31 @@ assert.match(
   /const input = buildContinueInput\([\s\S]*?buildContinueNudge\(deps\.interfacePick\)[\s\S]*?"private"[\s\S]*?sendAgentInput/,
   "auto-continue sends the shared continue nudge privately in place",
 );
+const budgetAt = autoBlock.indexOf("const next = nextAutoContinue({");
 const successOrder = [
-  "const sent = await sendAgentInput",
-  "const next = nextAutoContinue({",
-  "deps.updateCard(",
-  "return true",
-].map((token) => autoBlock.indexOf(token));
+  autoBlock.indexOf("const dispatch = await sendAgentInput"),
+  autoBlock.indexOf('if (dispatch.delivery === "queued") {'),
+  budgetAt,
+  // Scoped past the budget so the queued branch's own `updateCard` (which is
+  // what projects the hold) cannot be mistaken for the one that records it.
+  autoBlock.indexOf("deps.updateCard(", budgetAt),
+  autoBlock.indexOf("return true", budgetAt),
+];
 assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
 assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
+// The budget must sit BEHIND the queued branch, not merely after the send. On
+// card_e3u00eb4 (2026-09-30) a dispatch the host held was recorded as a resume
+// because `threads.send` does not throw when it queues, so ten held nudges
+// spent the whole budget and the card parked itself as if a person were
+// needed. Any reordering that lets the queued branch fall through to the
+// budget write brings that back.
+const queuedBranch = autoBlock.slice(autoBlock.indexOf('if (dispatch.delivery === "queued") {'));
+assert.match(queuedBranch, /holdUpdates\(snapshot\.lastOutput\)/, "a queued dispatch projects the hold");
+assert.doesNotMatch(
+  queuedBranch.slice(0, queuedBranch.indexOf("const next = nextAutoContinue")),
+  /nextAutoContinue|auto_continue_count/,
+  "a dispatch the host held spends no auto-continue budget",
+);
 assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
 assert.match(cardCopySource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
 assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");

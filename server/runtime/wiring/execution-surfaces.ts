@@ -23,6 +23,7 @@ import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-ma
 import { createResearchTrackSync } from "../research-track-sync.js";
 import type { HostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { createBuildThreadSync } from "../build-thread-sync.js";
+import { readHostHold } from "../worker-hold.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
@@ -243,6 +244,12 @@ function buildThreadSync(core: RuntimeCore) {
     recordStageEvent: core.ledger.recordStageEvent,
     markThreadRunning: core.trackProjection.markThreadRunning,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    // The research/explore sweep applies the hold too: those tracks never grew
+    // the duplicate-nudge pile (they do not auto-continue) but a held card must
+    // not be reported as an idle one asking for a retry nobody needs.
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     noteAgentOutput: core.trackProjection.noteAgentOutput,
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
@@ -279,6 +286,9 @@ function buildSyncDeps(
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     applyFailed: (cardId: string, threadId: string, error: string | null) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,

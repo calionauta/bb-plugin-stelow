@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
+import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import {
   lastTurnStelowCalls,
   nextAutoContinue,
@@ -50,6 +51,7 @@ type BuildThreadSyncDeps = {
   syncResearch: (card: WorkerCard) => Promise<void>;
   syncExplore: (card: WorkerCard) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
+  readHold: (card: WorkerCard) => Promise<HostHold | null>;
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   logComment: (cardId: string, body: string) => void;
   recordInbox: (
@@ -251,6 +253,17 @@ async function syncIdle(
     noteFreshOutput(deps, snapshot);
     return false;
   }
+  // The host owns the next move: a message is queued and the host has not
+  // dispatched it. Nothing in this file can advance the card, and nothing in it
+  // should try — the pending message IS the pending work, so a nudge here would
+  // queue a duplicate of a message that is already waiting to be delivered.
+  // That duplication is what turned one held card into ten.
+  const hold = await deps.readHold(snapshot.card);
+  if (hold) {
+    deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    noteFreshOutput(deps, snapshot);
+    return true;
+  }
   const transitioning = snapshot.card.activity !== "idle";
   // One fetch, two readers: the terminal park names what the finished turn ran,
   // the resume below reads the same window for its advance scan.
@@ -320,8 +333,16 @@ function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
 
 async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): Promise<boolean> {
   const input = buildContinueInput(buildContinueNudge(deps.interfacePick), "private");
-  const sent = await sendAgentInput(deps.bb, snapshot.card, input);
-  if (!sent) return false;
+  const dispatch = await sendAgentInput(deps.bb, snapshot.card, input);
+  if (dispatch.delivery === "refused") return false;
+  if (dispatch.delivery === "queued") {
+    // The host took the message and is holding it. The card is not running and
+    // this nudge earned no turn, so the budget is left alone — spending it on a
+    // dispatch that never started is how a held card exhausted all ten and then
+    // parked itself as if a person were needed.
+    deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    return true;
+  }
   const next = nextAutoContinue({
     stage: snapshot.stage,
     autoCount: snapshot.card.auto_continue_count ?? 0,

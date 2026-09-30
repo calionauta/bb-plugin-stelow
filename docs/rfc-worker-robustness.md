@@ -16,6 +16,23 @@ would remove whole bug classes instead of guarding them.
   past pending questions or `audit` (`lib/auto-continue.mjs`).
 - Seed ban + turn discipline are single-source consts referenced by all
   three build spawn paths, pinned by `tests/prompt-contracts.test.mjs`.
+- A card the **host** is holding is its own state, not an idle one
+  (`lib/host-hold.mjs`). The host can queue a message and decline to
+  dispatch it (concurrency limit, host offline, permission interaction);
+  `threads.send` answers `{delivery:"queued"}` and does not throw, so the
+  plugin used to read a held dispatch as a resume. The card then claimed
+  `running` on an idle thread, the auto-continue budget was spent on turns
+  that never started, and the result surfaced as a `paused` inbox event with
+  a Retry that would queue a second copy of the message already waiting
+  (card_e3u00eb4, 2026-09-30: ten identical nudges, budget gone, resumed on
+  its own four minutes later). A hold now projects as its own activity,
+  spends no budget, is never nudged, raises no inbox row, and offers no
+  recovery — because the host was always going to release it.
+
+  This is a **partial** answer to (H) below. It removes the case where a
+  resume was recorded that never ran, which is the one that actually
+  happened; it does not stop two dispatches being recorded for one intended
+  resume, so the lease is still worth doing.
 
 ## Remaining fragilities (ranked)
 

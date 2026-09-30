@@ -64,8 +64,18 @@ export const cardDetailRpcContract = {
         status: statusSchema,
         stage: z.string(),
         workerThreadId: z.string().nullable(),
-        activity: z.enum(["idle", "running", "awaiting-answer", "error"]),
+        activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
         lastError: z.string().nullable(),
+        // The host's hold, with its sentence already derived. Null whenever the
+        // thread is free, so a consumer reads one nullable rather than
+        // re-deriving the reason from the kind.
+        hostHold: z.object({
+          kind: z.enum(["capacity", "offline", "permission", "scheduled", "queued"]),
+          holderId: z.string().nullable(),
+          reason: z.string().nullable(),
+          queued: z.number(),
+          summary: z.string().nullable(),
+        }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
         presetName: z.string().nullable(),
