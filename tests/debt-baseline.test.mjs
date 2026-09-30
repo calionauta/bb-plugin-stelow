@@ -42,7 +42,7 @@ const inheritedBaseline = [
   "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   // The read toggles moved into their own unit, so this is smaller than the
   // 111 the fork point carried — the recorded number is the fork point's.
-  "components/panels/inbox-panel.tsx:InboxPanel#1: 104 lines (baseline 119)",
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 106 lines (baseline 119)",
   // The parenthesised number is the debt the FORK POINT carried, not today's:
   // the gate reports what the branch started with, so it stays stable while the
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —

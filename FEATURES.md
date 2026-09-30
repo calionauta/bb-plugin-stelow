@@ -608,9 +608,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   The vocabulary is a notification's, never a card's: an item says
   **Set aside**, not *Archived*, and its filter is **Read**, not *Archived* —
   "archive" is a card's fate, and a button on a notice that reads as an
-  action on the card it names is a wrong affordance. Marking read is a
-  timestamp, reversible, and touches no card; setting an item aside is the
-  separate one-way decision that remains available in Manage. The Resolved
+  action on the card it names is a wrong affordance. An item carries BOTH
+  reversible actions, because **read and handled are different facts**: a read
+  question that has not been answered still needs an answer, so it stays in
+  **Needs attention** and in the badge, and the read button says so and names
+  the Read filter as where it went. **Set aside** is the dismissal, with
+  **Bring back** as its exit. Collapsing the two into one button made "Mark as
+  read" read as broken — the item stayed and the badge did not move — which is
+  a phantom affordance, so both are back. Marking read is a timestamp,
+  reversible, and touches no card. The Resolved
   filter explains itself
   (needed-you-once, cleared on its own) and each row names HOW it cleared
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
