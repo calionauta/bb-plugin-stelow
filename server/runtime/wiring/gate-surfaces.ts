@@ -15,7 +15,7 @@
 import { execFile } from "node:child_process";
 import { loadCardScopes } from "../../scopes.js";
 import { summarizeTimeline } from "../../../lib/card-metrics.mjs";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordSplitAnswer } from "../../../lib/split-proposal.mjs";
 import { consumeAskContract } from "../../../lib/ask-contracts.mjs";
@@ -158,6 +158,7 @@ function buildGapSummary(
     summarizeTimeline,
     critiqueGapState,
     isDoneStatus,
+    isSkippedStatus,
     now: core.now,
   });
 }
