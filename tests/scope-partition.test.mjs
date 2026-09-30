@@ -38,4 +38,39 @@ assert.equal(
 );
 assert.ok(expandScopeFiles({ scopeId: "x", targetFiles: ["./src/a.ts", "src/a.ts"] }).length === 1, "expansion dedupes");
 
+// The gap this closes: a scope with no declared target files expands to an
+// EMPTY set, and two empty sets are trivially disjoint. So a batch that
+// declared nothing was admitted as PARTITIONS_DISJOINT on the strength of
+// knowing nothing — the silent overwrite this module exists to prevent,
+// arriving by the other door. An unknown footprint is not a smaller one.
+{
+  const bothUndeclared = computeScopePartitions([
+    { scopeId: "no-files-a", acceptanceCriteria: ["a"] },
+    { scopeId: "no-files-b", acceptanceCriteria: ["b"] },
+  ]);
+  assert.equal(bothUndeclared.admitted, false, "two scopes that declared nothing do not fan out");
+  assert.equal(bothUndeclared.code, "PARTITION_UNDECLARED", "the refusal names the reason, not an overlap that did not happen");
+  assert.deepEqual(
+    bothUndeclared.undeclared,
+    ["no-files-a", "no-files-b"],
+    "and it names the scopes, so the reader knows which to fix",
+  );
+
+  const oneUndeclared = computeScopePartitions([
+    { scopeId: "declared", targetFiles: ["src/a.ts"] },
+    { scopeId: "silent", acceptanceCriteria: ["b"] },
+  ]);
+  assert.equal(oneUndeclared.admitted, false, "one undeclared scope is enough to refuse the batch");
+  assert.deepEqual(oneUndeclared.undeclared, ["silent"], "the declared scope is not the problem");
+}
+
+// Single-scope work is exempt: there is nothing to be disjoint FROM, and the
+// declaration only matters for parallelism. Refusing it would block ordinary
+// sequential execution that never needed a file list.
+{
+  const alone = computeScopePartitions([{ scopeId: "only", acceptanceCriteria: ["a"] }]);
+  assert.equal(alone.admitted, true, "a single undeclared scope still runs — nothing can collide with it");
+  assert.equal(alone.code, "PARTITIONS_DISJOINT");
+}
+
 console.log("scope-partition: ok");

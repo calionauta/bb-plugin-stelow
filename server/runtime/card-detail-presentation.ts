@@ -12,6 +12,9 @@ import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
+import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
+import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
+import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
 import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
@@ -69,6 +72,38 @@ export type DetailParts = {
   fileLocks: BlockedFileWait | null;
 };
 
+/**
+ * Who else holds this card's files, from the ledger the lock protocol already
+ * keeps.
+ *
+ * The claim rows are the same ones `lock check` reads to refuse a conflict, so
+ * this asks a question the data can already answer rather than introducing a
+ * second source of truth. It is presentation, not enforcement: no decision
+ * changes here, the reader simply gets to see the state before a collision
+ * instead of only after one.
+ *
+ * Under a managed worktree the answer is always empty by construction, so it
+ * says so rather than reporting "nobody" as though a scan had run.
+ */
+function detailFileOccupancy(
+  deps: CardDetailDeps,
+  card: { id: string; dir_hash?: string | null },
+  workspace: { path: string | null },
+) {
+  const isolated = typeof workspace.path === "string" && workspace.path.includes(`sw-${card.id}`);
+  if (isolated) return { isolated: true, lines: [] as string[], shared: 0 };
+  const workspacePath = resolveClaimCheckout({ checkoutPath: workspace.path }) ?? null;
+  if (!workspacePath) return { isolated: false, lines: [] as string[], shared: 0 };
+  let rows: ReturnType<typeof liveClaimsForWorkspace> = [];
+  try {
+    rows = liveClaimsForWorkspace(deps.db, { workspacePath });
+  } catch {
+    // A card detail load must not fail because the ledger is mid-migration.
+  }
+  const answer = cardFileOccupancy(rows, { cardId: card.id, workspacePath });
+  return { isolated: answer.isolated, lines: answer.lines, shared: answer.shared };
+}
+
 export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
   const { card, workspace } = parts;
   const openQuestions = parts.pending.length + parts.expired.length;
@@ -100,6 +135,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
       sequence: STAGE_SEQUENCE,
     }),
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
+    fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,

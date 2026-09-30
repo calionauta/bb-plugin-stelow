@@ -125,6 +125,13 @@ export function collectScopeBatchPilotReceiptsRun(
 ) {
   const admission = admitScopeBatchRun(scopes);
   if (!admission.admitted) {
+    if (admission.code === "PARTITION_UNDECLARED") {
+      return {
+        ok: false as const,
+        code: "PARTITION_UNDECLARED" as const,
+        undeclared: admission.undeclared,
+      };
+    }
     return {
       ok: false as const,
       code: "PARTITION_OVERLAP" as const,

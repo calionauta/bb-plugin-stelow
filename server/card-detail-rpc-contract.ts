@@ -213,6 +213,17 @@ export const cardDetailRpcContract = {
           specFile: z.string().nullable(),
         })
         .nullable(),
+      // Who else holds this card's files, asked on purpose rather than
+      // reported after a collision. Derived from the claim ledger the lock
+      // protocol already enforces, so it adds no new state and no new rule.
+      // `isolated` says why the answer is empty on a managed worktree:
+      // nothing can reach those files, and saying nothing is the honest
+      // answer rather than a silent one.
+      fileOccupancy: z.object({
+        isolated: z.boolean(),
+        lines: z.array(z.string()),
+        shared: z.number(),
+      }),
       // The approved scope map, drawn as a graph. A server projection and
       // nothing the card can write: the X-ray reports the map, the worker owns
       // the map. Null on a card with no approved map to draw.

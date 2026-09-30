@@ -56,7 +56,7 @@ const inheritedBaseline = [
   // waiver. Recorded here as the reason it is absent: the debt is PAID, not
   // waived, and `source-debt.json` no longer carries it either.
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
-  "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 78 lines (recorded 78)",
+  "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
   // Same rule, the other way: lib/gap-registry.mjs was untouched until the gap
   // list started reading the whole registry, and that edit brought its 53-line
   // validateGapRegistry into the report. Unchanged debt, newly visible.
