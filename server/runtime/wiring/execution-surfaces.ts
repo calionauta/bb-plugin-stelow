@@ -21,12 +21,14 @@ import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
 import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-map-approval.js";
 import { createResearchTrackSync } from "../research-track-sync.js";
+import type { HostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { createBuildThreadSync } from "../build-thread-sync.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
+import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
 import type { AnswerBoundaryPort } from "../question-answers.js";
 import type { RuntimeCore } from "../runtime-core.js";
@@ -227,6 +229,7 @@ function buildWorktreeCleanup(core: RuntimeCore) {
  */
 function buildThreadSync(core: RuntimeCore) {
   const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
+  const readStreaks = createReadStreaks(bb);
   const trackSync = createResearchTrackSync({
     bb,
     db,
@@ -248,7 +251,23 @@ function buildThreadSync(core: RuntimeCore) {
     exploreArtifact: core.researchArtifacts.exploreArtifact,
     idleAttentionMs: IDLE_ATTENTION_MS,
   });
-  const syncThreadState = createBuildThreadSync({
+  const syncThreadState = createBuildThreadSync(
+    buildSyncDeps(core, trackSync, readStreaks),
+  );
+  return { trackSync, syncThreadState };
+}
+
+/** The build-card sync's deps, named in one place so `buildThreadSync` reads
+ * as a list of collaborators rather than a wall of wiring. */
+type ResearchTrackSync = ReturnType<typeof createResearchTrackSync>;
+
+function buildSyncDeps(
+  core: RuntimeCore,
+  trackSync: ResearchTrackSync,
+  readStreaks: HostReadStreak,
+) {
+  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
+  return {
     bb,
     db,
     now,
@@ -260,7 +279,7 @@ function buildThreadSync(core: RuntimeCore) {
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
-    applyFailed: (cardId, threadId, error) =>
+    applyFailed: (cardId: string, threadId: string, error: string | null) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,
     recordInbox: core.recordInboxEvent,
@@ -270,8 +289,29 @@ function buildThreadSync(core: RuntimeCore) {
     interfacePick: INTERFACE_PICK,
     auditDoneNudge: AUDIT_DONE_NUDGE,
     idleAttentionMs: IDLE_ATTENTION_MS,
-  });
-  return { trackSync, syncThreadState };
+    noteUnreadable: readStreaks.unreadable,
+    noteReadable: readStreaks.readable,
+    forgetUnreadable: readStreaks.forget,
+  };
+}
+
+/**
+ * The unreadable-read streak table for one wiring of the sync.
+ *
+ * Per-wiring and not on `core`: this is a counter behind a logging threshold,
+ * and putting it on the shared runtime would make a log counter look like a
+ * service every other surface could reach for. It exists because the sync's
+ * other two channels for a host fault are both wrong — `last_error` renders a
+ * Resume button for a transport fault, and silence leaves the next occurrence
+ * explained by theory instead of a log line.
+ */
+function createReadStreaks(bb: RuntimeCore["bb"]) {
+  return createHostReadStreak((cardId, streak) =>
+    bb.log.warn(
+      `Stelow could not read card ${cardId}'s workflow state on ${streak} consecutive checks; `
+        + "its last verified projection is now stale and nothing was written to the card. "
+        + "The host is not answering — no card action fixes this.",
+    ));
 }
 
 /** Register the boot reconcile and the interval that keeps it honest. */

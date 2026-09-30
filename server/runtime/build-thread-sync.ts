@@ -64,6 +64,14 @@ type BuildThreadSyncDeps = {
   interfacePick: string;
   auditDoneNudge: string;
   idleAttentionMs: number;
+  // Operator-visible logging only — a fact about the host, never a verdict
+  // about the card. `last_error` feeds `errorNeedsAttention` → `cardCanResume`,
+  // so a transport fault written there renders "Resume work" for something no
+  // resume can fix. These three do the counting; the streak table decides when
+  // that becomes one line in the log.
+  noteUnreadable: (cardId: string) => void;
+  noteReadable: (cardId: string) => void;
+  forgetUnreadable: (cardId: string) => void;
 };
 
 type ThreadSnapshot = {
@@ -76,7 +84,10 @@ type ThreadSnapshot = {
 export function createBuildThreadSync(deps: BuildThreadSyncDeps) {
   return async function syncThreadState(cardId: string): Promise<void> {
     const card = deps.getCard(cardId);
-    if (!shouldSyncThread(card)) return;
+    if (!shouldSyncThread(card)) {
+      deps.forgetUnreadable(cardId);
+      return;
+    }
     if (card.kind === "research") {
       await deps.syncResearch(card);
       return;
@@ -115,10 +126,20 @@ async function readBuildThread(
   }
   // An unreadable workspace is nobody's verdict. Returning here leaves the
   // card on its last verified projection instead of overwriting it with a
-  // failure the host caused, and the next tick (45s) asks again. Silently is
-  // the honest answer: a card that has been syncing for hours has nothing new
-  // to say because one read timed out.
-  if (state.kind === "unreadable") return null;
+  // failure the host caused, and the next tick (45s) asks again. Nothing is
+  // written to the card — that is what keeps a transport fault out of
+  // `last_error`, and therefore off the Resume button. What silence costs is
+  // the trace, so the miss is counted instead: after READ_STREAK_WARN_AT
+  // consecutive misses the host is named once in the plugin log. `readStateBlob`
+  // has three `unreadable` returns and all of them land here, so one call site
+  // counts all of them.
+  if (state.kind === "unreadable") {
+    deps.noteUnreadable(card.id);
+    return null;
+  }
+  // Both remaining answers mean the host DID answer — including `unresolved`,
+  // which is a verdict about the card rather than about the host.
+  deps.noteReadable(card.id);
   const metadata = projectStateMetadata(card, state.blob);
   applyIntent(deps, card, metadata.intent);
   const thread = await deps.bb.sdk.threads.get({ threadId: card.worker_thread_id! });

@@ -1,131 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createBuildThreadSync } from "../server/runtime/build-thread-sync.ts";
 import {
   projectRunningState,
   projectStateMetadata,
   shouldSyncThread,
 } from "../server/runtime/thread-state-projection.ts";
-
-function card(overrides = {}) {
-  return {
-    id: "card_1",
-    project_id: "project_1",
-    name: "Useful",
-    display_name: "Useful card",
-    prompt: "Build it",
-    intent: "unknown",
-    status: "triage",
-    stage: "triage",
-    activity: "running",
-    worker_thread_id: "thread_1",
-    worker_preset_id: "preset_1",
-    preset_restart_pending: 0,
-    dir_hash: null,
-    auto_continue_count: 0,
-    auto_continue_stage: null,
-    spawn_retry_count: 0,
-    spawn_retry_thread: null,
-    attachments: "[]",
-    workspace_kind: "project",
-    workspace_path: null,
-    workspace_host_id: null,
-    kind: "build",
-    research_strategy: null,
-    research_strategies: null,
-    explore_stage: null,
-    last_error: null,
-    last_assistant_text: null,
-    last_idle_at: null,
-    environment_label: null,
-    created_at: 1,
-    updated_at: 2,
-    ...overrides,
-  };
-}
-
-function createThreadApi(calls, options) {
-  return {
-    sdk: {
-      files: {
-        read: async () => ({
-          content: options.state ?? "name: Useful\nintent: feature\ncurrent_stage: planning\n",
-        }),
-      },
-      threads: {
-        get: async () => {
-          calls.push(["thread.get"]);
-          return { status: options.status ?? "active", createdAt: 1 };
-        },
-        output: async () => {
-          calls.push(["thread.output"]);
-          return { output: options.output ?? "working" };
-        },
-        events: {
-          list: async () => {
-            calls.push(["thread.events"]);
-            return [];
-          },
-        },
-        send: async (input) => {
-          calls.push(["thread.send", input]);
-        },
-      },
-    },
-  };
-}
-
-function createSyncDeps(calls, getCurrent, options) {
-  let current = getCurrent();
-  const db = {
-    prepare(sql) {
-      return {
-        run(...args) {
-          calls.push(["run", sql, ...args]);
-        },
-      };
-    },
-  };
-  return {
-    bb: createThreadApi(calls, options),
-    db,
-    now: () => options.now ?? 100_000,
-    getCard: () => current,
-    cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => options.stateDir === null ? null : "/project/.stelow/run",
-    resolveWorkflowStateDir: async () => {
-      if (options.stateDir === null) return { kind: "unowned" };
-      if (options.stateDir === "unreadable") return { kind: "unreadable" };
-      return { kind: "resolved", path: "/project/.stelow/run", state: options.state ?? "name: Useful\nintent: feature\ncurrent_stage: planning\n" };
-    },
-    updateCard: (_id, fields) => {
-      calls.push(["update", fields]);
-      current = { ...current, ...fields };
-    },
-    syncResearch: async () => calls.push(["research"]),
-    syncExplore: async () => calls.push(["explore"]),
-    syncQuestions: async () => Object.hasOwn(options, "questions") ? options.questions : [],
-    applyFailed: async (...args) => calls.push(["failed", ...args]),
-    logComment: (id, body) => calls.push(["comment", id, body]),
-    recordInbox: (...args) => calls.push(["inbox", ...args]),
-    vetContinuation: async () => {
-      calls.push(["vet"]);
-      return true;
-    },
-    escalateIfStalled: () => calls.push(["escalate"]),
-    stripMessageDirectives: (text) => text,
-    interfacePick: "Choose the interface.",
-    auditDoneNudge: "Run bb stelow done.",
-    idleAttentionMs: 90_000,
-  };
-}
-
-function harness(row, options = {}) {
-  const calls = [];
-  let current = row;
-  const deps = createSyncDeps(calls, () => current, options);
-  return { calls, deps, sync: createBuildThreadSync(deps), row: deps.getCard };
-}
+import {
+  card,
+  harness,
+  pausedSummary,
+} from "./helpers/build-thread-sync-harness.mjs";
 
 test("active build sync projects state metadata and running activity", async () => {
   const fixture = harness(card());
@@ -279,9 +163,9 @@ test("a park at audit names the spent budget, not just the instruction", async (
   );
   await spent.sync(spent.row().id);
 
-  const paused = spent.calls.find(([name, , , summary]) => name === "inbox" && /audit/i.test(String(summary)));
-  assert.match(paused[3], /already resumed it 2 times/);
-  assert.match(paused[3], /Another resume repeats it/);
+  const spentPaused = pausedSummary(spent.calls, /audit/i);
+  assert.match(spentPaused, /already resumed it 2 times/);
+  assert.match(spentPaused, /Another resume repeats it/);
 
   // The other way the host declines to nudge is not a fresh idle edge. That
   // card gets the plain sentence — spent-budget wording on a card the host
@@ -292,9 +176,9 @@ test("a park at audit names the spent budget, not just the instruction", async (
   );
   await fresh.sync(fresh.row().id);
 
-  const freshPaused = fresh.calls.find(([name, , , summary]) => name === "inbox" && /audit/i.test(String(summary)));
-  assert.match(freshPaused[3], /resume continues the worker with that instruction/);
-  assert.doesNotMatch(freshPaused[3], /already resumed/);
+  const plainPaused = pausedSummary(fresh.calls, /audit/i);
+  assert.match(plainPaused, /resume continues the worker with that instruction/);
+  assert.doesNotMatch(plainPaused, /already resumed/);
 });
 
 test("the audit notice says arrival, so it fires on the arrival and not after", async () => {
@@ -338,7 +222,11 @@ test("the audit notice says arrival, so it fires on the arrival and not after", 
 test("terminal and unverifiable ownership refusals are negative controls", async () => {
   const completed = harness(card({ status: "completed" }));
   await completed.sync("card_1");
-  assert.deepEqual(completed.calls, [], "completed cards never read or write worker state");
+  assert.deepEqual(
+    completed.calls.filter(([name]) => name !== "forgetUnreadable"),
+    [],
+    "completed cards never read or write worker state",
+  );
 
   const unverifiable = harness(card({ dir_hash: "hash_1" }), { stateDir: null });
   await unverifiable.sync("card_1");
@@ -388,4 +276,64 @@ test("a verified projection clears the failure the last tick reported", async ()
   const update = fixture.calls.find(([name, fields]) => name === "update" && fields.activity === "running");
   assert.equal(update[1].last_error, null, "the reseed instruction outlived the failure that wrote it");
   assert.equal(fixture.row().last_error, null);
+});
+
+// The trace is the whole point of the unreadable branch: silence keeps the card
+// clean, but a host that stops answering leaves nothing to explain the next one.
+// These four pin the shape of that trace — a counted miss, a byte-identical
+// card, a reset when the host answers, and no counter left behind when the card
+// leaves scope. The once-only warn itself is lib/host-read-streak's test.
+test("a missed read is counted, and the card is still byte-identical", async () => {
+  const fixture = harness(
+    card({ dir_hash: "hash_1", activity: "idle", last_assistant_text: "earlier" }),
+    { stateDir: "unreadable" },
+  );
+  const before = JSON.stringify(fixture.row());
+
+  for (let tick = 0; tick < 6; tick += 1) await fixture.sync(fixture.row().id);
+
+  assert.equal(
+    fixture.calls.filter(([name]) => name === "noteUnreadable").length,
+    6,
+    "every missed tick is counted, so the streak can reach its threshold",
+  );
+  assert.equal(JSON.stringify(fixture.row()), before, "counting is not writing: no activity, no last_error, no updated_at");
+  assert.equal(
+    fixture.calls.some(([name]) => name === "noteReadable"),
+    false,
+    "a read that never arrived cannot read as a recovery",
+  );
+});
+
+// A host that answers ends the outage. Without this the second failure of the
+// day starts from a streak the first one left and its warn never fires.
+test("a read that comes back resets the unreadable streak", async () => {
+  const missed = harness(card({ dir_hash: "hash_1" }), { stateDir: "unreadable" });
+  await missed.sync(missed.row().id);
+
+  const answered = harness(card({ dir_hash: "hash_1" }), { status: "active" });
+  await answered.sync(answered.row().id);
+
+  assert.deepEqual(
+    answered.calls.filter(([name]) => name === "noteReadable").map(([, id]) => id),
+    ["card_1"],
+    "a resolved read clears the streak, an ownership verdict too — both mean the host answered",
+  );
+});
+
+// A card that leaves the sync's scope must not keep a counter alive for itself.
+test("a card out of sync scope drops its unreadable streak", async () => {
+  const completed = harness(card({ status: "completed" }));
+  await completed.sync("card_1");
+
+  assert.deepEqual(
+    completed.calls.filter(([name]) => name === "forgetUnreadable"),
+    [["forgetUnreadable", "card_1"]],
+    "the streak dies with the scope, not with the process",
+  );
+  assert.equal(
+    completed.calls.some(([name]) => name === "noteUnreadable"),
+    false,
+    "a card nobody is watching cannot accumulate misses",
+  );
 });

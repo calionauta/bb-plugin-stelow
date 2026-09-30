@@ -1589,6 +1589,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card on its last projection with an error the host caused, and a verified
   projection clears `last_error`, so a failure the host recovered from stops
   being displayed days later next to a worker that never needed reseeding.
+  Skipping silently was the other half of the defect, though: on 2026-09-30
+  three cards lost reads to a stalled daemon and recovered 71s later with
+  nothing to show for it. Nothing is written to the card — `last_error` feeds
+  `errorNeedsAttention` → `cardCanResume`, so a host fault recorded there
+  renders "Resume work" for something no resume can fix — the next reconcile
+  asks again 45s later, and after six consecutive misses (≈4.5 min) the plugin
+  log names the card and the streak exactly once. It is an operator-visible
+  trace, never a card verdict, because a host that will not answer is not
+  something a reader can act on and must not look like a card somebody can.
   Measured case: 26 daemon event-loop stalls on 2026-09-30 09:36–09:41 (max
   delay 29.6s) turned three live cards into the ownership refusal in the same
   second; all three recovered on their own 71s later.
