@@ -1,5 +1,6 @@
 import { archivedCardDetailPresentation } from "../../lib/card-detail-presentation.mjs";
 import { lockWaitHero } from "../../lib/lock-blocked.mjs";
+import { isOwnershipRefusal } from "../../lib/ownership-refusal.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 // Detail hero: one status reading per card — decision, error, paused,
@@ -159,9 +160,16 @@ export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: bo
 // question. Shared by all three track detail bodies.
 export function HeroErrorNote({ card }: { card: { activity: string; lastError: string | null } }) {
   if (card.activity !== "error" || !card.lastError) return null;
+  // "Answering below resumes the worker" is a claim about a conversation that
+  // exists. On an unowned card it does not: the conversation is refused until
+  // the records agree, so the sentence points a reader at an answer box whose
+  // answer is discarded.
+  const trailing = isOwnershipRefusal(card.lastError)
+    ? "Restart fresh… in the card actions menu is what clears this; nothing on the card is waiting for an answer."
+    : "Answering below resumes the worker.";
   return (
     <p className="w-full rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs leading-5 text-destructive" title={card.lastError}>
-      <span className="font-semibold">Last worker error:</span> {card.lastError} Answering below resumes the worker.
+      <span className="font-semibold">Last worker error:</span> {card.lastError} {trailing}
     </p>
   );
 }

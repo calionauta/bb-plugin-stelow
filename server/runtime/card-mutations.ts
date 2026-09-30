@@ -4,6 +4,7 @@ import { heuristicDisplayName } from "../../lib/draft-burst.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent } from "../../lib/workflow-intent-policy.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -49,7 +50,7 @@ async function syncIntentState(
       )
     : null;
   if (card.dir_hash && !stateDir) {
-    return "Workflow state ownership cannot be verified. Reseed this card before changing its workflow type.";
+    return `${OWNERSHIP_UNVERIFIED} Reseed this card before changing its workflow type.`;
   }
   const statePath = stateDir
     ? join(stateDir, "state.md")

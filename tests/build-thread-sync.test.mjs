@@ -6,6 +6,7 @@ import {
   shouldSyncThread,
 } from "../server/runtime/thread-state-projection.ts";
 import { card, harness } from "./helpers/build-thread-sync-harness.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
 test("active build sync projects state metadata and running activity", async () => {
   const fixture = harness(card());
@@ -119,9 +120,15 @@ test("terminal and unverifiable ownership refusals are negative controls", async
   const unverifiable = harness(card({ dir_hash: "hash_1" }), { stateDir: null });
   await unverifiable.sync("card_1");
   assert.equal(unverifiable.calls.some(([name]) => name === "thread.get"), false);
-  assert.match(
+  // Exact equality against the shared constant, not a regex: this is the one
+  // place the sentence reaches a card, and a component three files over decides
+  // which copy to render from its prefix. An inline literal here would let the
+  // client render a different sentence than the server refused with, and no
+  // regex would notice.
+  assert.equal(
     unverifiable.calls.find(([name]) => name === "update")[1].last_error,
-    /ownership cannot be verified/,
+    OWNERSHIP_UNVERIFIED,
+    "the written refusal is the one sentence every surface recognises",
   );
 });
 

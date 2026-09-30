@@ -7,6 +7,7 @@ import { doneBuildGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
 import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
@@ -200,11 +201,7 @@ in the intended BB project; this card's state artifacts remain readable for refe
           .catch(() => null)
       : null;
     if (!stateBlob)
-      return refuse({
-        exitCode: 1,
-        stderr:
-          "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
-      });
+      return refuse({ exitCode: 1, stderr: OWNERSHIP_UNVERIFIED });
     currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
   }
   // Gates read tracked truth (mergePlanned: false): the read-time planned-task

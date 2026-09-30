@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import {
   lastTurnStelowCalls,
   nextAutoContinue,
@@ -120,7 +121,7 @@ async function readBuildThread(
   if (state.kind === "unresolved") {
     deps.updateCard(card.id, {
       activity: "error",
-      last_error: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
+      last_error: OWNERSHIP_UNVERIFIED,
     });
     return null;
   }

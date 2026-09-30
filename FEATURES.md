@@ -1128,6 +1128,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and gate set carry over. It is also what an unverified-ownership card is
   told to use, and a refused `done` now leaves the gate's own stderr as a
   card comment for a reader deciding between this and a retry.
+  When the card's state records disagree with its state file, every surface
+  that refuses does so with one shared sentence
+  (`lib/ownership-refusal.mjs`) that names this action, says it lives in the
+  card actions menu, and says a retry cannot help — every command on an
+  unowned card is refused until the records agree. The confirm dialog stops
+  advising "try Retry first" for that case, and the error note stops claiming
+  there is an answer below, because on such a card the conversation is
+  refused too. Five server sites and two components read that one definition;
+  the predicate that recognises it is a prefix match, so a site may append its
+  own tail.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
