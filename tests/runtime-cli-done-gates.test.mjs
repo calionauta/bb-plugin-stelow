@@ -82,6 +82,48 @@ test("a build done with an audit-gap rework scope still open refuses before comp
   );
 });
 
+// Regression pin: a SKIPPED rework scope must not keep the card open forever.
+// `isSkippedStatus` is the documented done-gate treatment (lib/trackables.mjs:
+// "Done-gates treat it as resolved") and lib/completion.mjs's scope gate already
+// honors it. This gate used `isDoneStatus` alone, so the only way past it was to
+// mark deliberately-set-aside work as `done` — falsely certifying it. The
+// sibling test above only covers `in-progress`, which is why that survived.
+test("a skipped audit-gap rework scope does not block done", async () => {
+  // Built on the full completion fixture so the assertion is exactly the bug:
+  // everything else is satisfied, so a skipped rework scope is the ONLY thing
+  // that can keep the card from completing.
+  const { invoke, calls } = cliHarness(
+    auditableBuildDone({
+      gapState: {
+        ...NO_GAPS,
+        matched: true,
+        totals: { total: 3, fixed: 1, documented: 1, escalated: 1 },
+        escalated: [{ description: "checkout ignores promo codes" }],
+        auditGapScopes: [
+          {
+            id: "scope-7",
+            name: "handle promo codes",
+            status: "skipped",
+            gap: "checkout ignores promo codes",
+          },
+        ],
+      },
+    }),
+  );
+  const result = await invoke(["done"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.doesNotMatch(
+    result.stderr ?? "",
+    /audit-gap rework/,
+    "a skipped rework scope is resolved, not open",
+  );
+  assert.deepEqual(
+    callsNamed(calls, "updateCard").map(([, , fields]) => fields.status),
+    ["completed"],
+    "a skipped rework scope must not deadlock the card",
+  );
+});
+
 test("a build done behind an unreadable gap registry still refuses through the depth gate", async () => {
   // A critique that cannot be parsed fails the loop gate with the registry's
   // own refusal, not by silently passing it.

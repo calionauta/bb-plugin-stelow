@@ -1368,7 +1368,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   build only at `audit`, with every scope done, completed, or explicitly
   skipped (open scopes refuse, naming each one — done certifies finished
   work, not walked-past work), research/explore only with a passing `verify`
-  and no pending question. Every refusal names the fix. The old
+  and no pending question. The same reading governs the audit-gap rework
+  gate: a rework scope the audit deliberately set aside is `skipped`, which
+  is resolved, so it never appears in the "still open" refusal — a card
+  whose whole finding was "obsolete as a rework scope here" is finishable
+  without anyone lying about it. Every refusal names the fix. The old
   audit-idle auto-complete is gone: an audit-idle worker is resumed with
   the done instruction (budgeted), then pauses with the instruction on
   the card — completed cards read "Done — ready to review", never a lit

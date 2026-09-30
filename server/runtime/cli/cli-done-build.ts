@@ -6,7 +6,7 @@ import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
 import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
@@ -249,8 +249,13 @@ async function reworkLoopRefusal(
 run \`bb stelow gap-scopes\`, \`bb stelow advance execution\`, execute the new scopes, re-run \
 the critique, then run done again:\n${unscoped.map((gap) => `- ${gap.description}`).join("\n")}`;
   }
+  // A skipped rework scope is resolved, not open: `isSkippedStatus` is the
+  // documented done-gate treatment (lib/trackables.mjs), and the scope-level
+  // gate in lib/completion.mjs already honors it. Without it here, a card that
+  // skips a rework scope can never complete — the refusal below would name
+  // "finish them" for a scope that was deliberately set aside.
   const pendingRework = gapState.auditGapScopes.filter(
-    (scope) => !isDoneStatus(scope.status),
+    (scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status),
   );
   if (pendingRework.length === 0) return null;
   return `Build completion is blocked: ${pendingRework.length} audit-gap rework \
