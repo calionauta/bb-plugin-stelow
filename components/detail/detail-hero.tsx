@@ -36,6 +36,9 @@ export type HeroDetailState = {
   /** The host's hold on the card's next dispatch, with its sentence already
    * derived server-side (lib/host-hold.mjs). Null when nothing is held. */
   hostHold?: { summary: string | null } | null;
+  /** The native Workflows run that owns the card's stage, with its sentence
+   * already derived server-side (lib/native-run.mjs). Null when none is live. */
+  nativeRun?: { summary: string | null } | null;
 } | null;
 
 export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
@@ -98,14 +101,23 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
   // Firing it on every turn would cry wolf and teach the signal to be ignored.
   // Fresh idles still get the subtle resume row in the calm hero below.
   if (isKnownStall(card, detail)) return stalledHero(card, detail);
-  if (card.activity === "running") {
-    return {
-      kind: "working",
-      title: `Working — ${stageLabel(card.stage)}`,
-      sub: "The agent advances on its own. Nothing needs you right now.",
-    };
-  }
+  if (card.activity === "running") return workingHero(card, detail);
   return null;
+}
+
+/**
+ * The card is working — but a card can be working in two places.
+ *
+ * A thread turn is the ordinary one, and "the agent advances on its own"
+ * describes it honestly. A host Workflows run is not: the run is a subprocess
+ * that outlives the turn that started it, so the thread sits idle for the
+ * whole run and that sentence would describe a turn that is never coming. The
+ * run's own words name where the work is and that it needs nothing, which is
+ * the only honest reading of a card that looks stalled and is not.
+ */
+function workingHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
+  const sub = detail?.nativeRun?.summary ?? "The agent advances on its own. Nothing needs you right now.";
+  return { kind: "working", title: `Working — ${stageLabel(card.stage)}`, sub };
 }
 
 function isKnownStall(card: HeroCardState, detail: HeroDetailState): boolean {

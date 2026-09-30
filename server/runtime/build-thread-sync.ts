@@ -3,7 +3,12 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
-import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
+import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/native-run.mjs";
+import {
+  lastTurnAdvancedStages,
+  nextAutoContinue,
+  shouldAutoContinue,
+} from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -49,6 +54,12 @@ type BuildThreadSyncDeps = {
   syncExplore: (card: WorkerCard) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
   readHold: (card: WorkerCard) => Promise<HostHold | null>;
+  /**
+   * The card's live native runs, if any. An idle thread is not an idle card
+   * when a host Workflows run owns the stage — see lib/native-run.mjs, which
+   * carries the rule and the reason it exists.
+   */
+  liveRuns: (card: WorkerCard) => NativeRunRef[];
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   logComment: (cardId: string, body: string) => void;
   recordInbox: (
@@ -258,6 +269,16 @@ async function syncIdle(
   const hold = await deps.readHold(snapshot.card);
   if (hold) {
     deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    noteFreshOutput(deps, snapshot);
+    return true;
+  }
+  // A host Workflows run outlives the turn that started it, so the thread being
+  // idle says nothing about the card. This check sits ABOVE the auto-continue
+  // decision on purpose: the run IS the pending work, so a nudge here would
+  // interrupt a card that is mid-workflow, and the park below would offer a
+  // Resume for a card that is already working.
+  if (keepsCardRunning(deps.liveRuns(snapshot.card), questionIds.length)) {
+    deps.updateCard(snapshot.card.id, runUpdates(snapshot.lastOutput));
     noteFreshOutput(deps, snapshot);
     return true;
   }

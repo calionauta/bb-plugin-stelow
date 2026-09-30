@@ -28,6 +28,7 @@ import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
+import { cardLiveRuns } from "../card-live-runs.js";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
 import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
@@ -283,6 +284,7 @@ function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTra
     readHold: (card) => Promise.resolve(
       card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
     ),
+    liveRuns: (card) => cardLiveRuns(db, card.id),
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,

@@ -76,6 +76,19 @@ export const cardDetailRpcContract = {
           queued: z.number(),
           summary: z.string().nullable(),
         }).nullable(),
+        // The native Workflows run that owns this card's stage, with its
+        // sentence already derived. Null when no run is live. A card running a
+        // multi-hour workflow is `running` on a thread that never turns again,
+        // so this is what tells a reader the work is elsewhere and moving —
+        // the same split hostHold makes, for the same reason.
+        nativeRun: z.object({
+          id: z.string(),
+          normalizedStatus: z.enum(["queued", "running", "needs_input"]),
+          recipeId: z.string(),
+          stage: z.string(),
+          stageLabel: z.string().nullable(),
+          summary: z.string().nullable(),
+        }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
         presetName: z.string().nullable(),

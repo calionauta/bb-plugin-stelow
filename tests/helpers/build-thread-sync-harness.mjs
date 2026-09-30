@@ -118,6 +118,7 @@ function createSyncDeps(calls, getCurrent, options) {
     syncExplore: async () => calls.push(["explore"]),
     syncQuestions: async () => (Object.hasOwn(options, "questions") ? options.questions : []),
     readHold: async () => options.hold ?? null,
+    liveRuns: () => options.runs ?? [],
     applyFailed: async (...args) => calls.push(["failed", ...args]),
     logComment: (id, body) => calls.push(["comment", id, body]),
     recordInbox: (...args) => calls.push(["inbox", ...args]),
