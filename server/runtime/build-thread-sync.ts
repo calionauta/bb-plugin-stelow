@@ -3,15 +3,19 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
-import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
+import { persistStandardIdle } from "./build-thread-park.js";
+import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/native-run.mjs";
+import {
+  lastTurnAdvancedStages,
+  nextAutoContinue,
+  shouldAutoContinue,
+} from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import {
   isActiveStatus,
   isIdleStatus,
-  projectIdleTimestamp,
-  projectNoProgress,
   projectRunningState,
   projectStateMetadata,
   projectThreadError,
@@ -19,7 +23,6 @@ import {
 } from "./thread-state-projection.js";
 import { syncTerminalIdle } from "./build-thread-terminal.js";
 import { readStelowCalls, type StelowCalls } from "./stelow-turn-verbs.js";
-import { recordPausedAfter } from "./paused-inbox.js";
 import { sendAgentInput } from "./thread-send.js";
 import type { WorkflowStateResolution } from "./workflow-state.js";
 
@@ -49,6 +52,12 @@ type BuildThreadSyncDeps = {
   syncExplore: (card: WorkerCard) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
   readHold: (card: WorkerCard) => Promise<HostHold | null>;
+  /**
+   * The card's live native runs, if any. An idle thread is not an idle card
+   * when a host Workflows run owns the stage — see lib/native-run.mjs, which
+   * carries the rule and the reason it exists.
+   */
+  liveRuns: (card: WorkerCard) => NativeRunRef[];
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   logComment: (cardId: string, body: string) => void;
   recordInbox: (
@@ -261,6 +270,16 @@ async function syncIdle(
     noteFreshOutput(deps, snapshot);
     return true;
   }
+  // A host Workflows run outlives the turn that started it, so the thread being
+  // idle says nothing about the card. This check sits ABOVE the auto-continue
+  // decision on purpose: the run IS the pending work, so a nudge here would
+  // interrupt a card that is mid-workflow, and the park below would offer a
+  // Resume for a card that is already working.
+  if (keepsCardRunning(deps.liveRuns(snapshot.card), questionIds.length)) {
+    deps.updateCard(snapshot.card.id, runUpdates(snapshot.lastOutput));
+    noteFreshOutput(deps, snapshot);
+    return true;
+  }
   const transitioning = snapshot.card.activity !== "idle";
   // One fetch, two readers: the terminal park names what the finished turn ran,
   // the resume below reads the same window for its advance scan.
@@ -338,50 +357,6 @@ async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot)
     autoContinueFields(next, snapshot.lastOutput),
   );
   return true;
-}
-
-function persistStandardIdle(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-  transitioning: boolean,
-  vetoed: boolean,
-): void {
-  const noProgress = projectNoProgress(
-    snapshot.card,
-    transitioning,
-    snapshot.lastOutput,
-  );
-  if (noProgress) {
-    deps.logComment(
-      snapshot.card.id,
-      "Worker stopped with no new output — treated as paused. If this repeats, inspect " +
-      "the thread before retrying: a silent stop usually means the worker is waiting on " +
-      "input it never asked for.",
-    );
-  }
-  const idleAt = projectIdleTimestamp(
-    snapshot.card,
-    transitioning,
-    noProgress,
-    deps.now(),
-    deps.idleAttentionMs,
-  );
-  deps.updateCard(snapshot.card.id, {
-    activity: "idle",
-    last_assistant_text: snapshot.lastOutput,
-    last_error: null,
-    last_idle_at: idleAt,
-  });
-  if (idleAt == null) return;
-  const suffix = vetoed
-    ? " Auto-continue vetoed the resume: the last output showed no real progress."
-    : "";
-  recordPausedAfter(
-    deps,
-    snapshot.card.id,
-    idleAt,
-    `Idle with unfinished work — retry continues in place, restart begins fresh.${suffix}`,
-  );
 }
 
 function noteFreshOutput(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): void {

@@ -19,6 +19,15 @@ export function createRespawnScheduler(
   return {
     schedule(cardId, presetId) {
       if (disposed) return;
+      // One pending swap per card, and the newest one wins. `timers.set`
+      // overwrote the handle without cancelling the timer it replaced, so a
+      // deferred band swap followed by a direct respawn left the old timer
+      // armed: it fired 10ms later and spawned a SECOND coordinator thread for
+      // a card that had just been given one. The card would then own two live
+      // worker threads, and the one it no longer pointed at could not be
+      // stopped by anything that knew the card's id — because nothing did.
+      const pending = timers.get(cardId);
+      if (pending !== undefined) scheduler.clearTimeout(pending);
       const timer = scheduler.setTimeout(() => {
         timers.delete(cardId);
         if (!disposed) respawn(cardId, presetId);

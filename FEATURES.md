@@ -177,7 +177,27 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agent-authored evidence from human authority, preserve Shape and Scope Map
   versions, and carry explicit disposition routes. Scope X-ray is a read-only
   server projection of approved nodes, dependency edges, provenance, and
-  freshness. Scope-map challenges name
+  freshness. What the card *draws* from it is
+  `lib/scope-xray-presentation.mjs`, and the two are no longer allowed to use
+  the same word for different things. The X-ray reads the **approved map**
+  (`<stateDir>/scope-map.json`, written at `scope`); the progress track reads
+  the **execution tracker** (`stelow.json` plus the latest spec, written at
+  `execution`). The empty state was keyed on the tracker, so a card holding an
+  approved seven-scope map and no tracker yet printed the seven scopes and "No
+  scopes broken down yet — the agent is still shaping the card" four lines
+  below it. The rule now asks the **map**: an approved map with nothing tracked
+  says the map is approved and tracking starts at execution, and only a card
+  with no map at all says it is still shaping. Freshness is said **once**, in
+  the header, as a sentence a reader can act on — it used to appear in the
+  header *and* on all seven nodes, from the same variable, which is how a
+  one-word fact became the most-repeated line on the card. A scope is labelled
+  only when it **deviates** from the map's baseline; a stale map is one header
+  fact, not seven. The raw contract words (`current`, `stale`, `blocked`,
+  `unknown`) never reach the card: `current` is a *staleness* value meaning
+  "this entry still matches the card's shape version", and printed beside a
+  scope id it read as "this is the scope being worked on" — the inverse of its
+  meaning. The dependency graph sits behind a disclosure rather than above the
+  fold. Scope-map challenges name
   their destination and stale artifact set. Native `needs_input` boundaries
   preserve contract ID, boundary ID, versions, and answer schema so a stale
   answer cannot silently resume a run. Refactors with more than one delivery
@@ -1136,6 +1156,111 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   itself), and then presented the result as a pause needing a person. Now a
   queued delivery projects the hold and **spends no budget**, and a held card
   is never nudged at all — the pending message is the pending work.
+- **A card running a workflow is running, not stopped** (`lib/native-run.mjs`,
+  `server/runtime/card-live-runs.ts`, `server/runtime/build-thread-sync.ts`).
+  A native execution run is a `bb workflows run` subprocess, so it outlives the
+  turn that started it: on card_cbnihg4c the `planning-research` run was still
+  `running` while the coordinator thread sat idle. That is the **normal** shape
+  of a run, not a symptom. The plugin had a rule for exactly this —
+  `keepsCardRunning`, "a queued or running run keeps the card alive; a run
+  waiting on a boundary only while nothing else is asking the user" — and
+  **nothing called it**. Six references, all inside its own definition and
+  re-export. So the 45s sync read an idle thread, found no pending question,
+  took the idle branch, and told a card that was working that it had stopped: a
+  nudge it did not need, auto-continue budget spent on turns with nothing to do
+  with the run, and finally a `paused` inbox row whose Resume button would have
+  restarted a card mid-stage.
+  The sync now consults the rule **above** the auto-continue decision, because
+  the run *is* the pending work, and the lifecycle export is gone — one owner,
+  one reader. A card with a live run is never nudged, never parked, spends no
+  budget, and clears the idle timestamp it does not have. The detail answers
+  *why* it is not moving, the same split the host hold uses: the board says
+  `running`, the card says `The Tech planning run is working now; the card's
+  thread is idle while it does. The card continues on its own — no action
+  needed.` The stage label travels with the run, because the card said "Tech
+  planning" and the run said "planning-research" and nothing on screen connected
+  them. A run waiting on a decision still yields to an open question — that
+  card is one the user is already in.
+- **A failed run holds the stage, and Retry run is the door**
+  (`lib/failed-run-gate.mjs`, `server/execution-lifecycle-retry.ts`,
+  `server/execution-advance-preflight.ts`). On card_cbnihg4c the `scope-map`
+  run failed with *"the recipe produced no task outputs"* and an empty staging
+  directory, and the card advanced to Tech planning anyway — so `Failed · scope`
+  sat in Execution runs while the card was two stages on, reading as a
+  contradiction with no way to tell whether the scope work had happened. The
+  preflight both entry points share now refuses to leave a stage whose **newest**
+  run failed, and the refusal names the door: `Retry run to try it again —
+  the card cannot leave the stage until a run of it succeeds.`
+  "Newest for the **stage**" is the whole design, and it is what makes the hold
+  survivable. A retry writes a newer run, so the hold releases the moment the
+  retry starts and re-tightens by itself if the retry fails too — nothing to
+  clear and nothing to reconcile, where a rule keyed on *"a failed run exists"*
+  would need a way to delete the failed row, and **nothing in this plugin does
+  that**. The gate is not scoped to the card for the same reason: a card that
+  failed three stages ago and moved on cleanly is not stuck. `cancelled` is
+  deliberately not a blocking state — a person cancelling a run is a decision,
+  not a failure, and holding a stage on it would make Stop a dead end.
+  `Retry run` appears on a **failed** row, the row the gate points at, and starts
+  a fresh run of the same recipe at the card's current stage through the **same**
+  launch rule every other start uses — so it inherits that rule's refusals
+  (unknown recipe, wrong stage, a card that already owns a live run, a host
+  without the capability) instead of growing a second set. It refuses a run from
+  a stage the card has since left, naming the stage and the way back, because
+  re-running that recipe would write the old stage's artifacts over work the
+  card has since done. The failed run is left untouched: terminal states accept
+  no transitions, and rewriting history to make a retry look tidy would mean the
+  card could no longer show what actually happened. A refusal from the launch is
+  shown to the reader rather than swallowed, because a retry that is declined
+  leaves the card exactly where it was.
+  The card is **told** which run blocks (`detail.card.blockingRun`) rather than
+  re-deriving the rule in the UI, so the button and the gate cannot disagree.
+  That one fact decides two affordances: the Execution runs section **opens**
+  when a run is blocking — the card's own rule is that a section starts closed
+  unless it is `live` or `blocking`, and a closed section hid the very button the
+  refusal names — and **Retry run** appears on the blocking row only, never on a
+  failed run from a stage the card has left, which would only ever answer with an
+  error. The hold also fires on `--dry-run`, which is how a worker asks "may I
+  advance?" before committing: with the hold below the short-circuit the probe
+  said yes, the worker acted, and the real advance refused — so the one tool
+  meant to prevent the mistake was the one place it did not fire.
+  The run list names each run by the **stage label the card already uses**
+  ("Tech planning"), not the host's recipe slug. It read
+  `planning-research / Running · planning` while every other surface said
+  "Tech planning", and nothing on screen connected them — the same word meaning
+  two things, which is the mistake the Scope X-ray made in the other direction.
+- **A run the host stops answering about eventually fails**
+  (`server/execution-reconcile-run.ts`, `lib/execution-run-ledger.mjs`). The
+  liveness rule trusts the ledger, the ledger is written in exactly one place,
+  and that place used to return an error and change nothing. A run whose host
+  went away therefore stayed `running` in the database **forever**, and the
+  liveness rule — faithfully reading a stale row — held the card as "the run is
+  working now" indefinitely: no button, no inbox row, no park. A wedge wearing
+  the costume of a fix, introduced by the fix above and closed by this.
+  An unanswerable host now opens a decaying window (generous — ten minutes,
+  because this is a recovery path and not a latency budget), an answered poll
+  closes it, and a window that never closes fails the run — a state the card can
+  show, the stage gate can hold on, and Retry can act on. The clock starts at the
+  **first** failure, not at the run's start, so restarting the plugin cannot
+  condemn a healthy long-running workflow. `reconcile_failed_at` is the
+  reconciler's own bookkeeping and is deliberately **not** projected to the card:
+  a reader is told "the host stopped answering" through the run's reason, not
+  through a timestamp they would have to compare against a clock.
+- **One card, one coordinator thread, one pending band swap**
+  (`server/workers-respawn-guard.ts`, `server/workers-respawn.ts`,
+  `server/workers-scheduler.ts`). A card owns one `worker_thread_id`, and
+  replacing the worker spawns the replacement **before** stopping the old one —
+  the right order, since a failed spawn must not leave a card with no worker.
+  It also means two threads are briefly live for every respawn, and that window
+  is only safe if two respawns cannot overlap. A band swap on a stage advance,
+  an automatic spawn retry, and a manual Restart Worker are three independent
+  callers, none locked against the others, each spawning a thread; overlapping,
+  the first replacement is orphaned — unreachable by anything that stops a
+  card's worker, because it is no longer the card's `worker_thread_id`. A
+  concurrent caller is now **refused, not queued** (queueing reproduces the same
+  orphan one tick later), with a message that says to try again once it
+  settles. Separately, a deferred band swap no longer stacks a second armed
+  timer on one card: it overwrote the handle without cancelling the one it
+  replaced, so the orphan timer fired 10ms later and spawned a **third** thread.
 - **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,

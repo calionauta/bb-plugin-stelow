@@ -62,7 +62,7 @@ function CardKindContent({ cardId, inboxEventId, view }: BuildContentProps) {
 
 function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
   const { card, detail } = view;
-  if (!card) return null;
+  if (!card || !detail) return null;
   const hero = heroFor(card, detail);
   const presetStale = isWorkerPresetStale(card, detail);
   return (
@@ -78,7 +78,10 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         runs={view.execution.runs}
         focusRunId={view.focusRunId}
         stoppingRunId={view.execution.stoppingRunId}
+        retryingRunId={view.execution.retryingRunId}
+        blockingRunId={detail.card.blockingRun?.id ?? null}
         onCancel={view.execution.cancel}
+        onRetry={view.execution.retry}
       />
       {/* Review tools are the reason to open a finished card, and they used to
           sit below Artifacts and the workflow map — six sections down, past the

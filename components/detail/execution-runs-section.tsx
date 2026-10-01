@@ -1,19 +1,25 @@
 import { useState } from "react";
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
-import { goToExecutionRun } from "../app-support/navigation";
 import { DisclosureSection, DisclosureChevron } from "../disclosure";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import { ExecutionRunDetail } from "./execution-run-detail";
 import { liveProgressNote } from "../../lib/execution-run-presentation.mjs";
+import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { RunActions } from "./execution-run-actions";
+import type { RunCard } from "./execution-run-row-types";
 import type { ExecutionRun } from "./use-execution-runs";
 
 type ExecutionRunsSectionProps = {
-  card: { id: string; kind: "build" | "research" | "explore" };
+  card: RunCard;
   runs: ExecutionRun[];
   focusRunId: string | null;
   stoppingRunId: string | null;
+  retryingRunId: string | null;
+  /** The run holding the card at its current stage, decided by the server by
+   * the same rule the advance gate uses. Null when nothing is blocked. */
+  blockingRunId: string | null;
   onCancel: (runId: string) => void | Promise<void>;
+  onRetry: (runId: string) => void | Promise<void>;
 };
 
 const stateLabel: Record<string, string> = {
@@ -40,14 +46,19 @@ function waitingForYou(run: ExecutionRun) {
 
 // One run's identity line. A run waiting on a person quotes its own question
 // so the card reads as a question, not a stalled spinner; everything else
-// keeps the plain status-and-stage line.
+// keeps the plain status line.
+//
+// The stage is NOT repeated here: the row's own title already names it, in the
+// card's own words. It used to appear a second time as the raw slug — so a row
+// read "planning-research / Running · planning" while every other surface on the
+// card said "Tech planning", and a reader had no way to tell those were the same
+// stage. One fact, one place, in the vocabulary the rest of the card uses.
 function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<typeof waitingForYou> }) {
   const live = liveProgressNote(run.normalizedStatus);
   if (!waiting) {
     return (
       <p className="text-xs text-muted-foreground">
         {stateLabel[run.normalizedStatus] ?? run.normalizedStatus}
-        {run.stage ? ` · ${run.stage}` : ""}
         {live ? ` · ${live}` : ""}
       </p>
     );
@@ -56,9 +67,7 @@ function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<t
     <>
       <p className="text-xs font-medium text-amber-900 dark:text-amber-200">{waiting.label}</p>
       {waiting.question ? <p className="mt-1 text-sm text-foreground">{waiting.question}</p> : null}
-      <p className="mt-1 text-xs text-muted-foreground">
-        {run.stage ? `${run.stage} · ` : ""}The run is paused until you answer on the card.
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">The run is paused until you answer on the card.</p>
     </>
   );
 }
@@ -83,44 +92,6 @@ function runOutcomeHint(runs: ExecutionRun[], active: number): string {
   if (succeeded > 0) parts.push(`${succeeded} succeeded`);
   if (cancelled > 0) parts.push(`${cancelled} cancelled`);
   return parts.length > 0 ? parts.join(" · ") : `${runs.length} queued`;
-}
-
-/** What a person can do with a run: open its transcript, or stop it. */
-function RunActions({
-  card,
-  run,
-  active,
-  stopping,
-  onCancel,
-}: {
-  card: ExecutionRunsSectionProps["card"];
-  run: ExecutionRun;
-  active: boolean;
-  stopping: boolean;
-  onCancel: ExecutionRunsSectionProps["onCancel"];
-}) {
-  const navigate = useBbNavigate();
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        className="min-h-11 cursor-pointer rounded-md border px-3 text-xs hover:bg-muted"
-        onClick={() => goToExecutionRun(navigate, card, run)}
-      >
-        Open
-      </button>
-      {active ? (
-        <button
-          type="button"
-          className="min-h-11 cursor-pointer rounded-md border px-3 text-xs text-destructive hover:bg-muted"
-          disabled={stopping}
-          onClick={() => void onCancel(run.id)}
-        >
-          {stopping ? "Stopping…" : "Stop"}
-        </button>
-      ) : null}
-    </div>
-  );
 }
 
 // The disclosure toggle's affordances, named so the row reads as a row: the
@@ -194,13 +165,19 @@ function ExecutionRunRow({
   run,
   focusRunId,
   stoppingRunId,
+  retryingRunId,
+  blockingRunId,
   onCancel,
+  onRetry,
 }: {
   card: ExecutionRunsSectionProps["card"];
   run: ExecutionRun;
   focusRunId: string | null;
   stoppingRunId: string | null;
+  retryingRunId: string | null;
+  blockingRunId: string | null;
   onCancel: ExecutionRunsSectionProps["onCancel"];
+  onRetry: ExecutionRunsSectionProps["onRetry"];
 }) {
   const waiting = waitingForYou(run);
   const [open, setOpen] = useState(focusRunId === run.id);
@@ -220,8 +197,11 @@ function ExecutionRunRow({
         waiting={waiting}
         open={open}
         stopping={stoppingRunId === run.id}
+        retrying={retryingRunId === run.id}
+        blocking={blockingRunId === run.id}
         onToggle={() => setOpen((value) => !value)}
         onCancel={onCancel}
+        onRetry={onRetry}
       />
       {/* The details sit OUTSIDE the header flex line, so a long failure reason
           wraps under the whole row instead of being squeezed between the
@@ -238,23 +218,29 @@ function RunHeader({
   waiting,
   open,
   stopping,
+  retrying,
+  blocking,
   onToggle,
   onCancel,
+  onRetry,
 }: {
   card: ExecutionRunsSectionProps["card"];
   run: ExecutionRun;
   waiting: ReturnType<typeof waitingForYou>;
   open: boolean;
   stopping: boolean;
+  retrying: boolean;
+  blocking: boolean;
   onToggle: () => void;
   onCancel: ExecutionRunsSectionProps["onCancel"];
+  onRetry: ExecutionRunsSectionProps["onRetry"];
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-1">
         <RunChevron run={run} open={open} onToggle={onToggle} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{run.recipeId}</p>
+          <p className="truncate text-sm font-medium">{stageLabel(run.stage)}</p>
           <RunSummary run={run} waiting={waiting} />
         </div>
       </div>
@@ -263,7 +249,10 @@ function RunHeader({
         run={run}
         active={["queued", "running", "needs_input"].includes(run.normalizedStatus)}
         stopping={stopping}
+        retrying={retrying}
+        blocking={blocking}
         onCancel={onCancel}
+        onRetry={onRetry}
       />
     </div>
   );
@@ -283,12 +272,19 @@ function RunHeader({
  * CLOSED once nothing is running, and the header keeps the tally visible so
  * closing it costs the reader the outcomes and nothing else.
  */
-export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, onCancel }: ExecutionRunsSectionProps) {
+export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, retryingRunId, blockingRunId, onCancel, onRetry }: ExecutionRunsSectionProps) {
   const active = runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length;
   if (runs.length === 0) return null;
   // A deep link names a run. Landing on a section that is not showing that run
   // would repeat the original bug in a new costume, so the link opens it.
-  const [open, setOpen] = useState(active > 0 || focusRunId !== null);
+  //
+  // A BLOCKING run opens it too, and that is the same rule the rest of the card
+  // follows — a section starts closed unless it is live or blocking. A failed
+  // run holding the card at its stage is blocking by definition, and leaving
+  // the section shut put the Retry button — the door the advance refusal names
+  // — one undisclosed click away from the message telling the reader to press
+  // it. A gate whose door is hidden is a gate that reads as a dead end.
+  const [open, setOpen] = useState(active > 0 || focusRunId !== null || blockingRunId !== null);
   return (
     <DisclosureSection
       title="Execution runs"
@@ -305,7 +301,10 @@ export function ExecutionRunsSection({ card, runs, focusRunId, stoppingRunId, on
             run={run}
             focusRunId={focusRunId}
             stoppingRunId={stoppingRunId}
+            retryingRunId={retryingRunId}
+            blockingRunId={blockingRunId}
             onCancel={onCancel}
+            onRetry={onRetry}
           />
         ))}
       </div>

@@ -76,6 +76,30 @@ export const cardDetailRpcContract = {
           queued: z.number(),
           summary: z.string().nullable(),
         }).nullable(),
+        // The native Workflows run that owns this card's stage, with its
+        // sentence already derived. Null when no run is live. A card running a
+        // multi-hour workflow is `running` on a thread that never turns again,
+        // so this is what tells a reader the work is elsewhere and moving —
+        // the same split hostHold makes, for the same reason.
+        nativeRun: z.object({
+          id: z.string(),
+          normalizedStatus: z.enum(["queued", "running", "needs_input"]),
+          recipeId: z.string(),
+          stage: z.string(),
+          stageLabel: z.string().nullable(),
+          summary: z.string().nullable(),
+        }).nullable(),
+        // The failed run holding this card at its CURRENT stage, or null. The
+        // card is told which run blocks rather than re-deriving the rule, so
+        // the Retry button it offers and the refusal the advance returns cannot
+        // disagree about which run is the one. Scoped to the stage on purpose:
+        // a card carries failed runs for every stage it has passed, and only
+        // one of them is holding this one.
+        blockingRun: z.object({
+          id: z.string(),
+          recipeId: z.string(),
+          errorCode: z.string().nullable(),
+        }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
         presetName: z.string().nullable(),

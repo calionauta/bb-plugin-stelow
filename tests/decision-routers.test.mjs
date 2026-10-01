@@ -15,6 +15,10 @@ const server = [
   readFileSync(join(root, "server/runtime/runtime-services.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/git-evidence.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
+  // The park owns the veto sentence now, so the pin that reads it has to read the
+  // park: pointing it back at the sync would assert against a file that no
+  // longer contains the sentence, so it would pass or fail for the wrong reason.
+  readFileSync(join(root, "server/runtime/build-thread-park.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/build-thread-terminal.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),

@@ -9,11 +9,14 @@ import {
 import { workflowStateRelativeDir } from "../../lib/workflow-state-identity.mjs";
 import { blockedFileWait } from "../../lib/lock-blocked.mjs";
 import { holdSentence } from "../../lib/host-hold.mjs";
+import { liveRun, runSentence } from "../../lib/native-run.mjs";
+import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
 import { enrichScopes } from "./card-detail-scopes.js";
 import { assembleDetail } from "./card-detail-presentation.js";
+import { cardLiveRuns } from "./card-live-runs.js";
 import { readHostHold } from "./worker-hold.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -141,6 +144,8 @@ async function loadDetailInputs(
     card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
     workerHistory, questionStaleness, stageSkips, scopeXray, hold,
+    nativeRun: readNativeRun(deps.db, cardId),
+    blockingRun: readBlockingRun(deps.db, card),
     // Derived from the SAME enriched scopes the card renders, so the hero's
     // wait and each scope's lock line are two views of one record.
     fileLocks: blockedFileWait(enrichedScopes, (holderCardId) => holderDisplayName(deps, holderCardId)),
@@ -159,6 +164,34 @@ async function readHold(deps: CardDetailDeps, card: WorkerCard) {
   if (!card.worker_thread_id) return null;
   const hold = await readHostHold(deps.bb, card.worker_thread_id);
   return hold ? { ...hold, summary: holdSentence(hold) } : null;
+}
+
+/**
+ * The card's live native run, with its sentence already derived.
+ *
+ * The board says "running" and this says why. It is the same split the host
+ * hold uses, and for the same reason: a card whose stage is owned by a
+ * multi-hour workflow looks identical to one that is merely thinking, and the
+ * difference is the whole question when someone opens the card to ask why
+ * nothing seems to be happening.
+ */
+function readNativeRun(db: CardDetailDeps["db"], cardId: string) {
+  const run = liveRun(cardLiveRuns(db, cardId));
+  return run ? { ...run, summary: runSentence(run) } : null;
+}
+
+/**
+ * The run holding this card at its current stage, or null.
+ *
+ * The card is TOLD this rather than re-deriving it, and that is the point: the
+ * advance preflight and the UI have to agree about which run is blocking, and
+ * two implementations of one rule is how a card ends up offering a Retry for a
+ * run the server will refuse. It is also what decides two affordances at once —
+ * the Execution runs section opens on it, and only its row carries the Retry
+ * button — so the door the refusal names is the door on screen.
+ */
+function readBlockingRun(db: CardDetailDeps["db"], card: WorkerCard) {
+  return blockingFailedRun(db, card.id, card.stage);
 }
 
 /** The holder's display name for the wait sentence. The id stays the link target. */

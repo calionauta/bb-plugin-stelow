@@ -13,6 +13,8 @@ import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
 import type { HostHold } from "../../lib/host-hold.mjs";
+import type { NativeRunRef } from "../../lib/native-run.mjs";
+import type { BlockingRun } from "../../lib/failed-run-gate.mjs";
 import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
@@ -75,6 +77,13 @@ export type DetailParts = {
   /** The host's hold on the card's next dispatch, with its derived sentence.
    * Null when the thread is free. Read on the detail only — see readHold. */
   hold: (HostHold & { summary: string | null }) | null;
+  /** The card's live native run, with its derived sentence. Null when no run
+   * owns the card. Read on the detail only — see readNativeRun. */
+  nativeRun: (NativeRunRef & { summary: string | null }) | null;
+  /** The failed run holding the card at its current stage, or null. The card is
+   * told this rather than re-deriving it, so its affordances cannot disagree
+   * with the advance gate. */
+  blockingRun: BlockingRun | null;
 };
 
 /**
@@ -142,6 +151,8 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
     fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
+    nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
     workerHistory: parts.workerHistory,
@@ -188,8 +199,16 @@ function detailCard(
   flow: { leadMs: number | null; cycleMs: number | null },
 ) {
   const { card, preset } = parts;
-  const db = deps.db;
-  const cardId = card.id;
+  return {
+    ...cardIdentity(deps, card, parts),
+    ...cardLifecycle(deps, card, parts),
+    ...cardPreset(preset),
+    ...cardProgress(deps, card, parts, flow),
+  };
+}
+
+/** Who the card is. */
+function cardIdentity(deps: CardDetailDeps, card: WorkerCard, parts: DetailParts) {
   return {
     id: card.id,
     name: card.name,
@@ -207,22 +226,57 @@ function detailCard(
     researchStrategy: card.research_strategy,
     researchStrategies: deps.strategyList(card),
     exploreStage: card.explore_stage ?? null,
+  };
+}
+
+/**
+ * What the card is doing, and the two waits that explain an idle one.
+ *
+ * `hostHold` and `nativeRun` sit together because they answer the same
+ * question — "why is this card not moving?" — from two different owners: the
+ * host holding the next message, and a Workflows run working the stage. Each
+ * carries its own derived sentence, so the card never writes a second version
+ * of a reason `lib/host-hold.mjs` or `lib/native-run.mjs` already owns.
+ */
+function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailParts) {
+  const db = deps.db;
+  const cardId = card.id;
+  return {
     status: normalizeStatus(card.status),
     stage: card.stage,
     workerThreadId: card.worker_thread_id,
     activity: parts.activity,
     lastError: card.last_error,
     hostHold: parts.hold,
+    nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
+  };
+}
+
+/** Which preset the card's worker runs on, and whether the card overrode it. */
+function cardPreset(preset: DetailParts["preset"]) {
+  return {
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
+    presetId: preset.id,
+  };
+}
+
+/** The counters and timings the card's own header reads. */
+function cardProgress(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  parts: DetailParts,
+  flow: { leadMs: number | null; cycleMs: number | null },
+) {
+  return {
     presetOverridden: hasPresetOverride(deps.db, card.id),
     updatedAt: card.updated_at,
     stallCount: stallCount(deps.db, card.id),
     scopeSummary: scopeSummary(parts.scopes),
-    presetId: preset.id,
     workerPresetId: card.worker_preset_id,
     presetRestartPending: (card.preset_restart_pending ?? 0) === 1,
     leadMs: flow.leadMs,

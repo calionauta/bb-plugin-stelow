@@ -96,4 +96,16 @@ export const executionRpcContract = defineRpcContract({
       error: z.string().nullable(),
     }),
   },
+  retryExecutionRun: {
+    experimental_description: "Run a failed recipe again at the card's stage, releasing the stage hold",
+    input: z.object({ runId: z.string() }).strict(),
+    // The new run's id, not the retried one: the caller repaints the list and
+    // the row it wants to follow is the one that just started. `null` on a
+    // refusal, which always carries the reason.
+    output: z.object({
+      ok: z.boolean(),
+      runId: z.string().nullable(),
+      error: z.string().nullable(),
+    }),
+  },
 });

@@ -8,6 +8,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   getExecutionRun,
+  markReconcileFailed,
+  markReconcileReached,
   transitionExecutionRun,
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
@@ -55,6 +57,20 @@ export type RunDeps = {
 
 const SIMPLE_STATES = ["queued", "running", "failed", "cancelled"] as const;
 type SimpleState = typeof SIMPLE_STATES[number];
+
+/**
+ * How long the host may stop answering about a run before the run is failed.
+ *
+ * Generous on purpose: this is a recovery path for a host that has actually
+ * gone away, not a latency budget, and a workflow that legitimately runs for
+ * hours must not be failed by one slow poll. Ten minutes of continuous silence
+ * is not a blip — and a run that is only unreachable for a moment never reaches
+ * it, because one answered poll closes the window.
+ */
+export const NATIVE_UNREACHABLE_MS = 10 * 60_000;
+
+/** The reason a reader sees, in the run's own vocabulary. */
+export const NATIVE_UNREACHABLE = "the host stopped answering about this run";
 
 /**
  * Why a run failed, as far as we actually know.
@@ -108,14 +124,59 @@ export async function reconcileOne(deps: RunDeps, runId: string): Promise<Reconc
     const native = await deps.native.adapterFor(run).status({ runId: run.runId });
     await applyNativeState(deps, card, run, native);
     const current = getExecutionRun(deps.db, run.id);
+    markReconcileReached(deps.db, run.id);
     if (current && runKey(current) !== before) deps.publishCard(current.cardId);
     return { run: current, error: null };
   } catch (error) {
-    return {
-      run,
-      error: error instanceof Error ? error.message : "Unable to reconcile native execution.",
-    };
+    return unreachable(deps, run, error);
   }
+}
+
+/**
+ * The host could not be asked about this run.
+ *
+ * A run whose status nobody can read is not a run making progress, and leaving
+ * it live forever is how a card is pinned as "running" by a workflow that died
+ * hours ago: the liveness rule trusts the ledger, the ledger is written in
+ * exactly one place, and a function that returns an error and changes nothing is
+ * a signal that never decays. So the unanswerable is bounded — generously, so a
+ * blip is not a verdict — and when the bound passes the run fails, which is a
+ * state the card can show, the stage gate can hold on, and Retry can act on.
+ *
+ * The clock starts at the FIRST failure rather than at the run's start, so a
+ * plugin restart cannot condemn a healthy long-running workflow: the first
+ * unanswerable poll opens the window, and an answered poll closes it.
+ */
+function unreachable(deps: RunDeps, run: ExecutionRun, error: unknown): ReconcileResult {
+  markReconcileFailed(deps.db, run.id, deps.now());
+  const failed = failedIfUnreachable(deps, run.id);
+  if (failed) {
+    deps.logComment(
+      failed.cardId,
+      failed.id,
+      `Native ${failed.recipeId} stopped answering after ${Math.round(NATIVE_UNREACHABLE_MS / 1000)}s `
+      + "and the run was marked failed. Retry run to try it again.",
+    );
+    deps.publishCard(failed.cardId);
+  }
+  return {
+    run: failed ?? getExecutionRun(deps.db, run.id) ?? run,
+    error: error instanceof Error ? error.message : "Unable to reconcile native execution.",
+  };
+}
+
+/**
+ * Fail a run the host has stopped answering about, once the window has passed.
+ *
+ * Null means "still inside the window" — which is the common case and the one
+ * that must not be noisy. The window is measured from the first failed poll,
+ * which `markReconcileFailed` stamps and `markReconcileReached` clears.
+ */
+function failedIfUnreachable(deps: RunDeps, runId: string) {
+  const current = getExecutionRun(deps.db, runId);
+  if (!current?.reconcileFailedAt) return null;
+  if (deps.now() - current.reconcileFailedAt < NATIVE_UNREACHABLE_MS) return null;
+  return transitionExecutionRun(deps.db, runId, "failed", { errorCode: NATIVE_UNREACHABLE });
 }
 
 /**
