@@ -4,9 +4,21 @@ import { DisclosureSection } from "../disclosure";
 type SubstepQuality = { slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" };
 type ResearchRound = { n: number; label: string; status: "ready" | "pending" | "missing"; substeps: SubstepQuality[] };
 
+// A research substep's quality, which is its OWN axis and shares no value with a
+// card's status or a pendency's — checked value by value, not assumed. That is
+// why it has a local map rather than borrowing one: `ready` is not a status
+// anywhere else, and folding it into a shared vocabulary would make a reader
+// wonder which machine they were looking at.
+//
+// The two entries that used to label themselves (`ready: "ready"`,
+// `missing: "missing"`) were the only labels in the plugin that equalled their
+// stored value, which is the shape the stage rule forbids everywhere else: a
+// reader cannot tell whether they are looking at a word or at a variable. The
+// other two were already phrases — "thin or mirrored" says what `invalid` means,
+// and "needs depth" says what `needs-depth` asks for.
 const STATUS_LABEL: Record<SubstepQuality["status"], string> = {
-  ready: "ready",
-  missing: "missing",
+  ready: "Ready",
+  missing: "Missing",
   invalid: "thin or mirrored",
   "needs-depth": "needs depth",
 };
