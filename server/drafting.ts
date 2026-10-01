@@ -33,6 +33,7 @@ type DraftingParams = {
   permissionMode: string;
   environmentKind: string;
   machineId: string | null;
+  baseBranch: string | null;
 };
 
 type DraftingCard = WorkerCard;
