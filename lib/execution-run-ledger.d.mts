@@ -10,6 +10,24 @@ export interface BoundaryContract {
   answerSchema: unknown;
 }
 
+/**
+ * The six statuses a run can be in — the column's CHECK constraint admits
+ * exactly these, and `RUN_STATUSES` is the same list for code to read.
+ */
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "needs_input"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+/** The failed status that holds a card's stage until it is retried. */
+export declare const BLOCKING_RUN_STATUS: "failed";
+export declare const RUN_STATUSES: ReadonlyArray<RunStatus>;
+export declare const RUN_STATUS_LABELS: Readonly<Record<RunStatus, string>>;
+export declare function runStatusLabel(status: unknown): string;
+
 export interface ExecutionRun {
   id: string;
   cardId: string;
@@ -25,7 +43,7 @@ export interface ExecutionRun {
   artifactRoot: string;
   originThreadId: string;
   nativeStatus: string | null;
-  normalizedStatus: "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled";
+  normalizedStatus: RunStatus;
   startedAt: number;
   completedAt: number | null;
   resumeOf: string | null;

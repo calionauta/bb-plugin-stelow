@@ -4,6 +4,7 @@ import { DisclosureSection, DisclosureChevron } from "../disclosure";
 import { executionRunRowId } from "../../lib/execution-deep-link.mjs";
 import { ExecutionRunDetail } from "./execution-run-detail";
 import { liveProgressNote } from "../../lib/execution-run-presentation.mjs";
+import { runStatusLabel } from "../../lib/execution-run-ledger.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { RunActions } from "./execution-run-actions";
 import type { RunCard } from "./execution-run-row-types";
@@ -22,14 +23,6 @@ type ExecutionRunsSectionProps = {
   onRetry: (runId: string) => void | Promise<void>;
 };
 
-const stateLabel: Record<string, string> = {
-  queued: "Queued",
-  running: "Running",
-  needs_input: "Needs input",
-  succeeded: "Succeeded",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
 
 // A run waiting on a person is the one state the card must never understate:
 // it is not stalled and not broken. The question is the run's own words, so
@@ -58,7 +51,7 @@ function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<t
   if (!waiting) {
     return (
       <p className="text-xs text-muted-foreground">
-        {stateLabel[run.normalizedStatus] ?? run.normalizedStatus}
+        {runStatusLabel(run.normalizedStatus)}
         {live ? ` · ${live}` : ""}
       </p>
     );
