@@ -61,6 +61,86 @@ test("idle no-progress transition persists attention instead of resuming", async
   assert.equal(fixture.calls.some(([name]) => name === "escalate"), true);
 });
 
+/**
+ * An idle card whose finished turn produced NO new prose, so the cheap progress
+ * signal says nothing and the turn's own verbs are the only evidence left.
+ *
+ * Shared by the two tests below because they are one decision read both ways: a
+ * turn that advanced the stage is progress, and a turn that did not is not.
+ * Written once so the pair cannot drift into testing different cards, and so
+ * neither can grow past the function budget by repeating the fixture.
+ */
+function silentTurnRunning(command) {
+  return harness(
+    card({
+      status: "in-progress",
+      stage: "shape",
+      activity: "running",
+      last_assistant_text: "same output",
+    }),
+    {
+      status: "idle",
+      output: "same output",
+      state: "name: Useful\ncurrent_stage: shape\n",
+      events: [
+        { type: "turn/completed", data: { status: "completed" } },
+        {
+          type: "item/completed",
+          data: {
+            item: { type: "commandExecution", command, status: "completed", exitCode: 0 },
+          },
+        },
+      ],
+    },
+  );
+}
+
+test("the finished turn's verbs are progress even when the text is identical", async () => {
+  // The complement of the test above, and the reason that one is not enough.
+  //
+  // New text is the cheap progress signal, so the test above leaves `output` and
+  // `last_assistant_text` identical and gets "no progress" — which is right, and
+  // which passes just as happily when the whole turn-reading branch is dead. A
+  // worker that only ran a command produces NO new text, and its progress is
+  // visible solely in the verbs of the turn it just finished. If the sync stops
+  // reading those verbs, this card stops being resumed, and nothing else in the
+  // suite notices: the rule is unit-tested in `auto-continue.test.mjs`, so the
+  // green suite would be measuring the lib and not the wiring.
+  //
+  // That is not hypothetical. A rebase left `lastTurnAdvancedStages` imported
+  // here and uncalled, which compiled, which the lib's own tests covered, and
+  // which nobody could see from reading the file — the import said the rule was
+  // wired and nothing said otherwise. This test fails on a dead READ, which is
+  // what a dead import actually is once it has been removed.
+  const fixture = silentTurnRunning("bb stelow advance shape");
+  await fixture.sync(fixture.row().id);
+
+  assert.equal(
+    fixture.calls.some(([name]) => name === "thread.send"),
+    true,
+    "a turn that advanced the stage is progress, however identical the prose",
+  );
+  assert.equal(
+    fixture.calls.some(([name, , kind]) => name === "inbox" && kind === "paused"),
+    false,
+    "and it does not also park the card it just resumed",
+  );
+});
+
+test("a turn that only asked for status is not an advance", async () => {
+  // The negative control for the test above, and the reason that test can be
+  // trusted: if any completed command counted as progress, the case above would
+  // pass with the verb rule replaced by "something ran".
+  const fixture = silentTurnRunning("bb stelow status");
+  await fixture.sync(fixture.row().id);
+
+  assert.equal(
+    fixture.calls.some(([name]) => name === "thread.send"),
+    false,
+    "reading the state is not advancing it",
+  );
+});
+
 test("successful idle recovery sends before recording its budget", async () => {
   const fixture = harness(
     card({ status: "in-progress", stage: "shape", activity: "running" }),
