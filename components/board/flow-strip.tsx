@@ -13,7 +13,7 @@ const FLOW_ROW_CLASS =
   + "hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 
 type FlowWindow = "all" | "30d" | "90d";
-type FlowTab = "tempo" | "atencao";
+type FlowTab = "timing" | "attention";
 const FLOW_WINDOWS: Array<{
   id: FlowWindow;
   label: string;
@@ -49,7 +49,7 @@ type FlowViewState = {
 export function FlowStrip({ rpc, projectId, onOpenCard }: FlowStripProps) {
   const [open, setOpen] = useState(false);
   const [window, setWindow] = useState<FlowWindow>("all");
-  const [tab, setTab] = useState<FlowTab>("tempo");
+  const [tab, setTab] = useState<FlowTab>("timing");
   const result = useFlowMetrics(rpc, projectId, window);
   if (!result || result.summary.count === 0) return null;
   const preset =
@@ -212,8 +212,8 @@ function FlowDetails({
         setTab={view.setTab}
         attention={stuck.length + review.length}
       />
-      {view.tab === "tempo" ? (
-        <TempoDetails
+      {view.tab === "timing" ? (
+        <TimingDetails
           window={view.window}
           setWindow={view.setWindow}
           rows={rows}
@@ -243,16 +243,16 @@ function FlowTabBar({
       role="group"
       aria-label="Flow view"
     >
-      {(["tempo", "atencao"] as const).map((entry) => (
+      {(["timing", "attention"] as const).map((entry) => (
         <button
           key={entry}
           onClick={() => setTab(entry)}
           aria-pressed={tab === entry}
           className={`${FLOW_TAB_CLASS} ${tab === entry ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}
         >
-          {entry === "tempo"
-            ? "Tempo"
-            : `Atenção${attention > 0 ? ` (${attention})` : ""}`}
+          {entry === "timing"
+            ? "Timing"
+            : `Attention${attention > 0 ? ` (${attention})` : ""}`}
         </button>
       ))}
       <span className="ml-auto text-xs tabular-nums text-muted-foreground">
@@ -263,19 +263,19 @@ function FlowTabBar({
   );
 }
 
-type TempoDetailsProps = {
+type TimingDetailsProps = {
   window: FlowWindow;
   setWindow: Dispatch<SetStateAction<FlowWindow>>;
   rows: FlowRow[];
   onOpenCard: (kind: FlowKind, cardId: string) => void;
 };
 
-function TempoDetails({
+function TimingDetails({
   window,
   setWindow,
   rows,
   onOpenCard,
-}: TempoDetailsProps) {
+}: TimingDetailsProps) {
   return (
     <div className="space-y-2">
       <p className="text-xs leading-5 text-muted-foreground">
