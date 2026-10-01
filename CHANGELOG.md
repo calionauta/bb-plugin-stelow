@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.60.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.0...v0.60.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* a stage is named by its label on every surface, or not at all ([#209](https://github.com/calionauta/bb-plugin-stelow/issues/209)) ([b85364d](https://github.com/calionauta/bb-plugin-stelow/commit/b85364dd3acbc659046982f63e328c145cc28b5d))
+* stage names are written for a product team, and have exactly one owner ([#212](https://github.com/calionauta/bb-plugin-stelow/issues/212)) ([db82d27](https://github.com/calionauta/bb-plugin-stelow/commit/db82d276605027cf8c6351420d2196e27a36af47))
+
 ## [0.60.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.59.0...v0.60.0) (2026-10-01)
 
 
