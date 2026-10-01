@@ -55,8 +55,48 @@ const PRESETS_DDL = `CREATE TABLE IF NOT EXISTS presets (
   ${PRESET_COLUMNS.map(([name, ddl]) => `${name} ${ddl}`).join(",\n  ")}
 )`;
 
+/**
+ * The recorded ledger, and it must never change.
+ *
+ * `PRESET_MIGRATION_STATEMENTS` is spread into the single `bb.storage.migrate`
+ * list in `core-migrations.ts`, and the host records a sha256 per STATEMENT at
+ * the position it occupied, refusing to start when a recorded position's
+ * statement no longer hashes the same. So this array is append-only and
+ * order-frozen: changing the text of an entry, or moving one, breaks every
+ * install that already recorded it — not just the ones carrying old data,
+ * because the record is a hash of the STATEMENT, not of the schema on disk.
+ *
+ * Measured on this host's live ledger, which is what caught it. Positions 3
+ * and 4 hold `ba1ac500…` (the `presets` DDL) and `dc61626f…` (`card_presets`).
+ * A first attempt at this change rewrote the `presets` entry as a template
+ * literal, which both changed its text and — by emitting only one entry —
+ * pulled `card_presets` up into position 3, so the host compared `dc61626f…`
+ * against a record of `ba1ac500…` and refused every install with "migration 3
+ * does not match the recorded statement". That message reads like a corrupt
+ * database; it is an unchanged array being reordered.
+ *
+ * So the array below is the RELEASED text, in the RELEASED order, and the
+ * current `presets` shape is reached outside it — see `ensureCurrentPresets`.
+ * The `presets` DDL here stays deliberately behind the current one, and that
+ * is the point: it is a record, not a schema.
+ */
 export const PRESET_MIGRATION_STATEMENTS = [
-  PRESETS_DDL,
+  `CREATE TABLE IF NOT EXISTS presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      reasoning_level TEXT NOT NULL,
+      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
+      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
+      base_branch TEXT,
+      machine_id TEXT,
+      instructions TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      built_in INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
   `CREATE TABLE IF NOT EXISTS card_presets (
       card_id TEXT PRIMARY KEY,
       preset_id TEXT NOT NULL,
@@ -99,9 +139,52 @@ export class PresetSchemaError extends Error {
 }
 
 export function runPresetMigrations(db: PresetDb, now: () => number): void {
+  ensureCurrentPresets(db);
   assertPresetsShape(db);
   ensurePresetTables(db);
   ensureDefaultPreset(db, now);
+}
+
+/**
+ * Bring the `presets` table to the current shape, outside the recorded ledger.
+ *
+ * The recorded list cannot carry the current DDL (see the note on
+ * `PRESET_MIGRATION_STATEMENTS`), so the table the ledger creates is brought
+ * forward here. Two cases, and the distinction is whether there is anything to
+ * lose:
+ *
+ * - the table does not exist, or exists EMPTY. There is no data to preserve, so
+ *   the old shape is dropped and the current one created. This is the fresh
+ *   install and the "no presets configured yet" install, and it is why a fresh
+ *   install gets the reasoning CHECK from the DDL rather than needing a repair.
+ * - the table exists with rows. It is left exactly as it is and
+ *   `assertPresetsShape` refuses, because copying rows out of a table whose
+ *   column order is not the current one is what destroyed data before — the
+ *   positional copy transposed the row and threw AFTER the rename. No backward
+ *   compatibility means no repair; the operator moves the table aside.
+ *
+ * Runs before the assertion so a fresh install has a current table to assert,
+ * and after the ledger so an existing table is seen however it was created.
+ */
+function ensureCurrentPresets(db: PresetDb): void {
+  const existing = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'presets'")
+    .get() as { sql: string } | undefined;
+  if (existing && !isCurrentPresetsDdl(existing.sql)) {
+    const rows = (db.prepare("SELECT COUNT(*) AS count FROM presets").get() as { count: number }).count;
+    if (rows > 0) return; // refused by the assertion, deliberately, with its rows intact
+    db.exec("DROP TABLE presets");
+  }
+  db.exec(PRESETS_DDL);
+}
+
+/**
+ * Whether a stored `presets` DDL is already the current one, decided by the
+ * marker the current DDL carries rather than by a string comparison of the
+ * whole statement — the same reason `assertPresetsShape` checks the CHECK
+ * instead of diffing DDL, since `sqlite_master` reformats what it stores.
+ */
+function isCurrentPresetsDdl(sql: string): boolean {
+  return sql.includes(REASONING_CHECK_MARKER);
 }
 
 /**
