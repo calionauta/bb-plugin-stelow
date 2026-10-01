@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { ensureAutoContinueColumns } from "../lib/auto-continue.mjs";
 import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
+import { healRewrittenLedgerRow } from "../lib/migration-ledger-heal.mjs";
 import { ensureTrackableEventsTable } from "../lib/trackable-events.mjs";
 import { runDecisionApiMigrations } from "./decision-api.js";
 import { runGithubMigrations } from "./github-migrations.js";
@@ -29,9 +30,14 @@ const CARD_COLUMNS: Array<[string, string]> = [
   ["read_miss_since", "INTEGER"],
 ];
 
-function createBaseTables(bb: BbPluginApi, db: Db): void {
-  bb.storage.migrate(db, [
-    `CREATE TABLE IF NOT EXISTS cards (
+/**
+ * The statements the host records, hoisted to a name so the ledger repair can
+ * read the same text the migrator is about to hash. The array is the released
+ * one, entry for entry and byte for byte; only its location moved, and the hash
+ * a position produces depends on the text alone, never on where it is written.
+ */
+const BASE_MIGRATION_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS cards (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -49,7 +55,7 @@ function createBaseTables(bb: BbPluginApi, db: Db): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )`,
-    `CREATE TABLE IF NOT EXISTS comments (
+  `CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
       card_id TEXT NOT NULL,
       target TEXT NOT NULL,
@@ -59,9 +65,9 @@ function createBaseTables(bb: BbPluginApi, db: Db): void {
       created_at INTEGER NOT NULL,
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
-    "CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id, created_at)",
-    ...PRESET_MIGRATION_STATEMENTS,
-    `CREATE TABLE IF NOT EXISTS expired_questions (
+  "CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id, created_at)",
+  ...PRESET_MIGRATION_STATEMENTS,
+  `CREATE TABLE IF NOT EXISTS expired_questions (
       id TEXT PRIMARY KEY,
       card_id TEXT NOT NULL,
       thread_id TEXT NOT NULL,
@@ -72,7 +78,10 @@ function createBaseTables(bb: BbPluginApi, db: Db): void {
       answered INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
-  ]);
+];
+
+function createBaseTables(bb: BbPluginApi, db: Db): void {
+  bb.storage.migrate(db, BASE_MIGRATION_STATEMENTS);
 }
 
 function createQuestionTables(db: Db): void {
@@ -137,6 +146,20 @@ function createFeatureTables(db: Db): void {
 }
 
 export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number): void {
+  // Before `bb.storage.migrate`, and it has to be here: the host checks every
+  // recorded position before it executes a single statement, so a bad record is
+  // only correctable before the call, and this is the first line of the plugin's
+  // own startup that holds an open database.
+  const repaired = healRewrittenLedgerRow(db, BASE_MIGRATION_STATEMENTS, (why) => {
+    bb.log.warn(`stelow did not repair the v0.61.0 migration ledger: ${why}`);
+  });
+  if (repaired) {
+    bb.log.warn(
+      `stelow repaired migration ${repaired.index} in its migration ledger: v0.61.0 recorded `
+      + `${repaired.recordedHash.slice(0, 8)}… there and the released statement hashes to `
+      + `${repaired.shippedHash.slice(0, 8)}…; no schema change, the recorded text was wrong`,
+    );
+  }
   createBaseTables(bb, db);
   runWorkerMigrations(db);
   ensureColumns(db, "cards", CARD_COLUMNS);
