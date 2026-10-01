@@ -2,7 +2,11 @@ import { createPresetAccessors } from "./preset-accessors.js";
 import { createPresetHandlers } from "./preset-handlers.js";
 import type { PresetServerDeps } from "./preset-contracts.js";
 
-export { PRESET_MIGRATION_STATEMENTS, runPresetMigrations } from "./preset-migrations.js";
+export {
+  PRESET_MIGRATION_STATEMENTS,
+  PresetSchemaError,
+  runPresetMigrations,
+} from "./preset-migrations.js";
 export type {
   PresetAttachmentParams,
   PresetRow,
