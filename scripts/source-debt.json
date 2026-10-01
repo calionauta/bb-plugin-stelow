@@ -1,8 +1,7 @@
 {
   "files": {
     "components/ui/dialog.tsx": 541,
-    "components/ui/icon.tsx": 450,
-    "tests/kanban-layout.test.mjs": 401
+    "components/ui/icon.tsx": 450
   },
   "functions": {
     "app.tsx:callback": 56,
@@ -44,7 +43,6 @@
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
     "server/runtime/workflow-seeding.ts:seedWorkflow": 72,
     "server/scopes.ts:runScopeCommand": 87,
-    
     "tests/server-drafting.test.mjs:harness": 83
   }
 }

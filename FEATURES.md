@@ -2279,7 +2279,7 @@ fails during a migration. If the column is ever rebuilt for another reason, add
 the CHECK then, from `CARD_STATUSES`.
 
 `server/contracts.ts` no longer exports one twelve-value `statusSchema`. That single
-enum served **one** card site and **six** pendency sites — tasks, scopes, board
+enum served **two** card sites and **six** pendency sites — tasks, scopes, board
 workflows and workflow phases — which is why it had twelve: it was the union of
 the two axes plus `planning` and `approved`, which belong to neither (`approved`
 is a scope MAP status, `planning` is a stage name). Nothing could reach those two
@@ -2303,8 +2303,8 @@ graph and fails `tsc` in `rpc-surfaces.ts` — four files from the import that
 caused it. Deriving was tried and reverted;
 `tests/status-axis-boundary.test.mjs` pins both lists to the machine instead.
 
-**A card's status was being read through the pendency normalizer, in eleven
-places**, and it only ever worked by accident: the scope vocabulary was an
+**A card's status was being read through the pendency normalizer, at ten
+call sites**, and it only ever worked by accident: the scope vocabulary was an
 inaccurate superset containing all five card statuses, so every value passed
 through unchanged. Describing that vocabulary accurately turned the accident into
 a live fault — `normalizeStatus("archived")` returns `pending`, so every guard of

@@ -4,11 +4,12 @@ import { CARD_STATUSES, readCardStatus } from "../lib/card-status.mjs";
 import { TRACKABLE_STATUSES } from "../lib/trackables.mjs";
 import { cardStatusSchema, trackableStatusSchema } from "../server/contracts.ts";
 import { normalizeStatus } from "../server/scopes.ts";
+import { readFileSync } from "node:fs";
 
 /**
  * The three lists that describe the same two axes, pinned to the two machines.
  *
- * A card's status was read through the SCOPE normalizer in eleven places, and it
+ * A card's status was read through the SCOPE normalizer in ten places, and it
  * only ever worked by accident: the scope vocabulary was a twelve-value superset
  * that happened to contain all five card statuses, so every value passed through
  * unchanged. Describing the scope vocabulary accurately — which is what the rest
@@ -30,8 +31,9 @@ import { normalizeStatus } from "../server/scopes.ts";
  */
 
 test("the RPC boundary accepts a card status and refuses what no writer produces", () => {
-  // Drive the schema, not the list. A card projection is validated on the way out,
-  // so this is the last place an invented status could still get in.
+  // Drive the schema, not the list. These are OUTPUT schemas, so the honest
+  // framing is that they catch rather than admit: an invented status is what they
+  // exist to refuse on the way out, not something that could get in through them.
   for (const status of CARD_STATUSES) {
     assert.doesNotThrow(
       () => cardStatusSchema.parse(status),
@@ -123,4 +125,28 @@ test("a card's status reads through the card reader, so archive still works", ()
   assert.equal(readCardStatus("nonsense"), "draft");
   assert.equal(readCardStatus(undefined), "draft");
   assert.equal(readCardStatus(null), "draft");
+});
+
+test("the production wiring hands out the card reader, not the scope one", () => {
+  // A topology pin, and deliberately so. Every harness in this repo builds its
+  // deps directly instead of going through `host-surfaces.ts`, which is the right
+  // way to keep a fake small and the wrong way to notice that the PRODUCER of
+  // `cardStatusOf` was rewired: an adversarial pass changed the provider to the
+  // scope normalizer and every harness-backed suite stayed green, because none of
+  // them ever asked the provider.
+  //
+  // So this asserts the wiring, not the behaviour: the reader the provider hands
+  // out has to be the card one. It cannot prove the provider is ever called, and
+  // it does not pretend to — what it can do is stop the two readers being swapped
+  // at the one place they are named, which is the mistake this work exists to end.
+  const wiring = readFileSync(
+    new URL("../server/runtime/wiring/host-surfaces.ts", import.meta.url).pathname,
+    "utf8",
+  );
+  const providers = wiring.match(/cardStatusOf:[^,\n]*/g) ?? [];
+  assert.ok(providers.length >= 1, "the provider is named at all");
+  for (const line of providers) {
+    assert.match(line, /readCardStatus/, `provider must be the card reader: ${line}`);
+    assert.doesNotMatch(line, /normalizeStatus/, `provider must not be the scope reader: ${line}`);
+  }
 });

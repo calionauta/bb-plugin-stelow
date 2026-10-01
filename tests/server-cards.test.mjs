@@ -3,6 +3,7 @@ import test from "node:test";
 import { createCardsServer, createCardStore } from "../server/cards.ts";
 import { createCardInternal } from "../server/cards-create.ts";
 import { CARD_COLUMNS } from "../server/cards-create-persist.ts";
+import { buildBoardColumnFor } from "../lib/workflow-vocabulary.mjs";
 
 const promptRules = {
   cardOwnerRules: "owner",
@@ -31,7 +32,7 @@ const card = {
   research_strategy: null,
   research_strategies: null,
   explore_stage: null,
-  status: "triage",
+  status: "in-progress",
   stage: "triage",
   worker_thread_id: null,
   activity: "idle",
@@ -41,8 +42,8 @@ const card = {
   environment_label: null,
 };
 
-function harness() {
-  const rows = [card];
+function harness(overrides = {}) {
+  const rows = [{ ...card, ...overrides }];
   const db = {
     prepare(sql) {
       return {
@@ -91,6 +92,39 @@ test("list cards preserves project names and attention state", async () => {
   assert.equal(result.cards[0].projectName, "Project");
   assert.equal(result.cards[0].needsAttention, false);
   assert.equal(result.cards[0].scopeSummary.scopesTotal, 0);
+});
+
+// The card list's status projection had no behavioural test at all, and the
+// fixture it used carried `status: "triage"` — a STAGE name, on no status axis,
+// in a test that never looked at `status`. So the one field the axis split exists
+// to protect was unasserted at the surface that renders it.
+//
+// These two are the regression that was reproduced live: with the projection
+// reading a card's status through the SCOPE normalizer, an archived card came
+// back as `pending` and landed in the `analysis` column instead of the archived
+// one. Nothing failed. Each of these asserts the stored value arriving intact,
+// which is what "a card reads through the card reader" has to mean at a call
+// site rather than only inside the function.
+for (const stored of ["archived", "completed", "pending", "draft"]) {
+  test(`list cards projects a ${stored} card's status intact`, async () => {
+    const { cards } = harness({ status: stored });
+    const result = await cards.handlers.listCards({ projectId: "proj_1", kind: null });
+    assert.equal(
+      result.cards[0].status,
+      stored,
+      "the stored card status must reach the projection unchanged",
+    );
+  });
+}
+
+test("an archived card lands in the archived column, not a phase", async () => {
+  // The consequence, which is what a reader sees. `buildBoardColumnFor` reads the
+  // PROJECTED status, so a status mangled by the wrong reader moves the card to a
+  // live phase column and the board shows a finished card as work in progress.
+  const { cards } = harness({ status: "archived" });
+  const result = await cards.handlers.listCards({ projectId: "proj_1", kind: null });
+  assert.equal(result.cards[0].status, "archived");
+  assert.equal(buildBoardColumnFor(result.cards[0]), "archived");
 });
 
 test("read card files rejects workspace escapes and reads text", async () => {

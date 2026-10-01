@@ -199,3 +199,60 @@ test("every rule RPC refuses on a disabled host and names the switch", async () 
     else process.env.STELOW_GITHUB_ISSUES = previous;
   }
 });
+
+// The archived guard on the linked-issue path had NO test at all — an adversarial
+// pass changed the comparison to a value that can never match and every suite in
+// the repo stayed green. The harness is what let it: it stubbed the card-status
+// reader as identity, so the unit under test was the right axis by construction
+// and no wiring bug was reachable from here.
+//
+// These two close it from both ends. The guard is a real refusal, and the reader
+// behind it is the real one.
+test("an archived card is refused before a linked issue is created", async () => {
+  const previous = process.env.STELOW_GITHUB_ISSUES;
+  process.env.STELOW_GITHUB_ISSUES = "1";
+  try {
+    const app = harness({
+      cards: [{
+        id: "card-1",
+        display_name: null,
+        name: "Fix login",
+        prompt: "It 500s on submit.",
+        intent: "bugfix",
+        stage: "Build",
+        status: "archived",
+        project_id: "project-1",
+      }],
+    });
+    const result = await app.handlers.createLinkedGithubIssue({ cardId: "card-1" });
+    assert.equal(result.ok, false, "an archived card does not get an issue");
+    assert.match(result.error, /archived/);
+    assert.equal(app.created.length, 0, "and nothing was sent to GitHub");
+  } finally {
+    if (previous === undefined) delete process.env.STELOW_GITHUB_ISSUES;
+    else process.env.STELOW_GITHUB_ISSUES = previous;
+  }
+});
+
+test("the same card, unarchived, is allowed through", async () => {
+  // The negative control. Without it, a guard that refuses everything would pass
+  // the test above, and the way to tell the two apart is the only reason this
+  // pair is worth having.
+  const previous = process.env.STELOW_GITHUB_ISSUES;
+  process.env.STELOW_GITHUB_ISSUES = "1";
+  try {
+    const app = harness();
+    const result = await app.handlers.createLinkedGithubIssue({ cardId: "card-1" });
+    // What matters is that the ARCHIVED guard did not fire — whatever happens
+    // downstream is the fake client's business. Asserting on the archived
+    // refusal is the negative control, not the whole contract.
+    assert.doesNotMatch(
+      result.error ?? "",
+      /archived/,
+      "a live card must pass the archived guard",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.STELOW_GITHUB_ISSUES;
+    else process.env.STELOW_GITHUB_ISSUES = previous;
+  }
+});

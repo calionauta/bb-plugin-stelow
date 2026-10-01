@@ -258,11 +258,9 @@ const researchGroups = filterAndGroupResearchCards([
   researchCard({ id: "archived", status: "archived", updatedAt: 2 }),
   researchCard({ id: "done", status: "completed", updatedAt: 3 }),
   researchCard({ id: "running", status: "in-progress", updatedAt: 4 }),
-  researchCard({ id: "approved", status: "approved", updatedAt: 5 }),
 ], researchFilters);
 assert.deepEqual(Object.keys(researchGroups), ["inbox", "doing", "done", "archived"]);
 assert.deepEqual(researchGroups.inbox.map((entry) => entry.id), ["unknown"]);
-assert.deepEqual(researchGroups.doing.map((entry) => entry.id), ["approved", "running"]);
 assert.deepEqual(researchGroups.done.map((entry) => entry.id), ["done"]);
 assert.deepEqual(researchGroups.archived.map((entry) => entry.id), ["archived"]);
 assert.equal(
