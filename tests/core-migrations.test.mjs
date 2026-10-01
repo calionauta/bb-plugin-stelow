@@ -1,7 +1,36 @@
+/**
+ * The ALTER tables, pinned as a record because they are NOT legacy code.
+ *
+ * A commit message shipped the opposite claim: `ensureColumns` and its callers
+ * were filed as "category (b) — exists only to serve an older shape — candidates
+ * for later", alongside every `addColumnIfMissing`, `WORKER_COLUMNS`, and the two
+ * `PRAGMA table_info` rebuilds. That was measured and it is wrong for two thirds
+ * of the list, and the difference is not a judgement call: it is whether the
+ * ALTER fires on an EMPTY database.
+ *
+ * It does. `CREATE TABLE IF NOT EXISTS cards` is frozen — bb records each
+ * migration by ARRAY INDEX and hashes its text, so the released DDL can never
+ * gain a column (see `tests/migration-statement-hashes.test.mjs`). Every card
+ * column added after the first release, including `kind` and the newest one,
+ * `read_miss_since`, therefore exists on a fresh install only because an ALTER
+ * created it. Delete the ALTER and the install starts without the column; the
+ * class of failure is the v0.61.0 boot refusal, not a tidy-up.
+ *
+ * Source of the expectation: `tests/fixtures/migration-appended-columns.json`,
+ * read as data, so an append reads as one added line and a deletion reads as a
+ * removed one. The honest debt in this area is the opposite of "legacy": these
+ * ALTERs are the schema's only append path, and until there is a real versioned
+ * migration mechanism they cannot be retired.
+ */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { runPluginMigrations } from "../server/core-migrations.ts";
+
+const APPENDED_COLUMNS = JSON.parse(
+  readFileSync(new URL("./fixtures/migration-appended-columns.json", import.meta.url), "utf8"),
+);
 
 function migrationHost(db) {
   return {
@@ -94,4 +123,62 @@ test("core migrations preserve legacy cards while creating the current schema", 
   });
   assert.equal(db.prepare("SELECT body FROM comments WHERE id = 'comment-1'").get().body, "keep me");
   assertMigratedSchema(db);
+});
+
+test("a fresh install gets every column the appends create", () => {
+  const db = new Database(":memory:");
+  runPluginMigrations(migrationHost(db), db, () => 1);
+
+  for (const [table, columns] of Object.entries(APPENDED_COLUMNS)) {
+    const present = new Map(
+      db.prepare(`PRAGMA table_info(${table})`).all().map((row) => [row.name, row]),
+    );
+    assert.notEqual(present.size, 0, `${table} exists on a fresh install`);
+    for (const [name, ddl] of columns) {
+      const column = present.get(name);
+      assert.notEqual(
+        column,
+        undefined,
+        `${table}.${name} exists on a fresh install. The released CREATE TABLE cannot gain a column `
+        + "— its text is hashed and bb refuses to boot on a mismatch — so the ALTER is the only thing "
+        + "that creates this one. Removing it strands the column, which is the v0.61.0 failure class.",
+      );
+      // The declared default is part of what the column means, not decoration: an
+      // older row has to read the same value a new one would. SQLite reports
+      // `dflt_value` as the literal expression text it stored, so compare that.
+      if (/\bNOT NULL\b/.test(ddl)) {
+        assert.equal(column.notnull, 1, `${table}.${name} is NOT NULL as declared`);
+      }
+      const declared = ddl.match(/DEFAULT\s+(.+)$/);
+      if (declared) {
+        assert.equal(
+          column.dflt_value,
+          declared[1].trim(),
+          `${table}.${name} keeps its declared default, so an older row reads what a new one would`,
+        );
+      }
+    }
+  }
+
+  db.close();
+});
+
+test("the appends are idempotent, so a second boot adds nothing", () => {
+  const db = new Database(":memory:");
+  runPluginMigrations(migrationHost(db), db, () => 1);
+  const after = Object.fromEntries(
+    Object.keys(APPENDED_COLUMNS).map((table) => [
+      table,
+      db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name),
+    ]),
+  );
+  runPluginMigrations(migrationHost(db), db, () => 2);
+  for (const [table, columns] of Object.entries(after)) {
+    assert.deepEqual(
+      db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name),
+      columns,
+      `${table} gains no column and loses none on a second boot`,
+    );
+  }
+  db.close();
 });
