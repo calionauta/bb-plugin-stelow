@@ -2,45 +2,61 @@ import type { PresetDb, PresetRow } from "./preset-contracts.js";
 import { PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
 
 /**
- * `presets` rebuilt with the reasoning-level CHECK. `ALTER TABLE … ADD
- * CONSTRAINT` is a syntax error in SQLite, so the column constraint can only
- * arrive by rebuilding the table — hence a second definition of the schema
- * that has to track the one in `PRESET_MIGRATION_STATEMENTS`.
+ * The one owner of the `presets` shape.
+ *
+ * Column name and DDL live in a single ordered list, and the table, the
+ * idempotence marker and the shape assertion are all derived from it. That is
+ * the whole point: the previous file carried a second, hand-written copy of
+ * this DDL for its table rebuild, the two drifted, and the drift was invisible
+ * until a legacy row was copied positionally into the wrong columns.
  */
-const PRESETS_WITH_REASONING_CHECK = `CREATE TABLE presets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      provider_id TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      reasoning_level TEXT NOT NULL CHECK (reasoning_level IN (${levelList()})),
-      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
-      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
-      base_branch TEXT,
-      machine_id TEXT,
-      instructions TEXT NOT NULL DEFAULT '',
-      is_default INTEGER NOT NULL DEFAULT 0,
-      built_in INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )`;
+const PRESET_COLUMNS: ReadonlyArray<readonly [name: string, ddl: string]> = [
+  ["id", "TEXT PRIMARY KEY"],
+  ["name", "TEXT NOT NULL UNIQUE COLLATE NOCASE"],
+  ["provider_id", "TEXT NOT NULL"],
+  ["model_id", "TEXT NOT NULL"],
+  [
+    "reasoning_level",
+    // Refuse an out-of-enum level at the storage layer, so no writer — RPC,
+    // CLI, composer override, or a future one — can persist a level the host
+    // cannot spawn. `assertSpawnableReasoningLevel` in preset-handler-crud
+    // refuses the same value at the door; this is the backstop under it.
+    `TEXT NOT NULL CHECK (reasoning_level IN (${levelList()}))`,
+  ],
+  [
+    "permission_mode",
+    "TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full'))",
+  ],
+  [
+    "environment_kind",
+    "TEXT NOT NULL DEFAULT 'project-default' "
+      + "CHECK (environment_kind IN ('project-default','new-worktree'))",
+  ],
+  ["base_branch", "TEXT"],
+  ["machine_id", "TEXT"],
+  ["instructions", "TEXT NOT NULL DEFAULT ''"],
+  ["is_default", "INTEGER NOT NULL DEFAULT 0"],
+  ["built_in", "INTEGER NOT NULL DEFAULT 0"],
+  ["created_at", "INTEGER NOT NULL"],
+  ["updated_at", "INTEGER NOT NULL"],
+];
+
+const PRESET_COLUMN_ORDER = PRESET_COLUMNS.map(([name]) => name);
+
+/** A marker only the current DDL emits, so the assertion cannot drift from it. */
+const REASONING_CHECK_MARKER = "CHECK (reasoning_level IN";
+
+/**
+ * The whole migration, for a fresh install and for an install that already has
+ * the table. `IF NOT EXISTS` makes the second case a no-op that touches no row,
+ * which is why no data-preserving copy of any kind is needed here.
+ */
+const PRESETS_DDL = `CREATE TABLE IF NOT EXISTS presets (
+  ${PRESET_COLUMNS.map(([name, ddl]) => `${name} ${ddl}`).join(",\n  ")}
+)`;
 
 export const PRESET_MIGRATION_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS presets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      provider_id TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      reasoning_level TEXT NOT NULL,
-      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
-      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
-      base_branch TEXT,
-      machine_id TEXT,
-      instructions TEXT NOT NULL DEFAULT '',
-      is_default INTEGER NOT NULL DEFAULT 0,
-      built_in INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )`,
+  PRESETS_DDL,
   `CREATE TABLE IF NOT EXISTS card_presets (
       card_id TEXT PRIMARY KEY,
       preset_id TEXT NOT NULL,
@@ -54,45 +70,66 @@ function levelList(): string {
   return PRESET_REASONING_LEVELS.map((level) => `'${level}'`).join(",");
 }
 
+/**
+ * A named refusal, not a repair.
+ *
+ * Stelow does not maintain backward compatibility, so an install whose
+ * `presets` table predates this schema is simply unsupported. The one thing
+ * that must not happen is degrading into plausible-looking behaviour, so the
+ * boot stops here — before `ensureDefaultPreset` writes anything, and long
+ * before a card resolves a preset and fails to spawn.
+ *
+ * The advice is deliberately non-destructive. Presets are user-authored
+ * configuration, so the fix is to move the old table aside, not to drop it:
+ * the plugin then creates the current table on the next start, and the rows
+ * stay in `presets_legacy` to re-import by name.
+ */
+export class PresetSchemaError extends Error {
+  constructor(problem: string) {
+    super(
+      `Stelow will not start: the \`presets\` table is not the current shape — ${problem}. `
+        + "Stelow no longer migrates this table, and presets are user-authored configuration, "
+        + "so nothing is repaired or dropped for you. To unblock, stop bb and move the old table "
+        + "aside in your Stelow data.db; the current table is then created on the next start, and "
+        + 'your presets stay in `presets_legacy` to re-import by name:\n'
+        + '  sqlite3 data.db "ALTER TABLE presets RENAME TO presets_legacy"',
+    );
+    this.name = "PresetSchemaError";
+  }
+}
+
 export function runPresetMigrations(db: PresetDb, now: () => number): void {
+  assertPresetsShape(db);
   ensurePresetTables(db);
-  addMissingColumns(db);
-  rebuildReasoningLevelCheck(db);
   ensureDefaultPreset(db, now);
-  db.prepare("DELETE FROM presets WHERE built_in = 0 AND provider_id = 'codex'").run();
 }
 
 /**
- * Refuse an out-of-enum reasoning level at the storage layer, so no writer —
- * RPC, CLI, composer override, or a future one — can persist a level the host
- * cannot spawn.
+ * `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it is, so a
+ * table from an unsupported install would otherwise survive boot with the wrong
+ * column order and no reasoning CHECK — and every later read and write of it
+ * would look like it worked. Assert the shape the current DDL guarantees.
  *
- * Three details are load-bearing and each was measured, not reasoned about:
- *
- * 1. `legacy_alter_table=ON`. Without it, `ALTER TABLE … RENAME TO` rewrites
- *    the children's foreign keys to the temp table's name, so
- *    `foreign_key_check` reports `parent: presets_rebuild` for every card pin
- *    and cascade deletes stop resolving against `presets`.
- * 2. The repair UPDATE runs *before* the rebuild: `INSERT … SELECT` aborts on a
- *    legacy junk row the moment the CHECK exists. Repair is invisible because
- *    `medium` is what the picker already displays for such a row.
- * 3. The rebuild is idempotence-gated on the existing table SQL, the same
- *    guard shape as `rebuildLegacyBandTable`.
+ * Two conditions, because the column order is the half that actually bit: a
+ * legacy table gains new columns by `ALTER TABLE … ADD COLUMN`, which appends,
+ * so a positional copy transposes the row and throws
+ * `NOT NULL constraint failed: presets.created_at` — after the rename, leaving
+ * `presets` empty and the user's rows orphaned in `presets_rebuild`.
  */
-function rebuildReasoningLevelCheck(db: PresetDb): void {
+function assertPresetsShape(db: PresetDb): void {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'presets'")
     .get() as { sql: string } | undefined;
-  if (row?.sql.includes("CHECK (reasoning_level IN")) return;
-  db.exec(`PRAGMA foreign_keys=OFF;
-    PRAGMA legacy_alter_table=ON;
-    UPDATE presets SET reasoning_level = 'medium'
-      WHERE reasoning_level NOT IN (${levelList()});
-    ALTER TABLE presets RENAME TO presets_rebuild;
-    ${PRESETS_WITH_REASONING_CHECK};
-    INSERT INTO presets SELECT * FROM presets_rebuild;
-    DROP TABLE presets_rebuild;
-    PRAGMA legacy_alter_table=OFF;
-    PRAGMA foreign_keys=ON;`);
+  if (!row) return;
+  if (!row.sql.includes(REASONING_CHECK_MARKER)) {
+    throw new PresetSchemaError(`it carries no \`${REASONING_CHECK_MARKER} …)\` constraint`);
+  }
+  const present = (db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>)
+    .map((column) => column.name);
+  if (present.join(",") !== PRESET_COLUMN_ORDER.join(",")) {
+    throw new PresetSchemaError(
+      `its columns are (${present.join(", ")}), not (${PRESET_COLUMN_ORDER.join(", ")})`,
+    );
+  }
 }
 
 function ensurePresetTables(db: PresetDb): void {
@@ -113,20 +150,6 @@ function ensurePresetTables(db: PresetDb): void {
   rebuildLegacyBandTable(db);
 }
 
-function addMissingColumns(db: PresetDb): void {
-  const columns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
-  const additions = [
-    ["environment_kind", "TEXT NOT NULL DEFAULT 'project-default'"],
-    ["base_branch", "TEXT"],
-    ["machine_id", "TEXT"],
-  ];
-  for (const [name, definition] of additions) {
-    if (!columns.some((column) => column.name === name)) {
-      db.exec(`ALTER TABLE presets ADD COLUMN ${name} ${definition}`);
-    }
-  }
-}
-
 function rebuildLegacyBandTable(db: PresetDb): void {
   const row = db.prepare(
     "SELECT sql FROM sqlite_master WHERE name = 'stage_presets'",
@@ -144,35 +167,16 @@ function rebuildLegacyBandTable(db: PresetDb): void {
     DROP TABLE stage_presets_rebuild;`);
 }
 
+/**
+ * The built-in default has to exist, because a card with no assigned preset
+ * resolves to it — so a fresh install is seeded. An existing row is left
+ * exactly as it is: it is a preset the operator can edit, and a migration that
+ * rewrote it on every boot would silently undo the edit.
+ */
 function ensureDefaultPreset(db: PresetDb, now: () => number): void {
-  const existing = db.prepare("SELECT * FROM presets WHERE id = 'preset_default'")
-    .get() as PresetRow | undefined;
-  if (existing?.provider_id === "codex") {
-    migrateCodexDefault(db, now());
-  } else if (existing && existing.permission_mode !== "full" && existing.provider_id === "pi") {
-    migratePiDefault(db, now());
-  } else if (!existing) {
-    insertDefaultPreset(db, now);
-  }
-}
-
-function migrateCodexDefault(db: PresetDb, timestamp: number): void {
-  db.prepare(`
-    UPDATE presets
-    SET provider_id = 'pi', model_id = 'bifrost/harness-coding',
-        permission_mode = 'full', updated_at = ?
-    WHERE id = 'preset_default'
-  `).run(timestamp);
-}
-
-function migratePiDefault(db: PresetDb, timestamp: number): void {
-  db.prepare(`
-    UPDATE presets SET permission_mode = 'full', updated_at = ?
-    WHERE id = 'preset_default'
-  `).run(timestamp);
-}
-
-function insertDefaultPreset(db: PresetDb, now: () => number): void {
+  const existing = db.prepare("SELECT id FROM presets WHERE id = 'preset_default'")
+    .get() as Pick<PresetRow, "id"> | undefined;
+  if (existing) return;
   db.prepare(`INSERT INTO presets (
     id, name, provider_id, model_id, reasoning_level, permission_mode,
     environment_kind, instructions, is_default, built_in, created_at, updated_at
