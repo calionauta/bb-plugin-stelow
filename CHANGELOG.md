@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.60.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.4...v0.60.5) (2026-10-01)
+
+
+### Bug Fixes
+
+* the adversarial pass survived the suite, so the suite was the bug ([#221](https://github.com/calionauta/bb-plugin-stelow/issues/221)) ([0086d31](https://github.com/calionauta/bb-plugin-stelow/commit/0086d319b2797e867a9b2069855c9daf1ba80f87))
+
 ## [0.60.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.3...v0.60.4) (2026-10-01)
 
 
