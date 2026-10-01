@@ -1,6 +1,7 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { DisclosureSection } from "../disclosure";
-import { STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, stageInfoUrl, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { STAGE_SEQUENCE, STAGE_TO_BAND, WORKFLOW_PHASES, stageInfoUrl, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { stageSummary } from "../../lib/stage-vocabulary-surfaces.mjs";
 
 // Workflow map: what each stage does, grouped by phase, each linked to
 // the upstream skill or behavior document that defines it. A sibling of
@@ -23,7 +24,9 @@ function WorkflowPhaseSection({ phase }: { phase: { id: string; label: string } 
       <ul className="grid gap-2.5 lg:grid-cols-2">
         {stages.map((stage) => {
           const url = stageInfoUrl(stage);
-          const skill = STAGE_SKILL[stage] ?? null;
+          // One derived answer per stage, not a second reading of the catalog.
+          const summary = stageSummary(stage);
+          const skill = summary?.attribution?.skill ?? null;
           return (
             <li key={stage} className="flex min-w-0 gap-2.5 rounded-md border bg-muted/30 px-3 py-2.5">
               <span aria-hidden className="flex size-6 shrink-0 items-center justify-center rounded-full bg-background text-[11px] font-semibold text-muted-foreground ring-1 ring-border">{STAGE_SEQUENCE.indexOf(stage) + 1}</span>
@@ -36,7 +39,7 @@ function WorkflowPhaseSection({ phase }: { phase: { id: string; label: string } 
                     </UrlLink>
                   ) : null}
                 </div>
-                <p className="text-xs leading-5 text-muted-foreground">{STAGE_PRODUCES[stage]}</p>
+                <p className="text-xs leading-5 text-muted-foreground">{summary?.produces}</p>
               </div>
             </li>
           );

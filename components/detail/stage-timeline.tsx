@@ -1,5 +1,6 @@
 import { CURRENT_STAGE_PILL_CLASS } from "../dashboard/build-status-pills";
-import { PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { PHASE_LABELS, STAGE_SEQUENCE, STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { stageSummary } from "../../lib/stage-vocabulary-surfaces.mjs";
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
 // chip: passed / current / upcoming. Clicking an allowed target advances or
@@ -64,7 +65,11 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
   const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
   const clickable = canAdvance || canRegress;
   const produced = artifacts.filter((artifact) => artifact.stage === stage);
-  const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : [STAGE_PRODUCES[stage], STAGE_SKILL[stage] ? `Defined by ${STAGE_SKILL[stage]} — see the Workflow map below for the link.` : null].filter(Boolean).join(" "));
+  // A chip can show a sentence but not a link, so it says what the stage
+  // produces and stops there. It used to append "see the Workflow map below
+  // for the link" — a pointer to a component it cannot vouch for, which is
+  // what let two surfaces answer the same question in two different ways.
+  const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : stageSummary(stage)?.text ?? "");
   return (
     <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
       <button
