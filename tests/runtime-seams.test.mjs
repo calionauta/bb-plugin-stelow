@@ -13,7 +13,8 @@ import { seedWorkflow } from "../server/runtime/workflow-seeding.ts";
 import { createCardLedger } from "../server/runtime/card-ledger.ts";
 import { createQuestionInbox } from "../server/runtime/question-inbox.ts";
 import { lockBlockEvent } from "../lib/lock-blocked.mjs";
-import { recoveryNudge, statusLabelForSummary } from "../server/runtime/card-copy.ts";
+import { recoveryNudge } from "../server/runtime/card-copy.ts";
+import { trackableStatusLabel } from "../lib/trackables.mjs";
 import { auditReceiptNote } from "../server/runtime/audit-receipts.ts";
 import { fileTimestamp, join as joinPath, projectRoot } from "../server/runtime/root-paths.ts";
 import { runHelper } from "../server/runtime/helper-script.ts";
@@ -56,9 +57,9 @@ assert.match(
   /bb stelow ask/,
   "a question the worker never asked is invited rather than assumed",
 );
-assert.equal(statusLabelForSummary("in-progress"), "in progress");
-assert.equal(statusLabelForSummary("completed"), "done");
-assert.equal(statusLabelForSummary("archived"), "archived", "an unmapped status reads verbatim");
+assert.equal(trackableStatusLabel("in-progress"), "In progress");
+assert.equal(trackableStatusLabel("completed"), "Completed");
+assert.equal(trackableStatusLabel("archived"), "archived", "a card status through the trackable label reads verbatim");
 
 // --- claim copy: a parked scope must say what frees it ---
 // The copy moved from the coordination seam to lib/lock-blocked, which is where

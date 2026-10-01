@@ -129,6 +129,11 @@ test("a finished status reads as finished by shape, not only by colour", () => {
   assert.equal(statusGlyph("in-progress"), "●");
   assert.equal(statusGlyph("archived"), "○");
   assert.equal(statusGlyph("something-unknown"), "·");
+  // `approved` is a scope MAP status — neither a card nor a trackable status —
+  // so it must read as unknown, not as in-progress. Both branches below used to
+  // mention it, which read as though a card could be approved.
+  assert.equal(statusGlyph("approved"), "·", "a map status is unknown to the trackable glyph");
+  assert.equal(statusTone("approved"), statusTone("something-unknown"), "and to the tone");
 });
 
 test("the glyph agrees with the machine about what is finished", () => {

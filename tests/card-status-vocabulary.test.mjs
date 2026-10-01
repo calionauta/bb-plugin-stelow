@@ -75,7 +75,7 @@ test("every status the app writes to a card is in the vocabulary", () => {
 test("a status from another axis is refused, and the refusal names it", () => {
   // `approved` is a real status in this codebase — it is what an approved scope
   // map carries — and it is exactly the value most likely to be written to a
-  // card by mistake. The refusal has to name the value AND the four options, or
+  // card by mistake. The refusal has to name the value AND the five options, or
   // the reader is left guessing which machine it came from.
   for (const wrong of ["approved", "running", "needs_input", "verified", "ready", "human-review"]) {
     assert.throws(

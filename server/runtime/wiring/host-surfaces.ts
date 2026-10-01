@@ -21,13 +21,13 @@ import {
 import { registerMentionProviders } from "../mentions.js";
 import { loadCardScopes } from "../../scopes.js";
 import { readCardStatus } from "../../../lib/card-status.mjs";
+import { trackableStatusLabel } from "../../../lib/trackables.mjs";
 import {
   BUILD_INFO,
   PLUGIN_SKILLS_DIR,
   pluginDir,
   readPinnedStelowVersion,
 } from "../../plugin-paths.js";
-import { statusLabelForSummary } from "../card-copy.js";
 import type { CardSurfaces } from "./card-surfaces.js";
 import type { RuntimeCore } from "../runtime-core.js";
 import type { GithubAutomation } from "../../github-issues.js";
@@ -112,7 +112,13 @@ function buildGithubAutomation(deps: HostSurfaceDeps) {
       // wired to the scope normalizer, which only worked because the scope
       // vocabulary was an inaccurate superset containing every card status.
       cardStatusOf: (value) => readCardStatus(value),
-      statusLabel: (status) => statusLabelForSummary(status),
+      // The TRACKABLE label, and it was a third restatement before: this dep is
+      // called with SCOPE statuses (github-completion renders one line per scope),
+      // and the hand-written function it wrapped passed `blocked`, `failed`,
+      // `skipped` and `escalated` straight through, so a reader on GitHub saw
+      // "env-seed-mapper (blocked)". It also lowercased "Done" and "In progress"
+      // into a spelling no card used.
+      statusLabel: (status) => trackableStatusLabel(status),
     },
   });
   deps.github(github);

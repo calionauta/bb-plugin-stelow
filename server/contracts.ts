@@ -22,7 +22,7 @@ import { z } from "zod";
  * extension resolves its runtime and its declarations as two unrelated type
  * identities, which propagates a nominal mismatch through the whole RPC type
  * graph and fails `tsc` far from the import that caused it. Deriving was tried
- * and reverted; `tests/status-vocabulary-values.test.mjs` pins both lists to the
+ * and reverted; `tests/status-axis-boundary.test.mjs` pins both lists to the
  * machine instead, so the duplication cannot drift and the constraint is recorded
  * rather than rediscovered.
  *
