@@ -2335,12 +2335,30 @@ imperfect about *syntax* — it recognises a declaration shape, not every way on
 can be written — so it guards the four known maps rather than pretending to
 enforce a property no regex can enforce.
 
-Research-artifact statuses (`ready`, `missing`, `invalid`, `needs-depth`,
-`verified`) are a fifth axis with their own vocabulary in
-`components/detail/research-quality-section.tsx`. They are not consolidated, and
-the one-owner test does not claim them: they never share a namespace with the four
-above, and widening the rule to cover a vocabulary with no collision would be
-ceremony.
+Research-substep quality (`ready`, `missing`, `invalid`, `needs-depth`) is a fifth
+axis with its own vocabulary in `components/detail/research-quality-section.tsx`.
+It is not consolidated and the one-owner test does not claim it, because it was
+checked value by value and shares nothing with the axes above. Its two
+self-labelling entries — `ready: "ready"` and `missing: "missing"` — are now
+words, since a label that equals its stored value is the shape the stage rule
+forbids everywhere else.
+
+**Research ROUND status is the exception, and it is a trap rather than a
+collision.** The round type declares `ready | pending | missing`, and `pending`
+is also a card status and a pendency status. Nothing renders it today, so there is
+no wrong word on screen — but the first person to render a round's status would
+get a value that belongs to two other machines and no way to tell which. The
+round axis is therefore the one place where "no collision" would have been the
+wrong claim, and the honest description is "unused, and it should not be used
+without deciding whose `pending` this is".
+
+One overlap survives by decision rather than by accident: `completed` is both a
+board column and a card status, and they are labelled differently — "Done" on the
+board, "Completed" in a search result. A board column is a place and "Done" is the
+conventional name for it, so the convention is kept and the difference is pinned
+rather than left to be tidied away. It never appears twice on one screen: the card
+pill shows the column, the mention picker shows the status, and a reader is never
+shown both words for one card at once.
 
 **The host's own answer is the only authority on whether a worker is
 running.** A message the host queued has not been dispatched, whatever the

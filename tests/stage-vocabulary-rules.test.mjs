@@ -3,7 +3,14 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { STAGE_LABELS, WORKFLOW_STAGES, stageLabel } from "../lib/workflow-vocabulary.mjs";
+import {
+  BUILD_BOARD_COLUMNS,
+  BUILD_BOARD_COLUMN_LABELS,
+  STAGE_LABELS,
+  WORKFLOW_STAGES,
+  stageLabel,
+} from "../lib/workflow-vocabulary.mjs";
+import { CARD_STATUSES, cardStatusLabel } from "../lib/card-status.mjs";
 
 /**
  * The stage vocabulary, as a contract rather than a preference.
@@ -93,6 +100,55 @@ test("a label is a name a reader can read, not a variable", () => {
       `${stage.id} label "${stage.label}" still looks like an identifier`,
     );
   }
+});
+
+test("a board column that is also a card status is labelled on purpose", () => {
+  // `completed` is BOTH a board column key and a card status, and the two maps
+  // call it different things — "Done" and "Completed". That is one axis with two
+  // names for one value, which is the mistake this whole file exists to catch, so
+  // it is pinned rather than left to be tidied away by someone who reads
+  // "Completed" on the board and assumes it should match.
+  //
+  // The argument for keeping it: a board column is a PLACE and "Done" is the
+  // conventional name for the place finished work collects, the same way
+  // `inbox` is labelled "Bucket". The argument against: a reader who sees "Done"
+  // on the board and "Completed" in a mention result has two words for one card.
+  //
+  // What makes it safe is that they never appear together. The card's pill shows
+  // the column, the mention picker shows the status, and no surface renders both
+  // — asserted below rather than assumed, because the day one does, this becomes
+  // a bug and the exception should stop being available.
+  const overlap = BUILD_BOARD_COLUMNS.filter((column) => CARD_STATUSES.includes(column));
+  assert.deepEqual(overlap, ["completed", "archived"], "the overlap is named, not discovered");
+
+  for (const column of overlap) {
+    const onBoard = BUILD_BOARD_COLUMN_LABELS[column];
+    const asStatus = cardStatusLabel(column);
+    if (onBoard === asStatus) continue;
+    assert.equal(
+      column,
+      "completed",
+      `${column} is the only column allowed a different word from the status it shares a key with`,
+    );
+    assert.equal(onBoard, "Done");
+    assert.equal(asStatus, "Completed");
+  }
+});
+
+test("no surface shows a card's column and its status word at once", () => {
+  // The condition that makes the exception above safe. If a card's own view ever
+  // renders both, the reader has "Done" and "Completed" side by side for one
+  // card and the exception has to go.
+  const readsColumnLabel = readFileSync(
+    join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
+  assert.ok(
+    readsColumnLabel.includes("{columnLabel}"),
+    "the card pill is expected to render the board column",
+  );
+  assert.ok(
+    !/\{cardStatusLabel\(card\.status\)\}/.test(readsColumnLabel),
+    "and NOT the status word beside it — if this ever changes, the two labels must be reconciled",
+  );
 });
 
 test("a stage added without a label fails the suite, not the reader", () => {
