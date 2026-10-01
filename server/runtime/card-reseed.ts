@@ -91,6 +91,31 @@ type ReseedDeps = {
   };
 };
 
+/**
+ * The reseed RPC — the action every ownership refusal names.
+ *
+ * There is deliberately NO `requireOwnedState` guard here, and its absence is
+ * the load-bearing part rather than an oversight. Every other surface refuses an
+ * unowned card and points at this one; a guard on the door would make
+ * `OWNERSHIP_UNVERIFIED` ("Reseed this card — Restart fresh…") a deadlock with a
+ * good error message, which is the failure shape this repo refuses hardest.
+ *
+ * It is also the only writer that can repair the disagreement: `seedWorkflow` is
+ * called with `fresh = true`, so it mints a NEW generation, writes a state file
+ * that names this card, and upserts the tracking entry — after which
+ * `updateReseedIdentity` points the card row at the generation it just created.
+ * The identity rule is what makes that safe rather than destructive: the entry
+ * is replaced only for this immutable card id, and the first `created` is kept,
+ * so no other card's state can be adopted and the old directory is not moved
+ * out from under anything. `dir_hash` is rewritten only after the seed succeeded
+ * (line 141), so a failed reseed leaves the card on its last verified records
+ * instead of on a hash that points nowhere.
+ *
+ * `tests/reseed-unowned-door.test.mjs` runs this against a real workspace whose
+ * records genuinely disagree and asserts they agree afterwards — the guard this
+ * comment describes as absent, and the door the refusal names, both proved by
+ * the behaviour rather than by the words in a sentence.
+ */
 export function createCardReseed(deps: ReseedDeps) {
   return (input: { cardId: string; presetId?: string | null; intent?: string }) =>
     reseedCard(deps, input);

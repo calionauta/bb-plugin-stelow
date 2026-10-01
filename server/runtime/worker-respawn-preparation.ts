@@ -1,3 +1,4 @@
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
 import { roundFileName, roundTimestamp } from "../../lib/research-rounds.mjs";
 import { techniqueById } from "../../lib/stage-catalog.mjs";
@@ -106,10 +107,17 @@ async function verifiedStateDir(
   return deps.workflowStateDir(deps.bb, projectPath, card.id, card.dir_hash).catch(() => null);
 }
 
+/**
+ * The refusal the Restart-worker path owes the reader, and it is the shared one.
+ *
+ * This site used to hold its own copy of the words, and it sits on the same
+ * Restart-fresh worker-replacement path the sentence already names — so a card
+ * that refused a restart was told one thing while its own error chip, three
+ * files over, told it another. The action is the same either way, so the
+ * sentence is the same either way.
+ */
 function unverifiableStateRefusal(): RespawnPreparation {
-  return {
-    error: "This card's workflow state cannot be verified. Reseed it before restarting its worker.",
-  };
+  return { error: OWNERSHIP_UNVERIFIED };
 }
 
 function stateHintFor(card: WorkerCard, stateDir: string | null): string {

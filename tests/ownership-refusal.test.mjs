@@ -20,15 +20,24 @@ import {
   OWNERSHIP_UNVERIFIED,
 } from "../lib/ownership-refusal.mjs";
 
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// The two words in the sentence are UI copy that lives in the components, so the
+// one half a string CAN reach is checked here: the menu still renders the label
+// the refusal tells the reader to look for. The other half — whether that action
+// actually works on a card the refusal is written for — is
+// `tests/reseed-unowned-door.test.mjs`, and it is the half that used to be
+// missing.
+assert.match(
+  readFileSync(join(root, "components/manage/card-actions-menu.tsx"), "utf8"),
+  /Restart fresh…/,
+  "the action the refusal names is a label the menu really renders",
+);
+
 assert.equal(
   isOwnershipRefusal(OWNERSHIP_UNVERIFIED),
   true,
   "the sentence recognises itself",
-);
-assert.equal(
-  isOwnershipRefusal(`${OWNERSHIP_UNVERIFIED} Reseed this card before changing its workflow type.`),
-  true,
-  "a site may append its own tail and still be the refusal",
 );
 for (const notIt of [
   null,
@@ -47,18 +56,59 @@ for (const notIt of [
   );
 }
 
-// The sentence has to name a door that exists, or naming it is worse than the
-// silence it replaced. Both halves are literal UI copy, so they are pinned
-// against the components rather than against prose in this file.
-const menu = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/manage/card-actions-menu.tsx"), "utf8");
-assert.match(OWNERSHIP_UNVERIFIED, /Restart fresh…/, "the refusal names the action, not just the intent");
-assert.match(OWNERSHIP_UNVERIFIED, /card actions menu/, "and says where the action lives");
-assert.match(OWNERSHIP_UNVERIFIED, /Retry cannot help/, "and rules out the button a reader reaches for first");
-assert.match(
-  menu,
-  /Restart fresh…/,
-  "the action the refusal names is a label the menu really renders",
+// The wording itself is NOT pinned here. `assert.match(OWNERSHIP_UNVERIFIED, /Restart fresh…/)`
+// proves only that a string contains some words, and it passes unchanged if the
+// reseed path grows a `requireOwnedState` guard — the exact change that turns
+// the sentence into a lie, and the one this file was written believing it
+// caught. Whether the door the sentence names actually opens on an unowned card
+// is `tests/reseed-unowned-door.test.mjs`, which runs the real reseed against a
+// real workspace whose records genuinely disagree. What is left to assert here
+// is the thing a string CAN prove: the sentence is a prefix the predicate
+// accepts, so the surfaces downstream can recognise it without matching words
+// they could have misspelled.
+assert.equal(
+  isOwnershipRefusal(`${OWNERSHIP_UNVERIFIED} Reseed this card before changing its workflow type.`),
+  true,
+  "a site may extend the sentence and the predicate still recognises the refusal",
 );
+
+// Every server surface that refuses on unowned state must hand the reader the
+// ONE sentence, because two components choose their copy from its prefix: a
+// site that kept its own words was invisible to this predicate and rendered the
+// wrong advice next to the right chip. Counted by reading the sources, not by
+// asserting the constant contains anything.
+const refusalSources = [
+  ["server/runtime/workflow-state.ts", "the requireOwnedState card-worker guard"],
+  ["server/runtime/worker-respawn-preparation.ts", "the Restart-worker path"],
+  ["server/runtime/cli/cli-gap-scopes.ts", "the gap-scopes worker CLI"],
+  ["server/runtime/build-thread-sync.ts", "the card's own last_error"],
+  ["server/runtime/cli-inspection.ts", "the playbook CLI"],
+  ["server/runtime/cli/cli-done-build.ts", "the done-build CLI"],
+  ["server/runtime/card-mutations.ts", "the workflow-type mutation"],
+  ["server/runtime/card-audit-trail.ts", "the audit trail status"],
+];
+for (const [file, role] of refusalSources) {
+  const source = readFileSync(join(root, file), "utf8");
+  assert.match(
+    source,
+    /OWNERSHIP_UNVERIFIED/,
+    `${file} (${role}) reads the shared sentence rather than holding its own copy of the words`,
+  );
+  // A re-spelled refusal is a string literal in the site that states the verdict
+  // in its own words. Matched on the VERDICT rather than on the whole sentence,
+  // so a site that trims the copy instead of pasting it verbatim is still caught:
+  // the predicate recognises the prefix, not the prose after it. Comments are
+  // stripped first because the reasoning ABOUT this refusal talks about the
+  // verdict in the same words, and a docstring is not a string the reader sees.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(
+    code,
+    /"(?:[^"\\]|\\.)*(?:cannot be verified|owns this card)(?:[^"\\]|\\.)*"/i,
+    `${file} (${role}) re-spells the refusal inline, which the predicate cannot recognise`,
+  );
+}
 
 // The repair dialog advises retrying first for most failures, which is the
 // right default and the wrong one here. Both arms are asserted because the
@@ -90,7 +140,7 @@ assert.notEqual(
 // JSX can only be tested by matching source, and this decision is the one that
 // has to survive being re-spelled.
 const dialogs = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../components/detail/build-lifecycle-dialogs.tsx"),
+  join(root, "components/detail/build-lifecycle-dialogs.tsx"),
   "utf8",
 );
 assert.match(dialogs, /ownershipRepairAdvice\(cardLastError\)/, "the dialog reads the shared advice");
@@ -100,4 +150,6 @@ assert.doesNotMatch(
   "the advice is not re-spelled in the component, so it cannot drift from the predicate",
 );
 
-console.log("ownership refusal ok: one sentence, one predicate, one advice, the door it names exists");
+console.log(
+  "ownership refusal ok: one sentence, one predicate, one advice; the DOOR is proved in tests/reseed-unowned-door.test.mjs",
+);
