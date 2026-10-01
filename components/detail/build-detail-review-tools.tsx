@@ -35,6 +35,7 @@ export function BuildReviewTools({
         ? (
           <BuildPublication
             cardId={cardId}
+            integrationPending={card.integrationPending}
             verifiedHeadSha={detail?.card.verifiedHeadSha ?? null}
             recoveryContent={card.workspaceKind === "exploratory"
               ? <BuildRecoveryContent card={card} lifecycle={lifecycle} view={view} />

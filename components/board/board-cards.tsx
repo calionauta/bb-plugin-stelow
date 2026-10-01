@@ -12,6 +12,7 @@ import {
   AttentionChip,
   BuildStatusPills,
   DoingNowPill,
+  IntegrationPendingChip,
   LightweightStatusPills,
   ReviewChip,
   ScopeStrip,
@@ -65,6 +66,14 @@ export function CardMetaRows({ card }: { card: BoardCardItem }) {
       </div>
       {cardShowsAttention(card) ? (
         <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
+      ) : null}
+      {card.integrationPending ? (
+        <div className="mt-2">
+          <IntegrationPendingChip
+            label={card.integrationPending.label}
+            detail={card.integrationPending.detail}
+          />
+        </div>
       ) : null}
       {card.activity === "running" || card.activity === "awaiting-answer" ? (
         <div className="mt-2 max-w-full"><DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /></div>

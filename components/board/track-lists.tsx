@@ -4,6 +4,7 @@ import { orderedDoingNow } from "../../lib/doing-now.mjs";
 import {
   ActivityPill,
   AttentionChip,
+  IntegrationPendingChip,
   DoingNowPill,
   ReviewChip,
   ScopeStrip,
@@ -44,6 +45,8 @@ type ListCard = {
   activity: string;
   needsAttention: boolean;
   hasPendingReview: boolean;
+  /** What a finished card still owes its repository, or null. */
+  integrationPending?: { state: string; label: string; detail: string } | null;
   workerThreadId?: string | null;
   doingNow?: string[] | null;
   executingScope?: string | null;
@@ -75,6 +78,29 @@ function openWorkerThread(
   if (event.key !== "w" && event.key !== "W") return;
   event.preventDefault();
   if (card.workerThreadId) onOpenThread(card.workerThreadId);
+}
+
+/**
+ * The status chips a list row carries on its right-hand side. Split out of the
+ * row so adding a chip is a change here rather than another branch inside a
+ * render function that is already at its size budget.
+ */
+function ListRowStatus({ card }: { card: ListCard }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <ActivityPill activity={card.activity} />
+      {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
+      {card.integrationPending ? (
+        <IntegrationPendingChip
+          label={card.integrationPending.label}
+          detail={card.integrationPending.detail}
+        />
+      ) : null}
+      {showDoingNow(card) ? <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /> : null}
+      {pendingReview(card) ? <ReviewChip /> : null}
+      <span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span>
+    </span>
+  );
 }
 
 function TrackListRow({ card, meta, onOpen, onOpenThread }: {
@@ -114,18 +140,15 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
           </span>
         </span>
       </span>
-      <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <ActivityPill activity={card.activity} />
-        {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
-        {showDoingNow(card) ? <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /> : null}
-        {pendingReview(card) ? <ReviewChip /> : null}
-        <span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span>
-      </span>
+      <ListRowStatus card={card} />
     </button>
   );
 }
 
 function rowTone(card: ListCard): string {
+  // An owed integration is a reason to look at this row, so it takes the
+  // attention tone over a completed card's calm emerald.
+  if (card.integrationPending) return "mt-1 size-2 shrink-0 rounded-full bg-amber-500";
   if (card.needsAttention) return "mt-1 size-2 shrink-0 rounded-full bg-amber-500";
   if (pendingReview(card)) return "mt-1 size-2 shrink-0 rounded-full bg-emerald-500";
   if (card.activity === "running") return "mt-1 size-2 shrink-0 rounded-full bg-primary";

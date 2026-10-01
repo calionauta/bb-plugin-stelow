@@ -183,6 +183,26 @@ export function AttentionChip({ label }: { label: string }) {
   </span>;
 }
 
+/**
+ * What a finished card still owes its repository.
+ *
+ * Amber is the same tone as AttentionChip on purpose: both mean "this card
+ * wants a person", and a reader who learns one tone should not have to learn
+ * a second for the same call to action. The difference is in the text, not
+ * the color — the label names the missing step.
+ */
+export function IntegrationPendingChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 // Dot tone for hill dots. List rows keep their own inline mapping on
 // purpose: there, emerald is reserved for pending review (a completed
 // card without review reads muted), while on the hill every completed

@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { hasPendingReview } from "../../lib/inbox-events.mjs";
+import { integrationPending } from "../../lib/integration-pending.mjs";
 import { diagnoseScopeSync } from "../../lib/spec-scope-reader.mjs";
 import { errorNeedsAttention, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { doingNowNames } from "../../lib/doing-now.mjs";
@@ -256,6 +257,9 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
     blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
+    // The same ladder the board reads, so opening a card cannot disagree
+    // with the chip that sent the reader here.
+    integrationPending: integrationPending(db, card),
   };
 }
 
