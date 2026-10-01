@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
 import { PREVIEW_STATES } from "../lib/preview-session.mjs";
 import { githubReleaseSchema, pluginUpdateSchema } from "./contracts.js";
 
@@ -75,6 +76,9 @@ export const platformRpcContract = {
           name: z.string(),
           providerId: z.string(),
           modelId: z.string(),
+          // The preset read outputs stay `z.string()` on purpose: the storage
+          // CHECK is what guarantees the stored value, and narrowing a read
+          // path breaks every existing client for no safety gain.
           reasoningLevel: z.string(),
           permissionMode: z.string(),
           environmentKind: z.string(),
@@ -95,7 +99,7 @@ export const platformRpcContract = {
         name: z.string().min(1).max(60),
         providerId: z.string().min(1).max(60),
         modelId: z.string().min(1).max(120),
-        reasoningLevel: z.string().min(1).max(20),
+        reasoningLevel: z.enum(PRESET_REASONING_LEVELS),
         permissionMode: z.enum(["accept-edits", "auto", "full"]),
         environmentKind: z.enum(["project-default", "new-worktree"]).default("project-default"),
         baseBranch: z.string().nullable().optional(),
