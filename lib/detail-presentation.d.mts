@@ -5,6 +5,8 @@ export function joinStrategyLabels(
 
 export function statusTone(status: string): string;
 
+export declare function statusGlyph(status: string): string;
+
 export function liveBorderClass(card: {
   activity: string;
   needsAttention: boolean;

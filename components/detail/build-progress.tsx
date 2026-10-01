@@ -3,11 +3,11 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { groupCardChecks, groupState, isExecutionUntracked } from "../../lib/card-checks.mjs";
 import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
-import { statusTone } from "../../lib/detail-presentation.mjs";
+import { statusGlyph, statusTone } from "../../lib/detail-presentation.mjs";
+import { isDoneStatus, trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
 import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
 import { scopeEmptyState } from "../../lib/scope-xray-presentation.mjs";
 import { TEXT_META } from "../../lib/design-tokens";
-import { isDoneStatus } from "../../lib/trackables.mjs";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
@@ -28,20 +28,6 @@ type GapSummary = {
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
 };
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft", planning: "Planning", approved: "Approved", "in-progress": "In progress",
-  completed: "Completed", archived: "Archived", pending: "Pending", done: "Done",
-  skipped: "Skipped", blocked: "Blocked", escalated: "Escalated", failed: "Failed",
-};
-const statusLabel = (status: string) => STATUS_LABELS[status] ?? status;
-const statusGlyph = (status: string) => {
-  if (isDoneStatus(status)) return "✓";
-  if (status === "skipped") return "↷";
-  if (["blocked", "failed", "escalated"].includes(status)) return status === "escalated" ? "↑" : status === "failed" ? "✗" : "⚠";
-  if (["in-progress", "approved"].includes(status)) return "●";
-  return status === "archived" ? "○" : "·";
-};
 
 function useGapSummary(cardId: string): GapSummary | null {
   const rpc = useRpc<typeof rpcContract>();
