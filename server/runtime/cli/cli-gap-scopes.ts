@@ -1,5 +1,6 @@
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { workflowEntryForOwner } from "../../../lib/workflow-state-identity.mjs";
@@ -131,13 +132,11 @@ async function gapScopesTracking(
   const entry = workflowEntryForOwner(array(data.workflows), cardId) as
     | WorkflowEntry
     | null;
-  if (!entry)
-    return {
-      result: {
-        exitCode: 1,
-        stderr: "No workflow entry owns this card. Reseed the workflow.",
-      },
-    };
+  // A tracking file with no entry for this card is the ownership verdict, not a
+  // variant of the missing-file refusal above, so it reads the shared sentence
+  // rather than its own words: the worker reading this stderr cannot reseed
+  // itself, and the door that does work is named in one place for every reader.
+  if (!entry) return { result: { exitCode: 1, stderr: OWNERSHIP_UNVERIFIED } };
   return { path, data, entry };
 }
 

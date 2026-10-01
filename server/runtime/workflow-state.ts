@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import {
   ownsWorkflowState,
   workflowEntryForOwner,
@@ -173,9 +174,12 @@ export async function ensureProjectArtifacts(
 ): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
   const transitions = join(rootPath, WORKSPACE_TRANSITIONS);
-  if (requireOwnedState && !stateDir) {
-    return "This card's workflow state cannot be verified. Reseed the card; Stelow will not use project-root state as a fallback.";
-  }
+  // The card-worker guard, and the same verdict every other surface reaches, so
+  // it reads the shared sentence: a reader who got it from `stelow advance` and
+  // a reader who got it from the card's Failed chip were being told two
+  // different things about the same broken card, and only one of them named the
+  // action that clears it.
+  if (requireOwnedState && !stateDir) return OWNERSHIP_UNVERIFIED;
   const state = stateDir
     ? join(stateDir, "state.md")
     : join(rootPath, "state.md");
