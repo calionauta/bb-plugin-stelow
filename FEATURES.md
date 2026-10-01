@@ -1508,6 +1508,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   untouched. Concretely, this means **a preset's permission mode and provider
   are no longer rewritten on every start** — an existing default preset you
   edited is now left exactly as you set it.
+  **An install that ran v0.61.0 is unblocked at boot, once, and narrowly.**
+  v0.61.0 shipped the `presets` migration as a generated literal, so the host
+  recorded the wrong text at position 3 of its migration ledger (`3dc92d76…`
+  instead of the released `ba1ac500…`). The host keys that ledger by position
+  and checks it before running anything, so from then on **every** upgrade of
+  that install was refused with *"migration 3 does not match the recorded
+  statement"* — a message that reads like a corrupt database when the database
+  is fine, and no new migration can reach it because the check runs first. Before
+  the migrator, the plugin corrects that one record when — and only when — it
+  holds exactly that hash, and logs the correction naming the position and both
+  values. No schema changes and no data is touched: the statement the record
+  claims to describe has been unchanged since before v0.61.0, so the record was
+  simply a wrong transcription of it. **Any other value at that position is left
+  alone and the boot is still refused**, because a genuine mismatch is a real
+  signal and silencing it is worse than the defect; the same applies to a
+  statement that has itself drifted, which the repair declines out loud. A
+  healthy install is not written to at all.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
