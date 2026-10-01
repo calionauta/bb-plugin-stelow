@@ -576,7 +576,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  102 times: the card had a real type scale, invented by whoever needed a small
+  109 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -589,7 +589,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 76 raw buttons. A test does. The index itself then failed
+  long time next to 81 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -1900,10 +1900,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
   progress block; the Build board carries one glanceable Flow strip naming
   itself (finished count with a measured trail, typical/median and slow/p90
-  lead/cycle with the jargon glossed inline, expanding to Tempo and Atenção
+  lead/cycle with the jargon glossed inline, expanding to Timing and Attention
   tabs and a per-card table that opens
-  cards) fed by the board project filter. Tempo holds windows, legend, and
-  the lead/cycle table; Atenção holds right-now stuck (blocked status or
+  cards) fed by the board project filter. Timing holds windows, legend, and
+  the lead/cycle table; Attention holds right-now stuck (blocked status or
   errored worker) and review-awaiting dones with an all-clear empty state —
   signal chips for both ride the closed header only when nonzero, so a calm
   board shows no amber. Empty boards render no strip.
