@@ -95,6 +95,18 @@ type PresetActionContext = {
   setError: (message: string | null) => void;
 };
 
+/**
+ * A refused save is a normal outcome of choosing, not a crash: the server
+ * refuses an incomplete provider/model, and it refuses a reasoning level the
+ * chosen provider never declared, naming the ladder that does apply. That
+ * refusal arrives as a thrown RPC error, so without this the dialog would sit
+ * there having done nothing and say nothing about why — the reader would retry
+ * the same choice.
+ */
+function assignmentFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Could not change preset.";
+}
+
 function recordAssignmentResult(
   result: { ok: boolean; error?: string },
   mode: "reset" | "override",
@@ -135,6 +147,16 @@ async function applyPresetSelection(
   );
 }
 
+type PresetActionsArgs = {
+  open: boolean;
+  cardId: string;
+  selected: string | null;
+  customValue: PresetExecutionValue;
+  defaultPreset: PresetSummary | null;
+  onOpenChange: (next: boolean) => void;
+  onChanged: () => void;
+};
+
 function usePresetActions({
   open,
   cardId,
@@ -143,15 +165,7 @@ function usePresetActions({
   defaultPreset,
   onOpenChange,
   onChanged,
-}: {
-  open: boolean;
-  cardId: string;
-  selected: string | null;
-  customValue: PresetExecutionValue;
-  defaultPreset: PresetSummary | null;
-  onOpenChange: (next: boolean) => void;
-  onChanged: () => void;
-}) {
+}: PresetActionsArgs) {
   const rpc = useRpc<typeof rpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +191,8 @@ function usePresetActions({
         { rpc, cardId, customValue, defaultPreset, complete, setError },
         selected,
       );
+    } catch (error) {
+      setError(assignmentFailureMessage(error));
     } finally {
       setBusy(false);
     }

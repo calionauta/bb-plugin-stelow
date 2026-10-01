@@ -4,6 +4,12 @@ export type PresetManagerPreset = {
   providerId: string;
   modelId: string;
   reasoningLevel: string;
+  /**
+   * The host roster's verdict on that level for that provider. `null` means the
+   * host did not say (roster unreadable, or a provider with no declared
+   * ladder), which is not the same as supported — see `listPresets`.
+   */
+  reasoningLevelSupported: boolean | null;
   permissionMode: string;
   environmentKind: string;
   builtIn: boolean;

@@ -80,6 +80,12 @@ export const platformRpcContract = {
           // CHECK is what guarantees the stored value, and narrowing a read
           // path breaks every existing client for no safety gain.
           reasoningLevel: z.string(),
+          // Whether the host's provider roster says that provider declares this
+          // level. `null` is the honest third state — roster unreadable, or a
+          // provider that declares no ladder — and it is deliberately not
+          // collapsed into `true`, or a list would render an unverified level
+          // as a supported one.
+          reasoningLevelSupported: z.boolean().nullable(),
           permissionMode: z.string(),
           environmentKind: z.string(),
           baseBranch: z.string().nullable(),

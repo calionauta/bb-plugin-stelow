@@ -16,7 +16,6 @@
     "components/settings/preset-manager-band-routing.tsx:PresetManagerBandRouting": 68,
     "components/settings/preset-manager-band-routing.tsx:PresetManagerDelegatedWork": 84,
     "components/settings/preset-manager-form.tsx:PresetManagerFormView": 73,
-    "components/settings/preset-manager-list.tsx:PresetManagerList": 74,
     "components/settings/preset-onboarding.tsx:PresetOnboardingDialog": 53,
     "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard": 67,
     "components/ui/dialog.tsx:Dialog": 62,
