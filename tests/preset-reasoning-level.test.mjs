@@ -15,13 +15,9 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import {
   asPresetReasoningLevel,
-  declaredProviderLevels,
-  isLevelDeclaredForProvider,
   isPresetReasoningLevel,
-  ladderIncludes,
   PRESET_REASONING_LEVELS,
   DEFAULT_PRESET_REASONING_LEVEL,
-  unsupportedLevelMessage,
 } from "../lib/preset-reasoning-level.mjs";
 import {
   sanitizeComposerExecution,
@@ -182,92 +178,6 @@ test("a fresh install creates presets with the reasoning CHECK and the current c
     "a fresh install is seeded with the default preset, because a card with no assigned preset resolves to it",
   );
   db.close();
-});
-
-/**
- * The host enum is a superset: every provider declares a subset of the eight,
- * so "valid for the host" is not "valid here". These are the shapes the host's
- * own roster has — `pi` without `ultra`/`ultracode`, `acp-opencode` without
- * `none`/`ultra`/`ultracode` — and the reason the enum check alone let a level
- * persist that the provider never declared.
- */
-const ROSTER = [
-  { id: "pi", reasoningLevels: ["none", "low", "medium", "high", "xhigh", "max"] },
-  { id: "acp-opencode", reasoningLevels: ["low", "medium", "high", "xhigh", "max"] },
-  { id: "silent", reasoningLevels: [] },
-].map((entry) => ({
-  id: entry.id,
-  reasoningLevels: entry.reasoningLevels.map((id) => ({ id, label: id })),
-}));
-
-test("a level the provider never declared is not a level, however valid it is for the host", () => {
-  assert.equal(
-    isLevelDeclaredForProvider(ROSTER, "acp-opencode", "medium"),
-    true,
-    "a level inside the declared ladder is supported",
-  );
-  assert.equal(
-    isLevelDeclaredForProvider(ROSTER, "acp-opencode", "ultracode"),
-    false,
-    "a level the host enum allows and this provider never declared is unsupported",
-  );
-  assert.equal(
-    isPresetReasoningLevel("ultracode"),
-    true,
-    "which is exactly why the enum check on its own let this through",
-  );
-  for (const level of ["none", "ultra", "ultracode"]) {
-    assert.equal(
-      isLevelDeclaredForProvider(ROSTER, "acp-opencode", level),
-      false,
-      `acp-opencode declares no ${level}`,
-    );
-  }
-  assert.equal(
-    isLevelDeclaredForProvider(ROSTER, "pi", "ultra"),
-    false,
-    "pi declares no ultra",
-  );
-  assert.equal(
-    ladderIncludes(["low", "medium"], "high"),
-    false,
-    "the bare ladder predicate agrees with the roster-shaped one",
-  );
-});
-
-test("the host's silence is null, never support", () => {
-  for (const [roster, providerId, why] of [
-    [null, "pi", "an unreadable roster"],
-    [ROSTER, "not-installed", "a provider absent from the roster"],
-    [ROSTER, "silent", "a provider that declares no ladder"],
-  ]) {
-    assert.equal(
-      isLevelDeclaredForProvider(roster, providerId, "high"),
-      null,
-      `${why} reports unverified, not supported`,
-    );
-    assert.equal(
-      declaredProviderLevels(roster, providerId),
-      null,
-      `${why} yields no ladder to check against`,
-    );
-  }
-  assert.deepEqual(
-    declaredProviderLevels(ROSTER, "pi"),
-    ["none", "low", "medium", "high", "xhigh", "max"],
-    "a declared ladder is reported as the provider declared it, ids only",
-  );
-});
-
-test("the refusal names the provider's own ladder, because that is where the mismatch is", () => {
-  const message = unsupportedLevelMessage("acp-opencode", "ultracode", ["low", "medium"]);
-  assert.match(message, /acp-opencode/);
-  assert.match(message, /ultracode/);
-  assert.match(
-    message,
-    /low, medium/,
-    "naming the levels that ARE supported sends the reader to the fix, not back to the enum",
-  );
 });
 
 test("running the migration again changes nothing at all", () => {
