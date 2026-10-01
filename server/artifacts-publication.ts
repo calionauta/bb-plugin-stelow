@@ -36,7 +36,7 @@ export interface ArtifactsPublicationDeps {
     get: (cardId: string) => PublicationCard | undefined;
     checkout: (card: PublicationCard) => Promise<PublicationCheckout | null>;
   };
-  normalizeStatus: (value: unknown) => string;
+  cardStatusOf: (value: unknown) => string;
 }
 
 const capabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });

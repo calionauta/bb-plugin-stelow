@@ -117,7 +117,7 @@ function toCandidateIssue(
     alreadyImported: card !== null,
     cardId: card?.id ?? null,
     cardName: card ? (card.display_name ?? card.name) : null,
-    cardStatus: card ? cards.normalizeStatus(card.status) : null,
+    cardStatus: card ? cards.cardStatusOf(card.status) : null,
     postedAt: link?.commented_at ?? null,
     related: findRelatedIssues(issue, items),
   };
@@ -241,7 +241,7 @@ async function createLinkedGithubIssue(ctx: GithubAutomationDeps, client: Github
   const card = db.prepare("SELECT id, display_name, name, prompt, project_id, status FROM cards WHERE id = ?").get(cardId) as
     { id: string; display_name: string | null; name: string; prompt: string; project_id: string; status: string } | undefined;
   if (!card) return { ok: false, url: null, number: null, error: "Card not found." };
-  if (ctx.cards.normalizeStatus(card.status) === "archived") return { ok: false, url: null, number: null, error: "This card is archived." };
+  if (ctx.cards.cardStatusOf(card.status) === "archived") return { ok: false, url: null, number: null, error: "This card is archived." };
   // Idempotent: a linked card returns its link instead of creating twice.
   const existing = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
   if (existing) return { ok: true, url: `https://github.com/${existing.repo}/issues/${existing.number}`, number: existing.number, error: null };

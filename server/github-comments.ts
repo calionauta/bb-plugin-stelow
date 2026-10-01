@@ -43,7 +43,7 @@ function linkFor(db: GithubDb, cardId: string): GithubLink | undefined {
 /** The card's normalized status, or null when the card row is gone. */
 function statusOf(ctx: GithubAutomationDeps, cardId: string): string | null {
   const card = ctx.db.prepare("SELECT status FROM cards WHERE id = ?").get(cardId) as { status: string } | undefined;
-  return card ? ctx.cards.normalizeStatus(card.status) : null;
+  return card ? ctx.cards.cardStatusOf(card.status) : null;
 }
 
 /** Refresh the mirror from the remote and publish only when it grew. */
@@ -72,7 +72,7 @@ async function getLinkedDiscussion(ctx: GithubAutomationDeps, client: GithubClie
   const link = linkFor(ctx.db, cardId);
   if (!link) {
     const card = ctx.db.prepare("SELECT project_id, status FROM cards WHERE id = ?").get(cardId) as { project_id: string; status: string } | undefined;
-    if (!card || ctx.cards.normalizeStatus(card.status) === "archived") {
+    if (!card || ctx.cards.cardStatusOf(card.status) === "archived") {
       return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null, canCreate: false, repos: [] as string[] };
     }
     const status = await client.statusResolved().catch(() => githubUnavailableStatus());

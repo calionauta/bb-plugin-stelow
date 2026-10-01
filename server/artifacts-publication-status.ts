@@ -106,7 +106,7 @@ async function availableSnapshot(
   card: PublicationCard,
   events: PublicationSnapshot["events"],
 ): Promise<PublicationSnapshot> {
-  if (deps.normalizeStatus(card.status) !== "completed") {
+  if (deps.cardStatusOf(card.status) !== "completed") {
     return unavailablePublication("Only completed cards can publish changes.", events);
   }
   const checkout = await deps.cards.checkout(card).catch(() => null);

@@ -5,7 +5,7 @@ import {
   boardWorkflowDefaultsSchema,
   composerExecutionSchema,
   reviewModeInputSchema,
-  statusSchema,
+  cardStatusSchema,
   workflowSchema,
 } from "./contracts.js";
 
@@ -76,7 +76,7 @@ export const cardRpcContract = {
           researchStrategy: z.string().nullable(),
           researchStrategies: z.array(z.string()),
           exploreStage: z.string().nullable(),
-          status: statusSchema,
+          status: cardStatusSchema,
           stage: z.string(),
           workerThreadId: z.string().nullable(),
           activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),

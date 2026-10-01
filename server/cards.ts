@@ -9,7 +9,7 @@ import { loadCardScopes } from "./scopes.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
-import { normalizeStatus } from "./scopes.js";
+import { readCardStatus } from "../lib/card-status.mjs";
 import { stallCount } from "../lib/worker-ledger.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
 import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
@@ -150,7 +150,7 @@ async function enrichCard(
     researchStrategy: row.research_strategy,
     researchStrategies: deps.strategyList(row),
     exploreStage: row.explore_stage ?? null,
-    status: normalizeStatus(row.status),
+    status: readCardStatus(row.status),
     stage: row.stage,
     workerThreadId: row.worker_thread_id,
     activity,

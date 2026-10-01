@@ -46,7 +46,7 @@ export interface GithubAutomationDeps {
     comment: (cardId: string, target: string, targetId: string, author: "user" | "agent", body: string) => string;
     workspace: (card: GithubCard) => Promise<{ path: string; hostId: string | null } | null>;
     scopes: (card: GithubCard, rootPath: string | null) => Array<{ name: string; status: string; tasks: Array<{ status: string }> }>;
-    normalizeStatus: (value: unknown) => string;
+    cardStatusOf: (value: unknown) => string;
     statusLabel: (status: string) => string;
   };
 }

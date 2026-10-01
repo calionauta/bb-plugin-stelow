@@ -19,7 +19,8 @@ import {
   registerWorkerSkills,
 } from "../composition.js";
 import { registerMentionProviders } from "../mentions.js";
-import { loadCardScopes, normalizeStatus } from "../../scopes.js";
+import { loadCardScopes } from "../../scopes.js";
+import { readCardStatus } from "../../../lib/card-status.mjs";
 import {
   BUILD_INFO,
   PLUGIN_SKILLS_DIR,
@@ -105,7 +106,12 @@ function buildGithubAutomation(deps: HostSurfaceDeps) {
       workspace: (card) => cardWorkspace(card as WorkerCard),
       scopes: (card, rootPath) =>
         rootPath ? loadCardScopes(rootPath, card.id) : [],
-      normalizeStatus: (value) => normalizeStatus(value),
+      // Named for what it reads. Every consumer of this dep is a CARD status —
+      // the GitHub issue flow, issue comments and artifact publication all ask
+      // "is this card archived?", and none of them asks about a scope. It was
+      // wired to the scope normalizer, which only worked because the scope
+      // vocabulary was an inaccurate superset containing every card status.
+      cardStatusOf: (value) => readCardStatus(value),
       statusLabel: (status) => statusLabelForSummary(status),
     },
   });
@@ -126,6 +132,6 @@ function buildPublication(core: RuntimeCore) {
       get: getCard,
       checkout: (card) => seams.cardCheckout(card as WorkerCard),
     },
-    normalizeStatus,
+    cardStatusOf: readCardStatus,
   });
 }

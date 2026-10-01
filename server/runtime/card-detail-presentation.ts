@@ -19,7 +19,8 @@ import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
-import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
+import { latestSpecTech, loadCardScopes } from "../scopes.js";
+import { readCardStatus } from "../../lib/card-status.mjs";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
@@ -135,7 +136,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     splitAction: splitActionState({
       kind: normalizeKind(card.kind),
       stage: card.stage,
-      status: normalizeStatus(card.status),
+      status: readCardStatus(card.status),
       archived: isArchivedCard(card),
       openProposal: Boolean(splitOpen),
       openQuestions,
@@ -242,7 +243,7 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
   const db = deps.db;
   const cardId = card.id;
   return {
-    status: normalizeStatus(card.status),
+    status: readCardStatus(card.status),
     stage: card.stage,
     workerThreadId: card.worker_thread_id,
     activity: parts.activity,

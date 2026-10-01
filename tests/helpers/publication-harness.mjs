@@ -212,7 +212,7 @@ export function harness() {
       get: (cardId) => cardId === CARD_ID ? card : undefined,
       checkout: async () => publicationCheckout(),
     },
-    normalizeStatus: (value) => value,
+    cardStatusOf: (value) => value,
   });
   return {
     db,
