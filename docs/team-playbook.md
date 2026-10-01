@@ -50,10 +50,10 @@ Default gate → specialist mapping (override per issue):
 
 | Gate | Specialist |
 |---|---|
-| Product gate (spec) | product |
-| Interface / int-gate | design |
-| Tech plan gate | tech lead |
-| Diff gate | tech lead |
+| Product Review (spec) | product |
+| Interface / Design Review | design |
+| Tech Planning / Technical Review | tech lead |
+| Code Review | tech lead |
 
 ## Flow
 

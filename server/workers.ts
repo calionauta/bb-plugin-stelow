@@ -98,7 +98,7 @@ function continuationText(card: WorkerCard): string {
   if (card.kind === "explore") return "continuing the explore run";
   // The label, with no "the ... stage" around it. That wrapper read fine for a
   // one-word noun ("the Triage stage") and badly for every label that already
-  // contains a noun ("the Plan gate stage"), and a sentence that has to be
+  // contains a noun ("the Technical Review stage"), and a sentence that has to be
   // reworded as the catalog grows is a sentence the catalog should not own.
   return `continuing from ${stageLabel(card.stage)}`;
 }

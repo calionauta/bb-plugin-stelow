@@ -9,7 +9,7 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
  * The card's native runs, as the liveness rule reads them.
  *
  * The stage label travels with each run because the recipe id alone made the
- * run list unreadable: the card said "Tech planning" and the run said
+ * run list unreadable: the card said "Tech Planning" and the run said
  * "planning-research", and nothing on screen said they were the same stage. The
  * rule derives its sentence from this record, so resolving the label here is
  * what lets that sentence speak the card's own vocabulary.

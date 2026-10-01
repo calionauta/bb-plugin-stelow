@@ -90,7 +90,7 @@ currently a warning, not a reason to fabricate or skip recon.";
 // human-approved proposal (`bb stelow split` takes no content args).
 export const SPLIT_PROTOCOL =
   'Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, \
-if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables \
+if it becomes clear only there, at Prioritization (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables \
 that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has \
 bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. \
 Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask \
