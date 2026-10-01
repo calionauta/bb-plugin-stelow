@@ -1290,9 +1290,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unowned card is refused until the records agree. The confirm dialog stops
   advising "try Retry first" for that case, and the error note stops claiming
   there is an answer below, because on such a card the conversation is
-  refused too. Five server sites and two components read that one definition;
-  the predicate that recognises it is a prefix match, so a site may append its
-  own tail.
+  refused too. **Eight server sites and two components** read that one
+  definition, and the eight are enumerated by name in a test that fails if a
+  site re-spells the verdict inline — so the count cannot drift, and it already
+  had: the comment claimed five when the true count was eight, and three sites
+  were telling a card to "try Retry first" for a card Retry cannot help.
+  The predicate that recognises the refusal is a prefix match, so a site may
+  append its own tail.
+  **The sentence names a door, and that is a behavioural claim, not a wording
+  one.** Restart fresh is genuinely the only thing that repairs a card whose
+  records disagree: it mints a new generation, writes a state file naming this
+  card, and repoints the card row at the generation it just created — and only
+  then, so a failed reseed leaves the card on its last verified records rather
+  than on a hash pointing nowhere. Archive is terminal and Delete is
+  irreversible, so naming a different action instead would be a lie in the other
+  direction. Asserting the sentence *contains* those words proves nothing and
+  passes unchanged against the exact change that would close the door, so the
+  door is proved by running the real reseed against a real workspace whose
+  records genuinely disagree and asking whether they agree afterwards — and by
+  asserting the surface actually *offers* the action, not just that it names
+  it.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
@@ -1406,6 +1423,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   still unverified against a real host. And because no error on this card
   was resolved *by the archive*, the verbatim-`last_error` revival path is
   untested here — the unit tests cover it, this card cannot.
+- **Opening a completed card is what satisfies its review.** The completion's
+  review request is cleared by a read, and only by a read: the inbox row and
+  the board chip are two surfaces of one row's read state, so spending it moves
+  read state alone and the completion keeps its own lifecycle — "reviewed" never
+  reads downstream as "closed", and an archived card's row is refused the
+  stamp entirely. Build, research and Explore each clear it in their own detail
+  body, guarded on the completed status so opening a card mid-work cannot
+  silence a live question, error or pause. This is a guarantee about the
+  *wiring*, not about the handler: a handler test exercises the handler
+  directly and never asks who calls it, which is why the guarantee is pinned
+  from the components and asserts its own premise (the card detail is fetched
+  from the detail body alone — a new prefetch or peek would be a second way for
+  a card to lose its review without you choosing it).
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
@@ -1420,6 +1450,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   write nothing and publish nothing — panels reload only on real
   changes, and background refreshes never flash loading UI (first
   load owns the skeleton).
+- **When the host stops answering, the card says so instead of going quiet.**
+  A read the host will not answer used to be written to the server log and
+  nowhere else, so a card losing reads repeatedly was undiscoverable to the
+  person who owns it. A card that misses **6 consecutive reads** (~4m 30s at
+  the 45s reconcile) now carries a **Host not answering** chip on its board
+  tile and list row, and the open card's hero states the measured sentence —
+  how long the host has not answered, that the card is read as stale rather
+  than working, and that nothing here needs you. It deliberately names what
+  was measured and stops there: no cause is guessed, because none was.
+  It is its own column, `read_miss_since`, and sits *beside* `activity`
+  rather than inside it — activity is the last **verified** projection, and
+  overwriting it would erase the only true thing the card knows while the
+  host is silent. It is not `last_error` (that is the Resume button, and a
+  transport fault is not something a resume can fix) and it is not an inbox
+  row (every inbox kind is an action you resolve; this is neither, and a row
+  would hold the badge above zero asking for something that changes nothing).
+  It clears itself the moment a read answers, and when a card leaves the
+  sync's scope — a warning that outlived the fault would be a second lie.
 
 ## 6. Configure the workforce
 *When I want a different brain, cost, or permission, I want presets.*
@@ -1432,10 +1480,34 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A preset's reasoning level is one of the eight levels the host offers, and it
   is stored with the provider and model it belongs to — never on its own.
   Saving a preset with any other level is refused, naming the levels that are
-  accepted, and a level stored by an earlier version is repaired to medium on
-  upgrade. The level reaches the worker's spawn alongside its provider and
+  accepted. The level reaches the worker's spawn alongside its provider and
   model, marked as an explicit choice, and both the card's first spawn and
   every restart after it are covered by that.
+  **The eight are the host's global enum, and a valid level is not a supported
+  one** — every provider declares a subset of them (measured on this host:
+  `acp-opencode` declares low/medium/high/xhigh/max, `pi` declares none of
+  ultra/ultracode). So the save boundary checks the level against the chosen
+  provider's own ladder, read from the host roster
+  (`bb.sdk.providers.list()`, one in-process read that works with every
+  bridge down), and refuses a level that provider never declared — naming the
+  ladder that does apply, because "invalid level" would send you back to a
+  picker that is not where the mismatch lives. The manager list reports the same
+  verdict per row and renders an unsupported level as unsupported.
+  **Unverified is a third state, kept apart from both.** An unreadable roster,
+  a provider absent from the roster, and a provider declaring no ladder all
+  read as *not verified* rather than *supported*, and they do not block a save:
+  a card running at the provider default is recoverable, a preset you cannot
+  save is not. The list says "not verified" so a pass is never read as a claim.
+  **A wrong-shaped `presets` table stops the plugin rather than being repaired.**
+  Stelow no longer migrates that table: a fresh install gets the current shape
+  from the DDL, and an install carrying an older shape throws `PresetSchemaError`
+  at boot naming the missing `reasoning_level` CHECK or the column order it
+  found, plus the non-destructive unblock
+  (`ALTER TABLE presets RENAME TO presets_legacy`, which keeps your rows to
+  re-import by name). Cards, workspaces, inbox events and run files are
+  untouched. Concretely, this means **a preset's permission mode and provider
+  are no longer rewritten on every start** — an existing default preset you
+  edited is now left exactly as you set it.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
@@ -1447,8 +1519,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   boundaries; unset bands inherit the card preset. Research and Explore
   have their own band defaults, configured from each board's Agent
   Presets entry (fall back to the board default when unset).
+- **A New-worktree preset really gets a worktree.** Choosing `New-worktree` as
+  a preset's environment kind asks the host for a managed worktree and gets
+  one: `host` + `managed-worktree`, provisioned by bb under `sw-<cardId>` on its
+  own branch, branching from the preset's base branch where it names one and
+  from the host's default where it does not. Isolation needs no machine
+  selection and no environment provider id, because the host supplies the
+  machine itself. Every spawn path is covered because the answer lives in the
+  one function all of them route through — create, respawn, reseed, drafting and
+  the CLI review path — so a card cannot be isolated on create and back in the
+  shared checkout on its next restart. An environment kind this build does not
+  recognise still resolves to the shared project checkout, because an unknown
+  kind must not silently start provisioning worktrees.
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
-  takes effect on (re)start, with a stale-worker warning until then.
+  takes effect on (re)start, with a stale-worker warning until then. A refused
+  save (an unsupported reasoning level, a name collision) surfaces in the
+  assign dialog rather than closing over your choice having done nothing.
 - **Reliable-tier override** (`getReliablePreset`, `assignReliablePreset`,
   `reliable_preset` table). One optional board-level preset for reliable-tier
   spawns (worker starts, restarts, band swaps, research fan-out, automation

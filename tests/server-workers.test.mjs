@@ -194,6 +194,47 @@ test("environment selection pins project-default workers to declared source", ()
   });
 });
 
+// The ask itself. `new-worktree` must reach the host as `host` +
+// `managed-worktree`, because that is the shape bb turns into a real
+// provisioned worktree (under `sw-<cardId>`, machine supplied by the host).
+// It resolved to `{type:"project-default"}` instead, so a card on a
+// New-worktree preset shared one working tree with every other card while the
+// exposure report and the checkout label both spoke as if isolation existed.
+test("a new-worktree preset asks the host for a managed worktree, not the shared checkout", () => {
+  assert.deepEqual(workerEnvironment(
+    { path: "/repo", hostId: "host-source" },
+    { environmentKind: "new-worktree", machineId: null, baseBranch: null },
+  ), {
+    type: "host",
+    hostId: "host-source",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  // The preset's base branch is the base the worktree branches from, in the
+  // host's own `{kind:"named"|"default"}` vocabulary.
+  assert.deepEqual(workerEnvironment(
+    { path: "/repo", hostId: "host-source" },
+    { environmentKind: "new-worktree", machineId: "host-machine", baseBranch: "develop" },
+  ), {
+    type: "host",
+    hostId: "host-machine",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "named", name: "develop" } },
+  });
+  // An exploratory card already owns a private directory, so it stays
+  // unmanaged there; and an environment kind this build does not know must not
+  // silently start provisioning worktrees.
+  assert.equal(
+    workerEnvironment({ path: "/repo", hostId: "h" }, { environmentKind: "new-worktree", machineId: null }, true)
+      .workspace.type,
+    "unmanaged",
+    "an exploratory workspace is already its own directory",
+  );
+  assert.deepEqual(
+    workerEnvironment({ path: "/repo", hostId: "h" }, { environmentKind: "something-new", machineId: null }),
+    { type: "project-default" },
+    "an unrecognised environment kind stays on the project default",
+  );
+});
+
 test("initial and prepared replacement spawns share the worker spawn seam", async () => {
   const initial = harness({ workerThreadId: null });
   const args = { projectId: "project-1", environment: { type: "project-default" }, prompt: "Start" };

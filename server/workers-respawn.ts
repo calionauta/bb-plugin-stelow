@@ -155,7 +155,7 @@ async function replaceWorker(
 function fallbackEnvironment(
   card: WorkerCard,
   prepared: Prepared,
-  params: { environmentKind: string; machineId: string | null },
+  params: { environmentKind: string; machineId: string | null; baseBranch?: string | null },
 ): ThreadEnvironment {
   if (!prepared.workspace) return { type: "project-default" as const };
   const source = { path: prepared.workspace.path, hostId: prepared.workspace.hostId ?? "" };
