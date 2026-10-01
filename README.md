@@ -132,8 +132,9 @@ existing checkout on its initial backlog. `npm run architecture` is the
 enforced boundary check; `npm run security:full` fails on high/critical npm
 advisories. CI runs all of these automatically. Database
 backward-compatibility branches are tracked in `docs/legacy-compat.md` for
-the v1 cleanup, and the fresh-install test fails if a tracked migration
-disappears without a ledger update. Socket's deeper package scan
+the v1 cleanup, and `tests/legacy-compat.test.mjs` (part of `npm run
+test:fresh`) fails if a tracked anchor disappears without a ledger update.
+Socket's deeper package scan
 is optional and requires the repository's own Socket API token.
 
 ```bash
