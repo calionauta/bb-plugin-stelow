@@ -106,3 +106,43 @@ test("the refusal names the provider's own ladder, because that is where the mis
     "naming the levels that ARE supported sends the reader to the fix, not back to the enum",
   );
 });
+
+/**
+ * The recorded ledger is frozen, and this is the test that says so.
+ *
+ * `PRESET_MIGRATION_STATEMENTS` is spread into the single `bb.storage.migrate`
+ * list, and the host records a sha256 per statement AT ITS POSITION, refusing to
+ * start when a recorded position no longer hashes the same. Changing an entry's
+ * text, or removing one so the rest shift up, makes every install that already
+ * recorded that position refuse — with "migration 3 does not match the recorded
+ * statement", which reads like a corrupt database and is not one.
+ *
+ * This is not hypothetical. The first version of the current-shape change
+ * rewrote the `presets` entry as a template literal and emitted a single entry,
+ * and it shipped in v0.61.0: every install rolled back. This host's live ledger
+ * held `ba1ac500…` (the `presets` DDL) at position 3 and `dc61626f…`
+ * (`card_presets`) at 4, and the new code presented `dc61626f…` at position 3.
+ *
+ * So the hashes below are the RELEASED ones, read off a live install's ledger. A
+ * change to this migration is supposed to change the presets SCHEMA; it is not
+ * supposed to change this list, and the current schema is reached outside it.
+ * Inverted — reordering or rewriting the array — this fails on the hash
+ * comparison rather than on a behaviour assertion, which is the point: the
+ * failure it prevents cannot be reproduced by any schema-level test.
+ */
+const RELEASED_LEDGER_HASHES = [
+  "ba1ac50033315c14f2c33b9f56cbacd380cf9ee96e5521901d53b07284c3ad07",
+  "dc61626f2f9be61c7db251f4a6b3ae5eb5047892c433c602ea523a5b5b3fe1e6",
+];
+
+test("the recorded preset statements are the released ones, in the released order", async () => {
+  const { createHash } = await import("node:crypto");
+  const { PRESET_MIGRATION_STATEMENTS } = await import("../server/presets.ts");
+  assert.deepEqual(
+    PRESET_MIGRATION_STATEMENTS.map((s) => createHash("sha256").update(s).digest("hex")),
+    RELEASED_LEDGER_HASHES,
+    "bb records a hash per statement at the position it occupied and refuses to start when a "
+    + "recorded position no longer matches — so this array is append-only and order-frozen. The "
+    + "current presets DDL is reached outside it, by design.",
+  );
+});

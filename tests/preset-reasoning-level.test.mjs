@@ -308,7 +308,13 @@ test("a table that carries the CHECK but the wrong column order is refused too",
 
 test("a correctly-shaped table with data keeps every row, across two migrations", () => {
   const db = emptyDb();
-  for (const statement of PRESET_MIGRATION_STATEMENTS) db.exec(statement);
+  // The current shape is reached by RUNNING the migration on an empty table, not
+  // by executing the recorded list: that list is frozen at the released DDL so it
+  // keeps its recorded ledger position, and the current shape is created outside
+  // it. Building the table from the recorded list here would be building a
+  // LEGACY table, which is (correctly) refused for holding rows.
+  runPresetMigrations(db, () => 1);
+  db.exec("DELETE FROM presets");
   db.exec(`INSERT INTO presets VALUES (
     'p_one','One','pi','m','high','full','new-worktree','main','host-a','do the thing',
     0,0,111,222)`);
