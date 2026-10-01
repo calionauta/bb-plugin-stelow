@@ -143,7 +143,7 @@ test("fresh start refuses invalid states and completes success side effects", as
     .run("thread-old", "card-1");
   const result = await started.workers.fresh("card-1", "start");
   assert.deepEqual(result, { ok: true, error: null });
-  assert.ok(started.calls.some(([name, , body]) => name === "comment" && body.includes("continuing from the triage stage")));
+  assert.ok(started.calls.some(([name, , body]) => name === "comment" && body.includes("continuing from Triage")));
   assert.ok(started.calls.some(([name, , fields]) => name === "updateCard" && fields.auto_continue_count === 0));
   assert.ok(started.calls.some(([name]) => name === "card-state"));
   const retry = started.db.prepare("SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards").get();
