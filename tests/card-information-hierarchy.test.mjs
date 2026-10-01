@@ -64,6 +64,31 @@ const FACT_HOMES = [
     because: "it is the run section's hint, so the tally survives the section being closed",
   },
   {
+    fact: "that the host is not answering this card's state read",
+    decidedIn: "components/detail/detail-hero.tsx",
+    // The CALL, inside the function that decides the hero, above the failure
+    // branch — not merely that a function with the right name exists. A pin on
+    // the declaration passes on a hero that never consults it, which is the
+    // door-shaped hole this repo keeps refusing: the sentence is right and the
+    // card is still wrong. The sentence itself is proven where it is derived
+    // (tests/host-read-streak.test.mjs); this proves the hero opens the door.
+    evidence: /const unreadable = unreadableHero\(card\);\s*if \(unreadable\) return unreadable;[\s\S]*?if \(card\.activity === "error"\)/,
+    because: "a frozen card looks like an idle card, and the whole fix is that the reader is told; "
+      + "a copy beside the hero would restate the hero's own state line",
+  },
+  {
+    fact: "that the host is not answering, on the board tile",
+    decidedIn: "components/dashboard/build-status-pills.tsx",
+    // The tile's chip. A card's board tile is a different surface from its
+    // detail, so this is not a second home for the hero's sentence — it is the
+    // same channel's only door onto the board, and it names rather than
+    // explains, because a tile has no room to explain and nobody opens one to
+    // read a paragraph.
+    evidence: /\{card\.readMissSince != null \? <ReadMissPill \/> : null\}/,
+    because: "the board is where a stale card is noticed at all; without a chip here a reader must open "
+      + "every frozen card to learn the host is down",
+  },
+  {
     fact: "that this card is waiting on another card's file",
     decidedIn: "components/detail/detail-hero.tsx",
     // The hero decides the card's state, and contention is a state: the card is

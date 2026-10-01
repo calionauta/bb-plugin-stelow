@@ -166,9 +166,25 @@ details.stelow-border-running {
   background: hsl(240 5% 50% / 0.07);
 }
 
+/* The host stopped answering this card's state read. Inert for the same reason
+   as the hold, and for the same reason it is not the hold's grey: a reader who
+   cannot act must still be able to see. A cool slate says "this projection is
+   not fresh" without borrowing the amber of a question or the red of a
+   failure, because neither of those is true of the card. */
+.stelow-activity-unreadable {
+  border-color: hsl(215 20% 45% / 0.55);
+  color: hsl(215 28% 30%);
+  background: hsl(215 25% 45% / 0.08);
+}
+
 .dark .stelow-activity-onhold {
   border-color: hsl(240 5% 60% / 0.5);
   color: hsl(240 10% 70%);
+}
+
+.dark .stelow-activity-unreadable {
+  border-color: hsl(215 25% 60% / 0.5);
+  color: hsl(215 30% 78%);
 }
 
 .dark .stelow-activity-waiting {

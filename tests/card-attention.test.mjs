@@ -22,6 +22,39 @@ assert.equal(cardCanResume({ ...active, workerThreadId: null }), false, "a parke
 assert.equal(cardCanResume({ ...active, status: "completed" }), false, "completed work never offers retry");
 assert.equal(cardCanResume({ ...active, status: "blocked" }), false, "blocked work never offers retry");
 assert.equal(cardCanResume({ ...active, activity: "error" }), true, "an errored worker is eligible for the recovery path");
+// A card whose host has stopped answering its state read.
+//
+// The warning travels on `readMissSince`, which is not `activity` and never
+// becomes it — so the recovery path cannot see it, and the channel cannot
+// manufacture an affordance. Asserted against a card whose own verified state
+// DOES earn a resume, which is the only way to tell "the warning added a
+// button" apart from "the warning changed nothing": the button is still there
+// because the card is idle and stalled, not because a host is silent.
+//
+// Suppressing it instead would be the worse bug: a card that genuinely stopped,
+// hidden behind a read fault the reader can do nothing about, and a resume
+// suppressed by a fact about the HOST. The dispatch is queued either way, so
+// it lands when the host returns — the same promise the hold makes.
+assert.equal(
+  cardCanResume({ ...active, readMissSince: 1_000 }),
+  cardCanResume(active),
+  "the read warning is invisible to the resume decision, in both directions: it adds no button and removes none",
+);
+assert.equal(
+  cardCanResume({ ...active, activity: "running", readMissSince: 1_000 }),
+  false,
+  "a card that never earned a resume does not get one from a read fault",
+);
+assert.equal(
+  cardShowsAttention({ ...active, readMissSince: 1_000 }),
+  true,
+  "and attention stays the card's own: the warning neither invents an action item nor suppresses one",
+);
+assert.equal(
+  workerActionPolicy({ ...active, readMissSince: 1_000 }, true).showRestartFresh,
+  workerActionPolicy(active, true).showRestartFresh,
+  "Manage's restart-fresh follows the card's verified activity, not the read fault",
+);
 assert.equal(cardShowsAttention(active), true, "idle attention has no duplicate activity chip");
 assert.equal(cardShowsAttention({ ...active, activity: "awaiting-answer" }), false, "the waiting pill replaces the attention chip");
 assert.equal(cardShowsAttention({ ...active, activity: "error" }), false, "the error pill replaces the attention chip");

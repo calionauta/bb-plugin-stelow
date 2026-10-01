@@ -26,6 +26,7 @@ const CARD_COLUMNS: Array<[string, string]> = [
   ["research_strategies", "TEXT"],
   ["explore_stage", "TEXT"],
   ["split_from", "TEXT"],
+  ["read_miss_since", "INTEGER"],
 ];
 
 function createBaseTables(bb: BbPluginApi, db: Db): void {

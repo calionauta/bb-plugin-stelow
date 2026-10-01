@@ -305,18 +305,25 @@ function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTra
 /**
  * The unreadable-read streak table for one wiring of the sync.
  *
- * Per-wiring and not on `core`: this is a counter behind a logging threshold,
- * and putting it on the shared runtime would make a log counter look like a
- * service every other surface could reach for. It exists because the sync's
- * other two channels for a host fault are both wrong — `last_error` renders a
- * Resume button for a transport fault, and silence leaves the next occurrence
- * explained by theory instead of a log line.
+ * Per-wiring and not on `core`: this is a counter behind a threshold, and
+ * putting it on the shared runtime would make it look like a service every
+ * other surface could reach for. It exists because the sync's other two
+ * channels for a host fault are both wrong — `last_error` renders a Resume
+ * button for a transport fault, and pure silence leaves the next occurrence
+ * explained by theory instead of a measurement.
+ *
+ * The warn and the card latch come from this one table, so they cannot disagree:
+ * both fire on the tick the streak reaches READ_STREAK_WARN_AT. The recovery
+ * line is here rather than in the module because a module with no clock and no
+ * logger cannot know that a host came back — and because the operator reading
+ * a warn an hour later is owed the ending, not just the alarm.
  */
 function createReadStreaks(bb: RuntimeCore["bb"]) {
   return createHostReadStreak((cardId, streak) =>
     bb.log.warn(
       `Stelow could not read card ${cardId}'s workflow state on ${streak} consecutive checks; `
-        + "its last verified projection is now stale and nothing was written to the card. "
+        + "its last verified projection is now stale and no verdict about the card was written. "
+        + "The card shows a 'Host not answering' marker from here. "
         + "The host is not answering — no card action fixes this.",
     ));
 }

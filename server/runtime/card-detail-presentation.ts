@@ -248,6 +248,9 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
     workerThreadId: card.worker_thread_id,
     activity: parts.activity,
     lastError: card.last_error,
+    // The host-read latch, with its sentence derived where the measurement
+    // lives. Read beside `activity`, which it never overwrites.
+    readMissSince: card.read_miss_since ?? null,
     hostHold: parts.hold,
     nativeRun: parts.nativeRun,
     blockingRun: parts.blockingRun,

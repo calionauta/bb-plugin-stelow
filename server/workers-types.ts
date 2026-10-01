@@ -29,6 +29,10 @@ export type WorkerCard = {
   last_error: string | null;
   last_assistant_text: string | null;
   last_idle_at: number | null;
+  /** When the host stopped answering this card's state read, or null. The
+   * measurement itself lives in the streak table; this is the latch the reader
+   * sees, and it is never a verdict about the card. See lib/host-read-streak. */
+  read_miss_since: number | null;
   environment_label: string | null;
   created_at: number;
   updated_at: number;

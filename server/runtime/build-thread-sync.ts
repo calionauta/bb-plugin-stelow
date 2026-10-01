@@ -3,6 +3,12 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
+import { readMissUpdates, readRecoveredUpdates } from "../../lib/host-read-streak.mjs";
+import {
+  clearLeftScopeRead,
+  noteReadableRead,
+  noteUnreadableRead,
+} from "./build-read-channel.js";
 import { persistStandardIdle } from "./build-thread-park.js";
 import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/native-run.mjs";
 import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
@@ -69,12 +75,13 @@ type BuildThreadSyncDeps = {
   interfacePick: string;
   auditDoneNudge: string;
   idleAttentionMs: number;
-  // Operator-visible logging only — a fact about the host, never a verdict
-  // about the card. `last_error` feeds `errorNeedsAttention` → `cardCanResume`,
-  // so a transport fault written there renders "Resume work" for something no
-  // resume can fix. These three do the counting; the streak table decides when
-  // that becomes one line in the log.
-  noteUnreadable: (cardId: string) => void;
+  // Operator-visible logging plus the card's own latch — both decided by the
+  // same streak crossing the same threshold. `last_error` feeds
+  // `errorNeedsAttention` → `cardCanResume`, so a transport fault written there
+  // renders "Resume work" for something no resume can fix; these three do the
+  // counting instead, and the card hears about it through a column that is not
+  // a verdict and not an action.
+  noteUnreadable: (cardId: string) => number;
   noteReadable: (cardId: string) => void;
   forgetUnreadable: (cardId: string) => void;
 };
@@ -91,6 +98,10 @@ export function createBuildThreadSync(deps: BuildThreadSyncDeps) {
     const card = deps.getCard(cardId);
     if (!shouldSyncThread(card)) {
       deps.forgetUnreadable(cardId);
+      // A card nobody is syncing will never take the latch off by reading, so
+      // the scope exit is the second door out. Without it an archived card
+      // carries a warning about a host that may have come back an hour ago.
+      if (card) clearLeftScopeRead(deps, card, readRecoveredUpdates);
       return;
     }
     if (card.kind === "research") {
@@ -131,20 +142,27 @@ async function readBuildThread(
   }
   // An unreadable workspace is nobody's verdict. Returning here leaves the
   // card on its last verified projection instead of overwriting it with a
-  // failure the host caused, and the next tick (45s) asks again. Nothing is
-  // written to the card — that is what keeps a transport fault out of
-  // `last_error`, and therefore off the Resume button. What silence costs is
-  // the trace, so the miss is counted instead: after READ_STREAK_WARN_AT
-  // consecutive misses the host is named once in the plugin log. `readStateBlob`
-  // has three `unreadable` returns and all of them land here, so one call site
-  // counts all of them.
+  // failure the host caused, and the next tick (45s) asks again. What is NOT
+  // written is `activity` and `last_error` — that is what keeps a transport
+  // fault out of the Resume button, and it is why the projection the reader is
+  // looking at survives the outage instead of being erased by it.
+  //
+  // Silence still costs the trace, so the miss is counted. The streak decides
+  // both channels at once: at READ_STREAK_WARN_AT consecutive misses the host is
+  // named once in the plugin log (lib/host-read-streak.mjs) AND the card is told
+  // its reads are failing, by latching a timestamp on its own column. The card
+  // is not asked to do anything about it, and `readRecoveredUpdates` takes the
+  // latch off on the first read that answers — a warning that outlived the fault
+  // would be a second lie. `readStateBlob` has three `unreadable` returns and all
+  // of them land here, so one call site counts all of them.
   if (state.kind === "unreadable") {
-    deps.noteUnreadable(card.id);
+    noteUnreadableRead(deps, card, deps.now, readMissUpdates);
     return null;
   }
   // Both remaining answers mean the host DID answer — including `unresolved`,
-  // which is a verdict about the card rather than about the host.
-  deps.noteReadable(card.id);
+  // which is a verdict about the card rather than about the host. Either ends
+  // the outage, so either takes the latch back off.
+  noteReadableRead(deps, card, readRecoveredUpdates);
   const metadata = projectStateMetadata(card, state.blob);
   applyIntent(deps, card, metadata.intent);
   const thread = await deps.bb.sdk.threads.get({ threadId: card.worker_thread_id! });

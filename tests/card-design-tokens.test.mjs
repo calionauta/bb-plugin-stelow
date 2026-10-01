@@ -94,6 +94,32 @@ test("the review chip's label is not a workflow phase name", () => {
   );
 });
 
+// A state the reader cannot act on must not wear the colours of one they
+// should. The host-read marker is the case: something IS wrong, it is on the
+// host, and no button on the card changes it — so it must not breathe (that
+// animation means "happening now, go look") and must not wear the error
+// channel's red (that means "this card failed"). Asserted against the class
+// lists rather than the hex values, so a palette change cannot quietly turn a
+// non-actionable state into an alarming one.
+test("the host-read marker is inert: no breathing, not the error channel", () => {
+  const styles = read("components/app-support/stelow-styles.css");
+  const rule = styles.match(/\.stelow-activity-unreadable \{([^}]*)\}/);
+  assert.ok(rule, "the host-read marker must have a tone of its own, not borrow the hold's or the error's");
+
+  const errorTone = styles.match(/\.stelow-activity-error \{([^}]*)\}/);
+  assert.ok(errorTone, "the error tone is the reference this is measured against");
+  for (const property of ["border-color", "color"]) {
+    const marker = rule[1].match(new RegExp(`${property}:\\s*([^;]+);`))?.[1].trim();
+    const error = errorTone[1].match(new RegExp(`${property}:\\s*([^;]+);`))?.[1].trim();
+    assert.notEqual(marker, error, `the host-read marker must not read as the failure channel's ${property}`);
+  }
+  assert.doesNotMatch(
+    styles.match(/\.stelow-activity-unreadable \{[^}]*\}/)[0],
+    /animation/,
+    "the breathing animation means \"happening now\"; a fault no button reaches must not pulse like a live one",
+  );
+});
+
 test("the vocabulary is named, and the names are the ones in use", () => {
   const disclosure = read("components/disclosure.tsx");
   for (const token of ["SECTION_SURFACE", "SUMMARY_BASE", "SUMMARY_ROW", "SUMMARY_LINK", "startsOpen"]) {

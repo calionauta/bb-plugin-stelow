@@ -1,5 +1,6 @@
 import { archivedCardDetailPresentation } from "../../lib/card-detail-presentation.mjs";
 import { lockWaitHero } from "../../lib/lock-blocked.mjs";
+import { readMissHero } from "../../lib/host-read-streak.mjs";
 import { isOwnershipRefusal } from "../../lib/ownership-refusal.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
@@ -8,7 +9,7 @@ import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 // three detail bodies render around it. Priority order is the contract:
 // archived first, then open questions, then failure, then lifecycle.
 
-export type HeroKind = "decision" | "error" | "paused" | "held" | "working" | "calm";
+export type HeroKind = "decision" | "error" | "paused" | "held" | "unreadable" | "working" | "calm";
 
 export type HeroCardState = {
   activity: string;
@@ -16,7 +17,12 @@ export type HeroCardState = {
   stage: string;
   workerThreadId: string | null;
   lastError: string | null;
+  /** When the host stopped answering this card's state read, with the
+   * measurement's sentence derived from it (lib/host-read-streak.mjs). Null
+   * whenever the host is answering. */
+  readMissSince?: number | null;
 };
+
 
 export type HeroDetailState = {
   pendingQuestions: Array<unknown>;
@@ -82,6 +88,8 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
   if (card.activity === "held" && detail?.hostHold?.summary) {
     return { kind: "held", title: `Waiting on the host — ${stageLabel(card.stage)}`, sub: detail.hostHold.summary };
   }
+  const unreadable = unreadableHero(card);
+  if (unreadable) return unreadable;
   if (card.activity === "error") {
     return {
       kind: "error",
@@ -170,6 +178,28 @@ function calmHero(card: HeroCardState): { kind: HeroKind; title: string; sub: st
   };
 }
 
+/**
+ * The host is not answering this card's state read.
+ *
+ * Above the failure and the stall branches, for the same reason the hold is
+ * above them: a verdict recorded before the reads stopped cannot be
+ * re-verified, and offering Retry or Resume for a card nobody can read is an
+ * action aimed at nothing. The stage is still named, because the last verified
+ * projection is real — it is just no longer fresh, which is what the derived
+ * sentence says.
+ *
+ * The wording lives in lib/host-read-streak.mjs so the card, the test and any
+ * future surface cannot say it three slightly different ways; this is the
+ * placement, and the placement is the part with a failure mode.
+ */
+function unreadableHero(card: HeroCardState): { kind: HeroKind; title: string; sub: string } | null {
+  return readMissHero(
+    card.readMissSince ?? null,
+    Date.now(),
+    stageLabel(card.stage),
+  );
+}
+
 export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }> = {
   decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
   error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
@@ -179,6 +209,11 @@ export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: bo
   // border rather than paused's amber. Amber here would ask for a decision the
   // reader cannot make.
   held: { wrap: "border-border bg-muted/40", dot: "bg-muted-foreground", alert: false },
+  // Unreadable is neither: something IS wrong, but it is the host and nothing
+  // on the card can fix it. It borrows the visible surface `held` earns for the
+  // same reason and takes an amber-free slate border instead, because this is a
+  // measurement the reader should see rather than a decision they should make.
+  unreadable: { wrap: "border-slate-500/40 bg-slate-500/5", dot: "bg-slate-500", alert: false },
   working: { wrap: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500", alert: false },
   calm: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: false },
 };

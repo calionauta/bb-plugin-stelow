@@ -6,6 +6,7 @@ import {
   composerExecutionSchema,
   reviewModeInputSchema,
   cardStatusSchema,
+  scopeSummarySchema,
   workflowSchema,
 } from "./contracts.js";
 
@@ -81,6 +82,11 @@ export const cardRpcContract = {
           workerThreadId: z.string().nullable(),
           activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
           lastError: z.string().nullable(),
+          // When the host stopped answering this card's state read. Carried
+          // beside `activity`, never inside it: a card whose reads are failing
+          // keeps the projection it was last verified on, and this is the only
+          // thing on the tile that says the projection is no longer fresh.
+          readMissSince: z.number().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),
           presetName: z.string().nullable(),
@@ -88,13 +94,7 @@ export const cardRpcContract = {
           presetModelId: z.string().nullable(),
           updatedAt: z.number(),
           stallCount: z.number(),
-          scopeSummary: z.object({
-            scopesTotal: z.number(),
-            scopesDone: z.number(),
-            tasksTotal: z.number(),
-            tasksDone: z.number(),
-            elapsedMs: z.number().nullable(),
-          }),
+          scopeSummary: scopeSummarySchema,
           doingNow: z.array(z.string()),
           executingScope: z.string().nullable(),
         }),
