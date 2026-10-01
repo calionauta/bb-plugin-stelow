@@ -49,6 +49,57 @@ export const trackableStatusSchema = z.enum([
   "escalated",
 ]);
 
+/**
+ * A boundary question's framing.
+ *
+ * Resolved from the `[Stelow boundary <id>]` marker against the run's boundary
+ * contract, then shaped in lib/ — the card renders `showOptions` and the copy,
+ * and never re-implements the rule. Null for an ordinary question.
+ */
+export const boundaryShapeSchema = z.object({
+  kind: z.enum(["reaction", "confirmation"]),
+  showOptions: z.boolean(),
+  heading: z.string(),
+  notice: z.string().nullable(),
+});
+
+/**
+ * A thread's token usage, in per-leg detail.
+ *
+ * Declared once because it was declared twice, and the leg set is exactly the
+ * kind of detail that rots quietly: a leg added for a child thread and not for
+ * the parent renders as "no usage" on the run it belongs to. Nullable per leg,
+ * not optional — a leg nobody reported is unknown, and a zero there would read
+ * as "this cost nothing".
+ */
+export const tokenBreakdownSchema = z
+  .object({
+    input: z.number().nullable(),
+    output: z.number().nullable(),
+    cached: z.number().nullable(),
+    reasoning: z.number().nullable(),
+    total: z.number().nullable(),
+  })
+  .nullable();
+
+/**
+ * The scope/task tally both card surfaces render.
+ *
+ * One shape for the board's list and the card's detail, because they are the
+ * same four numbers read at two zoom levels — and a copy is how a reader ends
+ * up comparing "3 of 8 scopes" on a tile against "8 scopes" on the card it
+ * opened. `elapsedMs` is nullable because an unstarted card has no elapsed
+ * time, and a zero there would read as "no time spent" rather than "never
+ * began".
+ */
+export const scopeSummarySchema = z.object({
+  scopesTotal: z.number(),
+  scopesDone: z.number(),
+  tasksTotal: z.number(),
+  tasksDone: z.number(),
+  elapsedMs: z.number().nullable(),
+});
+
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 export const reviewModeSchema = z.enum([
   "Auto",

@@ -14,6 +14,7 @@ const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
 ].join("\n");
+const sharedSchemas = readFileSync(join(root, "server", "contracts.ts"), "utf8");
 const workerBackend = readFileSync(
   join(root, "server", "workers-history.ts"),
   "utf8",
@@ -206,10 +207,36 @@ assert.match(
   /tokenBreakdown: report\.breakdown/,
   "history entries carry the split beside the total",
 );
+// The schema moved to server/contracts.ts, because it was declared twice in
+// the detail contract and a leg added for children and not for the parent
+// renders as "no usage" on the run it belongs to. The pin follows the shape:
+// it still has to carry every leg, and it has to be the shape BOTH the entry
+// and its children use — one name for the one story.
 assert.match(
   server,
-  /tokenBreakdown: z\s*\.object\(\{[\s\S]*?total: z\s*\.number\(\)\s*\.nullable\(\),[\s\S]*?\}\)\s*\.nullable\(\)/,
-  "worker history schemas carry the split on entries and children",
+  /tokenBreakdown: tokenBreakdownSchema/,
+  "worker history entries and their children share one breakdown schema, not two spellings of it",
+);
+assert.equal(
+  (server.match(/tokenBreakdown: tokenBreakdownSchema/g) ?? []).length,
+  2,
+  "both legs use it — a child thread that reported a split cannot render as no usage",
+);
+// One regex per leg would stop being one regex, so this is split at the legs
+// instead: five alternatives in a row is the shape being asserted, and a
+// 190-character line asserts it illegibly.
+const SHARED_BREAKDOWN_LEGS = new RegExp([
+  "export const tokenBreakdownSchema = z\\s*\\.object\\(\\{",
+  "[\\s\\S]*?input:", "[\\s\\S]*?output:", "[\\s\\S]*?cached:",
+  "[\\s\\S]*?reasoning:",
+  "[\\s\\S]*?total: z\\s*\\.number\\(\\)\\s*\\.nullable\\(\\),",
+  "\\s*\\}\\)\\s*\\.nullable\\(\\)",
+].join(""));
+
+assert.match(
+  sharedSchemas,
+  SHARED_BREAKDOWN_LEGS,
+  "the shared schema declares all five legs, nullable per leg so an unreported leg is unknown rather than zero",
 );
 assert.match(
   workerHistory,

@@ -10,6 +10,9 @@ type BuildCardState = {
   intent: string;
   activity: CardActivity;
   workerThreadId?: string | null;
+  /** When the host stopped answering this card's state read (see
+   * lib/host-read-streak.mjs). Null whenever the host is answering. */
+  readMissSince?: number | null;
 };
 
 export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: { children: ReactNode; tone?: string; className?: string; title?: string; icon?: ReactNode }) {
@@ -138,6 +141,37 @@ export function ActivityPill({ activity, detail }: { activity: CardActivity; det
   </span>;
 }
 
+/**
+ * The host has stopped answering this card's state read.
+ *
+ * It borrows the activity pill's shape and nothing else, on purpose: it is a
+ * property of the READ, so it renders beside the activity rather than as one —
+ * the card is still showing the activity it was last verified on, and erasing
+ * that to make room for this would destroy the only true thing the tile says.
+ *
+ * Deliberately inert, for the reason `stelow-activity-onhold` is: nothing the
+ * reader can do changes this, and a state you cannot act on must not wear the
+ * colours of one you should. What it must not be is invisible — a card frozen
+ * on a stale projection used to look like a normally idle card, which is how
+ * three unreadable cards on 2026-09-30 were explained by theory instead of by
+ * a measurement. The card's hero carries the sentence; this carries the name.
+ */
+const READ_MISS_TITLE = "The host has not answered this card's state read. "
+  + "What this tile shows is its last verified projection, so it is stale. "
+  + "The plugin log names the card once per outage, and the next successful read clears this — nothing to do.";
+
+export function ReadMissPill() {
+  return (
+    <span
+      className="stelow-activity-pill stelow-activity-unreadable max-w-full truncate"
+      title={READ_MISS_TITLE}
+    >
+      <span aria-hidden>⏱</span>
+      Host not answering
+    </span>
+  );
+}
+
 // One attention chip for tiles and list rows alike: amber dot + action
 // label ("Answer required", "Worker failed", "Paused. Resume it."). Callers
 // show it only when the activity pill doesn't already say it — the pair
@@ -226,12 +260,14 @@ export function BuildStatusPills({ card, statusTone, intentLabel }: {
       ? <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
       : <Pill title="Not started — parked in Bucket. Nothing runs until you start it.">Not started</Pill>) : null}
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
-    {/* The two states a reader must be able to tell apart from across the
-        board without opening anything: someone is waiting on THEM, or the host
-        is holding the card and it will move by itself. Everything else stays
-        on the card. */}
+    {/* The three states a reader must be able to tell apart from across the
+        board without opening anything: someone is waiting on THEM, the host is
+        holding the card and it will move by itself, or the card's own state has
+        stopped being readable and what the tile shows is now stale. Everything
+        else stays on the card. */}
     {card.activity === "awaiting-answer" || card.activity === "held"
       ? <ActivityPill activity={card.activity} />
       : null}
+    {card.readMissSince != null ? <ReadMissPill /> : null}
   </>;
 }

@@ -56,6 +56,7 @@ export function card(overrides = {}) {
     environment_label: null,
     created_at: 1,
     updated_at: 2,
+    read_miss_since: null,
     ...overrides,
   };
 }
@@ -100,8 +101,40 @@ function createThreadApi(calls, options) {
   };
 }
 
+/**
+ * The read-channel deps, which exist only so the fake can count.
+ *
+ * Split out because the streak is state: `unreadable` has to remember what it
+ * returned last time or the sync never reaches its threshold, and a closure
+ * built inline in the deps literal would put that state in a place no test can
+ * reset between fixtures.
+ */
+function readChannelDeps(calls, misses) {
+  return {
+    // A real counter, not a bare recorder: the sync decides whether the card
+    // hears about the outage by asking this dep how long the streak is, so a
+    // fake that returns nothing would leave the channel permanently silent and
+    // every test of it vacuously green.
+    noteUnreadable: (cardId) => {
+      const streak = (misses.get(cardId) ?? 0) + 1;
+      misses.set(cardId, streak);
+      calls.push(["noteUnreadable", cardId]);
+      return streak;
+    },
+    noteReadable: (cardId) => {
+      misses.delete(cardId);
+      calls.push(["noteReadable", cardId]);
+    },
+    forgetUnreadable: (cardId) => {
+      misses.delete(cardId);
+      calls.push(["forgetUnreadable", cardId]);
+    },
+  };
+}
+
 function createSyncDeps(calls, getCurrent, options) {
   let current = getCurrent();
+  const misses = new Map();
   const deps = {
     bb: createThreadApi(calls, options),
     db: recorderDb(calls),
@@ -131,12 +164,7 @@ function createSyncDeps(calls, getCurrent, options) {
     interfacePick: "Choose the interface.",
     auditDoneNudge: "Run bb stelow done.",
     idleAttentionMs: 90_000,
-    // The unreadable-read streak is a logging counter behind a threshold, so
-    // the fake records it the way it records everything else: a dep that is not
-    // a recorder is a dep no test can pin.
-    noteUnreadable: (cardId) => calls.push(["noteUnreadable", cardId]),
-    noteReadable: (cardId) => calls.push(["noteReadable", cardId]),
-    forgetUnreadable: (cardId) => calls.push(["forgetUnreadable", cardId]),
+    ...readChannelDeps(calls, misses),
   };
   return deps;
 }

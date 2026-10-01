@@ -35,6 +35,7 @@ function card(overrides = {}) {
     last_error: null,
     last_assistant_text: null,
     last_idle_at: null,
+    read_miss_since: null,
     environment_label: null,
     created_at: 1,
     updated_at: 2,
@@ -116,6 +117,30 @@ test("card detail preserves question projection and missing-card refusal", async
     },
   }));
   await assert.rejects(() => missing({ cardId: "missing" }), /Card not found\./);
+});
+
+// The card's own half of the host-read channel, end to end through the detail
+// handler the UI reads. A test on lib/host-read-streak proves the sentence is
+// derived; this proves the door those words name OPENS — that the column
+// reaches the card payload, and that a card whose host is answering carries
+// nothing at all rather than a zero or a stale latch.
+test("card detail carries the host-read latch beside the activity, never inside it", async () => {
+  // `idle` rather than `running`: the detail promotes a card to
+  // `awaiting-answer` when questions are open, and this test is about the
+  // outage channel, not about which projection the questions outrank.
+  // The shared deps leave one question open, which promotes any card to
+  // `awaiting-answer`; closing it is what makes the activity assertion below
+  // about the outage channel rather than about the question outranking it.
+  const noQuestions = { fetchPendingQuestions: async () => [] };
+  const latched = card({ activity: "idle", read_miss_since: 1_000 });
+  const held = await createCardDetailHandler(detailDeps(latched, noQuestions))({ cardId: latched.id });
+
+  assert.equal(held.card.readMissSince, 1_000, "the detail carries the measurement the hero reads");
+  assert.equal(held.card.activity, "idle", "and the activity is untouched: the projection survives the outage");
+
+  const answering = card({ activity: "idle" });
+  const clear = await createCardDetailHandler(detailDeps(answering, noQuestions))({ cardId: answering.id });
+  assert.equal(clear.card.readMissSince, null, "a card whose host is answering carries no warning to render");
 });
 
 test("card detail keeps removed projects and unreadable state fail-soft", async () => {

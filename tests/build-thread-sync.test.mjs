@@ -6,6 +6,7 @@ import {
   shouldSyncThread,
 } from "../server/runtime/thread-state-projection.ts";
 import { card, harness } from "./helpers/build-thread-sync-harness.mjs";
+import { READ_STREAK_WARN_AT } from "../lib/host-read-streak.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
 
@@ -237,6 +238,18 @@ test("an unreadable workspace is not a verdict about the card's state", async ()
   );
 });
 
+// One missed read is not news: a restarting worker or a single slow read would
+// put a warning on the card, and a warning that cries wolf is a warning nobody
+// reads. The card is byte-identical until the streak crosses the threshold.
+test("a single missed read leaves the card byte-identical", async () => {
+  const fixture = harness(card({ dir_hash: "hash_1", activity: "idle" }), { stateDir: "unreadable" });
+  const before = JSON.stringify(fixture.row());
+
+  await fixture.sync(fixture.row().id);
+
+  assert.equal(JSON.stringify(fixture.row()), before, "below the threshold there is nothing to report, so nothing is written");
+});
+
 test("a verified projection clears the failure the last tick reported", async () => {
   const fixture = harness(
     card({
@@ -254,26 +267,54 @@ test("a verified projection clears the failure the last tick reported", async ()
   assert.equal(fixture.row().last_error, null);
 });
 
-// The trace is the whole point of the unreadable branch: silence keeps the card
-// clean, but a host that stops answering leaves nothing to explain the next one.
-// These four pin the shape of that trace — a counted miss, a byte-identical
-// card, a reset when the host answers, and no counter left behind when the card
-// leaves scope. The once-only warn itself is lib/host-read-streak's test.
-test("a missed read is counted, and the card is still byte-identical", async () => {
+// The trace is the whole point of the unreadable branch: below the threshold
+// silence keeps the card clean, and a host that stops answering for good needs
+// to reach the card's OWNER, not only the operator's log. These pin the shape of
+// that trace — a counted miss, a card untouched until the threshold, one write
+// per outage, a reset when the host answers, and no counter left behind when the
+// card leaves scope. The once-only warn itself is lib/host-read-streak's test.
+test("a sustained outage latches the card once, and never writes a verdict", async () => {
   const fixture = harness(
     card({ dir_hash: "hash_1", activity: "idle", last_assistant_text: "earlier" }),
     { stateDir: "unreadable" },
   );
-  const before = JSON.stringify(fixture.row());
 
-  for (let tick = 0; tick < 6; tick += 1) await fixture.sync(fixture.row().id);
+  for (let tick = 0; tick < READ_STREAK_WARN_AT - 1; tick += 1) await fixture.sync(fixture.row().id);
 
   assert.equal(
     fixture.calls.filter(([name]) => name === "noteUnreadable").length,
-    6,
+    READ_STREAK_WARN_AT - 1,
     "every missed tick is counted, so the streak can reach its threshold",
   );
-  assert.equal(JSON.stringify(fixture.row()), before, "counting is not writing: no activity, no last_error, no updated_at");
+  assert.equal(
+    fixture.row().read_miss_since,
+    null,
+    "one tick short of the threshold, the card has heard nothing — a single slow read is not a report",
+  );
+
+  await fixture.sync(fixture.row().id);
+  assert.equal(
+    fixture.row().read_miss_since,
+    100_000,
+    "the tick that reaches the threshold tells the owner, with the time the outage was measured",
+  );
+  for (let tick = 0; tick < 10; tick += 1) await fixture.sync(fixture.row().id);
+
+  assert.equal(
+    fixture.calls.filter(([name, fields]) => name === "update" && fields.read_miss_since != null).length,
+    1,
+    "one write per outage: a latch that moved every 45s would reshuffle the board under the reader",
+  );
+  // The three things this channel may never do. Each is load-bearing elsewhere:
+  // `activity` is the last VERIFIED projection, `last_error` feeds
+  // errorNeedsAttention → cardCanResume, and an inbox row is an action item.
+  assert.equal(fixture.row().activity, "idle", "the last verified projection survives the outage instead of being overwritten by it");
+  assert.equal(fixture.row().last_error, null, "a transport fault in last_error renders 'Resume work' for a fault no resume fixes");
+  assert.equal(
+    fixture.calls.some(([name]) => name === "inbox"),
+    false,
+    "the inbox counts unresolved ACTION items; a row here would be a badge asking for something that changes nothing",
+  );
   assert.equal(
     fixture.calls.some(([name]) => name === "noteReadable"),
     false,
@@ -281,13 +322,18 @@ test("a missed read is counted, and the card is still byte-identical", async () 
   );
 });
 
-// A host that answers ends the outage. Without this the second failure of the
-// day starts from a streak the first one left and its warn never fires.
-test("a read that comes back resets the unreadable streak", async () => {
+// A host that answers ends the outage, and the warning ends with it. A latch
+// that outlives the fault is a second lie: the card would sit on a stale
+// projection forever, telling a reader the host is down when it is not.
+test("a read that comes back clears the card's warning", async () => {
   const missed = harness(card({ dir_hash: "hash_1" }), { stateDir: "unreadable" });
-  await missed.sync(missed.row().id);
+  for (let tick = 0; tick < READ_STREAK_WARN_AT; tick += 1) await missed.sync(missed.row().id);
+  assert.equal(missed.row().read_miss_since, 100_000, "the outage is on the card");
 
-  const answered = harness(card({ dir_hash: "hash_1" }), { status: "active" });
+  const answered = harness(
+    card({ dir_hash: "hash_1", read_miss_since: 100_000 }),
+    { status: "active" },
+  );
   await answered.sync(answered.row().id);
 
   assert.deepEqual(
@@ -295,17 +341,29 @@ test("a read that comes back resets the unreadable streak", async () => {
     ["card_1"],
     "a resolved read clears the streak, an ownership verdict too — both mean the host answered",
   );
+  assert.equal(
+    answered.row().read_miss_since,
+    null,
+    "and it clears the card's warning on the same tick, without waiting for a person to notice",
+  );
 });
 
-// A card that leaves the sync's scope must not keep a counter alive for itself.
-test("a card out of sync scope drops its unreadable streak", async () => {
-  const completed = harness(card({ status: "completed" }));
+// A card that leaves the sync's scope must not keep a counter alive for itself —
+// nor a warning. The scope exit is the only door out for a card that left while
+// the host was down, since it will never be read again to clear itself.
+test("a card out of sync scope drops its streak and its warning", async () => {
+  const completed = harness(card({ status: "completed", read_miss_since: 100_000 }));
   await completed.sync("card_1");
 
   assert.deepEqual(
     completed.calls.filter(([name]) => name === "forgetUnreadable"),
     [["forgetUnreadable", "card_1"]],
     "the streak dies with the scope, not with the process",
+  );
+  assert.equal(
+    completed.row().read_miss_since,
+    null,
+    "an archived card must not sit on a 'host not answering' marker for a host that came back an hour ago",
   );
   assert.equal(
     completed.calls.some(([name]) => name === "noteUnreadable"),

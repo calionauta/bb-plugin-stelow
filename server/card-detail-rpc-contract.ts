@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { EXPOSURE_REASONS } from "../lib/shared-checkout-exposure.mjs";
-import { attachmentSchema, askOptionSchema, cardStatusSchema, trackableStatusSchema } from "./contracts.js";
+import {
+  attachmentSchema,
+  askOptionSchema,
+  boundaryShapeSchema,
+  cardStatusSchema,
+  scopeSummarySchema,
+  tokenBreakdownSchema,
+  trackableStatusSchema,
+} from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
 
 /**
@@ -8,13 +16,6 @@ import { executionRunSchema } from "./execution-contract.js";
  * marker against the run's boundary contract, then shaped in lib/ — the card
  * renders `showOptions` and the copy, and never re-derives the rule.
  */
-const boundaryShapeSchema = z.object({
-  kind: z.enum(["reaction", "confirmation"]),
-  showOptions: z.boolean(),
-  heading: z.string(),
-  notice: z.string().nullable(),
-});
-
 export const cardDetailRpcContract = {
   /**
    * The cross-thread half of "who is in this card's files".
@@ -66,6 +67,10 @@ export const cardDetailRpcContract = {
         workerThreadId: z.string().nullable(),
         activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
         lastError: z.string().nullable(),
+        // The host-read latch (lib/host-read-streak.mjs). Null whenever the host
+        // is answering. Deliberately not `activity`: a transport fault is not a
+        // verdict, and `last_error` would turn it into a Resume button.
+        readMissSince: z.number().nullable(),
         // The host's hold, with its sentence already derived. Null whenever the
         // thread is free, so a consumer reads one nullable rather than
         // re-deriving the reason from the kind.
@@ -108,13 +113,7 @@ export const cardDetailRpcContract = {
         presetOverridden: z.boolean(),
         updatedAt: z.number(),
         stallCount: z.number(),
-        scopeSummary: z.object({
-          scopesTotal: z.number(),
-          scopesDone: z.number(),
-          tasksTotal: z.number(),
-          tasksDone: z.number(),
-          elapsedMs: z.number().nullable(),
-        }),
+        scopeSummary: scopeSummarySchema,
         presetId: z.string(),
         workerPresetId: z.string().nullable(),
         presetRestartPending: z.boolean(),
@@ -352,15 +351,7 @@ export const cardDetailRpcContract = {
           endedAt: z.number().nullable(),
           endedReason: z.string().nullable(),
           tokenUsage: z.number().nullable(),
-          tokenBreakdown: z
-            .object({
-              input: z.number().nullable(),
-              output: z.number().nullable(),
-              cached: z.number().nullable(),
-              reasoning: z.number().nullable(),
-              total: z.number().nullable(),
-            })
-            .nullable(),
+          tokenBreakdown: tokenBreakdownSchema,
           children: z.array(
             z.object({
               threadId: z.string(),
@@ -368,15 +359,7 @@ export const cardDetailRpcContract = {
               status: z.string(),
               providerId: z.string().nullable(),
               tokenUsage: z.number().nullable(),
-              tokenBreakdown: z
-                .object({
-                  input: z.number().nullable(),
-                  output: z.number().nullable(),
-                  cached: z.number().nullable(),
-                  reasoning: z.number().nullable(),
-                  total: z.number().nullable(),
-                })
-                .nullable(),
+              tokenBreakdown: tokenBreakdownSchema,
             }),
           ),
         }),

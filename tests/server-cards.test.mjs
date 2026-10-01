@@ -4,6 +4,7 @@ import { createCardsServer, createCardStore } from "../server/cards.ts";
 import { createCardInternal } from "../server/cards-create.ts";
 import { CARD_COLUMNS } from "../server/cards-create-persist.ts";
 import { buildBoardColumnFor } from "../lib/workflow-vocabulary.mjs";
+import { cardRpcContract } from "../server/card-rpc-contract.ts";
 
 const promptRules = {
   cardOwnerRules: "owner",
@@ -38,6 +39,7 @@ const card = {
   activity: "idle",
   last_error: null,
   last_idle_at: null,
+  read_miss_since: null,
   updated_at: Date.now(),
   environment_label: null,
 };
@@ -92,6 +94,47 @@ test("list cards preserves project names and attention state", async () => {
   assert.equal(result.cards[0].projectName, "Project");
   assert.equal(result.cards[0].needsAttention, false);
   assert.equal(result.cards[0].scopeSummary.scopesTotal, 0);
+  assert.equal(result.cards[0].readMissSince, null, "a card whose host is answering carries no read warning");
+});
+
+// The board can only show a warning the list actually carries, and the list can
+// only carry it if the read reaches it. This is the door the pill opens through:
+// `readMissSince` in the RPC output, fed by the card column.
+/**
+ * Is `readMissSince` a declared output field of the list contract?
+ *
+ * A shape check, not a source pin: it asks the schema the host validates
+ * against, and answers by parsing. It is deliberately scoped to the one field
+ * rather than parsing a whole card — the question is whether the channel
+ * carries the measurement, not whether the whole card shape parses.
+ */
+function readMissFieldDeclared() {
+  const fields = cardRpcContract.listCards.output.shape.cards.element.shape;
+  const declared = fields.readMissSince?._zod?.def;
+  return declared?.type === "nullable" && declared.innerType?._zod?.def?.type === "number";
+}
+
+test("the board carries the host-read warning, and it stays a measurement", async () => {
+  const { cards } = harness({ ...card, read_miss_since: 1_000 });
+
+  const result = await cards.handlers.listCards({ projectId: "proj_1", kind: null });
+
+  assert.equal(result.cards[0].readMissSince, 1_000, "the board reads the latch the sync wrote");
+  assert.equal(
+    readMissFieldDeclared(),
+    true,
+    "and the contract declares the field, so the value cannot be silently dropped between the list and the board",
+  );
+  assert.equal(
+    result.cards[0].activity,
+    "idle",
+    "a card whose reads are failing keeps the activity it was last verified on — the warning does not overwrite the projection",
+  );
+  assert.equal(
+    result.cards[0].needsAttention,
+    false,
+    "and it raises no attention chip: a transport fault is not an action item, and the amber chip is only ever for one",
+  );
 });
 
 // The card list's status projection had no behavioural test at all, and the
