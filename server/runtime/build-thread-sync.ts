@@ -5,11 +5,7 @@ import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { persistStandardIdle } from "./build-thread-park.js";
 import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/native-run.mjs";
-import {
-  lastTurnAdvancedStages,
-  nextAutoContinue,
-  shouldAutoContinue,
-} from "../../lib/auto-continue.mjs";
+import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
