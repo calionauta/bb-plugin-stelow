@@ -74,7 +74,10 @@ const inheritedBaseline = [
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
   "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
   "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
-  "tests/server-cards.test.mjs:callback#4: 82 lines (baseline 84)",
+  // Paid: the deferred-creation callback in tests/server-cards.test.mjs was
+  // 82 lines because it built its whole harness inline. The harness is now
+  // creationHarness/creationDeps/creationDb/creationBb, so no callback in that
+  // file is oversized and `source-debt.json` carries no entry for it.
 ];
 
 function git(...command) {

@@ -99,23 +99,10 @@ test("read card files rejects workspace escapes and reads text", async () => {
   assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "notes.md" })).content, "artifact");
 });
 
-test("deferred build creation stores the card kind and never spawns a worker", async () => {
-  let inserted;
-  const db = {
-    prepare(sql) {
-      return {
-        get: () => sql.includes("stage_presets")
-          ? { preset_id: "preset_1" }
-          : undefined,
-        run: (...values) => { inserted = values; },
-      };
-    },
-  };
-  const bb = {
-    sdk: { projects: { get: async () => ({ id: "proj_1", sources: [{ path: "/workspace", hostId: "host_1" }] }) } },
-    storage: { kv: { set: async () => undefined } },
-    realtime: { publish: () => undefined },
-  };
+// One creation harness for both spawn decisions: the stub keeps the args the
+// spawn was handed, because discarding them is exactly why a card could lose
+// its reasoning level with the whole suite green.
+function creationHarness(presetOverrides = {}) {
   const preset = {
     id: "preset_1",
     provider_id: "pi",
@@ -126,11 +113,20 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     base_branch: "main",
     machine_id: null,
     instructions: "follow the workflow",
+    ...presetOverrides,
   };
-  let spawned = false;
-  const create = createCardInternal({
+  const spawns = [];
+  const insert = creationDb();
+  const create = createCardInternal(
+    creationDeps({ preset, db: insert.db, spawns }),
+  );
+  return { create, spawns, inserted: insert.values };
+}
+
+function creationDeps({ preset, db, spawns }) {
+  return {
     db,
-    bb,
+    bb: creationBb(),
     now: () => 100,
     randomId: () => "card_created",
     roundTimestamp: () => "stamp",
@@ -153,7 +149,7 @@ test("deferred build creation stores the card kind and never spawns a worker", a
       machineId: value.machine_id,
       instructions: value.instructions,
     }),
-    spawnInitial: async () => { spawned = true; return { id: "thread_1" }; },
+    spawnInitial: async (args) => { spawns.push(args); return { id: "thread_1" }; },
     recordThread: () => undefined,
     lineage: async () => undefined,
     roundPath: (stateDir) => stateDir,
@@ -166,18 +162,68 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     recordStageEvent: () => undefined,
     comment: () => undefined,
     suggestCardName: async () => undefined,
-  });
+  };
+}
 
-  const result = await create({
-    projectId: "proj_1",
-    prompt: "Improve the thing",
-    attachments: [],
-    intent: "feature",
-    appetite: "Lean",
-    reviewMode: "Auto",
-    start: false,
-  });
+function creationDb() {
+  const written = { values: null };
+  const db = {
+    prepare(sql) {
+      return {
+        get: () => sql.includes("stage_presets") ? { preset_id: "preset_1" } : undefined,
+        run: (...values) => { written.values = values; },
+      };
+    },
+  };
+  return { db, values: () => written.values };
+}
+
+function creationBb() {
+  return {
+    sdk: { projects: { get: async () => ({ id: "proj_1", sources: [{ path: "/workspace", hostId: "host_1" }] }) } },
+    storage: { kv: { set: async () => undefined } },
+    realtime: { publish: () => undefined },
+  };
+}
+
+const buildRequest = (start) => ({
+  projectId: "proj_1",
+  prompt: "Improve the thing",
+  attachments: [],
+  intent: "feature",
+  appetite: "Lean",
+  reviewMode: "Auto",
+  start,
+});
+
+test("deferred build creation stores the card kind and never spawns a worker", async () => {
+  const { create, spawns, inserted } = creationHarness();
+  const result = await create(buildRequest(false));
   assert.deepEqual(result, { cardId: "card_created", threadId: null });
-  assert.equal(spawned, false);
-  assert.equal(inserted[CARD_COLUMNS.indexOf("kind")], "build");
+  assert.equal(spawns.length, 0);
+  assert.equal(inserted()[CARD_COLUMNS.indexOf("kind")], "build");
+});
+
+test("the initial spawn carries the preset's reasoning level with its provider and model", async () => {
+  const { create, spawns } = creationHarness({
+    provider_id: "acp-opencode",
+    model_id: "opencode/space-bunny-free",
+    reasoning_level: "high",
+  });
+  await create(buildRequest(true));
+  const args = spawns.at(-1);
+  assert.equal(args.providerId, "acp-opencode");
+  assert.equal(args.model, "opencode/space-bunny-free");
+  // The host accepts provider, model and reasoning level only together, so the
+  // three are pinned as a tuple: dropping the level, or making it conditional
+  // while the other two are unconditional, must fail here.
+  assert.equal(args.reasoningLevel, "high");
+  assert.equal(args.executionInputSources.reasoningLevel, "explicit");
+});
+
+test("the composer's choice overrides the preset's level per field", async () => {
+  const { create, spawns } = creationHarness({ reasoning_level: "high" });
+  await create({ ...buildRequest(true), execution: { reasoningLevel: "banana" } });
+  const args = spawns.at(-1);
+  assert.equal(args.reasoningLevel, "high", "a level no host will spawn never reaches the worker");
 });

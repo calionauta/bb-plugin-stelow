@@ -104,6 +104,25 @@ test("CRUD preserves optional nulls and refuses duplicate, built-in, and assigne
   assert.ok(db.prepare("SELECT id FROM presets WHERE id = ?").get(created.preset.id));
 });
 
+test("upsertPreset refuses a level no host will spawn, and writes nothing", async () => {
+  const { db, server } = harness();
+  await assert.rejects(
+    addPreset(server, { reasoningLevel: "banana" }),
+    /Preset reasoning level "banana" is not one of: low, medium, high, xhigh, max, none, ultra, ultracode\./,
+    "the refusal names the levels that are accepted",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM presets WHERE name = 'Custom'").get().count,
+    0,
+    "a refused level leaves no row behind, so no card can inherit it",
+  );
+  assert.equal(
+    (await addPreset(server, { reasoningLevel: "xhigh" })).preset.name,
+    "Custom",
+    "a real level from the same CLI-shaped input is accepted",
+  );
+});
+
 test("card, band, and reliable resolution follow the full fallback cascade", async () => {
   const { db, server } = harness();
   const band = await addPreset(server, { name: "Band" });

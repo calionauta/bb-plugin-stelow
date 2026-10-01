@@ -24,7 +24,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   chosen checkout unchanged and keeps later workers in it, and forwards the
   chosen provider/model/reasoning/permission to the spawn — a choice
   differing from the analysis band preset is pinned as the card's preset
-  override, so restarts keep running what was picked. Spawns a hidden worker thread
+  override, so restarts keep running what was picked. The forwarded
+  reasoning level is validated against the same eight levels a preset may
+  hold, so a hand-crafted request naming anything else falls back to the
+  preset's level instead of reaching the worker. Spawns a hidden worker thread
   starting at triage. A failed submit never closes the dialog or loses the
   draft (the throw contract): a persistent warning names the cause in place
   — e.g. Build on a project without a Git source — so another workspace can
@@ -1426,6 +1429,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   from BB's own pickers (live catalog with search, same as the new-card
   composer) shared with the card override dialog; environment kind stays a
   preset field. Built-ins protected.
+  A preset's reasoning level is one of the eight levels the host offers, and it
+  is stored with the provider and model it belongs to — never on its own.
+  Saving a preset with any other level is refused, naming the levels that are
+  accepted, and a level stored by an earlier version is repaired to medium on
+  upgrade. The level reaches the worker's spawn alongside its provider and
+  model, marked as an explicit choice, and both the card's first spawn and
+  every restart after it are covered by that.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the

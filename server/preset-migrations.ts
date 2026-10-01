@@ -1,4 +1,28 @@
 import type { PresetDb, PresetRow } from "./preset-contracts.js";
+import { PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
+
+/**
+ * `presets` rebuilt with the reasoning-level CHECK. `ALTER TABLE … ADD
+ * CONSTRAINT` is a syntax error in SQLite, so the column constraint can only
+ * arrive by rebuilding the table — hence a second definition of the schema
+ * that has to track the one in `PRESET_MIGRATION_STATEMENTS`.
+ */
+const PRESETS_WITH_REASONING_CHECK = `CREATE TABLE presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      reasoning_level TEXT NOT NULL CHECK (reasoning_level IN (${levelList()})),
+      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
+      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
+      base_branch TEXT,
+      machine_id TEXT,
+      instructions TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      built_in INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`;
 
 export const PRESET_MIGRATION_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS presets (
@@ -26,11 +50,49 @@ export const PRESET_MIGRATION_STATEMENTS = [
     )`,
 ];
 
+function levelList(): string {
+  return PRESET_REASONING_LEVELS.map((level) => `'${level}'`).join(",");
+}
+
 export function runPresetMigrations(db: PresetDb, now: () => number): void {
   ensurePresetTables(db);
   addMissingColumns(db);
+  rebuildReasoningLevelCheck(db);
   ensureDefaultPreset(db, now);
   db.prepare("DELETE FROM presets WHERE built_in = 0 AND provider_id = 'codex'").run();
+}
+
+/**
+ * Refuse an out-of-enum reasoning level at the storage layer, so no writer —
+ * RPC, CLI, composer override, or a future one — can persist a level the host
+ * cannot spawn.
+ *
+ * Three details are load-bearing and each was measured, not reasoned about:
+ *
+ * 1. `legacy_alter_table=ON`. Without it, `ALTER TABLE … RENAME TO` rewrites
+ *    the children's foreign keys to the temp table's name, so
+ *    `foreign_key_check` reports `parent: presets_rebuild` for every card pin
+ *    and cascade deletes stop resolving against `presets`.
+ * 2. The repair UPDATE runs *before* the rebuild: `INSERT … SELECT` aborts on a
+ *    legacy junk row the moment the CHECK exists. Repair is invisible because
+ *    `medium` is what the picker already displays for such a row.
+ * 3. The rebuild is idempotence-gated on the existing table SQL, the same
+ *    guard shape as `rebuildLegacyBandTable`.
+ */
+function rebuildReasoningLevelCheck(db: PresetDb): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'presets'")
+    .get() as { sql: string } | undefined;
+  if (row?.sql.includes("CHECK (reasoning_level IN")) return;
+  db.exec(`PRAGMA foreign_keys=OFF;
+    PRAGMA legacy_alter_table=ON;
+    UPDATE presets SET reasoning_level = 'medium'
+      WHERE reasoning_level NOT IN (${levelList()});
+    ALTER TABLE presets RENAME TO presets_rebuild;
+    ${PRESETS_WITH_REASONING_CHECK};
+    INSERT INTO presets SELECT * FROM presets_rebuild;
+    DROP TABLE presets_rebuild;
+    PRAGMA legacy_alter_table=OFF;
+    PRAGMA foreign_keys=ON;`);
 }
 
 function ensurePresetTables(db: PresetDb): void {

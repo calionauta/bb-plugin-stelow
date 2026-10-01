@@ -44,7 +44,7 @@
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
     "server/runtime/workflow-seeding.ts:seedWorkflow": 72,
     "server/scopes.ts:runScopeCommand": 87,
-    "tests/server-cards.test.mjs:callback#4": 82,
+    
     "tests/server-drafting.test.mjs:harness": 83
   }
 }

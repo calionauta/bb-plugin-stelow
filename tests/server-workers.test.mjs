@@ -94,11 +94,15 @@ function harness({
   workerThreadId = "thread-old",
   scheduler = undefined,
   retryDelayMs = undefined,
+  presetOverride = null,
 } = {}) {
   const db = workerTestDb();
   const calls = [];
   const current = card({ worker_thread_id: workerThreadId });
   const bb = workerHost(calls, spawnError, environment);
+  // presetParams is identity here, so the resolved preset row is what the
+  // spawn receives — which is what makes the level under test observable.
+  const resolved = presetOverride ? { ...preset, ...presetOverride } : preset;
   const workers = createWorkers({
     db,
     bb,
@@ -106,8 +110,8 @@ function harness({
     getCard: () => current,
     updateCard: (cardId, fields) => calls.push(["updateCard", cardId, fields]),
     comment: (cardId, body) => calls.push(["comment", cardId, body]),
-    getPreset: () => preset,
-    getReliablePreset: () => preset,
+    getPreset: () => resolved,
+    getReliablePreset: () => resolved,
     presetParams: (value) => value,
     prepareRespawn: async () => ({
       prompt: "Continue the card",
@@ -211,6 +215,33 @@ test("initial and prepared replacement spawns share the worker spawn seam", asyn
   assert.deepEqual(replaced.calls.slice(0, 3).map(([name]) => name), ["spawn", "archive", "stop"]);
   replaced.workers.dispose();
   replaced.db.close();
+});
+
+test("a restart spawns the replacement with the preset's reasoning level", async () => {
+  const { calls, workers, db } = harness({
+    presetOverride: {
+      provider_id: "acp-opencode",
+      model_id: "opencode/space-bunny-free",
+      reasoning_level: "high",
+      providerId: "acp-opencode",
+      modelId: "opencode/space-bunny-free",
+      reasoningLevel: "high",
+    },
+  });
+  assert.deepEqual(await workers.respawn("card-1", preset.id, "restart"), {
+    ok: true,
+    threadId: "thread-new",
+  });
+  const args = calls.find(([name]) => name === "spawn")[1];
+  assert.equal(args.providerId, "acp-opencode");
+  assert.equal(args.model, "opencode/space-bunny-free");
+  // The host accepts provider, model and reasoning level only together, so the
+  // three are pinned as a tuple: a restart that keeps the provider and model
+  // but loses the level — the exact regression — fails here.
+  assert.equal(args.reasoningLevel, "high");
+  assert.equal(args.executionInputSources.reasoningLevel, "explicit");
+  workers.dispose();
+  db.close();
 });
 
 test("respawn stops the predecessor only after the replacement exists", async () => {

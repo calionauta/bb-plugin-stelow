@@ -29,6 +29,17 @@ assert.deepEqual(
   "only valid provenance values survive",
 );
 
+assert.deepEqual(
+  sanitizeComposerExecution({ reasoningLevel: "banana" }),
+  null,
+  "a reasoning level no host will honour is dropped, not carried to the spawn",
+);
+assert.deepEqual(
+  sanitizeComposerExecution({ providerId: "pi", reasoningLevel: "banana", model: "m" }),
+  { providerId: "pi", model: "m" },
+  "dropping the level leaves the rest of the choice intact",
+);
+
 // Merge: composer wins per-field, the base fills the gaps.
 assert.deepEqual(
   resolveComposerSpawn(base, null),

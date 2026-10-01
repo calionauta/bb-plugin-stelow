@@ -1,3 +1,4 @@
+import { isPresetReasoningLevel, PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
 import type { PresetAccessors } from "./preset-accessors.js";
 import type {
   PresetRow,
@@ -15,6 +16,7 @@ export function createPresetCrudHandlers(
   async function upsertPreset(input: PresetUpsertInput) {
     const trimmed = input.name.trim();
     if (!trimmed) throw new Error("Preset name is required.");
+    assertSpawnableReasoningLevel(input.reasoningLevel);
     const id = input.id || `preset_${Math.random().toString(36).slice(2, 10)}`;
     const collision = db.prepare(`
       SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?
@@ -49,6 +51,19 @@ export function createPresetCrudHandlers(
   }
 
   return { listPresets, upsertPreset, deletePreset };
+}
+
+/**
+ * One check for every writer that reaches this handler — the settings form, the
+ * CLI, and any RPC caller. Refused rather than repaired: silently rewriting the
+ * level would spawn the card at an effort nobody chose, while the settings
+ * screen kept showing the choice they made.
+ */
+function assertSpawnableReasoningLevel(value: string): void {
+  if (isPresetReasoningLevel(value)) return;
+  throw new Error(
+    `Preset reasoning level "${value}" is not one of: ${PRESET_REASONING_LEVELS.join(", ")}.`,
+  );
 }
 
 function createPresetListHandler(db: PresetServerDeps["db"]) {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePresetFormState, type PresetFormState } from "./preset-manager-form-state";
+import { asPresetReasoningLevel } from "./preset-execution-values.mjs";
 import type { PresetManagerPreset } from "./preset-manager-types";
 
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
@@ -73,7 +74,7 @@ export async function savePreset(
       name: state.form.name.trim(),
       providerId: state.form.providerId,
       modelId: state.form.modelId,
-      reasoningLevel: state.form.reasoningLevel,
+      reasoningLevel: asPresetReasoningLevel(state.form.reasoningLevel),
       permissionMode: state.form.permissionMode,
       environmentKind: state.form.environmentKind,
       baseBranch: null,
