@@ -2278,17 +2278,52 @@ is left open deliberately: a loud refusal at the boundary beats a constraint tha
 fails during a migration. If the column is ever rebuilt for another reason, add
 the CHECK then, from `CARD_STATUSES`.
 
-`server/contracts.ts#statusSchema` still declares **twelve** card statuses — the
-five above plus `planning`, `approved`, `done`, `skipped`, `blocked`,
-`escalated`, `failed`, which no card write path produces. It is the same over-broad
-claim in a second place and is left alone here deliberately: narrowing an RPC
-enum deserves its own review and its own evidence, and an enum that is too wide
-refuses nothing while an enum that is too narrow breaks creation.
+`server/contracts.ts` no longer exports one twelve-value `statusSchema`. That single
+enum served **one** card site and **six** pendency sites — tasks, scopes, board
+workflows and workflow phases — which is why it had twelve: it was the union of
+the two axes plus `planning` and `approved`, which belong to neither (`approved`
+is a scope MAP status, `planning` is a stage name). Nothing could reach those two
+as a status at all, and an enum admitting unreachable values cannot fail fast on
+a reachable one.
+
+It is now `cardStatusSchema` and `trackableStatusSchema`, split by axis. The
+boundary refuses `planning` and `approved`, and refuses `draft` where a pendency
+belongs. **Split rather than narrowed**: narrowing to a card's five would have
+broken every scope, task, workflow and phase, which legitimately hold `blocked`,
+`done`, `skipped`, `escalated` and `failed`. The axes overlap on exactly three
+values — `pending`, `in-progress`, `completed` — which is what makes the split
+safe rather than a new source of refusals.
+
+These two lists are written out rather than derived from the constants, and that
+is recorded in the file because it looks like the mistake it would otherwise be.
+A `.ts` file cannot take a type from a `lib/*.mjs` constant here: importing the
+module by extension resolves its runtime and its declarations as two unrelated
+type identities, which propagates a nominal mismatch through the whole RPC type
+graph and fails `tsc` in `rpc-surfaces.ts` — four files from the import that
+caused it. Deriving was tried and reverted;
+`tests/status-axis-boundary.test.mjs` pins both lists to the machine instead.
+
+**A card's status was being read through the pendency normalizer, in eleven
+places**, and it only ever worked by accident: the scope vocabulary was an
+inaccurate superset containing all five card statuses, so every value passed
+through unchanged. Describing that vocabulary accurately turned the accident into
+a live fault — `normalizeStatus("archived")` returns `pending`, so every guard of
+the form `normalizeStatus(card.status) === "archived"` silently starts answering
+false. A card that cannot be archived, and a board that cannot tell an archived
+card from a live one, is not a type error; it is a card.
+
+The compiler found it, which is worth stating plainly: narrowing the scope
+vocabulary produced a type error pointing at `rpc-surfaces.ts`, four files from
+the annotation that was actually wrong. Cards now read through `readCardStatus`,
+and the injected dep is named `cardStatusOf` because **every** consumer of it was
+asking about a card — the GitHub issue flow, issue comments and artifact
+publication all ask "is this card archived?" and none asked about a scope. The
+scope reader stays, for scopes.
 
 The mention picker now names both rows. It was the one surface still printing
 `in-progress` and `pending` beside a properly-labelled stage — the same word
 meaning two things one string apart — and it carries **two axes**: a board
-workflow's status is a trackable (via `normalizeStatus`) while a card's is a card
+workflow's status is a trackable (via the scope reader) while a card's is a card
 status, so the two rows are named by different vocabularies and both rows sit in
 the same picker.
 

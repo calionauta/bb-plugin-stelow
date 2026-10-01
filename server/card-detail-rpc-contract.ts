@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EXPOSURE_REASONS } from "../lib/shared-checkout-exposure.mjs";
-import { attachmentSchema, askOptionSchema, statusSchema } from "./contracts.js";
+import { attachmentSchema, askOptionSchema, cardStatusSchema, trackableStatusSchema } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
 
 /**
@@ -61,7 +61,7 @@ export const cardDetailRpcContract = {
         researchStrategy: z.string().nullable(),
         researchStrategies: z.array(z.string()),
         exploreStage: z.string().nullable(),
-        status: statusSchema,
+        status: cardStatusSchema,
         stage: z.string(),
         workerThreadId: z.string().nullable(),
         activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
@@ -147,7 +147,7 @@ export const cardDetailRpcContract = {
           name: z.string(),
           kind: z.literal("scope"),
           type: z.string().optional(),
-          status: statusSchema,
+          status: trackableStatusSchema,
           source: z.string().optional(),
           gap: z.string().optional(),
           blockedBy: z.array(z.string()).optional(),
@@ -188,7 +188,7 @@ export const cardDetailRpcContract = {
               id: z.string(),
               name: z.string(),
               kind: z.literal("task"),
-              status: statusSchema,
+              status: trackableStatusSchema,
               source: z.string().optional(),
               note: z.string().optional(),
               blockedBy: z.array(z.string()).optional(),

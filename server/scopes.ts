@@ -16,18 +16,14 @@ import { scopeDoneGate, scopeStartGate } from "./scope-batch-gates.js";
 import type { ScopeBatchDb } from "./scope-batch.js";
 
 export type ScopeStatus =
-  | "draft"
-  | "planning"
-  | "approved"
-  | "in-progress"
-  | "completed"
-  | "archived"
   | "pending"
-  | "done"
-  | "skipped"
+  | "in-progress"
   | "blocked"
-  | "escalated"
-  | "failed";
+  | "done"
+  | "completed"
+  | "skipped"
+  | "failed"
+  | "escalated";
 
 
 export interface ScopeTask {
@@ -62,19 +58,15 @@ export interface WorkflowScope {
   tasks: ScopeTask[];
 }
 
-const STATUSES = new Set<ScopeStatus>([
-  "draft",
-  "planning",
-  "approved",
-  "in-progress",
-  "completed",
-  "archived",
+const STATUSES: ReadonlySet<string> = new Set<string>([
   "pending",
-  "done",
-  "skipped",
+  "in-progress",
   "blocked",
-  "escalated",
+  "done",
+  "completed",
+  "skipped",
   "failed",
+  "escalated",
 ]);
 
 function strings(value: unknown): string[] | undefined {
@@ -84,7 +76,7 @@ function strings(value: unknown): string[] | undefined {
 
 export function normalizeStatus(value: unknown): ScopeStatus {
   const candidate = text(value, "pending");
-  return STATUSES.has(candidate as ScopeStatus) ? candidate as ScopeStatus : "pending";
+  return STATUSES.has(candidate) ? candidate as ScopeStatus : "pending";
 }
 
 function projectTask(

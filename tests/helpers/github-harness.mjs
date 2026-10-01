@@ -156,7 +156,7 @@ function hostCardAccessors(state, db, options, nextId) {
       },
       workspace: async () => ({ path: "/workspace", hostId: null }),
       scopes: () => options.scopes ?? [],
-      normalizeStatus: (value) => value,
+      cardStatusOf: (value) => value,
       statusLabel: (status) => status,
     },
   };

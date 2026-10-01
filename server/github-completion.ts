@@ -53,7 +53,7 @@ async function postGithubCompletion(ctx: GithubAutomationDeps, client: GithubCli
   if (!card) return { ok: false, issueUrl: null, error: "Card not found." };
   const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
   if (!link) return { ok: false, issueUrl: null, error: "This card was not imported from a GitHub issue." };
-  if (ctx.cards.normalizeStatus(card.status) !== "completed") return { ok: false, issueUrl: null, error: "Only completed cards can report back to GitHub." };
+  if (ctx.cards.cardStatusOf(card.status) !== "completed") return { ok: false, issueUrl: null, error: "Only completed cards can report back to GitHub." };
   const workspace = await ctx.cards.workspace(card).catch(() => null);
   const scopes = ctx.cards.scopes(card, workspace?.path ?? null);
   const body = completionBody(card, scopes, ctx.cards.statusLabel);
