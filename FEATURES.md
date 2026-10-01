@@ -576,7 +576,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  109 times: the card had a real type scale, invented by whoever needed a small
+  111 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
