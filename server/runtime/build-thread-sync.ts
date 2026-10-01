@@ -3,6 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
+import { persistStandardIdle } from "./build-thread-park.js";
 import {
   lastTurnStelowCalls,
   nextAutoContinue,
@@ -14,15 +15,12 @@ import type { WorkerCard } from "../workers-types.js";
 import {
   isActiveStatus,
   isIdleStatus,
-  projectIdleTimestamp,
-  projectNoProgress,
   projectRunningState,
   projectStateMetadata,
   projectThreadError,
   shouldSyncThread,
 } from "./thread-state-projection.js";
 import { syncTerminalIdle, type StelowCalls } from "./build-thread-terminal.js";
-import { recordPausedAfter } from "./paused-inbox.js";
 import { sendAgentInput } from "./thread-send.js";
 import type { WorkflowStateResolution } from "./workflow-state.js";
 
@@ -51,6 +49,14 @@ type BuildThreadSyncDeps = {
   syncResearch: (card: WorkerCard) => Promise<void>;
   syncExplore: (card: WorkerCard) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
+  /**
+   * The host's hold on the card's next dispatch, with its own record.
+   *
+   * Null when the thread is free. Read here rather than on the board: the board
+   * would pay one queue call per card to learn a state the 45s sync already
+   * wrote to `activity`, and the reason is only worth a round trip to someone
+   * who has opened the card to ask.
+   */
   readHold: (card: WorkerCard) => Promise<HostHold | null>;
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   logComment: (cardId: string, body: string) => void;
@@ -253,11 +259,12 @@ async function syncIdle(
     noteFreshOutput(deps, snapshot);
     return false;
   }
-  // The host owns the next move: a message is queued and the host has not
-  // dispatched it. Nothing in this file can advance the card, and nothing in it
-  // should try — the pending message IS the pending work, so a nudge here would
-  // queue a duplicate of a message that is already waiting to be delivered.
-  // That duplication is what turned one held card into ten.
+  // The host owns the next dispatch, so this is checked before every idle
+  // branch. A held card is not stuck and not failed — it is a card whose message
+  // is already queued, and the host releases it on its own. The pending message
+  // IS the pending work, so a nudge here would queue a duplicate of a message
+  // that is about to be delivered: that duplication is what turned one held card
+  // into ten.
   const hold = await deps.readHold(snapshot.card);
   if (hold) {
     deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
@@ -355,49 +362,6 @@ async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot)
   return true;
 }
 
-function persistStandardIdle(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-  transitioning: boolean,
-  vetoed: boolean,
-): void {
-  const noProgress = projectNoProgress(
-    snapshot.card,
-    transitioning,
-    snapshot.lastOutput,
-  );
-  if (noProgress) {
-    deps.logComment(
-      snapshot.card.id,
-      "Worker stopped with no new output — treated as paused. If this repeats, inspect " +
-      "the thread before retrying: a silent stop usually means the worker is waiting on " +
-      "input it never asked for.",
-    );
-  }
-  const idleAt = projectIdleTimestamp(
-    snapshot.card,
-    transitioning,
-    noProgress,
-    deps.now(),
-    deps.idleAttentionMs,
-  );
-  deps.updateCard(snapshot.card.id, {
-    activity: "idle",
-    last_assistant_text: snapshot.lastOutput,
-    last_error: null,
-    last_idle_at: idleAt,
-  });
-  if (idleAt == null) return;
-  const suffix = vetoed
-    ? " Auto-continue vetoed the resume: the last output showed no real progress."
-    : "";
-  recordPausedAfter(
-    deps,
-    snapshot.card.id,
-    idleAt,
-    `Idle with unfinished work — retry continues in place, restart begins fresh.${suffix}`,
-  );
-}
 
 function noteFreshOutput(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): void {
   if (snapshot.lastOutput && snapshot.lastOutput !== snapshot.card.last_assistant_text) {

@@ -24,6 +24,7 @@ import { createResearchTrackSync } from "../research-track-sync.js";
 import type { HostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { createBuildThreadSync } from "../build-thread-sync.js";
 import { readHostHold } from "../worker-hold.js";
+import type { WorkerCard } from "../../workers-types.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
@@ -286,7 +287,7 @@ function buildSyncDeps(
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
-    readHold: (card) => Promise.resolve(
+    readHold: (card: WorkerCard) => Promise.resolve(
       card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
     ),
     applyFailed: (cardId: string, threadId: string, error: string | null) =>
