@@ -16,6 +16,7 @@
  * stage — so the hold releases the moment the retry starts, and re-tightens by
  * itself if the retry fails too. Nothing to clear, nothing to reconcile.
  */
+import { runStatusPhrase } from "../lib/execution-run-ledger.mjs";
 import { getExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { stageLabel as vocabularyStageLabel } from "../lib/workflow-vocabulary.mjs";
@@ -30,15 +31,6 @@ export type RetryResult = { ok: boolean; runId: string | null; error: string | n
 
 /** Only a run that stopped can be tried again. A live one is already working. */
 const RETRYABLE = ["failed", "cancelled"];
-
-const STATE_LABELS: Record<string, string> = {
-  queued: "queued",
-  running: "running",
-  needs_input: "waiting on a decision",
-  succeeded: "succeeded",
-  failed: "failed",
-  cancelled: "cancelled",
-};
 
 export function createLifecycleRetrier(deps: RetryDeps) {
   return {
@@ -56,7 +48,7 @@ export async function retryExecutionRun(
     return {
       ok: false,
       runId: null,
-      error: `This run is ${stateLabel(run.normalizedStatus)}, so there is nothing to retry.`
+      error: `This run is ${runStatusPhrase(run.normalizedStatus)}, so there is nothing to retry.`
         + (run.normalizedStatus === "succeeded" ? " It already finished." : " It is still working."),
     };
   }
@@ -96,10 +88,6 @@ export async function retryExecutionRun(
 }
 
 /** The reader's word for a run state. Never the raw enum. */
-function stateLabel(status: string): string {
-  return STATE_LABELS[status] ?? status;
-}
-
 /** The reader's word for a stage — the same one the card already uses. */
 function stageLabel(stage: string): string {
   return vocabularyStageLabel(stage);

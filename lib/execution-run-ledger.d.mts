@@ -27,6 +27,8 @@ export declare const BLOCKING_RUN_STATUS: "failed";
 export declare const RUN_STATUSES: ReadonlyArray<RunStatus>;
 export declare const RUN_STATUS_LABELS: Readonly<Record<RunStatus, string>>;
 export declare function runStatusLabel(status: unknown): string;
+export declare const RUN_STATUS_PHRASES: Readonly<Partial<Record<RunStatus, string>>>;
+export declare function runStatusPhrase(status: unknown): string;
 
 export interface ExecutionRun {
   id: string;

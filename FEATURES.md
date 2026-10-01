@@ -2239,18 +2239,34 @@ contrast and to someone who cannot see colour. So tone and glyph live together i
 `lib/detail-presentation.mjs` and answer for every axis, while names stay with
 their own.
 
-**Nothing a reader sees changed.** These are the words that were already on
-screen. The status pass is consolidation, not rewording — which is also why it
-was kept separate from the stage labels, where rewording WAS the complaint.
-Changing both in one change would have made the move unreviewable: you could not
-have told whether a text got worse or merely moved.
+**A label and a sentence are different registers.** A label sits in a list and is
+a noun phrase ("Needs input"); a refusal reads "This run is ___" and needs a
+predicate ("waiting on a decision"). Substituting one for the other gives "This run
+is Needs input", and the tempting fix for that — keep a second map — is how raw
+slugs like "This run is succeeded" reached a reader in the first place. So both
+registers live beside the values (`RUN_STATUS_LABELS` and `RUN_STATUS_PHRASES`),
+the phrase defaults to the label, and only the four statuses that read
+differently are listed. A new status added to the CHECK constraint therefore gets
+a grammatical sentence without anyone remembering to add it.
 
-A card's four statuses (`draft`, `in-progress`, `completed`, `archived`) were
-established by classifying every status literal in the repository by axis, not by
-asking the database — which holds three of them and would have missed
-`archived`. Every other literal belongs to a different machine: `approved` is a
-scope map, `ready`/`missing`/`invalid` are research artifacts, `open`/`answered`
-are boundary contracts, `pending` is a trackable, `verified` is a quality seal.
+**Nothing a reader sees changed except where it was wrong.** These are the words
+that were already on screen, which is why the pass was kept separate from the
+stage labels, where rewording WAS the complaint: doing both in one change would
+have made the move unreviewable, because you could not tell whether a text got
+worse or merely moved.
+
+A card's five statuses (`draft`, `pending`, `in-progress`, `completed`,
+`archived`) were established by asking **who writes the value**, not which
+vocabulary the word appears in. That distinction earned its place immediately: a
+first version of this list had four values and asserted in its own comments that
+"`pending` is a trackable", so the validator threw on the creation of every
+Research and Explore card and on every drag back to Bucket — a regression the
+suite did not catch, because no test created a lightweight card.
+`pending` is both a card status and a trackable status, and sharing one entry
+between the two machines is precisely the collision this work exists to end.
+`tests/card-status-vocabulary.test.mjs` now cross-checks the literals read out of
+the two write paths against `CARD_STATUSES`, so a vocabulary that omits a value
+the app writes fails naming it.
 
 **The schema has no CHECK on `cards.status`, on purpose.** SQLite cannot add one
 to an existing table; it takes a rename, a rebuild, a copy and a drop. This repo
@@ -2262,14 +2278,34 @@ is left open deliberately: a loud refusal at the boundary beats a constraint tha
 fails during a migration. If the column is ever rebuilt for another reason, add
 the CHECK then, from `CARD_STATUSES`.
 
-The mention picker now names the card's status too — it was the one surface still
-printing `in-progress` next to a properly-labelled stage, which is the same word
-meaning two things one string apart.
+`server/contracts.ts#statusSchema` still declares **twelve** card statuses — the
+five above plus `planning`, `approved`, `done`, `skipped`, `blocked`,
+`escalated`, `failed`, which no card write path produces. It is the same over-broad
+claim in a second place and is left alone here deliberately: narrowing an RPC
+enum deserves its own review and its own evidence, and an enum that is too wide
+refuses nothing while an enum that is too narrow breaks creation.
 
-`tests/vocabulary-one-owner.test.mjs` holds the single-owner rule for **all four**
+The mention picker now names both rows. It was the one surface still printing
+`in-progress` and `pending` beside a properly-labelled stage — the same word
+meaning two things one string apart — and it carries **two axes**: a board
+workflow's status is a trackable (via `normalizeStatus`) while a card's is a card
+status, so the two rows are named by different vocabularies and both rows sit in
+the same picker.
+
+`tests/vocabulary-one-owner.test.mjs` holds the single-owner rule for all four
 axes, in one place, and checks both directions: nothing declares a map outside its
 owner (naming the file), and every owner still declares its map (so deleting a
-vocabulary cannot pass by leaving the permission behind).
+vocabulary cannot pass by leaving the permission behind). It is deliberately
+imperfect about *syntax* — it recognises a declaration shape, not every way one
+can be written — so it guards the four known maps rather than pretending to
+enforce a property no regex can enforce.
+
+Research-artifact statuses (`ready`, `missing`, `invalid`, `needs-depth`,
+`verified`) are a fifth axis with their own vocabulary in
+`components/detail/research-quality-section.tsx`. They are not consolidated, and
+the one-owner test does not claim them: they never share a namespace with the four
+above, and widening the rule to cover a vocabulary with no collision would be
+ceremony.
 
 **The host's own answer is the only authority on whether a worker is
 running.** A message the host queued has not been dispatched, whatever the

@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { cardStatusLabel } from "../../lib/card-status.mjs";
+import { trackableStatusLabel } from "../../lib/trackables.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -54,7 +55,7 @@ function matchingWorkflows(workflows: BoardWorkflow[], query: string): MentionIt
     .map((workflow) => ({
       id: workflow.id,
       title: workflow.name,
-      subtitle: `${stageLabel(workflow.stage)} · ${workflow.status}`,
+      subtitle: `${stageLabel(workflow.stage)} · ${trackableStatusLabel(workflow.status)}`,
     }));
 }
 

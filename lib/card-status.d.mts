@@ -1,5 +1,5 @@
 /** The four statuses a card can hold. Derived by classification, not observation. */
-export type CardStatus = "draft" | "in-progress" | "completed" | "archived";
+export type CardStatus = "draft" | "pending" | "in-progress" | "completed" | "archived";
 
 export declare const CARD_STATUSES: ReadonlyArray<CardStatus>;
 
