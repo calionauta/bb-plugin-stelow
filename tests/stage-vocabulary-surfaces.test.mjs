@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { registerMentionProviders } from "../server/runtime/mentions.ts";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { cardStatusLabel } from "../lib/card-status.mjs";
+import { trackableStatusLabel } from "../lib/trackables.mjs";
 
 /**
  * A stage a reader can act on, by name.
@@ -66,17 +68,33 @@ const WORKFLOW = {
 };
 
 test("a workflow mention names the stage the way the card does", async () => {
+  // A board workflow's status is a TRACKABLE status (`normalizeStatus` projects
+  // it to a ScopeStatus), so it is named by the trackable machine. This row and
+  // the card row below sit in the SAME picker with the same shape, which is
+  // exactly why an earlier version of this test pinned the raw slug as correct
+  // while the card row beside it had been fixed: the inconsistency looked like
+  // the spec.
   const search = providerFixture([], [WORKFLOW]);
   const [item] = await search("useful", "project_1");
-  assert.equal(item.subtitle, `${LABEL} · in-progress`, "the label the rest of the card uses");
-  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
+  assert.equal(
+    item.subtitle,
+    `${LABEL} · ${trackableStatusLabel(WORKFLOW.status)}`,
+    "the label the rest of the card uses",
+  );
+  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored stage slug");
+  assert.doesNotMatch(item.subtitle, new RegExp(WORKFLOW.status), "nor the stored trackable status");
 });
 
 test("a card mention names the stage the way the card does", async () => {
   const search = providerFixture([CARD], []);
   const [item] = await search("useful", "project_1");
-  assert.equal(item.subtitle, `${LABEL} · in-progress · feature`);
+  assert.equal(item.subtitle, `${LABEL} · ${cardStatusLabel(CARD.status)} · feature`);
   assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
+  assert.doesNotMatch(
+    item.subtitle,
+    new RegExp(CARD.status),
+    "and never the stored card status either — the same rule, the other axis",
+  );
 });
 
 test("every stage in the catalog reaches the picker as a label, not a slug", async () => {

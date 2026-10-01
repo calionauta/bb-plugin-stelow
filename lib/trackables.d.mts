@@ -15,6 +15,8 @@ export interface TrackableCondition {
 }
 export declare const TRACKABLE_STATUSES: TrackableStatus[];
 export declare const BLOCKING_CONDITION_TYPES: string[];
+export declare const TRACKABLE_STATUS_LABELS: Readonly<Record<TrackableStatus, string>>;
+export declare function trackableStatusLabel(status: unknown): string;
 export declare function isDoneStatus(status: unknown): boolean;
 export declare function isSkippedStatus(status: unknown): boolean;
 export declare function isActiveStatus(status: unknown): boolean;

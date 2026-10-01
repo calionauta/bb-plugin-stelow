@@ -2219,9 +2219,93 @@ things, which is the bug this whole rule exists to prevent.
 What no test can decide is whether a label is *good* — "Plan gate" satisfied both
 machine rules for months. That is a product call, and it was made by a person.
 
-Status is the same shape of problem and has **no** vocabulary yet: card status
-renders raw (`in-progress`) in the mention subtitle and elsewhere. One axis, one
-map, when it is worth doing.
+Status is the same shape of problem, and the answer turned out to be the mirror
+image of the stage rule: **names are axis-specific, appearance is not.**
+
+Every axis now has one owner and a name, beside the values it names:
+
+| axis | values live in | names live in | constrained by |
+|---|---|---|---|
+| stage | `data/stelow-stage-catalog.json` | `stageLabel()` | the catalog's own shape |
+| trackable | `lib/trackables.mjs` | `TRACKABLE_STATUS_LABELS` | `TRACKABLE_STATUSES` |
+| run | `execution_runs` CHECK | `RUN_STATUS_LABELS` | the SQL CHECK |
+| card | `lib/card-status.mjs` | `CARD_STATUS_LABELS` | `assertCardStatus` at both write paths |
+
+`statusTone` and `statusGlyph` are the deliberate exception: they are called with
+a card's status AND a scope's, and that is correct, because colour and shape are
+the one fact that does not need an axis. A finished card and a finished scope are
+both green; a status that reads "done" by colour also reads as done in high
+contrast and to someone who cannot see colour. So tone and glyph live together in
+`lib/detail-presentation.mjs` and answer for every axis, while names stay with
+their own.
+
+**A label and a sentence are different registers.** A label sits in a list and is
+a noun phrase ("Needs input"); a refusal reads "This run is ___" and needs a
+predicate ("waiting on a decision"). Substituting one for the other gives "This run
+is Needs input", and the tempting fix for that — keep a second map — is how raw
+slugs like "This run is succeeded" reached a reader in the first place. So both
+registers live beside the values (`RUN_STATUS_LABELS` and `RUN_STATUS_PHRASES`),
+the phrase defaults to the label, and only the four statuses that read
+differently are listed. A new status added to the CHECK constraint therefore gets
+a grammatical sentence without anyone remembering to add it.
+
+**Nothing a reader sees changed except where it was wrong.** These are the words
+that were already on screen, which is why the pass was kept separate from the
+stage labels, where rewording WAS the complaint: doing both in one change would
+have made the move unreviewable, because you could not tell whether a text got
+worse or merely moved.
+
+A card's five statuses (`draft`, `pending`, `in-progress`, `completed`,
+`archived`) were established by asking **who writes the value**, not which
+vocabulary the word appears in. That distinction earned its place immediately: a
+first version of this list had four values and asserted in its own comments that
+"`pending` is a trackable", so the validator threw on the creation of every
+Research and Explore card and on every drag back to Bucket — a regression the
+suite did not catch, because no test created a lightweight card.
+`pending` is both a card status and a trackable status, and sharing one entry
+between the two machines is precisely the collision this work exists to end.
+`tests/card-status-vocabulary.test.mjs` now cross-checks the literals read out of
+the two write paths against `CARD_STATUSES`, so a vocabulary that omits a value
+the app writes fails naming it.
+
+**The schema has no CHECK on `cards.status`, on purpose.** SQLite cannot add one
+to an existing table; it takes a rename, a rebuild, a copy and a drop. This repo
+has done that before, so the pattern is not foreign — but `cards` is the central
+table, threads write to it continuously, and a rebuild buys little when every app
+write already passes through two functions that refuse an unknown value by name.
+What a CHECK would add is protection against writes that bypass the app, and that
+is left open deliberately: a loud refusal at the boundary beats a constraint that
+fails during a migration. If the column is ever rebuilt for another reason, add
+the CHECK then, from `CARD_STATUSES`.
+
+`server/contracts.ts#statusSchema` still declares **twelve** card statuses — the
+five above plus `planning`, `approved`, `done`, `skipped`, `blocked`,
+`escalated`, `failed`, which no card write path produces. It is the same over-broad
+claim in a second place and is left alone here deliberately: narrowing an RPC
+enum deserves its own review and its own evidence, and an enum that is too wide
+refuses nothing while an enum that is too narrow breaks creation.
+
+The mention picker now names both rows. It was the one surface still printing
+`in-progress` and `pending` beside a properly-labelled stage — the same word
+meaning two things one string apart — and it carries **two axes**: a board
+workflow's status is a trackable (via `normalizeStatus`) while a card's is a card
+status, so the two rows are named by different vocabularies and both rows sit in
+the same picker.
+
+`tests/vocabulary-one-owner.test.mjs` holds the single-owner rule for all four
+axes, in one place, and checks both directions: nothing declares a map outside its
+owner (naming the file), and every owner still declares its map (so deleting a
+vocabulary cannot pass by leaving the permission behind). It is deliberately
+imperfect about *syntax* — it recognises a declaration shape, not every way one
+can be written — so it guards the four known maps rather than pretending to
+enforce a property no regex can enforce.
+
+Research-artifact statuses (`ready`, `missing`, `invalid`, `needs-depth`,
+`verified`) are a fifth axis with their own vocabulary in
+`components/detail/research-quality-section.tsx`. They are not consolidated, and
+the one-owner test does not claim them: they never share a namespace with the four
+above, and widening the rule to cover a vocabulary with no collision would be
+ceremony.
 
 **The host's own answer is the only authority on whether a worker is
 running.** A message the host queued has not been dispatched, whatever the

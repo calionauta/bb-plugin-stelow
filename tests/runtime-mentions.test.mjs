@@ -67,7 +67,7 @@ test("workflow mentions include exploratory cards when the project board misses 
   assert.deepEqual(result, [{
     id: "hash-1",
     title: "Exploratory idea",
-    subtitle: "Research · pending · investigate",
+    subtitle: "Research · Pending · investigate",
   }]);
   assert.deepEqual(boardCalls, ["project-1"]);
 });
