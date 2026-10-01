@@ -2,6 +2,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { DisclosureChevron } from "../disclosure";
 import { formatDuration } from "../../lib/card-metrics.mjs";
+import { AttentionRow, WaitBreakdown } from "./flow-wait";
 import type { rpcContract } from "../../server";
 
 const FLOW_BUTTON_CLASS =
@@ -216,6 +217,7 @@ function FlowDetails({
         <TimingDetails
           window={view.window}
           setWindow={view.setWindow}
+          result={result}
           rows={rows}
           onOpenCard={onOpenCard}
         />
@@ -266,6 +268,7 @@ function FlowTabBar({
 type TimingDetailsProps = {
   window: FlowWindow;
   setWindow: Dispatch<SetStateAction<FlowWindow>>;
+  result: FlowMetrics;
   rows: FlowRow[];
   onOpenCard: (kind: FlowKind, cardId: string) => void;
 };
@@ -273,6 +276,7 @@ type TimingDetailsProps = {
 function TimingDetails({
   window,
   setWindow,
+  result,
   rows,
   onOpenCard,
 }: TimingDetailsProps) {
@@ -282,6 +286,7 @@ function TimingDetails({
         Typical is the median (p50); slow is p90 — 9 of 10 finish within. Lead
         runs idea to done; cycle runs first real movement to done.
       </p>
+      <WaitBreakdown wait={result.wait} />
       <div className="flex items-center gap-1" role="group" aria-label="Done window">
         {FLOW_WINDOWS.map((entry) => (
           <button
@@ -311,22 +316,21 @@ type AttentionDetailsProps = {
   onOpenCard: (kind: FlowKind, cardId: string) => void;
 };
 
+/**
+ * The two attention lists, right now rather than in the picked window.
+ *
+ * Reviews are sorted oldest-first: a finished card nobody has opened for a week
+ * is the one a reader needs to see, and a list sorted by anything else buries it
+ * under this morning's completions.
+ */
 function AttentionDetails({
   stuck,
   review,
   onOpenCard,
 }: AttentionDetailsProps) {
   const entries = [
-    ...stuck.map((entry) => ({
-      ...entry,
-      tone: "text-amber-700 dark:text-amber-300",
-      mark: "stuck",
-    })),
-    ...review.map((entry) => ({
-      ...entry,
-      tone: "text-emerald-700 dark:text-emerald-300",
-      mark: "to review",
-    })),
+    ...stuck,
+    ...review.slice().sort((a, b) => (b.waitMs ?? 0) - (a.waitMs ?? 0)),
   ];
   return (
     <div className="space-y-2">
@@ -341,17 +345,11 @@ function AttentionDetails({
       ) : (
         <ul className="max-h-56 space-y-0.5 overflow-auto">
           {entries.map((entry) => (
-            <li key={entry.cardId}>
-              <button
-                onClick={() => onOpenCard(entry.kind, entry.cardId)}
-                className={FLOW_ROW_CLASS}
-              >
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                <span className={`shrink-0 font-medium ${entry.tone}`}>
-                  {entry.mark}
-                </span>
-              </button>
-            </li>
+            <AttentionRow
+              key={entry.cardId}
+              entry={entry}
+              onOpenCard={onOpenCard}
+            />
           ))}
         </ul>
       )}

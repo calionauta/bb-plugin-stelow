@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { clearClaimWaiters, releaseAllCardClaims, sweepExpiredClaims } from "../../lib/card-claims.mjs";
 import { isClaimTerminal } from "../../lib/card-terminal.mjs";
+import { sweepEventSeverity } from "../../lib/inbox-events.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type ReleasedFile = { workspacePath: string; file: string };
@@ -12,6 +13,7 @@ export type Scheduler = {
 
 type ReconcilerDeps = {
   db: Db;
+  bb: BbPluginApi;
   syncThreadState: (cardId: string) => Promise<void>;
   scopeProgress: {
     sync: (cardId: string) => Promise<unknown>;
@@ -53,6 +55,24 @@ function releaseExpiredClaims(deps: ReconcilerDeps): void {
   notifyReleased(deps, released);
 }
 
+/**
+ * Age escalation for rows no live sync will revisit.
+ *
+ * `syncThreadState` skips completed cards on purpose (a finished card has no
+ * thread left to read), so its per-card severity sweep never sees a completion
+ * nobody opened — and the review-wait tier could never fire. This is the fleet
+ * tick that reaches them. Advisory: a failure leaves the stored tiers alone.
+ */
+function sweepInboxAging(deps: ReconcilerDeps): void {
+  try {
+    if (sweepEventSeverity(deps.db, { nowMs: deps.now() }) > 0) {
+      deps.bb.realtime.publish("inbox-changed", { aged: true });
+    }
+  } catch (error) {
+    deps.onError("sweep inbox aging", error);
+  }
+}
+
 function releaseTerminalClaims(deps: ReconcilerDeps): void {
   const holders = deps.db.prepare("SELECT id, status FROM cards").all() as Array<{
     id: string;
@@ -82,6 +102,7 @@ export function startReconciler(deps: ReconcilerDeps) {
     if (!(deps.db as { open?: boolean }).open) return;
     try { reconcileLiveCards(deps); } catch (error) { deps.onError("reconcile live cards", error); }
     void deps.maybeBumpSeverity();
+    sweepInboxAging(deps);
     try { releaseExpiredClaims(deps); } catch (error) { deps.onError("release expired claims", error); }
     try { releaseTerminalClaims(deps); } catch (error) { deps.onError("release terminal claims", error); }
   };

@@ -1902,11 +1902,27 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   itself (finished count with a measured trail, typical/median and slow/p90
   lead/cycle with the jargon glossed inline, expanding to Timing and Attention
   tabs and a per-card table that opens
-  cards) fed by the board project filter. Timing holds windows, legend, and
-  the lead/cycle table; Attention holds right-now stuck (blocked status or
-  errored worker) and review-awaiting dones with an all-clear empty state —
+  cards) fed by the board project filter. Timing holds windows, legend, the
+  lead/cycle table, and **where the time went**: every finished card's
+  wall-clock split into time a question held it for you, time lost to a paused
+  worker or a lock wait or a failure, and an `unattributed` remainder the data
+  does not explain — three disjoint parts of one interval, computed as a union
+  rather than a sum (`lib/wait-attribution.mjs`), so overlapping windows can
+  never report a share above 100%. The remainder is never called work, and
+  host-caused stalls stay out of it by design (`lib/host-read-streak.mjs`).
+  Attention holds right-now stuck (blocked status or
+  errored worker) and review-awaiting dones — oldest first, each naming how long
+  it has waited — with an all-clear empty state —
   signal chips for both ride the closed header only when nonzero, so a calm
   board shows no amber. Empty boards render no strip.
+- **Review-wait aging** (`lib/inbox-severity.mjs`, `sweepEventSeverity`). A
+  finished card nobody has opened used to read identically whether it landed
+  this morning or a week ago: a completion is routine by tier and its card is
+  excluded from the live sync (`shouldSyncThread` skips `completed`), so no
+  sweep ever re-scored it. Past 48 hours an unread completion escalates on the
+  reconcile tick, reason chip reading `unreviewed Nd`, and the fleet-wide sweep
+  is the door that reaches rows no live sync visits. Escalating never resolves:
+  the badge still counts the review request.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
