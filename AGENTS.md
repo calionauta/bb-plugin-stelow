@@ -265,11 +265,11 @@ from a laptop.
 
 **Never push to `master` directly — branch, then PR, always.** Every
 release rule above is written for a merged PR, and a direct push breaks
-them silently: the squash commit's subject is the *branch's last commit*
-rather than a PR title chosen for the change type, so a batch of `fix:`
-commits that carries a `feat:` ships as a patch with the feature absent
-from the notes. It also leaves no review point, which is the one thing
-the release process is built on. Pushing and then reverting with
+them silently: the squash commit's subject is then the *branch's last
+commit* rather than a title chosen for the change type, so a batch of
+`fix:` commits that carries a `feat:` ships as a patch with the feature
+absent from the notes. It also leaves no review point, which is the one
+thing the release process is built on. Pushing and then reverting with
 `--force-with-lease` works, but it publishes a wrong master first —
 avoid it rather than repairing it.
 
@@ -328,23 +328,31 @@ saying plainly: it runs *inside* the release workflow, so a workflow
 that never starts never reaches it. Recover, then check the tag
 exists — `gh release list --limit 1`.
 
-**A squash-merged PR is typed by its title, not by its commits.** The
-squash commit keeps every merged message in its *body*, but the
-*subject* — the only line release-please reads for the change type —
-is the pull request title. So a PR titled `fix:` that carries a
-`feat:` commit is released as a patch and the feature appears nowhere
-in the notes. This is not hypothetical: PR #157 mixed the design-ref
-feature with three fixes and a sync, and release-please computed
-0.56.5 for work that had to ship as 0.57.0.
+**A squash-merged PR is typed by its branch commits, not by its title.**
+This repo sets `squash_merge_commit_title = COMMIT_OR_PR_TITLE` with
+`squash_merge_commit_message = COMMIT_MESSAGES`, so a multi-commit
+branch is squashed under the **last commit's** subject and the
+individual messages survive in the body. The subject — the only line
+release-please reads for the change type — therefore comes from a
+commit, and the title never types the release. This is not
+hypothetical: PR #211 carried a `feat:` commit and a `fix:` commit
+under a `feat:` title, and master recorded the `fix:`, shipping a
+feature as a patch. PR #157 mixed the design-ref feature with three
+fixes and a sync, and release-please computed 0.56.5 for work that
+had to ship as 0.57.0.
 
-Two consequences, both now rules: a PR that carries a feature is
-**titled** `feat:` even when it also carries fixes, and a feature
-never shares a PR with unrelated fixes. When a bump is already wrong
-— the release PR is open and says the wrong version — correct it
-through the release workflow's own `release-as` input
+Two consequences, both now rules: the **last commit** on a branch that
+carries a feature is `feat:` even when it also carries fixes, and a
+feature never shares a branch with unrelated fixes. When a bump is
+already wrong — the release PR is open and says the wrong version —
+correct it through the release workflow's own `release-as` input
 (`gh workflow run release.yml -f release-as=<version>`), never by
 editing `package.json` in the release PR, which release-please
-overwrites.
+overwrites. A `BREAKING CHANGE:` footer on a 0.x line computes 1.0.0
+and that milestone is refused by `check-release-major-claim.mjs`,
+which points back at `release-as`; `bump-minor-pre-major` cannot
+soften it, because passing `release-type` on the action makes
+release-please ignore `release-please-config.json` entirely.
 
 **A squash merge destroys the evidence you would use to check the
 work landed, so verify by content, not by commit message.** After a
