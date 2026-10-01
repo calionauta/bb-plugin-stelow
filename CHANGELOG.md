@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.60.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.59.0...v0.60.0) (2026-10-01)
+
+
+### Features
+
+* a card mid-workflow is running, the scope map stops contradicting the tracker, and a failed run holds its stage ([#203](https://github.com/calionauta/bb-plugin-stelow/issues/203)) ([302a759](https://github.com/calionauta/bb-plugin-stelow/commit/302a7590f5816ec30be3ed94882f329e03021db0))
+
+
+### Bug Fixes
+
+* a dead import that claimed a live rule was still wired ([#208](https://github.com/calionauta/bb-plugin-stelow/issues/208)) ([12e4fc0](https://github.com/calionauta/bb-plugin-stelow/commit/12e4fc0a024efd96971095a5e5c0aa78dca6ec34))
+
 ## [0.59.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.2...v0.59.0) (2026-09-30)
 
 
