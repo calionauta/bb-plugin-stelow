@@ -64,8 +64,9 @@ Restore and re-archive both ran through the real RPCs — `restoreCard`, then
    `draft`, which is the documented rule for `triage`; the stage was never
    touched.
 2. **A fresh worker starts.** Held. `worker_thread_id` went from null to set;
-   the card log records *"Worker started on preset Default, continuing from the
-   triage stage."*
+   the card log records *"Worker started on preset Default, continuing from
+   Triage."* — the stage is named by its label, the same word every other card
+   surface uses, never the stored slug.
 3. **The question is live and answerable.** **It did not stay live** — see below.
 4. **The error is back with the original reason.** Held. `resolved_at` NULL,
    `resolved_reason` NULL, and the summary is the card's stored `last_error`

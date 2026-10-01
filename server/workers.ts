@@ -5,6 +5,7 @@ import { recordWorkerThread } from "../lib/worker-ledger.mjs";
 import { resetSpawnRetry } from "../lib/spawn-retry.mjs";
 import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
 import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
+import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
@@ -95,7 +96,11 @@ async function lineage(deps: WorkerDeps, input: LineageInput): Promise<void> {
 function continuationText(card: WorkerCard): string {
   if (card.kind === "research") return "continuing the research";
   if (card.kind === "explore") return "continuing the explore run";
-  return `continuing from the ${card.stage} stage`;
+  // The label, with no "the ... stage" around it. That wrapper read fine for a
+  // one-word noun ("the Triage stage") and badly for every label that already
+  // contains a noun ("the Plan gate stage"), and a sentence that has to be
+  // reworded as the catalog grows is a sentence the catalog should not own.
+  return `continuing from ${stageLabel(card.stage)}`;
 }
 
 async function fresh(

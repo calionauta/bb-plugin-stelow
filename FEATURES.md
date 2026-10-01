@@ -2156,6 +2156,32 @@ From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
 
+**A stage is named by its label, on every surface, or not at all.**
+`stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
+is a database key, a CLI argument, and a prompt token — never a word to show a
+reader. The card UI mostly got this right on its own (pills, timeline, phase
+rail, board columns all route through the catalog), which is exactly why the two
+that did not were invisible: the mention picker's subtitle rendered
+`int-gate · in-progress`, and the worker-restart trail read *"continuing from
+the int-gate stage"*.
+
+The mention picker is the worst place to get this wrong, because it is the one
+surface where a card is chosen **before** it is opened — the stage in that row
+is often the only thing telling two cards apart. `tests/stage-vocabulary-surfaces.test.mjs`
+drives the provider the host actually registers and walks the whole catalog, so a
+stage that reaches the picker as a slug fails naming itself.
+
+One label per stage is enforced in `workflow-contracts.test.mjs`. What is **not**
+enforced is that the label is a word a reader understands: several are still
+internal vocabulary (`Plan gate`, `Diff gate`, `Interface selection`,
+`Shape proposal`, `Choose work`) rather than plain language. That is a wording
+question about the catalog, deliberately not decided by a test — a test can prove
+a stage has a label, not that the label is good.
+
+Status is the same shape of problem and has **no** vocabulary yet: card status
+renders raw (`in-progress`) in the mention subtitle and elsewhere. One axis, one
+map, when it is worth doing.
+
 **The host's own answer is the only authority on whether a worker is
 running.** A message the host queued has not been dispatched, whatever the
 call returned. Any projection that reads "running" from a call that did not
