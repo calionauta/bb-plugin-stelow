@@ -905,7 +905,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   **Workflow map** as two sibling sections that never pretend to be each
   other: progress is where this card is, the map is what each stage does.
   Before scopes exist the live checkpoint pill rides the subtitle line
-  (`where this card is · ● Plan gate`), never a detached floating hint —
+  (`where this card is · ● Product Review`), never a detached floating hint —
   element hints render without truncation so the pill ring is never clipped.
   A progress hero shows scope/task bars with counts (never percentages), what is doing
   now, and what is blocked — above the per-scope detail.
@@ -1175,7 +1175,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   one reader. A card with a live run is never nudged, never parked, spends no
   budget, and clears the idle timestamp it does not have. The detail answers
   *why* it is not moving, the same split the host hold uses: the board says
-  `running`, the card says `The Tech planning run is working now; the card's
+  `running`, the card says `The Tech Planning run is working now; the card's
   thread is idle while it does. The card continues on its own — no action
   needed.` The stage label travels with the run, because the card said "Tech
   planning" and the run said "planning-research" and nothing on screen connected
@@ -1185,7 +1185,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`lib/failed-run-gate.mjs`, `server/execution-lifecycle-retry.ts`,
   `server/execution-advance-preflight.ts`). On card_cbnihg4c the `scope-map`
   run failed with *"the recipe produced no task outputs"* and an empty staging
-  directory, and the card advanced to Tech planning anyway — so `Failed · scope`
+  directory, and the card advanced to Tech Planning anyway — so `Failed · scope`
   sat in Execution runs while the card was two stages on, reading as a
   contradiction with no way to tell whether the scope work had happened. The
   preflight both entry points share now refuses to leave a stage whose **newest**
@@ -1224,9 +1224,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   said yes, the worker acted, and the real advance refused — so the one tool
   meant to prevent the mistake was the one place it did not fire.
   The run list names each run by the **stage label the card already uses**
-  ("Tech planning"), not the host's recipe slug. It read
+  ("Tech Planning"), not the host's recipe slug. It read
   `planning-research / Running · planning` while every other surface said
-  "Tech planning", and nothing on screen connected them — the same word meaning
+  "Tech Planning", and nothing on screen connected them — the same word meaning
   two things, which is the mistake the Scope X-ray made in the other direction.
 - **A run the host stops answering about eventually fails**
   (`server/execution-reconcile-run.ts`, `lib/execution-run-ledger.mjs`). The
@@ -1787,7 +1787,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pipelines. Missing files fail loud, never silently dropped.
 - **Exceptional card split** (`bb stelow ask --tag split`, `bb stelow split`,
   `lib/split-proposal.mjs`). The default is one focused card with scopes;
-  triage (or Choose work, before its choice is committed) may propose a
+  triage (or Prioritization, before its choice is committed) may propose a
   split only for 2+ substantial, independently auditable deliverables with
   distinct outcomes and acceptance criteria — never for bullets, files,
   UI/API slices, steps, or small fixes. The structured multi-select ask
@@ -2171,12 +2171,43 @@ is often the only thing telling two cards apart. `tests/stage-vocabulary-surface
 drives the provider the host actually registers and walks the whole catalog, so a
 stage that reaches the picker as a slug fails naming itself.
 
-One label per stage is enforced in `workflow-contracts.test.mjs`. What is **not**
-enforced is that the label is a word a reader understands: several are still
-internal vocabulary (`Plan gate`, `Diff gate`, `Interface selection`,
-`Shape proposal`, `Choose work`) rather than plain language. That is a wording
-question about the catalog, deliberately not decided by a test — a test can prove
-a stage has a label, not that the label is good.
+One label per stage is enforced in `workflow-contracts.test.mjs`, and
+`tests/stage-vocabulary-rules.test.mjs` adds the two rules that made this one
+worth having: **only the catalog may declare a stage name** (a second map is how
+two surfaces start disagreeing, and the symptom is a reader concluding that
+"Interface gate" and `int-gate` are two different stages), and **no stage's label
+may be its own stored id** (shipping a stage with no name is a normal accident,
+and a variable name on screen is what it looks like).
+
+**The labels are written for a product team — a product manager, a designer, and
+a developer all reading the same card.** That was the actual complaint: `Plan
+gate`, `Diff gate`, `Interface selection`, `Shape proposal` and `Choose work` are
+the team's internal vocabulary printed at someone deciding whether to trust a
+plan. So the four decision stages are now named after **who decides**, which is
+the one fact a reader actually wants and the one a name can carry:
+
+| stage id | was | now | whose call |
+|---|---|---|---|
+| `gate` | Product gate | **Product Review** | product |
+| `int-gate` | Interface gate | **Design Review** | design |
+| `plan-gate` | Plan gate | **Technical Review** | engineering |
+| `diff-gate` | Diff gate | **Code Review** | engineering |
+
+and the rest follow one voice — a noun phrase naming the work, the shape
+"Tech Planning" already had: `select` → **Prioritization**, `context` → **Project
+Context**, `shape` → **Product Proposal**, `selection` → **Interface Choice**,
+`execution` → **Implementation**. "Diff" is gone because it is a git term, not a
+product one.
+
+The stored ids stay. They are database keys, CLI arguments and prompt tokens, and
+renaming one is a migration for no reader-visible gain. Only the labels moved, and
+each stage's `produces` line with it — those lines render beside the label on the
+workflow map and the stage timeline, so a label that says "Product Review" next to
+prose reading "Product gate: decides whether…" is the same word meaning two
+things, which is the bug this whole rule exists to prevent.
+
+What no test can decide is whether a label is *good* — "Plan gate" satisfied both
+machine rules for months. That is a product call, and it was made by a person.
 
 Status is the same shape of problem and has **no** vocabulary yet: card status
 renders raw (`in-progress`) in the mention subtitle and elsewhere. One axis, one

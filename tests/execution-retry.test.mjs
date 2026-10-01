@@ -3,6 +3,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { retryExecutionRun } from "../server/execution-lifecycle-retry.ts";
 import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
+import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 
 /**
  * The door in the failed-run hold.
@@ -178,8 +179,11 @@ test("a run from a stage the card has left is refused, and says how to reach it"
   seed(db, { stage: "critique" });
   const result = await retryExecutionRun(deps(db, card({ stage: "execution" }), []), "exec_1");
   assert.equal(result.ok, false);
-  assert.match(result.error, /belongs to Critique/i);
-  assert.match(result.error, /card is at Execution/i);
+  // Derived, not written out: a catalog rename is not a regression, and the
+  // thing that must never appear here is the stored slug.
+  assert.match(result.error, new RegExp(`belongs to ${stageLabel("critique")}`, "i"));
+  assert.match(result.error, new RegExp(`card is at ${stageLabel("execution")}`, "i"));
+  assert.doesNotMatch(result.error, /\bexecution\b(?![ -])/i, "and never the raw stage id");
   assert.match(result.error, /reopen/i, "and it names the way to get there");
 });
 

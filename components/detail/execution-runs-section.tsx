@@ -51,7 +51,7 @@ function waitingForYou(run: ExecutionRun) {
 // The stage is NOT repeated here: the row's own title already names it, in the
 // card's own words. It used to appear a second time as the raw slug — so a row
 // read "planning-research / Running · planning" while every other surface on the
-// card said "Tech planning", and a reader had no way to tell those were the same
+// card said "Tech Planning", and a reader had no way to tell those were the same
 // stage. One fact, one place, in the vocabulary the rest of the card uses.
 function RunSummary({ run, waiting }: { run: ExecutionRun; waiting: ReturnType<typeof waitingForYou> }) {
   const live = liveProgressNote(run.normalizedStatus);

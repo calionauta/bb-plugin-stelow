@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerMentionProviders } from "../server/runtime/mentions.ts";
+import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 
 /**
  * A stage a reader can act on, by name.
@@ -35,12 +36,20 @@ function providerFixture(rows, workflows) {
   return (query, projectId) => workflow.search({ query, projectId });
 }
 
+// The expected subtitle is DERIVED from the catalog, not written out. An earlier
+// version of this file hardcoded "Interface gate" and failed the moment that
+// label was renamed — which is the wrong way round: a rename is not a
+// regression, and a test that cannot survive one trains people to ignore it.
+// What must never appear is the slug, so that is what the assertions name.
+const STAGE = "int-gate";
+const LABEL = stageLabel(STAGE);
+
 const CARD = {
   id: "card_1",
   project_id: "project_1",
   display_name: "Useful card",
   name: "useful",
-  stage: "int-gate",
+  stage: STAGE,
   status: "in-progress",
   intent: "feature",
   dir_hash: "hash_1",
@@ -49,7 +58,7 @@ const CARD = {
 const WORKFLOW = {
   id: "wf_1",
   name: "Useful workflow",
-  stage: "int-gate",
+  stage: STAGE,
   status: "in-progress",
   appetite: "small",
   reviewMode: "auto",
@@ -59,15 +68,15 @@ const WORKFLOW = {
 test("a workflow mention names the stage the way the card does", async () => {
   const search = providerFixture([], [WORKFLOW]);
   const [item] = await search("useful", "project_1");
-  assert.match(item.subtitle, /^Interface gate · /, "the label the rest of the card uses");
-  assert.doesNotMatch(item.subtitle, /int-gate/, "and never the stored slug");
+  assert.equal(item.subtitle, `${LABEL} · in-progress`, "the label the rest of the card uses");
+  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
 });
 
 test("a card mention names the stage the way the card does", async () => {
   const search = providerFixture([CARD], []);
   const [item] = await search("useful", "project_1");
-  assert.match(item.subtitle, /^Interface gate · /);
-  assert.doesNotMatch(item.subtitle, /int-gate/, "and never the stored slug");
+  assert.equal(item.subtitle, `${LABEL} · in-progress · feature`);
+  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
 });
 
 test("every stage in the catalog reaches the picker as a label, not a slug", async () => {

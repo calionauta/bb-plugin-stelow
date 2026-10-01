@@ -56,7 +56,7 @@ export function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open
     <DisclosureSection title="Workflow map" subtitle="what each stage does" open={open} onToggle={onToggle}>
       <p className="max-w-4xl text-sm leading-6 text-muted-foreground">
         Analysis, Planning, Execution, and Review are workflow phases. Review contains
-        automated checks (Diff gate and Audit), not human review. Done is the completed
+        automated checks (Code Review and Audit), not human review. Done is the completed
         outcome after Audit, not a stage; Needs attention can occur in any phase. Each
         stage links to the upstream Stelow skill or behavior document that defines it.
       </p>
