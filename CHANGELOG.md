@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.60.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.5...v0.60.6) (2026-10-01)
+
+
+### Bug Fixes
+
+* a card whose reads the host will not answer had a log line and no channel to its owner ([#225](https://github.com/calionauta/bb-plugin-stelow/issues/225)) ([e63fbb9](https://github.com/calionauta/bb-plugin-stelow/commit/e63fbb97fa39a1c9981ef0a0629c738df6e9bdd5))
+* the reasoning level was validated against the wrong set ([#223](https://github.com/calionauta/bb-plugin-stelow/issues/223)) ([de311d7](https://github.com/calionauta/bb-plugin-stelow/commit/de311d7f96ed14fc5cd4e8331ad57b30d04d6aa5))
+* the refusal named a door, and the test proved the words opened ([#224](https://github.com/calionauta/bb-plugin-stelow/issues/224)) ([0e94132](https://github.com/calionauta/bb-plugin-stelow/commit/0e94132fdfc23f75b7c6c4e495f762d4b3f9a939))
+
 ## [0.60.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.4...v0.60.5) (2026-10-01)
 
 
