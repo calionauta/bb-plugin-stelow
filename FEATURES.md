@@ -2219,9 +2219,57 @@ things, which is the bug this whole rule exists to prevent.
 What no test can decide is whether a label is *good* — "Plan gate" satisfied both
 machine rules for months. That is a product call, and it was made by a person.
 
-Status is the same shape of problem and has **no** vocabulary yet: card status
-renders raw (`in-progress`) in the mention subtitle and elsewhere. One axis, one
-map, when it is worth doing.
+Status is the same shape of problem, and the answer turned out to be the mirror
+image of the stage rule: **names are axis-specific, appearance is not.**
+
+Every axis now has one owner and a name, beside the values it names:
+
+| axis | values live in | names live in | constrained by |
+|---|---|---|---|
+| stage | `data/stelow-stage-catalog.json` | `stageLabel()` | the catalog's own shape |
+| trackable | `lib/trackables.mjs` | `TRACKABLE_STATUS_LABELS` | `TRACKABLE_STATUSES` |
+| run | `execution_runs` CHECK | `RUN_STATUS_LABELS` | the SQL CHECK |
+| card | `lib/card-status.mjs` | `CARD_STATUS_LABELS` | `assertCardStatus` at both write paths |
+
+`statusTone` and `statusGlyph` are the deliberate exception: they are called with
+a card's status AND a scope's, and that is correct, because colour and shape are
+the one fact that does not need an axis. A finished card and a finished scope are
+both green; a status that reads "done" by colour also reads as done in high
+contrast and to someone who cannot see colour. So tone and glyph live together in
+`lib/detail-presentation.mjs` and answer for every axis, while names stay with
+their own.
+
+**Nothing a reader sees changed.** These are the words that were already on
+screen. The status pass is consolidation, not rewording — which is also why it
+was kept separate from the stage labels, where rewording WAS the complaint.
+Changing both in one change would have made the move unreviewable: you could not
+have told whether a text got worse or merely moved.
+
+A card's four statuses (`draft`, `in-progress`, `completed`, `archived`) were
+established by classifying every status literal in the repository by axis, not by
+asking the database — which holds three of them and would have missed
+`archived`. Every other literal belongs to a different machine: `approved` is a
+scope map, `ready`/`missing`/`invalid` are research artifacts, `open`/`answered`
+are boundary contracts, `pending` is a trackable, `verified` is a quality seal.
+
+**The schema has no CHECK on `cards.status`, on purpose.** SQLite cannot add one
+to an existing table; it takes a rename, a rebuild, a copy and a drop. This repo
+has done that before, so the pattern is not foreign — but `cards` is the central
+table, threads write to it continuously, and a rebuild buys little when every app
+write already passes through two functions that refuse an unknown value by name.
+What a CHECK would add is protection against writes that bypass the app, and that
+is left open deliberately: a loud refusal at the boundary beats a constraint that
+fails during a migration. If the column is ever rebuilt for another reason, add
+the CHECK then, from `CARD_STATUSES`.
+
+The mention picker now names the card's status too — it was the one surface still
+printing `in-progress` next to a properly-labelled stage, which is the same word
+meaning two things one string apart.
+
+`tests/vocabulary-one-owner.test.mjs` holds the single-owner rule for **all four**
+axes, in one place, and checks both directions: nothing declares a map outside its
+owner (naming the file), and every owner still declares its map (so deleting a
+vocabulary cannot pass by leaving the permission behind).
 
 **The host's own answer is the only authority on whether a worker is
 running.** A message the host queued has not been dispatched, whatever the

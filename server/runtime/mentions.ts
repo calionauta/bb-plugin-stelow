@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { cardStatusLabel } from "../../lib/card-status.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -65,7 +66,7 @@ function matchingCards(deps: MentionDeps, projectId: string | null, query: strin
     .map((card) => ({
       id: card.dir_hash ?? card.id,
       title: card.display_name ?? card.name,
-      subtitle: `${stageLabel(card.stage)} · ${card.status} · ${card.intent}`,
+      subtitle: `${stageLabel(card.stage)} · ${cardStatusLabel(card.status)} · ${card.intent}`,
     }));
 }
 

@@ -1,4 +1,5 @@
 import { describeCardEnvironment } from "../lib/tracks.mjs";
+import { assertCardStatus } from "../lib/card-status.mjs";
 import { environmentFallbackNotice } from "../lib/card-environment.mjs";
 import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create.js";
 
@@ -33,6 +34,9 @@ export async function insertCard(
   });
   const values = cardValues(input, cardId, workspace, prepared, track, preset, thread, environmentLabel, createdAt, timestamp);
   if (values.length !== CARD_COLUMNS.length) throw new Error(`Card insert mismatch: ${values.length} values for ${CARD_COLUMNS.length} columns.`);
+  // The other of the two write paths. See lib/card-status.mjs for why the
+  // vocabulary is enforced here rather than by a CHECK on the column.
+  assertCardStatus(values[CARD_COLUMNS.indexOf("status")], `card insert for ${cardId}`);
   deps.db.prepare(`INSERT INTO cards (${CARD_COLUMNS.join(", ")}) VALUES (${CARD_COLUMNS.map(() => "?").join(", ")})`).run(...values);
   return timestamp;
 }

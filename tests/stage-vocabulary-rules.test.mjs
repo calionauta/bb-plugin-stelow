@@ -71,24 +71,10 @@ test("stageLabel reads the catalog rather than restating it", () => {
   assert.equal(stageLabel("explore"), "Explore");
 });
 
-test("nothing outside the catalog declares a stage name", () => {
-  // A topology constraint, not a copy check: it names which file OWNS the map,
-  // so a second owner fails loudly instead of quietly diverging.
-  const declared = /^\s*(?:export\s+)?const\s+(STAGE_LABELS|BUILD_BOARD_COLUMN_LABELS|PHASE_LABELS)\s*(?::[^=]+)?=\s*\{/gm;
-  const owners = new Set();
-  const offenders = [];
-  const files = execFileSync("git", ["ls-files", "*.ts", "*.tsx", "*.mjs", "*.mts"], { cwd: root })
-    .toString().split("\n").filter(Boolean);
-  for (const file of files) {
-    if (CATALOG_OWNERS.includes(file)) continue;
-    const source = readFileSync(join(root, file), "utf8");
-    for (const match of source.matchAll(declared)) {
-      offenders.push(`${file} re-declares ${match[1]}`);
-      owners.add(match[1]);
-    }
-  }
-  assert.deepEqual(offenders, [], "the stage vocabulary has exactly one owner");
-});
+// The one-owner rule is NOT here: it spans every axis, so it lives in
+// tests/vocabulary-one-owner.test.mjs. Leaving a stage-only copy of it here is
+// the fragmentation it exists to prevent — a fourth axis added without a check is
+// exactly how this drift starts again.
 
 test("a label is a name a reader can read, not a variable", () => {
   // Cheap structural floor on wording. It cannot judge whether "Plan gate" was a

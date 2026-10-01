@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { registerMentionProviders } from "../server/runtime/mentions.ts";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { cardStatusLabel } from "../lib/card-status.mjs";
 
 /**
  * A stage a reader can act on, by name.
@@ -75,8 +76,13 @@ test("a workflow mention names the stage the way the card does", async () => {
 test("a card mention names the stage the way the card does", async () => {
   const search = providerFixture([CARD], []);
   const [item] = await search("useful", "project_1");
-  assert.equal(item.subtitle, `${LABEL} · in-progress · feature`);
+  assert.equal(item.subtitle, `${LABEL} · ${cardStatusLabel(CARD.status)} · feature`);
   assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
+  assert.doesNotMatch(
+    item.subtitle,
+    new RegExp(CARD.status),
+    "and never the stored card status either — the same rule, the other axis",
+  );
 });
 
 test("every stage in the catalog reaches the picker as a label, not a slug", async () => {
