@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [1.0.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.6...v1.0.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* an install whose `presets` table predates this schema no longer starts. The plugin now throws `PresetSchemaError` at boot, naming the missing constraint or the column order it found and the command that unblocks it (`ALTER TABLE presets RENAME TO presets_legacy`, which keeps the rows for re-import). This affects installs carrying a `presets` table without the `reasoning_level` CHECK, or with a legacy column order gained by `ALTER TABLE ADD COLUMN`. The operator must run that rename once; the plugin then creates the current table and re-seeds the default preset. Cards, workspaces, inbox events and run files are untouched.
+
+### Features
+
+* a New-worktree preset gets a worktree, and a wrong-shaped presets table is refused instead of migrated ([#227](https://github.com/calionauta/bb-plugin-stelow/issues/227)) ([889044e](https://github.com/calionauta/bb-plugin-stelow/commit/889044ef4f51af919b957b819562f8e44112fa64))
+
 ## [0.60.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.5...v0.60.6) (2026-10-01)
 
 
