@@ -1818,7 +1818,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   — the head slice is used, the prompt says so, and the card comment records
   which of the two happened. A review of the contract's sections and a review of
   the document's opening are different reviews, and the reader of the verdict is
-  the one who has to tell them apart.
+  the one who has to tell them apart. Every review record carries that choice as
+  an `Excerpt:` header beside its `Status:` and `Fingerprint:` lines, and
+  `bb stelow metrics --card` counts them (`lib/review-truncation.mjs`): how many
+  reviews read a cut artifact, and how many of those fell back to the opening —
+  the one cut that can have hidden a section the contract named. A card whose
+  reviews all read whole documents prints nothing, because a metric that is
+  always present is a number nobody learns to read. Records written before the
+  field existed are uncounted, never reported as reviews that saw everything.
 - **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
   Advancing a build card into gate/int-gate/plan-gate with a reviewer
   designated fires one hidden review of the gate's registered artifact,

@@ -124,7 +124,7 @@ async function runReview(
   );
   const polled = await awaitReviewer(deps, spawned.threadId);
   if ("refusal" in polled) return polled.refusal;
-  return recordVerdict(deps, card, spawned.threadId, reviewPresetRow.name, subject, polled.output, permissionNote);
+  return recordVerdict(deps, card, spawned.threadId, reviewPresetRow.name, subject, polled.output, permissionNote, excerpt);
 }
 
 /** One sentence naming what the reviewer saw, or nothing when it saw it all.

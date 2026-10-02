@@ -1,4 +1,6 @@
 import { formatDuration, summarizeTimeline } from "../../../lib/card-metrics.mjs";
+import { excerptMetricLine, summarizeExcerpts } from "../../../lib/review-truncation.mjs";
+import { reviewExcerptRecords } from "../../../lib/review-verdict.mjs";
 import { noCardInContext, scanCardId, unknownCard } from "./cli-contract.js";
 import type { CliCommandFn, CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
@@ -154,6 +156,35 @@ function renderFleet(
   return { exitCode: 0, stdout: lines.join("\n") };
 }
 
+/** How much of each artifact the reviewer actually read on this card.
+ *
+ * A verdict is valid even when the reviewer saw a cut document, so this is a
+ * fact about coverage rather than a warning. Fail-soft on an unreadable
+ * reviews directory: a card whose records cannot be listed is reported as no
+ * coverage, never as coverage that was fine. */
+async function reviewerCoverage(deps: CliDeps, card: WorkerCard) {
+  // Fail-soft on both failure modes, not just the rejected promise: a host that
+  // predates the seam must not take the whole metrics readout down over a
+  // coverage line. No records means no coverage reported, which is a true
+  // statement about what was measured.
+  if (typeof deps.reviewFilesFor !== "function") {
+    return summarizeExcerpts([]);
+  }
+  const files = await deps.reviewFilesFor(card).catch(() => []);
+  return summarizeExcerpts(reviewExcerptRecords(files));
+}
+
+/** The coverage counts as the JSON payload carries them, so --json and the text
+ * readout are the same fact in two shapes rather than two truths. */
+function coveragePayload(reviews: Awaited<ReturnType<typeof reviewerCoverage>>) {
+  return {
+    counted: reviews.counted,
+    truncated: reviews.truncated,
+    headCuts: reviews.headCuts,
+    byMode: reviews.byMode,
+  };
+}
+
 async function cardMetrics(
   deps: CliDeps,
   card: WorkerCard,
@@ -170,26 +201,8 @@ async function cardMetrics(
   });
   const gapState =
     card.kind === "build" ? await deps.gapState(card).catch(() => null) : null;
-  const totals = gapState?.matched
-    ? gapState.totals
-    : { total: 0, fixed: 0, documented: 0, escalated: 0 };
-  const payload = {
-    card: cardId,
-    name: card.name,
-    done: card.status === "completed",
-    leadMs: timeline.leadMs,
-    cycleMs: timeline.cycleMs,
-    byStage: timeline.byStage,
-    gaps: totals,
-    escalatedRate: totals.total > 0 ? totals.escalated / totals.total : null,
-    reworkScopes: gapState?.matched
-      ? gapState.auditGapScopes.map((scope) => ({
-          id: scope.id,
-          name: scope.name,
-          status: scope.status,
-        }))
-      : [],
-  };
+  const reviews = await reviewerCoverage(deps, card);
+  const payload = cardMetricsPayload(card, cardId, timeline, gapState, reviews);
   if (json)
     return { exitCode: 0, stdout: JSON.stringify(payload, null, 2) };
   const lines = [
@@ -198,11 +211,51 @@ async function cardMetrics(
     cycleLine(timeline.cycleMs, doneEvent !== null),
     ...stageLines(timeline.byStage),
   ];
-  if (gapState?.matched) lines.push(...gapLines(totals, payload));
+  if (gapState?.matched) lines.push(...gapLines(payload.gaps, payload));
+  // Silent when nothing was ever cut, so a card whose reviews all saw their
+  // whole document reads as a clean run rather than a metric full of zeros.
+  const coverage = excerptMetricLine(reviews);
+  if (coverage) lines.push(coverage);
   return { exitCode: 0, stdout: lines.join("\n") };
 }
 
+type ReviewCoverage = Awaited<ReturnType<typeof reviewerCoverage>>;
 type CardTimeline = ReturnType<typeof summarizeTimeline>;
+
+/** The --json shape of one card, carrying the same numbers the text readout
+ * prints. Gap totals resolve to explicit zeros when the registry did not
+ * match, so the field is never absent and never null for a skipped lookup. */
+function cardMetricsPayload(
+  card: WorkerCard,
+  cardId: string,
+  timeline: CardTimeline,
+  gapState: {
+    matched?: boolean;
+    totals: { total: number; fixed: number; documented: number; escalated: number };
+    auditGapScopes?: Array<{ id: string; name: string; status: string }>;
+  } | null,
+  reviews: ReviewCoverage,
+) {
+  const totals = gapState?.matched
+    ? gapState.totals
+    : { total: 0, fixed: 0, documented: 0, escalated: 0 };
+  return {
+    card: cardId,
+    name: card.name,
+    done: card.status === "completed",
+    leadMs: timeline.leadMs,
+    cycleMs: timeline.cycleMs,
+    byStage: timeline.byStage,
+    gaps: totals,
+    escalatedRate: totals.total > 0 ? totals.escalated / totals.total : null,
+    reviewerCoverage: coveragePayload(reviews),
+    reworkScopes: (gapState?.auditGapScopes ?? []).map((scope) => ({
+      id: scope.id,
+      name: scope.name,
+      status: scope.status,
+    })),
+  };
+}
 
 function stageLines(byStage: CardTimeline["byStage"]): string[] {
   if (byStage.length === 0) return [];
