@@ -8,6 +8,7 @@ import {
   callsNamed,
   cliHarness,
   NO_GAPS,
+  WORKSPACE,
 } from "./helpers/cli-harness.mjs";
 
 /** The Build completion chain: the gates between owned state and the Done
@@ -215,5 +216,34 @@ test("the done path never consults who else is in the checkout", () => {
     source,
     /sharedCheckout|threadsSharingCheckout|listBbThreads|thread list/,
     "done completes a card from its own state; a stranger's presence is not a done gate",
+  );
+});
+
+/** The harness records the root each helper ran in, because that is part of
+ * what an audit trail answers: it samples cwd. A harness that hid the cwd could
+ * not see a gate comparing two paths that were never the same checkout — which
+ * is the bug this covers.
+ *
+ * The card's checkout and its project root are two directories whenever the
+ * card worked in a worktree — which is the normal case, not the exception.
+ * `bb stelow done` refused every such card with "the audit trail attests the
+ * repository at <project> but the verified checkout is <worktree>", because the
+ * trail was built at the project root while the receipt was verified at the
+ * checkout. The gate is right; the path was wrong. */
+test("the audit trail is built in the card's checkout, not at the project root", async () => {
+  const { invoke, calls } = cliHarness({
+    ...auditableBuildDone(),
+    workspacePath: "/repo/main",
+    checkoutPath: WORKSPACE,
+  });
+  await invoke(["done"]);
+  const builds = callsNamed(calls, "helper").filter(
+    ([, args]) => args?.[0] === "audit-trail" && args?.[1] === "build",
+  );
+  assert.equal(builds.length, 1, "the trail is generated exactly once");
+  assert.equal(
+    builds[0][2],
+    WORKSPACE,
+    "built where the receipt was verified, so the two halves of the gate name one checkout",
   );
 });

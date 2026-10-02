@@ -137,9 +137,16 @@ async function finishBuild(
   card: WorkerCard,
   finish: BuildFinish,
 ): Promise<CliResult> {
+  // Built where the receipt was verified, not at the project root. The gate
+  // below refuses when the trail's repository differs from the verified
+  // checkout, and the comment under it states the rule this line has to obey:
+  // "the audit receipt, portable trail, and final Done transition all name one
+  // checkout". Passing projectPath broke that whenever a card worked in a
+  // worktree — two different directories by construction, so a card could
+  // never reach Done. checkoutPath is the path gitEvidence sampled.
   const trailRefusal = await auditTrailRefusal(
     deps,
-    finish.projectPath,
+    finish.checkoutPath ?? finish.projectPath,
     finish.stateDir,
     finish.git,
   );
