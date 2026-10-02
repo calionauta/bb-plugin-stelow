@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.64.0...v0.65.0) (2026-10-02)
+
+
+### Features
+
+* a preset's worktree setting is authorable and is the composer's default ([#249](https://github.com/calionauta/bb-plugin-stelow/issues/249)) ([fedce5b](https://github.com/calionauta/bb-plugin-stelow/commit/fedce5b1d69ae591a1b4ef4d8da212138566c9e9))
+
+
+### Bug Fixes
+
+* let a worker see that a question is already open ([#256](https://github.com/calionauta/bb-plugin-stelow/issues/256)) ([3ad35b6](https://github.com/calionauta/bb-plugin-stelow/commit/3ad35b68c9e86d8d008d7c3f6231bcc236642b96))
+* refuse placeholder questions before they reach a human ([#253](https://github.com/calionauta/bb-plugin-stelow/issues/253)) ([b76c7ee](https://github.com/calionauta/bb-plugin-stelow/commit/b76c7ee37a0d413601645b269963d3154fee7d65))
+* the card-title burst leaves a cause-naming record (card_e3u00eb4) ([#251](https://github.com/calionauta/bb-plugin-stelow/issues/251)) ([ecbc741](https://github.com/calionauta/bb-plugin-stelow/commit/ecbc74141efb8aadbdb193053b95e96b692dbf08))
+* the pending chip says what it recorded, not what it guessed ([#252](https://github.com/calionauta/bb-plugin-stelow/issues/252)) ([c421e62](https://github.com/calionauta/bb-plugin-stelow/commit/c421e625cc1e756f809a0aebce59609a9b1cbd6b))
+* three conflict markers reached master through PR [#249](https://github.com/calionauta/bb-plugin-stelow/issues/249) ([#255](https://github.com/calionauta/bb-plugin-stelow/issues/255)) ([1e2348d](https://github.com/calionauta/bb-plugin-stelow/commit/1e2348ded03ef946ea4deac00287e14bb8a33c19))
+* wrap an overlong source line that broke the shape gate ([#254](https://github.com/calionauta/bb-plugin-stelow/issues/254)) ([2acdfce](https://github.com/calionauta/bb-plugin-stelow/commit/2acdfcef2edde571b1279531275ead9991bb2091))
+
 ## [0.64.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.63.0...v0.64.0) (2026-10-02)
 
 
