@@ -9,6 +9,7 @@
  * hiccuped.
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
+import type { QuestionCount } from "../../lib/status-question-state.mjs";
 import { expiredQuestionId } from "../../lib/question-answer-recording.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
@@ -93,6 +94,32 @@ function hasOpenQuestions(
     : openExpiredQuestionIds(deps, cardId).length > 0;
 }
 
+/**
+ * How many questions a card is waiting on, split by where they are: a live
+ * BB interaction, or an unanswered recovery row answerable on the card.
+ *
+ * This is the read-only answer to "is anything waiting on me?". On
+ * card_48uuhus1 a worker had no way to ask that question without interrupting
+ * a human, so it fired `--question "ping"` and got one. Returns null when the
+ * live read fails — the same rule as everywhere else here: an unknown is not
+ * a zero, and a zero would look like "go ahead and work".
+ */
+async function countOpenQuestions(
+  deps: QuestionInboxDeps,
+  cards: Array<{ id: string; worker_thread_id: string | null }>,
+): Promise<Map<string, QuestionCount> | null> {
+  const counts = new Map<string, QuestionCount>();
+  for (const card of cards) {
+    const expired = openExpiredQuestionIds(deps, card.id).length;
+    const live = card.worker_thread_id
+      ? await fetchPendingAsks(deps, card.worker_thread_id)
+      : [];
+    if (live === null) return null;
+    counts.set(card.id, { expired, live: live.length });
+  }
+  return counts;
+}
+
 export function createQuestionInbox(deps: QuestionInboxDeps) {
   return {
     openExpiredQuestionIds: openExpiredQuestionIds.bind(null, deps),
@@ -100,6 +127,7 @@ export function createQuestionInbox(deps: QuestionInboxDeps) {
     fetchPendingAsks: fetchPendingAsks.bind(null, deps),
     syncOpenQuestionInbox: syncOpenQuestionInbox.bind(null, deps),
     hasOpenQuestions: hasOpenQuestions.bind(null, deps),
+    countOpenQuestions: countOpenQuestions.bind(null, deps),
   };
 }
 

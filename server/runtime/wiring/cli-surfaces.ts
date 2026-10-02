@@ -64,6 +64,12 @@ function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
     cardWorkspace: core.cardWorkspace,
     loadBoard: (projectId) => core.loadBoard(bb, projectId),
     boardFromRoot: (root, dirHash) => core.boardFromRoot(bb, root, dirHash),
+    openQuestionsByCard: async (cardIds: string[]) => {
+      const cards = cardIds
+        .map((id) => core.getCard(id))
+        .filter((card): card is NonNullable<typeof card> => Boolean(card));
+      return core.questions.countOpenQuestions(cards);
+    },
     projectRoot: (projectId) => core.projectRoot(bb, projectId),
     workflowStateDir: (root, cardId, dirHash) =>
       core.workflowStateDir(bb, root, cardId, dirHash),
