@@ -119,6 +119,7 @@ async function provedLanding(
 
 export async function reconcilePublications(core: PublicationReconcileCore): Promise<void> {
   const deps = publicationDepsFor(core);
+  const failures: string[] = [];
   for (const cardId of pendingCandidates(core.db)) {
     try {
       if (hasRecordedIntegration(core.db, cardId)) continue;
@@ -137,8 +138,19 @@ export async function reconcilePublications(core: PublicationReconcileCore): Pro
         null,
         landing.prUrl,
       );
-    } catch {
-      // A reconcile pass reports nothing and stops nothing. The next tick retries.
+    } catch (error) {
+      // A reconcile pass does not fail on one card — the next tick retries, and
+      // a bad card must not stop the others. It does not swallow the card
+      // either: a silent catch is how a permanently broken card stays invisible
+      // while the board keeps saying the same thing forever.
+      failures.push(`${cardId} (${error instanceof Error ? error.message : String(error)})`);
     }
+  }
+  if (failures.length > 0) {
+    const shown = failures.slice(0, 3).join(", ");
+    const more = failures.length > 3 ? `, and ${failures.length - 3} more` : "";
+    core.bb.log.warn(
+      `publication reconcile could not ask the forge about ${failures.length} card(s): ${shown}${more}`,
+    );
   }
 }
