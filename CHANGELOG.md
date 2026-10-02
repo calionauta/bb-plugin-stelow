@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.2...v0.65.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* ask the cleanup gate's question in the reconciler, by content as well as by pull request ([#266](https://github.com/calionauta/bb-plugin-stelow/issues/266)) ([2fa0526](https://github.com/calionauta/bb-plugin-stelow/commit/2fa05262b2062d8f31961ed872942aaab72c8c36))
+* settle an unrecognised environment kind on the card-override path ([#263](https://github.com/calionauta/bb-plugin-stelow/issues/263)) ([3704cb5](https://github.com/calionauta/bb-plugin-stelow/commit/3704cb5e14b4fa11274590e679885608a167b056))
+
 ## [0.65.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.1...v0.65.2) (2026-10-02)
 
 
