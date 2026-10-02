@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEPENDENCY_STATE } from "../lib/scope-dependency-relations.mjs";
 
 /**
  * Every fact the card shows must have exactly one home.
@@ -200,27 +201,68 @@ const buildProgressSource = read("components/detail/build-progress.tsx");
 
 test("a dependency's state is a word, not only a colour", () => {
   // The rows come from lib, which derives the word; the component renders it.
-  // A regression to colour-only would show here as the rows disappearing or
-  // the lib projection no longer being the source.
   assert.match(scopeRelations, /row\.text/, "the row text is rendered, so state is visible without styling");
+
+  // This was first asserted as `doesNotMatch(/after \{byId\.get\(dep\)/)`, which
+  // is blind in the way a literal pin always is: it names the OLD source's
+  // variable, so a component that still said `after <name>` for a satisfied
+  // dependency would satisfy the guard just by using any other identifier. The
+  // property worth pinning is that the row's own SENTENCE is what renders.
+  // `row.glyph` and `row.tone` legitimately render beside it — decoration is
+  // allowed, a rebuilt sentence is not, because that is how a satisfied and a
+  // waiting dependency came to look identical again.
   assert.doesNotMatch(
     scopeRelations,
-    /after \{byId\.get\(dep\)/,
-    "the old pill rendering is gone: it could not tell a satisfied dependency from a waiting one",
+    /\{\s*`\$\{row\.(to|label)\}[^`]*`\s*\}/,
+    "the row's own text is what renders; assembling a sentence from its parts is how a "
+    + "satisfied and a waiting dependency came to look identical again",
   );
+  assert.match(
+    scopeRelations,
+    /\{row\.text\}/,
+    "the derived sentence is rendered as-is",
+  );
+
+  // And the words are a contract, read from the module that derives them, so a
+  // state renamed in one place cannot silently disagree with the other.
+  for (const [name, info] of Object.entries(DEPENDENCY_STATE)) {
+    assert.ok(
+      typeof info.label === "string" && info.label.trim().length > 0,
+      `state "${name}" has a word — a state with no word is colour-only`,
+    );
+  }
 });
 
 test("a region and the box inside it do not share a label", () => {
+  // This guard was first written as `doesNotMatch(/<h3>Checks<\/h3>/)`, which
+  // could never have caught the defect it was written for: the real code was
+  // `<h3 className="...">Checks</h3>`, so the attribute-less regex never
+  // matched and a reinstated defect stayed green. A guard that reports safety
+  // it does not provide converts a regression into a silent one.
+  //
+  // It also cannot be fixed by matching a region's body with a lazy regex: the
+  // region wraps a CHILD COMPONENT, so the first `</ProgressRegion>` is the
+  // child's and a lazy match reads an empty body, checking nothing. That
+  // version also passed against a reinstated defect.
+  //
+  // So the invariant is stated where it is actually decidable: inside the
+  // progress file, no heading may carry a region title. The region renders its
+  // title through the shared `ProgressRegion` component, so a heading repeating
+  // one of these strings is a child restating its region — whatever component
+  // it sits in.
   const regionTitles = [...buildProgressSource.matchAll(/<ProgressRegion\s+title="([^"]+)"/g)].map((m) => m[1]);
-  // The child box rendered its own <h3>Checks</h3> under a region already named
-  // "Checks", so the label appeared twice and the DOM nested a heading inside a
-  // heading (WCAG 1.3.1).
-  assert.doesNotMatch(
-    buildProgressSource,
-    /<h3>Checks<\/h3>/,
-    "the Checks box must not restate the region's own label",
-  );
-  assert.ok(regionTitles.includes("Checks"), "the region still owns the label");
+  assert.ok(regionTitles.length >= 5, `found ${regionTitles.length} regions to check`);
+
+  const headings = [...buildProgressSource.matchAll(/<h[1-6][^>]*>([^<]*)</g)].map((m) => m[1].trim());
+  for (const title of regionTitles) {
+    const restated = headings.filter((h) => h.toLowerCase() === title.toLowerCase());
+    assert.deepEqual(
+      restated,
+      [],
+      `the "${title}" region must not be restated by a heading in the progress file — `
+      + "the region owns the name, the box owns the content",
+    );
+  }
 });
 
 test("which scope is running is named once", () => {

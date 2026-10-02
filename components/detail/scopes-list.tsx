@@ -245,7 +245,7 @@ export function ScopesList({ scopes, statusTone, statusGlyph, statusLabel }: {
   };
   return (
     <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Scopes ({scopes.length})</h3>
+      <h3 className={TEXT_SECTION}>Scopes ({scopes.length})</h3>
       {scopes.length > 1 ? <p className={TEXT_META}>Ordered by dependency — ⛔ waits on unfinished work.</p> : null}
       <ScopeConditions scopes={scopes} />
       {ordered.map((scope) => (

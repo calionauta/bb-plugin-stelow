@@ -1,6 +1,6 @@
 import { conditionSpread, groupConditionsByType, isSharedCondition } from "../../lib/scope-conditions-grouping.mjs";
 import { dependencyRows } from "../../lib/scope-dependency-relations.mjs";
-import { TEXT_META, TEXT_SECTION } from "../../lib/design-tokens";
+import { TEXT_META } from "../../lib/design-tokens";
 import type { ScopeListScope } from "./scopes-list";
 
 /**
@@ -45,10 +45,15 @@ export function ScopeConditions({ scopes }: { scopes: ScopeListScope[] }) {
   const groups = groupConditionsByType(scopes).filter(isSharedCondition);
   if (groups.length === 0) return null;
   return (
+    // No heading, deliberately. This block is a sibling of every scope's
+    // <details>, so an <h4> here put a heading in the outline that the next
+    // heading down belonged to a per-scope count (WCAG 1.3.1) — a reader
+    // walking headings landed on "Shared conditions" and descended into
+    // unrelated scope tasks. The aria-label names it for assistive tech
+    // without claiming a place in the document outline.
     <section className="space-y-2" aria-label="Scope conditions">
-      <h4 className={TEXT_SECTION}>Shared conditions</h4>
       <p className={TEXT_META}>
-        Applies to more than one scope — a fact about how this card closed, not about any single scope.
+        Shared conditions — a fact about how this card closed, not about any single scope.
       </p>
       <ul className="space-y-1.5">
         {groups.map((group) => (
