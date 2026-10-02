@@ -18,6 +18,7 @@ import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./
 import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
+import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 
 // Research creation dialog: strategy picker plus deferred start. Owns its
@@ -109,11 +110,45 @@ export type CreateResearchDialogProps = {
   activeProjectId: string | null;
   validProjectIds?: string[];
   strategies: ResearchStrategyOption[];
-  researchPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
+  researchPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; name: string } | null;
   hasBandPreset: boolean;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: React.ReactNode };
   onOpenPresets: () => void;
 };
+
+// Composer with the per-open project seed and the preset's environment seed.
+// Extracted for the same reason as the build dialog's: the shell plus one
+// composer is over the function budget, and the composer is the part with the
+// seed contract worth reading in one place.
+function CreateResearchComposer({
+  seedProjectId,
+  researchPreset,
+  seededEnvironment,
+  prompt,
+  onSubmit,
+}: {
+  seedProjectId: string | null;
+  researchPreset: CreateResearchDialogProps["researchPreset"];
+  seededEnvironment: ComposerEnvironmentSeed;
+  prompt: string;
+  onSubmit: (request: NewThreadRequest) => Promise<void>;
+}) {
+  return (
+    <NewThreadComposer
+      defaultProjectId={seedProjectId ?? undefined}
+      defaultProviderId={researchPreset?.providerId}
+      defaultModel={researchPreset?.modelId}
+      defaultReasoningLevel={researchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+      defaultPermissionMode={researchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+      defaultEnvironment={seededEnvironment}
+      initialPrompt={prompt}
+      placeholder="What should Stelow investigate?"
+      layout="contained"
+      draftKey="stelow-research-create"
+      onSubmit={onSubmit}
+    />
+  );
+}
 
 export function CreateResearchDialog({
   open,
@@ -128,6 +163,7 @@ export function CreateResearchDialog({
 }: CreateResearchDialogProps) {
   const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
   const submit = useCreateResearchSubmit({ activeProjectId: seedProjectId, onClose: () => onOpenChange(false) });
+  const seededEnvironment = useSeededComposerEnvironment(researchPreset?.environmentKind, open);
 
   return (
     <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
@@ -149,16 +185,11 @@ export function CreateResearchDialog({
           bucketGallery={bucketGallery}
           onOpenPresets={onOpenPresets}
         />
-        <NewThreadComposer
-          defaultProjectId={seedProjectId ?? undefined}
-          defaultProviderId={researchPreset?.providerId}
-          defaultModel={researchPreset?.modelId}
-          defaultReasoningLevel={researchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-          defaultPermissionMode={researchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-          initialPrompt={submit.prompt}
-          placeholder="What should Stelow investigate?"
-          layout="contained"
-          draftKey="stelow-research-create"
+        <CreateResearchComposer
+          seedProjectId={seedProjectId}
+          researchPreset={researchPreset}
+          seededEnvironment={seededEnvironment}
+          prompt={submit.prompt}
           onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
       </DialogContent>

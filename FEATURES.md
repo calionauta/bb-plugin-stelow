@@ -1135,8 +1135,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (build only). Every card names its checkout in one stored word
   (`environment_label`: isolated worktree, shared checkout, BB-managed,
   exploratory) plus the live branch on build cards — no guessing from
-  paths. Branch choice at creation stays BB's composer (project,
-  environment, branch forwarded unchanged); Stelow never re-picks it.
+  paths. Branch choice at creation stays BB's composer. Project and
+  branch are forwarded unchanged; the environment picker is *seeded*
+  from the active preset's worktree setting, and the person can always
+  change it. Stelow never overrides an environment the person picked.
+  The label is stored per path, not per intent: a card started from the
+  composer records `worktree`, while a card started by GitHub import,
+  the CLI or a restart records `managed` for the same preset — both are
+  correct for the shape they were given.
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
@@ -1553,6 +1559,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   from BB's own pickers (live catalog with search, same as the new-card
   composer) shared with the card override dialog; environment kind stays a
   preset field. Built-ins protected.
+  The preset also carries its worktree setting, editable from this dialog as
+  an on/off field:
+  **Isolated worktree** seeds the card composer's environment picker on a
+  worktree of its own, and leaving it off means BB resolves its own default
+  for the project. It is deliberately not a "Project checkout vs Worktree"
+  pair — the two words mean opposite things in Stelow and in BB, and a
+  shared-checkout preset still records the card as `managed`, so a labelled
+  pair would promise a checkout the card does not get. The field is disabled
+  on built-in presets (flipping the built-in default's kind re-routes every
+  auto-started worker and is inherited by every preset created afterwards);
+  duplicate one to change it. A preset row shows a `worktree` pill, and New
+  preset inherits the current default's setting. An environment value the
+  schema never produced is named in the field's own sentence and refused on
+  save rather than sent to the server. Built-ins protected.
+  Two known limits, stated rather than hidden: on a personal/exploratory
+  project the card uses the exploratory workspace instead of the seeded
+  worktree, and that substitution is **silent** (no notice is written); and
+  BB's own re-seed rule re-applies every seed when a preset changes while the
+  dialog is open. Stelow freezes the environment picker for the duration of a
+  visit — it captures the seed when the dialog opens and re-reads it on reopen —
+  but the picker freezing is the *only* thing frozen: provider, model, reasoning
+  level and permission mode are still read live from the active preset, so
+  changing those mid-dialog re-seeds them, including over a choice already made.
+<<<<<<< HEAD
   A preset's reasoning level is one of the eight levels the host offers, and it
   is stored with the provider and model it belongs to — never on its own.
   Saving a preset with any other level is refused, naming the levels that are
@@ -1601,6 +1631,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   signal and silencing it is worse than the defect; the same applies to a
   statement that has itself drifted, which the repair declines out loud. A
   healthy install is not written to at all.
+=======
+>>>>>>> a492f61 (fix: hold the environment control to the promise its docs make)
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the

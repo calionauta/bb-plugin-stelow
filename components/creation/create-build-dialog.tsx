@@ -17,6 +17,7 @@ import {
 import { AgentConfigBox, CreateCardAlert, WorkflowSettings, type Appetite, type ReviewGates } from "./creation-settings";
 import { useProjectSeed } from "./use-project-seed";
 import { composerExecutionOf } from "./composer-execution";
+import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 import { GithubCreateRow } from "../github/github-create-row";
 
@@ -132,8 +133,8 @@ export type CreateBuildDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeProjectId: string | null;
-  validProjectIds?: string[];
-  analysisPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
+validProjectIds?: string[];
+  analysisPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; name: string } | null;
   appetite: Appetite;
   reviewGates: ReviewGates;
   githubRepos: string[];
@@ -143,11 +144,13 @@ export type CreateBuildDialogProps = {
   onOpenPresets: () => void;
 };
 
-// Composer with the per-open project seed. Extracted so the dialog shell
-// stays under the function budget — one composer per creation dialog.
-function CreateBuildComposer({ seedProjectId, analysisPreset, prompt, onSubmit }: {
+// Composer with the per-open project seed and the preset's environment seed.
+// Extracted so the dialog shell stays under the function budget — one composer
+// per creation dialog.
+function CreateBuildComposer({ seedProjectId, analysisPreset, seededEnvironment, prompt, onSubmit }: {
   seedProjectId: string | null;
   analysisPreset: CreateBuildDialogProps["analysisPreset"];
+  seededEnvironment: ComposerEnvironmentSeed;
   prompt: string;
   onSubmit: (request: NewThreadRequest) => Promise<void>;
 }) {
@@ -158,6 +161,7 @@ function CreateBuildComposer({ seedProjectId, analysisPreset, prompt, onSubmit }
       defaultModel={analysisPreset?.modelId}
       defaultReasoningLevel={analysisPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
       defaultPermissionMode={analysisPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+      defaultEnvironment={seededEnvironment}
       initialPrompt={prompt}
       placeholder="What should Stelow build?"
       layout="contained"
@@ -174,6 +178,7 @@ export function CreateBuildDialog({
 }: CreateBuildDialogProps) {
   const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
   const submit = useCreateBuildSubmit({ activeProjectId: seedProjectId, appetite, reviewGates, githubRepos, onClose: () => onOpenChange(false) });
+  const seededEnvironment = useSeededComposerEnvironment(analysisPreset?.environmentKind, open);
 
   return (
     <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
@@ -186,6 +191,7 @@ export function CreateBuildDialog({
         <CreateBuildComposer
           seedProjectId={seedProjectId}
           analysisPreset={analysisPreset}
+          seededEnvironment={seededEnvironment}
           prompt={submit.prompt}
           onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
