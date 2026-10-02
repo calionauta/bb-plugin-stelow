@@ -10,7 +10,8 @@ import type { WorkerCard } from "./workers-types.js";
  * and the wiring, and nothing else: the boundary, artifact, run and sweep rules
  * live in their own modules and take the slice of the dependencies they use, so
  * a rule can be read, and changed, without reading the whole reconcile pass. The
- * pass itself is one sentence — repair what is recorded, then start what is owed.
+ * pass itself is one sentence — repair what is recorded, start what is owed, then
+ * ask the forge whether what still looks owed already landed.
  */
 export function createExecutionReconcile(deps: ReconcileDeps) {
   let inFlight = false;
@@ -22,6 +23,9 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
     try {
       await sweep.reconcileRuns();
       await sweep.reconcileStageEntries();
+      // Last, optional, and unable to fail the pass: ask the forge whether a
+      // card whose ledger still says "owed" has in fact already landed.
+      await deps.reconcilePublications?.().catch(() => undefined);
     } finally {
       inFlight = false;
     }
