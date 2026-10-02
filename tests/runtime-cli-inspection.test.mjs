@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createInspectionCommand } from "../server/runtime/cli-inspection.ts";
 import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
+import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 
 const card = {
   id: "card-1",
@@ -105,8 +106,7 @@ test("inspection family preserves helper and workspace error exits", async () =>
   });
   assert.deepEqual(await missingRoot(["schema"], { projectId: "project-1" }), {
     exitCode: 1,
-    stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
-      + "project: bb stelow schema <command> --project <proj_id>.",
+    stderr: workspaceUnavailable("bb stelow schema <command> --project <proj_id>"),
   });
 });
 

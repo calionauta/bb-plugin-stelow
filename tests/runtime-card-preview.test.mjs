@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCardPreview } from "../server/runtime/card-preview.ts";
+import { CARD_WORKSPACE_UNAVAILABLE } from "../lib/workspace-refusal.mjs";
 
 function harness(checkout = { path: "/worker", hostId: "thr-1", source: "worker worktree" }) {
   const calls = [];
@@ -43,15 +44,15 @@ test("missing checkout refuses mutations and reports an unavailable view", async
   assert.equal((await preview.view("card-1")).available, false);
   assert.deepEqual(await preview.start("card-1"), {
     ok: false,
-    error: "Workspace path is unavailable.",
+    error: CARD_WORKSPACE_UNAVAILABLE,
   });
   assert.deepEqual(await preview.stop("card-1"), {
     ok: false,
-    error: "Workspace path is unavailable.",
+    error: CARD_WORKSPACE_UNAVAILABLE,
   });
   assert.deepEqual(await preview.share("card-1"), {
     ok: false,
-    error: "Workspace path is unavailable.",
+    error: CARD_WORKSPACE_UNAVAILABLE,
   });
 });
 

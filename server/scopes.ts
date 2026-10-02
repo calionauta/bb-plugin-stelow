@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { parseScopeArgs } from "../lib/scope-command.mjs";
+import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 import {
   sanitizeEvidenceRecord,
   type EvidenceCondition,
@@ -256,7 +257,7 @@ async function resolveScopeContext<TCard extends ScopeCliCard>(
       card,
       rootPath: null,
       stateDir: null,
-      guard: "Workspace path is unavailable.",
+      guard: workspaceUnavailable("bb stelow scope --project <proj_id>"),
     };
   }
   const stateDir = card?.dir_hash ? await deps.workflowStateDir(rootPath, card) : null;
@@ -279,7 +280,7 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
   if (!context.rootPath) {
     return {
       exitCode: 1,
-      stderr: context.guard ?? "Workspace path is unavailable.",
+      stderr: context.guard ?? workspaceUnavailable("bb stelow scope --project <proj_id>"),
     };
   }
   if (context.guard) return { exitCode: 1, stderr: context.guard };

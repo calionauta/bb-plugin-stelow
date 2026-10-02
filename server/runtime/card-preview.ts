@@ -1,4 +1,5 @@
 import { previewShape } from "../../lib/preview-session.mjs";
+import { CARD_WORKSPACE_UNAVAILABLE } from "../../lib/workspace-refusal.mjs";
 import type { PreviewRuntime, PreviewTarget } from "../../lib/preview-runtime.mjs";
 
 type PreviewCard = {
@@ -18,7 +19,7 @@ type CardPreviewDeps<T extends PreviewCard> = {
   cardNotFoundError: string;
 };
 
-const NO_PREVIEW_WORKSPACE = "Workspace path is unavailable.";
+const NO_PREVIEW_WORKSPACE = CARD_WORKSPACE_UNAVAILABLE;
 
 export function createCardPreview<T extends PreviewCard>(deps: CardPreviewDeps<T>) {
   async function targetFor(cardId: string): Promise<PreviewTarget | null> {

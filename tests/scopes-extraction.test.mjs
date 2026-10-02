@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { loadCardScopes, runScopeCommand } from "../server/scopes.ts";
 import { createScopeProgressSync } from "../server/scope-progress-sync.ts";
 import { z } from "zod";
+import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "stelow-scopes-"));
 try {
@@ -216,7 +217,11 @@ assert.deepEqual(guarded.events, [], "artifact guards do not publish a transitio
 const noRoot = commandHarness({ card: null });
 noRoot.deps.projectRoot = async () => null;
 const noRootResult = await runScopeCommand(["scope", "start", "--scope", "scope-1"], { projectId: "missing" }, noRoot.deps);
-assert.deepEqual(noRootResult, { exitCode: 1, stderr: "Workspace path is unavailable." }, "a missing project root refuses clearly");
+assert.deepEqual(
+  noRootResult,
+  { exitCode: 1, stderr: workspaceUnavailable("bb stelow scope --project <proj_id>") },
+  "a missing project root refuses, and names the project that would resolve it",
+);
 assert.equal(noRoot.calls.length, 0, "a missing project root never invokes the helper");
 
 const trailFailure = commandHarness();
