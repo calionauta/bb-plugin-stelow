@@ -24,6 +24,24 @@ import type { rpcContract } from "../../server";
 
 type PublicationStatus = z.infer<typeof rpcContract.publicationStatus.output>;
 
+/** The push shells as an unreadable list, carrying the reason. */
+function unreadablePushShells(err: unknown): PushShellList {
+  return {
+    ok: false,
+    error: err instanceof Error ? err.message : "Unable to list push shells.",
+    remote: null,
+    terminals: [],
+  };
+}
+
+/** Cancel the scheduled re-checks, so a closed card stops asking the host. */
+function clearPushTimers(timers: React.RefObject<number[]>) {
+  return () => {
+    for (const timer of timers.current) window.clearTimeout(timer);
+    timers.current = [];
+  };
+}
+
 type BuildPublicationProps = {
   cardId: string;
   /** What this finished card still owes its repository, from the detail card. */
@@ -66,14 +84,17 @@ function usePublicationState(cardId: string, rpc: ReturnType<typeof useRpc<typeo
     try {
       setPushTerminals(await rpc.call("publicationPushTerminals", { cardId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unable to list push shells.");
+      // A failed listing stays in the panel. A toast disappears on a timer,
+      // and a push whose result cannot be read is exactly the state a reader
+      // must not lose.
+      setPushTerminals(unreadablePushShells(err));
     } finally {
       setPushTerminalsLoading(false);
     }
   }, [cardId, rpc]);
 
   useEffect(() => { void loadPublication(); void loadPushTerminals(); }, [loadPublication, loadPushTerminals]);
-  useEffect(() => () => { for (const timer of pushRefreshTimers.current) window.clearTimeout(timer); pushRefreshTimers.current = []; }, []);
+  useEffect(() => clearPushTimers(pushRefreshTimers), []);
 
   function schedulePushRefresh(action: PublicationAction) {
     // A push takes a while and the user should not have to poll. The first

@@ -208,13 +208,13 @@ export function UnsavedWorkspace({ publication, verifiedHeadSha, publishesToDefa
 function pushVerdict(terminal: PushShell): PushVerdict {
   if (terminal.outputUnavailable) {
     return {
-      label: "Ended — output unavailable",
+      label: "○ Ended — output unavailable",
       guidance: "The shell already exited. Its result is in the Git history or remote instead.",
       retryable: false,
     };
   }
   if (terminal.pushState === "succeeded") {
-    return { label: "Pushed", guidance: null, retryable: false };
+    return { label: "✓ Pushed", guidance: null, retryable: false };
   }
   if (terminal.pushState === "failed") {
     const tail = terminal.outputTail ?? "";
@@ -234,7 +234,7 @@ function pushVerdict(terminal: PushShell): PushVerdict {
   }
   if (terminal.pushState === "waiting") {
     return {
-      label: "Waiting — git push typed but NOT sent",
+      label: "○ Waiting — git push typed but NOT sent",
       guidance: [
         "An older shell from before pushes ran themselves.",
         "Press Enter in BB's sidebar terminal to send it,",
