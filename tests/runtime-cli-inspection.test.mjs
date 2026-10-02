@@ -105,7 +105,8 @@ test("inspection family preserves helper and workspace error exits", async () =>
   });
   assert.deepEqual(await missingRoot(["schema"], { projectId: "project-1" }), {
     exitCode: 1,
-    stderr: "Workspace path is unavailable.",
+    stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
+      + "project: bb stelow schema <command> --project <proj_id>.",
   });
 });
 

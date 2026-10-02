@@ -117,7 +117,8 @@ function statusCommand(
     if (!workspace?.path) {
       return {
         exitCode: 1,
-        stderr: "Workspace path is unavailable for this card.",
+        stderr: "Workspace path is unavailable for this card. Its checkout is not on "
+          + "this host — open the card to see its environment, or run this from a card that has one.",
       };
     }
     return deps
@@ -241,7 +242,16 @@ async function doctorCommand(
   const card = context.threadId ? deps.getCardForThread(context.threadId) : undefined;
   const workspace = card ? await deps.cardWorkspace(card) : null;
   const root = workspace?.path ?? (await deps.projectRoot(projectId));
-  if (!root) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+  // Names the fix. A refusal that only says what is missing is a refusal the
+  // reader learns to work around: the command takes a project, and running it
+  // outside a card thread leaves it with neither a card nor a project.
+  if (!root) {
+    return {
+      exitCode: 1,
+      stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
+        + "project: bb stelow doctor --project <proj_id>.",
+    };
+  }
   const stateDir = card?.dir_hash
     ? await deps.workflowStateDir(root, card.id, card.dir_hash)
     : null;
@@ -265,7 +275,13 @@ async function schemaCommand(
   const sub = argv[1];
   if (sub?.startsWith("--")) return { exitCode: 2, stderr: "Usage: bb stelow schema [command]" };
   const root = await deps.projectRoot(context.projectId ?? null);
-  if (!root) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+  if (!root) {
+    return {
+      exitCode: 1,
+      stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
+        + "project: bb stelow schema <command> --project <proj_id>.",
+    };
+  }
   const result = await deps.runHelper(sub ? ["schema", sub] : ["schema"], root);
   return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
