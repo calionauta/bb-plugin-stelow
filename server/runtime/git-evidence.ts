@@ -14,7 +14,12 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { isAbsolute, join as nodeJoin } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { detectedTestCommand } from "../../lib/audit-verification.mjs";
@@ -24,6 +29,8 @@ import { createDiscardEvidence } from "./discard-evidence.js";
 export type RecoveryGitEvidence = {
   isGit: boolean;
   gitRoot: string | null;
+  /** Repository identity, shared by a checkout and its linked worktrees. */
+  commonDir: string | null;
   branch: string | null;
   headSha: string | null;
   changedFiles: number;
@@ -149,6 +156,31 @@ async function dirtyStatusResult(
   }
 }
 
+/**
+ * The repository a path belongs to, independent of which directory the path
+ * is. `--git-common-dir` resolves to the main checkout's `.git` for the project
+ * checkout *and* for every linked worktree, so two directories of one
+ * repository agree here while two unrelated repositories never do.
+ *
+ * A linked worktree is the same repository; comparing directory paths was what
+ * made a card working in a worktree unable to reach Done.
+ */
+async function gitCommonDir(
+  runGit: typeof runGitIn,
+  path: string,
+): Promise<string | null> {
+  const common = await runGit(path, ["rev-parse", "--git-common-dir"]);
+  if (!common.ok) return null;
+  const dir = common.stdout.trim();
+  if (!dir) return null;
+  // Git resolves a relative answer against the directory it was invoked in, not
+  // against the path we asked about: in a project checkout it answers `.git`,
+  // in one of its worktrees an absolute path to the same place. realpath of
+  // the joined path normalizes both, and also the symlinked temporary roots
+  // that mkdtemp and Tailscale hand out.
+  return realpathSync(nodeJoin(path, dir));
+}
+
 /** What git can say about a path: root, branch, HEAD, dirty file count. */
 async function recoveryGitEvidence(
   runGit: typeof runGitIn,
@@ -159,19 +191,22 @@ async function recoveryGitEvidence(
     return {
       isGit: false,
       gitRoot: null,
+      commonDir: null,
       branch: null,
       headSha: null,
       changedFiles: 0,
     };
   }
-  const [branch, head, status] = await Promise.all([
+  const [branch, head, status, common] = await Promise.all([
     runGit(path, ["branch", "--show-current"]),
     runGit(path, ["rev-parse", "HEAD"]),
     runGit(path, ["status", "--porcelain=v1", "--untracked-files=all"]),
+    gitCommonDir(runGit, path),
   ]);
   return {
     isGit: true,
     gitRoot: root.stdout.trim(),
+    commonDir: common,
     branch: branch.ok ? branch.stdout.trim() || null : null,
     headSha: head.ok ? head.stdout.trim() || null : null,
     changedFiles: status.ok

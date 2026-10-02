@@ -34,6 +34,8 @@ export type CardCheckout = { path: string };
 export type GitEvidence = {
   isGit: boolean;
   gitRoot: string | null;
+  /** Repository identity, shared by a checkout and its linked worktrees. */
+  commonDir: string | null;
   branch: string | null;
   headSha: string | null;
 } | null;
