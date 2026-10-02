@@ -1,6 +1,6 @@
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
-import { auditTrailGate } from "../../../lib/audit-trail-contract.mjs";
+import { auditTrailGate, auditTrailOutcome } from "../../../lib/audit-trail-contract.mjs";
 import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";
@@ -131,22 +131,46 @@ type BuildFinish = {
   checkoutPath: string | null;
 };
 
+/**
+ * The checkout that holds a card's state, read off the state dir.
+ *
+ * `.stelow/<date>/sw-<card>` is a fixed shape, so the directory above its
+ * `.stelow` is the root the helper must run in. Returns null when the state dir
+ * is absent or does not carry that shape — a caller then falls back to the
+ * checkout it already resolved, rather than guessing a root.
+ */
+function stateRootOf(stateDir: string | null): string | null {
+  if (!stateDir) return null;
+  const marker = `${sep}.stelow${sep}`;
+  const at = stateDir.lastIndexOf(marker);
+  if (at <= 0) return null;
+  return stateDir.slice(0, at);
+}
+
 async function finishBuild(
   deps: CliDeps,
   exportRunBundle: ExportRunBundle,
   card: WorkerCard,
   finish: BuildFinish,
 ): Promise<CliResult> {
-  // Built where the receipt was verified, not at the project root. The gate
-  // below refuses when the trail's repository differs from the verified
-  // checkout, and the comment under it states the rule this line has to obey:
-  // "the audit receipt, portable trail, and final Done transition all name one
-  // checkout". Passing projectPath broke that whenever a card worked in a
-  // worktree — two different directories by construction, so a card could
-  // never reach Done. checkoutPath is the path gitEvidence sampled.
+  // Built where the card's state actually is, derived from the state dir.
+  //
+  // A card's state root is the directory whose `.stelow/<date>/sw-<card>` the
+  // state dir names, and the trail has to be built there: the helper resolves
+  // every registered `path:` against its cwd, so a trail built in any other
+  // directory reports the card's own artifacts as unregistered and refuses.
+  //
+  // Neither fixed base is right on its own. A card whose worker wrote into the
+  // project checkout keeps its state there, and building at checkoutPath (a
+  // linked worktree, a different directory by construction) refused it — while
+  // building at projectPath refused every card whose worker wrote into a
+  // worktree. The state dir is the one thing that names the right place for
+  // both, so it decides, and the checkout is only the fallback when there is
+  // no state dir at all.
+  const trailRoot = stateRootOf(finish.stateDir) ?? finish.checkoutPath ?? finish.projectPath;
   const trailRefusal = await auditTrailRefusal(
     deps,
-    finish.checkoutPath ?? finish.projectPath,
+    trailRoot,
     finish.stateDir,
     finish.git,
   );
@@ -358,13 +382,32 @@ async function auditTrailRefusal(
           stateDir ?? undefined,
         )
       : null;
+  // Which repository the trail attests. The vendored helper reports the root it
+  // sampled but not the repository identity, and the gate needs both halves to
+  // answer "same repository?" for a trail built beside a linked worktree. The
+  // host can read it from the root the trail names, so it does, rather than
+  // requiring an upstream helper release before the gate can work.
+  const snapshotCommonDir = await snapshotRepository(deps, trailCheck ?? trail);
   const gate = auditTrailGate({
     build: trail,
     check: trailCheck,
     verifiedGit: git,
+    snapshotCommonDir,
   });
   if (gate.ready) return null;
   return gate.error ?? "Audit trail validation failed.";
+}
+
+/** The repository the trail's snapshot names, resolved on this machine. */
+async function snapshotRepository(
+  deps: CliDeps,
+  run: Awaited<ReturnType<CliDeps["runHelper"]>> | null,
+): Promise<string | null> {
+  if (!run || run.code !== 0) return null;
+  const root = auditTrailOutcome(run)?.result?.snapshot?.root;
+  if (typeof root !== "string" || !root) return null;
+  const evidence = await deps.gitEvidence(root).catch(() => null);
+  return evidence?.commonDir ?? null;
 }
 
 /** The done trail event: a completed card without it is invisible to flow
