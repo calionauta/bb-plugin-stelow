@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.63.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.62.0...v0.63.0) (2026-10-02)
+
+
+### Features
+
+* a worktree is only reclaimable once the work is already integrated ([#243](https://github.com/calionauta/bb-plugin-stelow/issues/243)) ([110cfb2](https://github.com/calionauta/bb-plugin-stelow/commit/110cfb29ea511e9fd0c36e8d047bf13b97264012))
+
 ## [0.62.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.2...v0.62.0) (2026-10-02)
 
 
