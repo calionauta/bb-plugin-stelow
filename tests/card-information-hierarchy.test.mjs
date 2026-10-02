@@ -183,3 +183,51 @@ test("the run list is a disclosure, not a permanently-open stack of rows", () =>
     "and the hint keeps the tally visible with the section closed, so closing it costs the outcomes and nothing else",
   );
 });
+
+// ---------------------------------------------------------------------------
+// A scope's dependencies, and the one fact a card states twice.
+//
+// The dependency rows used to be pills reading "after <name>" at 11px, where a
+// satisfied dependency and a waiting one rendered the SAME string and only the
+// background differed. The state was therefore carried by colour alone
+// (WCAG 1.4.1) and vanished wherever colour does not survive. Separately, the
+// progress region was called "Checks" while the box inside it rendered its own
+// <h3>Checks</h3> — one label, twice, with a heading inside a heading.
+// ---------------------------------------------------------------------------
+
+const scopeRelations = read("components/detail/scope-relations.tsx");
+const buildProgressSource = read("components/detail/build-progress.tsx");
+
+test("a dependency's state is a word, not only a colour", () => {
+  // The rows come from lib, which derives the word; the component renders it.
+  // A regression to colour-only would show here as the rows disappearing or
+  // the lib projection no longer being the source.
+  assert.match(scopeRelations, /row\.text/, "the row text is rendered, so state is visible without styling");
+  assert.doesNotMatch(
+    scopeRelations,
+    /after \{byId\.get\(dep\)/,
+    "the old pill rendering is gone: it could not tell a satisfied dependency from a waiting one",
+  );
+});
+
+test("a region and the box inside it do not share a label", () => {
+  const regionTitles = [...buildProgressSource.matchAll(/<ProgressRegion\s+title="([^"]+)"/g)].map((m) => m[1]);
+  // The child box rendered its own <h3>Checks</h3> under a region already named
+  // "Checks", so the label appeared twice and the DOM nested a heading inside a
+  // heading (WCAG 1.3.1).
+  assert.doesNotMatch(
+    buildProgressSource,
+    /<h3>Checks<\/h3>/,
+    "the Checks box must not restate the region's own label",
+  );
+  assert.ok(regionTitles.includes("Checks"), "the region still owns the label");
+});
+
+test("which scope is running is named once", () => {
+  // It used to be "Doing now" in the progress bar and "Executing" in a second
+  // line below, with the same glyph — three names for one fact.
+  const doing = buildProgressSource.match(/● Doing now/g) ?? [];
+  const executing = buildProgressSource.match(/● Executing/g) ?? [];
+  assert.equal(doing.length, 1, "one vocabulary for the running scope");
+  assert.equal(executing.length, 0, "the second vocabulary is gone");
+});

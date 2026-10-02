@@ -66,8 +66,22 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
   if (groups.length === 0) return null;
   const visible = pendingOnly ? groups.filter((group) => groupState(group) === "pending") : groups;
   return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      <div className="flex items-center gap-2"><h3 className="text-xs font-semibold text-foreground">Checks</h3><label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label></div>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        {/* No heading of its own: the enclosing ProgressRegion is already
+            called "Checks", so an h3 here repeated the label on one screen and
+            put a heading inside a heading. The region owns the name; this box
+            owns the content. */}
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={pendingOnly}
+            onChange={(event) => setPendingOnly(event.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          Pending only
+        </label>
+      </div>
       {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => <div key={group.id} className="space-y-0.5"><p className="text-xs"><span className="font-medium text-foreground">{group.label}</span><span className="ml-2 tabular-nums text-muted-foreground">{group.open.length}/{group.total} open</span>{groupState(group) === "done" ? <span className="ml-2 text-emerald-700 dark:text-emerald-300">✓</span> : null}</p>{group.open.length > 0 ? <p className="truncate text-[11px] text-muted-foreground" title={group.open.join(" · ")}>{group.open.slice(0, 3).join(" · ")}{group.open.length > 3 ? ` +${group.open.length - 3} more` : ""}</p> : null}</div>)}
     </div>
@@ -159,13 +173,16 @@ function ScopesProgress({ detail }: { detail: BuildDetail }) {
   if (detail.scopes.length === 0) return null;
   const flow = { leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null };
   const elapsed = detail.card.scopeSummary.elapsedMs;
-  const activeScope = detail.card.executingScope;
   return (
     <>
       <ScopeProgress scopes={detail.scopes} flow={flow} />
       <ScopeProgressTrack done={detail.card.scopeSummary.scopesDone} total={detail.card.scopeSummary.scopesTotal} />
       {elapsed != null ? <p className="text-xs text-muted-foreground">Total scope time: {formatDuration(elapsed)}</p> : null}
-      {activeScope ? <p className="text-xs text-primary">● Executing: {activeScope}</p> : null}
+      {/* "Which scope is running" is stated once, by ScopesProgress, as
+          "Doing now". This line used to say "Executing" for the same fact, and
+          the section hint said "now:" — three names for one answer, so a reader
+          could not tell whether they agreed. */}
+
       <ScopesList
         scopes={detail.scopes}
         statusTone={statusTone}

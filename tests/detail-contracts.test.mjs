@@ -315,6 +315,7 @@ assert.match(
 );
 assert.match(
   detailScopes,
-  /waiting on \{wait\.length\}/,
-  "blocked scopes name their wait",
+  /waiting on \{waitCount\}/,
+  "blocked scopes name their wait — the count moved from `wait.length` to a `waitCount` prop when the "
+    + "summary row was split out, and the rule is unchanged: a blocked scope says how many it waits on",
 );

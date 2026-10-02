@@ -3,10 +3,10 @@ import { scopeElapsedMs } from "../../lib/scope-elapsed.mjs";
 import { useState } from "react";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
-import { isDoneStatus } from "../../lib/trackables.mjs";
+
 import { scopeClaimLines, type ScopeClaimTone } from "../../lib/lock-blocked.mjs";
 import { orderScopes, statusRank } from "../../lib/scope-order.mjs";
-import { conditionSpread, groupConditionsByType, isSharedCondition } from "../../lib/scope-conditions-grouping.mjs";
+import { ScopeConditions, ScopeDependencies, sharedConditionTypesFor } from "./scope-relations";
 import { TEXT_META, TEXT_SECTION } from "../../lib/design-tokens";
 
 // Scope list: dependency-ordered scopes with waiting markers, per-task
@@ -33,6 +33,9 @@ export type ScopeBlockedFile = { file: string; heldBy: string; expiresAt: number
  * "needs a decision" colour, not a new one.
  */
 const CONDITION_TEXT = `${TEXT_META} text-amber-700 dark:text-amber-300`;
+const REWORK_PILL = "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+const WAITING_PILL = "rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium "
+  + "text-amber-700 dark:text-amber-300";
 const DEP_PILL = "rounded-md border border-dashed px-1.5 py-0.5 text-muted-foreground";
 const BLOCKED_PILL = "rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 "
   + "text-amber-700 dark:text-amber-300";
@@ -194,52 +197,6 @@ function ScopeBody({ scope, fns, sharedTypes }: {
   );
 }
 
-/**
- * Condition types that more than one scope carries, decided once per list.
- *
- * A shared type is said once for the card, so repeating it inside each scope
- * would be the fourteen-line wall this replaces. A type only one scope carries
- * stays in that scope, because a single-scope condition reads better as a
- * sentence about that scope. Computed per render and passed down, so two lists
- * on one page cannot share an answer.
- */
-function sharedConditionTypesFor(scopes: ScopeListScope[]): Set<string> {
-  return new Set(groupConditionsByType(scopes).filter(isSharedCondition).map((group) => group.type));
-}
-
-/**
- * The conditions the card has in common, one row per type, naming the scopes
- * they apply to.
- *
- * The count is the point. Per-scope rendering made "one scope is missing a
- * record" and "every scope is missing a record" look identical, when the first
- * is a task and the second is a problem with how the card was closed.
- */
-function ScopeConditions({ scopes }: { scopes: ScopeListScope[] }) {
-  const groups = groupConditionsByType(scopes).filter(isSharedCondition);
-  if (groups.length === 0) return null;
-  return (
-    <section className="space-y-2" aria-label="Scope conditions">
-      <h4 className={TEXT_SECTION}>Shared conditions</h4>
-      <p className={TEXT_META}>
-        Applies to more than one scope — a fact about how this card closed, not about any single scope.
-      </p>
-      <ul className="space-y-1.5">
-        {groups.map((group) => (
-          <li key={group.type} className={`${TEXT_META} text-amber-700 dark:text-amber-300`} role="note">
-            <span className="font-medium">{conditionSpread(group)} scopes</span>{" — "}
-            {group.message}
-            <span className="block text-muted-foreground">
-              {group.scopes.length > 6
-                ? `${group.scopes.slice(0, 6).join(", ")} and ${group.scopes.length - 6} more`
-                : group.scopes.join(", ")}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 function ScopeRow({ scope, isOpen, onToggle, waitingOn, byId, fns, sharedTypes }: {
   scope: ScopeListScope;
@@ -252,29 +209,21 @@ function ScopeRow({ scope, isOpen, onToggle, waitingOn, byId, fns, sharedTypes }
 }) {
   const wait = waitingOn.get(scope.id) ?? [];
   const blockedNow = wait.length > 0;
-  const finished = (id: string) => isDoneStatus(byId.get(id)?.status ?? "");
+  const elapsedMs = scopeElapsedMs(scope);
   const tasksDone = scope.tasks.filter((task) => statusRank(task.status) === 4).length;
   return (
     <details key={scope.id} open={isOpen} onToggle={(event) => onToggle((event.currentTarget as HTMLDetailsElement).open)} className={`group rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
       <summary className="cursor-pointer list-none space-y-1">
-        <div className="flex flex-wrap items-center gap-1">
-          <DisclosureChevron open={isOpen} />
-          <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
-          <span className="font-medium">{scope.name}</span>
-          {scope.type ? <Pill>{scope.type}</Pill> : null}
-          {scope.source === "audit-gap" ? <Pill tone="bg-amber-500/15 text-amber-700 dark:text-amber-300" title={scope.gap ? `Rework for escalated gap: ${scope.gap}` : "Rework scope from an escalated gap"}>↻ rework</Pill> : null}
-          <Pill tone={fns.statusTone(scope.status)}><span className="mr-1">{fns.statusGlyph(scope.status)}</span>{fns.statusLabel(scope.status)}</Pill>
-          {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
-           {scopeElapsedMs(scope) != null ? <span className="text-[11px] text-muted-foreground">· {formatDuration(scopeElapsedMs(scope) ?? 0)}</span> : null}
-          {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
-        </div>
-        {(scope.blockedBy?.length || scope.dependsOn?.length) ? (
-          <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-            {scope.dependsOn?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className={`rounded-md border px-2 py-0.5 ${finished(dep) ? "border-border" : "border-amber-500/40 bg-amber-500/10"}`}>after {byId.get(dep)!.name}</span>)}
-            {scope.blockedBy?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5">blocked by {byId.get(dep)!.name}</span>)}
-            {scope.dependsOn?.filter((id) => !byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-dashed px-2 py-0.5">after {dep} (missing)</span>)}
-          </div>
-        ) : null}
+        <ScopeSummaryRow
+          scope={scope}
+          isOpen={isOpen}
+          blockedNow={blockedNow}
+          waitCount={wait.length}
+          tasksDone={tasksDone}
+          elapsedMs={elapsedMs}
+          fns={fns}
+        />
+        <ScopeDependencies scope={scope} byId={byId} />
       </summary>
       <ScopeBody scope={scope} fns={fns} sharedTypes={sharedTypes} />
     </details>
@@ -312,5 +261,99 @@ export function ScopesList({ scopes, statusTone, statusGlyph, statusLabel }: {
         />
       ))}
     </section>
+  );
+}
+
+/**
+ * A scope's summary line: who it is, what state it is in, and its measures.
+ *
+ * Extracted from `ScopeRow`, which the function budget caught when this
+ * region's markup grew. The split is by concern: this is the one line a
+ * reader scans, and the body below it is what they open to read in full.
+ */
+function ScopeSummaryRow({
+  scope,
+  isOpen,
+  blockedNow,
+  waitCount,
+  tasksDone,
+  elapsedMs,
+  fns,
+}: {
+  scope: ScopeListScope;
+  isOpen: boolean;
+  blockedNow: boolean;
+  waitCount: number;
+  tasksDone: number;
+  elapsedMs: number | null;
+  fns: ScopeStatusFns;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <DisclosureChevron open={isOpen} />
+      <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
+      <span className="font-medium">{scope.name}</span>
+      {scope.type ? <Pill>{scope.type}</Pill> : null}
+      {scope.source === "audit-gap" ? (
+        <Pill
+          tone={REWORK_PILL}
+          title={scope.gap
+            ? `Rework for escalated gap: ${scope.gap}`
+            : "Rework scope from an escalated gap"}
+        >
+          ↻ rework
+        </Pill>
+      ) : null}
+      <Pill tone={fns.statusTone(scope.status)}>
+        <span className="mr-1">{fns.statusGlyph(scope.status)}</span>
+        {fns.statusLabel(scope.status)}
+      </Pill>
+      <ScopeMeasures
+        taskCount={scope.tasks.length}
+        tasksDone={tasksDone}
+        elapsedMs={elapsedMs}
+        blockedNow={blockedNow}
+        waitCount={waitCount}
+      />
+    </div>
+  );
+}
+
+/**
+ * The numbers beside a scope's name: task progress, elapsed time, and whether
+ * it is blocked.
+ *
+ * Separate from the identity row because these are the measures a reader
+ * scans, and the id and name are the ones they read. Keeping them in one place
+ * also means a new measure is added beside the others rather than appended to
+ * a row that had already grown.
+ */
+function ScopeMeasures({
+  taskCount,
+  tasksDone,
+  elapsedMs,
+  blockedNow,
+  waitCount,
+}: {
+  taskCount: number;
+  tasksDone: number;
+  elapsedMs: number | null;
+  blockedNow: boolean;
+  waitCount: number;
+}) {
+  return (
+    <>
+      {taskCount > 0 ? (
+        <span className={TEXT_META} title={`${tasksDone} of ${taskCount} tasks done`}>
+          {tasksDone}/{taskCount} tasks
+        </span>
+      ) : null}
+      {elapsedMs != null ? <span className={TEXT_META}>· {formatDuration(elapsedMs)}</span> : null}
+      {blockedNow ? (
+        <span className={WAITING_PILL} title={`${waitCount} unfinished`}>
+          ⛔ waiting on {waitCount}
+        </span>
+      ) : null}
+    </>
   );
 }
