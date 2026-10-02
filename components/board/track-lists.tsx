@@ -7,6 +7,7 @@ import {
   IntegrationPendingChip,
   DoingNowPill,
   ErrorChip,
+  PausedChip,
   ReviewChip,
   ScopeStrip,
   attentionLabel,
@@ -27,7 +28,7 @@ import {
   LIGHTWEIGHT_VISIBLE_COLUMNS,
 } from "../../lib/tracks.mjs";
 import { useReturnFocus } from "./use-return-focus";
-import { errorActivityLabel } from "../../lib/detail-presentation.mjs";
+import { errorActivityLabel, pausedActivityLabel } from "../../lib/detail-presentation.mjs";
 
 type ScopeSummary = {
   scopesDone: number;
@@ -89,10 +90,12 @@ function openWorkerThread(
  */
 function ListRowStatus({ card }: { card: ListCard }) {
   const stopped = errorActivityLabel(card);
+  const paused = pausedActivityLabel(card);
   return (
     <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
       <ActivityPill activity={card.activity} />
       {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
+      {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
       {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
       {card.integrationPending ? (
         <IntegrationPendingChip

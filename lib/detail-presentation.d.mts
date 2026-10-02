@@ -17,3 +17,10 @@ export declare function errorActivityLabel(card: {
   activity: string;
   lastError?: string | null;
 }): { label: string; detail: string } | null;
+
+/** The label a paused card shows, or null when it is not paused. */
+export declare function pausedActivityLabel(card: {
+  activity: string;
+  needsAttention?: boolean;
+  lastError?: string | null;
+}): { label: string; detail: string } | null;

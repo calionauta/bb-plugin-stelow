@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { liveBorderClass, errorActivityLabel } from "../lib/detail-presentation.mjs";
+import { liveBorderClass, errorActivityLabel, pausedActivityLabel } from "../lib/detail-presentation.mjs";
 
 // A stopped card must not look like a card waiting for an answer.
 //
@@ -86,4 +86,40 @@ assert.match(css, /stelow-border-error/, "the error border has a rule");
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*stelow-border-error/,
   "the error border survives reduced motion — a still card must still read as stopped");
 
-console.log("error activity test ok: a stopped card is red, named, and never mistaken for a question");
+// --- a paused card says it is paused ---------------------------------------
+// card_e3u00eb4 collected eight `paused` inbox entries. The board showed none
+// of them: the record was correct and invisible, which is the same failure as
+// the error one.
+//
+// `needsAttention && activity === "idle"` is the codebase's own definition of
+// a stall (cardCanResume and cardShowsAttention both use it), so the two can
+// never disagree about what counts as paused.
+
+const PAUSED = { activity: "idle", needsAttention: true, lastError: null };
+const IDLE_FINE = { activity: "idle", needsAttention: false, lastError: null };
+
+const paused = pausedActivityLabel(PAUSED);
+assert.ok(paused, "a stalled card must say it is waiting for someone");
+assert.equal(paused.label, "Paused");
+assert.match(paused.detail, /[Rr]etry/, "the detail names the option that continues");
+
+assert.equal(pausedActivityLabel(IDLE_FINE), null,
+  "a card that is merely settled is not paused");
+assert.equal(pausedActivityLabel(ERROR), null, "a stopped card is not paused");
+assert.equal(pausedActivityLabel(QUESTION), null, "a card asking a question is not paused");
+assert.equal(pausedActivityLabel(RUNNING), null, "a running card is not paused");
+
+// --- a card is never both stopped and paused ------------------------------
+
+assert.notEqual(
+  errorActivityLabel(PAUSED) === null, pausedActivityLabel(PAUSED) === null,
+  "idle and error are disjoint states, so exactly one label can apply",
+);
+
+// --- the list row keeps the same distinction -------------------------------
+
+const listRows = readFileSync(join(here, "..", "components/board/track-lists.tsx"), "utf8");
+assert.match(listRows, /if \(card\.activity === "error"\) return "[^"]*bg-destructive/,
+  "a stopped list row is red, ahead of the amber that means waiting");
+
+console.log("error activity test ok: a stopped card is red, a paused card says so, and neither is mistaken for a question");

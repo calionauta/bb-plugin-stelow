@@ -184,6 +184,27 @@ export function AttentionChip({ label }: { label: string }) {
 }
 
 /**
+ * A card whose worker ran out of work and is waiting for the user.
+ *
+ * Amber, like the attention chip it appears alongside — this is a "needs
+ * you" state, not a failure. It is a separate component rather than a branch
+ * inside the attention chip because the two say different things: attention
+ * means a specific known thing is outstanding, pause means the worker simply
+ * stopped producing and the user has to decide what to do about it.
+ */
+export function PausedChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-zinc-500" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
  * A card that has stopped.
  *
  * Red, and it does not pulse: the card's own border already pulses to say
