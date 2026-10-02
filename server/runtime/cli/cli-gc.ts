@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { formatBytes, threadIdFromWorktreePath } from "../../../lib/worktree-storage.mjs";
 import { cleanupIntegrationGate } from "../../../lib/discard-policy.mjs";
+import { treeMatchesBase } from "../../integration-proof.js";
 import { scanFlags, type CliCommandFn, type CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
@@ -157,7 +158,7 @@ async function collectCandidates(
       // squash merge leaves behind. The tree comparison is the second proof,
       // for a branch whose merge was recorded somewhere else.
       remoteMerged: deps.hasRecordedMerge?.(cardId) === true,
-      treeMatchesBase: await treeMatchesBase(deps, evidence),
+      treeMatchesBase: await treeMatchesBase(deps.runGitIn, evidence.checkoutPath as string | null),
     });
     candidates.push({
       cardId: card.id,
@@ -172,44 +173,6 @@ async function collectCandidates(
   }
   candidates.sort((a, b) => (b.bytes ?? -1) - (a.bytes ?? -1));
   return candidates;
-}
-
-function runGit(
-  deps: CliDeps,
-  cwd: string,
-  args: string[],
-): Promise<{ ok: boolean; stdout: string }> {
-  return deps
-    .runGitIn(cwd, args)
-    .then((result) => ({ ok: result.ok, stdout: result.stdout }))
-    .catch(() => ({ ok: false, stdout: "" }));
-}
-
-/**
- * Does the base branch already contain this branch's files?
- *
- * A squash produces an identical tree, so this is the proof that survives a
- * rewrite of every commit id — which is why it is a positive check rather than
- * "no unpushed commits", since a pushed-but-unmerged branch also has none.
- *
- * Fails closed: a base that cannot be resolved, or a dirty tree that would
- * change the answer, reports false. Guessing true here deletes a worktree.
- */
-async function treeMatchesBase(
-  deps: CliDeps,
-  evidence: { checkoutPath?: string | null; branch?: string | null } | null,
-): Promise<boolean> {
-  const path = evidence?.checkoutPath;
-  if (!path) return false;
-  const base = await runGit(deps, path, ["rev-parse", "--verify", "origin/master"]);
-  if (!base.ok || !base.stdout.trim()) return false;
-  const mine = await runGit(deps, path, ["rev-parse", "HEAD"]);
-  if (!mine.ok) return false;
-  const [baseSha, headSha] = [base.stdout.trim(), mine.stdout.trim()];
-  if (baseSha === headSha) return true;
-  const diff = await runGit(deps, path, ["diff", "--name-only", `${baseSha}..${headSha}`]);
-  if (!diff.ok) return false;
-  return diff.stdout.trim() === "";
 }
 
 function duBytes(path: string): Promise<number | null> {
@@ -242,7 +205,7 @@ async function removeSafe(deps: CliDeps, safe: Candidate[]): Promise<string[]> {
     const verdict = cleanupIntegrationGate({
       ...fresh,
       remoteMerged: deps.hasRecordedMerge?.(candidate.cardId) === true,
-      treeMatchesBase: await treeMatchesBase(deps, fresh),
+      treeMatchesBase: await treeMatchesBase(deps.runGitIn, fresh.checkoutPath as string | null),
     });
     if (!verdict.safe) continue;
     const result = await deps

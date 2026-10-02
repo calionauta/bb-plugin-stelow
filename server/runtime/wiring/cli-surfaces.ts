@@ -15,6 +15,7 @@ import { runScopeCommand } from "../../scopes.js";
 import { seedWorkflow } from "../workflow-seeding.js";
 import { PLUGIN_SKILLS_DIR } from "../../plugin-paths.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
+import { hasRecordedIntegration } from "../../../lib/integration-pending.mjs";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import type { WorkerCard } from "../../workers-types.js";
 import type { RuntimeCore } from "../runtime-core.js";
@@ -303,16 +304,9 @@ function worktreeRemover(execution: ExecutionSurfaces): CliRunConfig["cleanupWor
  * marked ready are all recorded actions that do not put the work on the base.
  */
 function recordedMerge(db: CliRunConfig["db"]): CliRunConfig["hasRecordedMerge"] {
-  return (cardId) => {
-    try {
-      const row = db
-        .prepare("SELECT COUNT(*) AS n FROM publication_events WHERE card_id = ? AND action = ?")
-        .get(cardId, "pull_request_merge") as { n?: number } | undefined;
-      return Number(row?.n ?? 0) > 0;
-    } catch {
-      // A missing ledger means "not proven merged", which is a reason to keep
-      // the worktree. It is never a reason to delete one.
-      return false;
-    }
-  };
+  // The rule lives with the board chip that reads it (`hasRecordedIntegration`),
+  // so the gate that deletes a worktree and the chip that reports it cannot
+  // drift apart. A missing ledger means "not proven merged", never a reason to
+  // delete: the helper fails closed for the same reason.
+  return (cardId) => hasRecordedIntegration(db, cardId);
 }

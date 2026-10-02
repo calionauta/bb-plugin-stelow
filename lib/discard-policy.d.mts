@@ -34,6 +34,12 @@ export declare function cleanupEligibility(evidence: Partial<DiscardEvidence>): 
  * back from? Separate from cleanupEligibility on purpose — one answers
  * "is there a worktree to remove", the other "is the work safe to lose".
  */
+/**
+ * Is the card's work on the base branch — by a recorded merge, or by CONTENT?
+ * Positive proof only; anything unproven is not integrated.
+ */
+export declare function isWorkIntegrated(evidence: { remoteMerged?: boolean; treeMatchesBase?: boolean }): boolean;
+
 export declare function cleanupIntegrationGate(evidence: Partial<DiscardEvidence>): {
   safe: boolean;
   blockers: string[];

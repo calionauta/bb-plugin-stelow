@@ -103,6 +103,25 @@ assert.equal(
   "a merge recorded before a later commit still counts as landed",
 );
 
+// --- a reconciled integration is a landed one ------------------------------
+// The reconciler writes `reconciled_integrated` when it proves by CONTENT that
+// the base branch already contains this branch's files — the proof a squash
+// merge leaves and a commit id does not. It is the one action here the panel
+// never writes, and the chip must go quiet on it exactly as it does on a merge.
+
+assert.equal(
+  integrationPending(fakeDb(["reconciled_integrated"]), DONE_PROJECT),
+  null,
+  "a reconciled content proof lands the card, so the chip says nothing",
+);
+
+// A recorded push is still not an integration, even for a card that exists.
+assert.notEqual(
+  integrationPending(fakeDb(["push_terminal"]), DONE_PROJECT),
+  null,
+  "pushing is not landing",
+);
+
 // --- the detail names the missing step ------------------------------------
 
 for (const [actions, expected] of [
