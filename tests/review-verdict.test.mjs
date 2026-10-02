@@ -3,8 +3,10 @@ import { buildReviewPrompt, extractJsonBlock, parseReviewOutput, reviewSummary, 
 
 const ARTIFACT = "## Top 10:\n#### 1/10 Ensure outcome one\n- Alternative: achieve result one\n";
 
-// Prompt carries the contract, the request, and the truncation note.
-const prompt = buildReviewPrompt({
+// Prompt carries the contract, the request, and the truncation note. The
+// builder returns { prompt, excerpt }: the excerpt report is what lets a caller
+// record WHICH excerpt the reviewer saw, not merely that there was one.
+const { prompt, excerpt } = buildReviewPrompt({
   cardName: "Card",
   request: "Map jobs",
   contractLabel: "functional-needs: 10 criteria",
@@ -16,10 +18,14 @@ assert.match(prompt, /functional-needs: 10 criteria/, "prompt names the contract
 assert.match(prompt, /Map jobs/, "prompt names the request");
 assert.match(prompt, /verbatim/, "prompt demands quotes");
 assert.ok(!prompt.includes("truncated"), "short artifact carries no truncation note");
-const longPrompt = buildReviewPrompt({ cardName: "C", request: "R", contractLabel: "L", artifactContent: "x".repeat(MAX_REVIEW_CHARS + 1) });
-assert.match(longPrompt, /truncated/, "long artifact is marked truncated");
-const hypoPrompt = buildReviewPrompt({ cardName: "C", request: "R", contractLabel: "L", artifactContent: "x", evidence: "hypothesis-only" });
-assert.match(hypoPrompt, /do not penalize missing external sources/, "hypothesis-only adjusts the rubric");
+assert.equal(excerpt.selected, "whole", "a fitting artifact is reported as sent whole");
+assert.equal(excerpt.truncated, false, "and not as truncated");
+const long = buildReviewPrompt({ cardName: "C", request: "R", contractLabel: "L", artifactContent: "x".repeat(MAX_REVIEW_CHARS + 1) });
+assert.match(long.prompt, /truncated/, "long artifact is marked truncated");
+assert.equal(long.excerpt.selected, "head", "with no contract the head slice is the honest report");
+assert.equal(long.excerpt.originalChars, MAX_REVIEW_CHARS + 1, "the original size is reported");
+const hypo = buildReviewPrompt({ cardName: "C", request: "R", contractLabel: "L", artifactContent: "x", evidence: "hypothesis-only" });
+assert.match(hypo.prompt, /do not penalize missing external sources/, "hypothesis-only adjusts the rubric");
 
 // Valid verdict with an exact quote passes; fabricated quotes drop the finding.
 const good = '```json\n{"verdict": "needs-revision", "findings": [{"criterion": "scope fits", "quote": "#### 1/10 Ensure outcome one", "verdict": "FAIL", "repair": "add metrics"}]}\n```';

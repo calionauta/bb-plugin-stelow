@@ -1779,12 +1779,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+  The excerpt the reviewer receives is chosen by the **artifact contract**, not
+  by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
+  first, so a long introduction cannot push a required table past the 12k cost
+  cap and have the reviewer judge a document with its required section missing.
+  A document that fits goes whole; with no contract — or one that names nothing
+  — the head slice is used, the prompt says so, and the card comment records
+  which of the two happened. A review of the contract's sections and a review of
+  the document's opening are different reviews, and the reader of the verdict is
+  the one who has to tell them apart.
 - **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
   Advancing a build card into gate/int-gate/plan-gate with a reviewer
   designated fires one hidden review of the gate's registered artifact,
   posted as a card comment for the human (and worker) before approval.
   Advisory and fire-and-forget — advance never waits; every miss (no
-  designation, no workflow, no artifact, thin file) stays silent.
+  designation, no workflow, no artifact, thin file) stays silent. The artifact's
+  own contract drives the excerpt here too, so the gate's required sections are
+  what the pre-review reads.
   diff-gate stays out (no single file). Eligibility resolves through the
   lib map, never inline.
 - **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
