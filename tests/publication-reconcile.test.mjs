@@ -41,14 +41,11 @@ const contentDiffers = (_cwd, args) => {
 const gitBroken = () => Promise.resolve({ ok: false, stdout: "" });
 
 function fakeCore({
-  cards = ["card_x"],
-  events = {},
-  pullRequest = OPEN,
-  checkoutPath = "/work/wt",
-  runGitIn = contentMatches,
-  forgeThrows = false,
+  cards = ["card_x"], events = {}, pullRequest = OPEN, checkoutPath = "/work/wt",
+  runGitIn = contentMatches, forgeThrows = false, getCardThrows = [],
 } = {}) {
   const inserts = [];
+  const warns = [];
   const db = {
     prepare(sql) {
       if (sql.includes("INSERT INTO publication_events")) {
@@ -65,9 +62,11 @@ function fakeCore({
   };
   return {
     inserts,
+    warns,
     core: {
       db,
       bb: {
+        log: { warn: (message) => warns.push(message) },
         sdk: {
           environments: {
             pullRequest: async () => {
@@ -80,7 +79,10 @@ function fakeCore({
       now: () => 1790000000000,
       randomId: (prefix) => `${prefix}_test`,
       cardNotFound: "not found",
-      getCard: (id) => ({ id, status: "completed", workspace_kind: "project" }),
+      getCard: (id) => {
+        if (getCardThrows.includes(id)) throw new Error(`card store refused ${id}`);
+        return { id, status: "completed", workspace_kind: "project" };
+      },
       checkout: async () => ({ environmentId: "env_1" }),
       discardEvidence: async () => (checkoutPath === null ? null : { checkoutPath }),
       runGitIn,
@@ -159,9 +161,34 @@ function fakeCore({
 // --- a forge error is silence, not a landing -------------------------------
 
 {
-  const { core, inserts } = fakeCore({ forgeThrows: true, runGitIn: contentDiffers });
+  const { core, inserts, warns } = fakeCore({ forgeThrows: true, runGitIn: contentDiffers });
   await reconcilePublications(core);
-  assert.equal(inserts.length, 0, "an error is silence");
+  assert.equal(inserts.length, 0, "an error never lands a card");
+  assert.equal(warns.length, 0, "a forge that will not answer is an answer: no, and it is not an incident");
+}
+
+// --- a card that breaks the pass is reported, and does not stop the others --
+
+{
+  const { core, inserts, warns } = fakeCore({
+    cards: ["card_bad", "card_good"],
+    getCardThrows: ["card_bad"],
+    pullRequest: MERGED,
+  });
+  await reconcilePublications(core);
+  assert.equal(inserts.length, 1, "the card after the broken one is still asked about");
+  assert.equal(inserts[0][1], "card_good", "and it is the good one that lands");
+  assert.equal(warns.length, 1, "the broken card is reported once, not swallowed");
+  assert.match(warns[0], /could not ask the forge about 1 card/, "the warning names the count");
+  assert.match(warns[0], /card_bad \(card store refused card_bad\)/, "and the card and the reason");
+}
+
+// A pass with nothing wrong stays quiet: a warning that fires every tick is a
+// warning nobody reads.
+{
+  const { core, warns } = fakeCore({ pullRequest: OPEN, runGitIn: contentDiffers });
+  await reconcilePublications(core);
+  assert.equal(warns.length, 0, "a clean pass says nothing");
 }
 
 // --- the pass must not fail the reconcile ----------------------------------
