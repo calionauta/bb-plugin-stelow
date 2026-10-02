@@ -16,47 +16,81 @@ import ts from "typescript";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Load the real component with the host-free imports stubbed out. */
-function loadPresetManagerList() {
-  const source = readFileSync(
-    join(root, "components/settings/preset-manager-list.tsx"),
-    "utf8",
-  );
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      jsx: ts.JsxEmit.React,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
+// Components are invoked as they are created rather than left as opaque nodes,
+// or the assertion would only ever see the element that wraps them and the text
+// a component renders would never be read.
+const React = {
+  createElement: (type, props, ...children) => (
+    typeof type === "function"
+      ? type({ ...props, children })
+      : { type, props, children }
+  ),
+};
+
+/** The host-free deps both the list and its row import. */
+function hostStubs() {
+  return {
+    "../dashboard/build-status-pills": {
+      Pill: (props, ...children) => ({ type: "Pill", props, children }),
     },
-  }).outputText;
-  const module = { exports: {} };
-  // Function components are invoked here rather than left as opaque nodes, or
-  // the assertion would only ever see the element that wraps them and the text
-  // a component renders would never be read.
-  const React = {
-    createElement: (type, props, ...children) => (
-      typeof type === "function"
-        ? type({ ...props, children })
-        : { type, props, children }
-    ),
+    "@/components/ui/button": {
+      Button: (props, ...children) => ({ type: "Button", props, children }),
+    },
+    "./preset-manager-types": {},
   };
-  const execute = new Function("exports", "require", "module", "React", compiled);
-  execute(
+}
+
+/**
+ * Load a real component with its host imports stubbed out.
+ *
+ * The row was extracted out of the list, and the reasoning level it renders is
+ * the fact this file is about — so the row is loaded for real rather than
+ * stubbed away. Both modules go through here so the two stubs can never drift.
+ */
+function loadComponent(file, exportName) {
+  const compiled = ts.transpileModule(
+    readFileSync(join(root, file), "utf8"),
+    {
+      compilerOptions: {
+        jsx: ts.JsxEmit.React,
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText;
+  const module = { exports: {} };
+  new Function("exports", "require", "module", "React", compiled)(
     module.exports,
     (specifier) => {
-      if (specifier === "../dashboard/build-status-pills") {
-        return { Pill: (props, ...children) => ({ type: "Pill", props, children }) };
+      if (specifier === "./preset-manager-preset-row") {
+        return { PresetManagerPresetRow: loadPresetRow() };
       }
-      if (specifier === "@/components/ui/button") {
-        return { Button: (props, ...children) => ({ type: "Button", props, children }) };
-      }
-      if (specifier === "./preset-manager-types") return {};
+      const stub = hostStubs()[specifier];
+      if (stub) return stub;
       throw new Error(`Unexpected import: ${specifier}`);
     },
     module,
     React,
   );
-  return module.exports.PresetManagerList;
+  return module.exports[exportName];
+}
+
+let cachedRow = null;
+function loadPresetRow() {
+  if (!cachedRow) {
+    cachedRow = loadComponent(
+      "components/settings/preset-manager-preset-row.tsx",
+      "PresetManagerPresetRow",
+    );
+  }
+  return cachedRow;
+}
+
+function loadPresetManagerList() {
+  return loadComponent(
+    "components/settings/preset-manager-list.tsx",
+    "PresetManagerList",
+  );
 }
 
 function renderRowText(listComponent, preset) {

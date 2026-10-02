@@ -18,7 +18,7 @@ import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./
 import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
-import { useSeededComposerEnvironment } from "./composer-environment-seed";
+import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 
 // Explore creation dialog: technique picker plus deferred start. Owns its
@@ -116,6 +116,40 @@ export type CreateExploreDialogProps = {
   onOpenPresets: () => void;
 };
 
+// Composer with the per-open project seed and the preset's environment seed.
+// Extracted for the same reason as the build dialog's: the shell plus one
+// composer is over the function budget, and the composer is the part with the
+// seed contract worth reading in one place.
+function CreateExploreComposer({
+  seedProjectId,
+  explorePreset,
+  seededEnvironment,
+  prompt,
+  onSubmit,
+}: {
+  seedProjectId: string | null;
+  explorePreset: CreateExploreDialogProps["explorePreset"];
+  seededEnvironment: ComposerEnvironmentSeed;
+  prompt: string;
+  onSubmit: (request: NewThreadRequest) => Promise<void>;
+}) {
+  return (
+    <NewThreadComposer
+      defaultProjectId={seedProjectId ?? undefined}
+      defaultProviderId={explorePreset?.providerId}
+      defaultModel={explorePreset?.modelId}
+      defaultReasoningLevel={explorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+      defaultPermissionMode={explorePreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+      defaultEnvironment={seededEnvironment}
+      initialPrompt={prompt}
+      placeholder="What should Stelow explore?"
+      layout="contained"
+      draftKey="stelow-explore-create"
+      onSubmit={onSubmit}
+    />
+  );
+}
+
 export function CreateExploreDialog({
   open,
   onOpenChange,
@@ -151,17 +185,11 @@ export function CreateExploreDialog({
           bucketGallery={bucketGallery}
           onOpenPresets={onOpenPresets}
         />
-        <NewThreadComposer
-          defaultProjectId={seedProjectId ?? undefined}
-          defaultProviderId={explorePreset?.providerId}
-          defaultModel={explorePreset?.modelId}
-          defaultReasoningLevel={explorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-          defaultPermissionMode={explorePreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-          defaultEnvironment={seededEnvironment}
-          initialPrompt={submit.prompt}
-          placeholder="What should Stelow explore?"
-          layout="contained"
-          draftKey="stelow-explore-create"
+        <CreateExploreComposer
+          seedProjectId={seedProjectId}
+          explorePreset={explorePreset}
+          seededEnvironment={seededEnvironment}
+          prompt={submit.prompt}
           onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
       </DialogContent>
