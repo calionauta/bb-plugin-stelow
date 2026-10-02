@@ -367,10 +367,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analysis/Planning/Execution/Review) + Done/Archived — the Bucket is not
-  rendered as a column (its header button + gallery own it); cards sit in their
-  stage's phase. The complete Build topology (inbox, phases, terminal
+- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+  named by the synced catalog (analysis/planning/execution/review) +
+  Done/Archived — the Bucket is not rendered as a column (its header button +
+  gallery own it); cards sit in their stage's phase. Column headings are
+  `PHASE_LABELS`, so the `review` phase currently reads **Evaluation** and a
+  host-side rename moves the board without a plugin edit. The complete Build
+  topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
   derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
