@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.5...v0.65.6) (2026-10-02)
+
+
+### Bug Fixes
+
+* the doctor and schema refusals name the fix, not just the gap ([#277](https://github.com/calionauta/bb-plugin-stelow/issues/277)) ([1e4dfa2](https://github.com/calionauta/bb-plugin-stelow/commit/1e4dfa25355502369b245301684a46380a00cd7e))
+
 ## [0.65.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.4...v0.65.5) (2026-10-02)
 
 
