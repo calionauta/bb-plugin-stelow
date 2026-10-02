@@ -10,7 +10,10 @@ import { integrationPending, integrationPendingLabel } from "../lib/integration-
 // Every case here is a card shape that actually occurred on this repo, and
 // each one is a regression this file exists to catch:
 //
-// - oqm8gyae  finished with its work uncommitted on a shared checkout
+// - oqm8gyae  finished with no publication recorded — the board could not tell
+//             whether its work was committed, pushed or merged (it turned out to
+//             have been committed outside the panel and later merged), which is
+//             exactly why the chip now says what it recorded, not what it guessed
 // - hh2nwqs4 finished after a local squash that never reached a remote
 // - a card pushed to a branch nobody merged
 
@@ -47,7 +50,8 @@ assert.equal(
 const unpublished = integrationPending(fakeDb([]), DONE_PROJECT);
 assert.ok(unpublished, "a finished project card with no publication event is pending");
 assert.equal(unpublished.state, "unpublished");
-assert.equal(integrationPendingLabel(DONE_PROJECT, unpublished), "Not committed");
+assert.equal(integrationPendingLabel(DONE_PROJECT, unpublished), "No commit recorded");
+assert.match(unpublished.detail, /cannot say whether its work was committed/);
 
 // --- a local commit is not publication ------------------------------------
 // card_oqm8gyae: committed, never pushed, no PR. The board must still say so.
@@ -102,7 +106,7 @@ assert.equal(
 // --- the detail names the missing step ------------------------------------
 
 for (const [actions, expected] of [
-  [[], "uncommitted"],
+  [[], "cannot say whether its work was committed"],
   [["commit"], "pushed or merged"],
   [["commit", "push_terminal"], "no merge"],
 ]) {
