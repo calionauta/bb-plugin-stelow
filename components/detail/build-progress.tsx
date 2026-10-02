@@ -17,7 +17,6 @@ import { FileOccupancy } from "./file-occupancy";
 import { BuildGaps, type GapSummary } from "./progress/build-gaps";
 import { ProgressRegion } from "./progress/progress-region";
 import { ScopeXray } from "./scope-xray";
-import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
 import type { rpcContract } from "../../server";
 
@@ -118,9 +117,7 @@ type BuildProgressProps = {
   archivedPresentation: { workflow: { title: string; hint: string; emptyScopes: string } } | null;
   artifactTotal: number;
   defaultOpen: boolean;
-  intentLabels: Record<string, string>;
   onOpenArtifacts: () => void;
-  onPickStage: (stage: string) => void;
   onViewFile: (file: ViewerFile) => void;
 };
 
@@ -179,13 +176,7 @@ function ScopesProgress({ detail }: { detail: BuildDetail }) {
   );
 }
 
-function TimelineProgress({ card, detail, intentLabels, onPick }: { card: BuildCard; detail: BuildDetail; intentLabels: Record<string, string>; onPick: (stage: string) => void }) {
-  const terminal = card.status === "completed" ? "completed" : card.status === "archived" ? "archived" : undefined;
-  const offRoute = card.intent && card.intent !== "unknown" ? `Not in this ${intentLabels[card.intent] ?? card.intent} route` : null;
-  return <div className="space-y-2 border-t pt-3"><StageTimeline currentStage={card.stage} terminal={terminal} nextStages={detail.nextStages} artifacts={detail.artifacts} onPick={onPick} skips={detail.stageSkips ?? { offRoute: [], skipped: [] }} offRouteReason={offRoute} />{card.status === "archived" ? null : <p className="text-xs text-muted-foreground">{card.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : "The agent advances on its own · click a lit stage to override"}</p>}</div>;
-}
-
-export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, intentLabels, onOpenArtifacts, onPickStage, onViewFile }: BuildProgressProps) {
+export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, onOpenArtifacts, onViewFile }: BuildProgressProps) {
   const gaps = useGapSummary(card.id);
   const progress = summarizeScopeProgress(detail.scopes);
   const emptyScopes = emptyScopeCopy(card, detail, archivedPresentation?.workflow.emptyScopes);
@@ -212,9 +203,6 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
             <ScopesProgress detail={detail} />
           </ProgressRegion>
         ) : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
-        <ProgressRegion title="Stage" hint="where the card is, and what each stage produces">
-          <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
-        </ProgressRegion>
         {detail.mentionedFiles.length > 0 ? (
           <ProgressRegion title="Files named in your request" hint="spelled out by you, never inferred">
             <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />

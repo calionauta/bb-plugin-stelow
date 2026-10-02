@@ -28,9 +28,7 @@ export function BuildProgressSection({ view }: { view: BuildDetailView }) {
         archivedPresentation={archivedCardDetailPresentation(card, stageLabel)}
         artifactTotal={artifactTotal}
         defaultOpen={startsOpen({ live: hero?.kind === "working", blocking: hero?.kind === "calm" })}
-        intentLabels={view.intentLabels}
         onOpenArtifacts={view.showArtifacts}
-        onPickStage={view.setPendingAdvance}
         onViewFile={view.setViewerFile}
       />
     )

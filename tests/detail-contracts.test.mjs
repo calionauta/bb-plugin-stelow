@@ -18,6 +18,7 @@ import {
   detailComment,
   detailTimeline,
   detailScopes,
+  stageSection,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
 // Detail leaves: one banner definition for every body; event text, time,
@@ -254,9 +255,11 @@ assert.match(
   "the timeline lives in the detail module",
 );
 assert.match(
-  buildProgress,
+  stageSection,
   /import \{ StageTimeline \} from "\.\/stage-timeline"/,
-  "the extracted build progress body reads the shared timeline",
+  "the stage section reads the shared timeline — it took over from build-progress when the timeline, "
+    + "run history and stage reference merged into one section. The shared renderer is the point: one "
+    + "timeline, not two, and this pin fails if a second reader appears",
 );
 assert.match(
   buildWorkspace,

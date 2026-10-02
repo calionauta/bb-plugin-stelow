@@ -46,7 +46,7 @@ const SECTION_FILES = [
   "components/detail/build-detail-hero.tsx",
   "components/detail/inbox-event-banner.tsx",
   "components/detail/build-progress.tsx",
-  "components/detail/workflow-map.tsx",
+  "components/detail/stage-section.tsx",
   "components/detail/research-quality-section.tsx",
   "components/detail/explore-quality-section.tsx",
   "components/detail/explore-detail-content.tsx",
@@ -94,8 +94,8 @@ test("a SECTION is the shared disclosure, not a second implementation of it", ()
     );
   }
   assert.ok(
-    read("components/detail/workflow-map.tsx").includes("<DisclosureSection"),
-    "the workflow map must use the shared disclosure",
+    read("components/detail/stage-section.tsx").includes("<DisclosureSection"),
+    "the stage reference must use the shared disclosure",
   );
 });
 
@@ -112,7 +112,7 @@ const EARNED = [
 /** Settled before the reader arrived. History does not get the first screen. */
 const UNEARNED = [
   "components/detail/input-files.tsx",
-  "components/detail/workflow-map.tsx",
+  "components/detail/stage-section.tsx",
   "components/detail/research-quality-section.tsx",
   "components/detail/explore-quality-section.tsx",
 ];

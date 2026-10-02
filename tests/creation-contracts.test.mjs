@@ -138,13 +138,18 @@ const progressSection = buildContent.slice(
 assert.ok(
   progressSection.length > 0 &&
     progressSection.indexOf("<BuildProgressSection") <
-      progressSection.indexOf("<WorkflowMap"),
-  "the workflow map is a sibling of extracted progress, never nested inside it",
+      progressSection.indexOf("<StageSection"),
+  "the stage section is a sibling of extracted progress, never nested inside it — the original rule, "
+    + "re-pinned from <WorkflowMap when the timeline, runs and stage reference merged into one "
+    + "section. The reasoning is unchanged: progress owns where the WORK is, the stage section owns "
+    + "where the card IS, and nesting one inside the other would make a reader scroll a scope list "
+    + "to find out which stage the card is on",
 );
 assert.match(
-  readFileSync(join(root, "components", "detail", "workflow-map.tsx"), "utf8"),
-  /export function WorkflowMap\(\{ open, onToggle/,
-  "the map lives in the detail module",
+  readFileSync(join(root, "components", "detail", "stage-section.tsx"), "utf8"),
+  /function StageReference\(\{ open, onToggle/,
+  "the stage reference lives in the stage section — it absorbed workflow-map.tsx when the map, the "
+    + "timeline and the run history became one section",
 );
 assert.doesNotMatch(
   detailSource,

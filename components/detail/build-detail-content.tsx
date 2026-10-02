@@ -4,14 +4,13 @@ import { startsOpen } from "../disclosure";
 import type { BuildDetailView } from "./build-detail-view";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
-import { ExecutionRunsSection } from "./execution-runs-section";
+import { StageSection } from "./stage-section";
 import { BuildReviewTools } from "./build-detail-review-tools";
 import { BuildWorkspace } from "./build-detail-workspace";
 import { heroFor } from "./detail-hero";
 import { ExploreDetailBody } from "./explore-detail-body";
 import { InboxEventBanner, shouldShowInboxEventBanner } from "./inbox-event-banner";
 import { ResearchDetailBody } from "./research-detail-body";
-import { WorkflowMap } from "./workflow-map";
 
 type BuildContentProps = {
   cardId: string;
@@ -73,23 +72,26 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         sectionRef={view.inboxEventRef}
       />
       <BuildReviewHero view={view} presetStale={presetStale} />
-      <ExecutionRunsSection
-        card={card}
-        runs={view.execution.runs}
-        focusRunId={view.focusRunId}
-        stoppingRunId={view.execution.stoppingRunId}
-        retryingRunId={view.execution.retryingRunId}
-        blockingRunId={detail.card.blockingRun?.id ?? null}
-        onCancel={view.execution.cancel}
-        onRetry={view.execution.retry}
-      />
       {/* Review tools are the reason to open a finished card, and they used to
           sit below Artifacts and the workflow map — six sections down, past the
           diff's own visibility gate. A completed card leads with them. */}
       {card.status === "completed" ? <BuildReviewTools cardId={cardId} view={view} /> : null}
       <BuildWorkspace view={view} presetStale={presetStale} />
       <BuildProgressSection view={view} />
-      <WorkflowMap open={view.mapOpen} onToggle={view.setMapOpen} />
+      {/* The stage timeline, the run history and the stage reference were three
+          sibling sections, and a reader asking where the card was had to hold
+          three scroll positions to answer it. They are one section now, with
+          three named regions: see components/detail/stage-section.tsx. */}
+      <StageSection
+        card={card}
+        detail={detail}
+        runs={view.execution}
+        focusRunId={view.focusRunId}
+        intentLabels={view.intentLabels}
+        onPickStage={view.setPendingAdvance}
+        mapOpen={view.mapOpen}
+        onMapToggle={view.setMapOpen}
+      />
       <BuildArtifacts view={view} />
       {card.status === "completed" ? null : <BuildReviewTools cardId={cardId} view={view} />}
       <CardConversation

@@ -104,11 +104,33 @@ const FACT_HOMES = [
 
 const read = (relative) => readFileSync(join(fileURLToPath(import.meta.url), "..", "..", relative), "utf8");
 
-/** Everything rendered above the first collapsible section of an open card. */
+/**
+ * Everything rendered above the first collapsible section of an open card.
+ *
+ * The slice point used to be the literal `"<ExecutionRunsSection"`. When the
+ * three stage components were merged and that name left the file, `indexOf`
+ * returned -1 and `slice(0, -1)` silently returned the WHOLE body — so the
+ * guard kept passing while covering 100% of the card instead of the 530
+ * characters above the first section. A guard that quietly stops guarding is
+ * worse than no guard, because it reports safety.
+ *
+ * So the anchor is resolved, not assumed: find the first section component in
+ * the render tree and fail loudly if the shape this guard depends on changes.
+ * `-1` is now an assertion failure, never a wider slice.
+ */
 function alwaysVisibleRegions() {
   const content = read("components/detail/build-detail-content.tsx");
-  const body = content.slice(content.indexOf("function BuildCardContent"));
-  return body.slice(0, body.indexOf("<ExecutionRunsSection"));
+  const start = content.indexOf("function BuildCardContent");
+  assert.ok(start >= 0, "build-detail-content.tsx still declares BuildCardContent");
+  const body = content.slice(start);
+  // The first collapsible section on the card, whatever it is called.
+  const anchor = body.search(/<(ExecutionRunsSection|IntegratedStageSection|StageSection|DisclosureSection)\b/);
+  assert.ok(
+    anchor >= 0,
+    "no section opener found in BuildCardContent — this guard slices the body up to the first "
+    + "section, and with no anchor it would guard the entire card instead of the region above it",
+  );
+  return body.slice(0, anchor);
 }
 
 test("each fact on the card is decided in exactly one place", () => {

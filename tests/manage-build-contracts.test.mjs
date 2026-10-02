@@ -146,9 +146,11 @@ const buildOrder = buildContent.slice(
 );
 assert.ok(
   buildOrder.indexOf("<BuildProgressSection") <
-    buildOrder.indexOf("<WorkflowMap") &&
-    buildOrder.indexOf("<WorkflowMap") < buildOrder.indexOf("<BuildArtifacts"),
-  "progress, workflow map, and artifacts keep their established detail order",
+    buildOrder.indexOf("<StageSection") &&
+    buildOrder.indexOf("<StageSection") < buildOrder.indexOf("<BuildArtifacts"),
+  "progress, the stage section, and artifacts keep their established detail order — re-pinned from "
+    + "<WorkflowMap when the timeline, runs and stage reference merged. Artifacts stay last because "
+    + "they are the largest block on the card and the least consulted while it is still moving",
 );
 for (const rpc of [
   "cancelCard",
