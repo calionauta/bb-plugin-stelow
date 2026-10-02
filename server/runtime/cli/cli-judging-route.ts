@@ -1,13 +1,11 @@
 import { DECISION_POINT_ARTIFACT_CRITERIA } from "../../../lib/decision-points.mjs";
-import {
-  defaultEndpointFor,
+import {defaultEndpointFor,
   defaultModelFor,
   isDecisionApiDisabled,
   normalizeDecisionApiModel,
   normalizeDecisionProvider,
   providerRequiresKey,
-  resolveDecisionApiKey,
-} from "../../../lib/decision-api.mjs";
+  resolveDecisionApiKey, DEFAULT_DECISION_PROVIDER } from "../../../lib/decision-api.mjs";
 import {
   defaultThresholdsFor,
   normalizePointMode,
@@ -74,7 +72,7 @@ export function judgingRoute(
     )
     .get() as DecisionConfigRow | undefined;
   const route = deps.decisionRoute(point, config);
-  const provider = normalizeDecisionProvider(route.provider ?? "jev");
+  const provider = normalizeDecisionProvider(route.provider ?? DEFAULT_DECISION_PROVIDER);
   const { key } = resolveDecisionApiKey({
     storedKey: route.apiKey ?? null,
     env: process.env,

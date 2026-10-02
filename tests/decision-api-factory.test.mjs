@@ -73,14 +73,17 @@ try {
 
   // Reads disclose key presence and source only. Adding the raw key to this
   // result would fail the explicit absence check even if hasKey stayed true.
+  // The unconfigured read: the default provider is keyless AND deterministic,
+  // so an install that configures nothing still has a gate that answers the
+  // same way twice — and keyRequired is false because nothing needs a key.
   assert.deepEqual(await api.handlers.getDecisionApiConfig(), {
-    endpoint: "https://api.typesafe.ai/v1/systemone",
-    model: "jev-latest",
+    endpoint: "https://simple-jev-demo-api.featherless.ai/v1/classifier",
+    model: "featherless-ai/Qwen3.6-35B-A3B-classifier",
     hasKey: false,
     keySource: null,
-    keyRequired: true,
+    keyRequired: false,
     disabled: false,
-    provider: "jev",
+    provider: "simplejev",
     configured: false,
   });
 

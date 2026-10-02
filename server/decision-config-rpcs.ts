@@ -6,8 +6,7 @@
  * host. Writes keep absent fields (preserve) apart from explicit nulls
  * (clear), and every refusal names the fix.
  */
-import {
-  DECISION_PROVIDERS,
+import {DECISION_PROVIDERS,
   buildProbeCall,
   defaultEndpointFor,
   defaultModelFor,
@@ -17,8 +16,7 @@ import {
   normalizeDecisionApiModel,
   normalizeDecisionProvider,
   providerRequiresKey,
-  resolveDecisionApiKey,
-} from "../lib/decision-api.mjs";
+  resolveDecisionApiKey, DEFAULT_DECISION_PROVIDER } from "../lib/decision-api.mjs";
 import type { ConfigSave, DecisionStore } from "./decision-store.js";
 
 interface ConfigInput {
@@ -40,7 +38,7 @@ export interface DecisionConfigDeps {
 /** The stored row plus its normalized provider, the pair every read needs. */
 function readConfig(store: DecisionStore) {
   const row = store.configRow();
-  return { row, provider: normalizeDecisionProvider(row?.provider ?? "jev") };
+  return { row, provider: normalizeDecisionProvider(row?.provider ?? DEFAULT_DECISION_PROVIDER) };
 }
 
 /**
@@ -52,7 +50,7 @@ function resolveConfig(store: DecisionStore, input: ConfigInput): ResolvedConfig
   const { row } = readConfig(store);
   const nextProvider =
     input.provider === undefined
-      ? normalizeDecisionProvider(row?.provider ?? "jev")
+      ? normalizeDecisionProvider(row?.provider ?? DEFAULT_DECISION_PROVIDER)
       : normalizeDecisionProvider(input.provider, "");
   if (!nextProvider)
     return {

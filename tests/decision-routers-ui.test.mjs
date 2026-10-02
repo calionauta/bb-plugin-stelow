@@ -42,8 +42,8 @@ assert.match(decisionRoutersUi, /export function DecisionRoutersSection\(/, "the
 // --- providers render from the registry, so adding one needs no UI change
 assert.match(
   decisionApiUi,
-  /DECISION_PROVIDERS\.filter\(\(entry\) => entry\.id !== "jev"\)\.map\(\(entry\) => \(/,
-  "non-default providers render from the registry (adding one is UI-free)",
+  /DECISION_PROVIDERS\.map\(\(entry\) => \(/,
+  "EVERY provider renders from the registry, including the default (adding one is UI-free)",
 );
 assert.match(
   decisionApiUi,

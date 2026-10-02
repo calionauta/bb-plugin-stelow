@@ -11,7 +11,9 @@ deterministic rules → configured Decision API/router → configured preset fal
 The Decision API is the shared Jev-compatible client in `lib/decision-api.mjs`. Each point is declared in `lib/decision-points.mjs`, with its questions, mode, threshold, and route. The supported modes are:
 
 - `rules`: deterministic host policy;
-- `api`: the configured Jev-compatible decision provider;
+- `api`: the configured decision provider. `simplejev` is the default: keyless and
+  deterministic. `classifier.dev` is selectable and faster, but its confidence moves on
+  identical input, so it cannot gate; `jev` (TypeSafe) needs a key and is the most accurate;
 - `preset`: an explicitly configured low-frequency judge preset.
 
 Unknown modes, missing routes, low confidence, timeouts, malformed answers, and disabled API configuration degrade to the point's built-in rules. They never silently spawn an unconfigured LLM.

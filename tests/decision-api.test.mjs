@@ -153,7 +153,7 @@ assert.deepEqual(
 // Providers: jev speaks state+questions (key required), classifier speaks
 // labels (keyless). Unknown providers degrade to jev — never to an
 // unintended wire shape.
-assert.deepEqual(DECISION_PROVIDERS.map((entry) => entry.id), ["jev", "classifier", "simplejev", "openjev"], "four providers, jev first");
+assert.deepEqual(DECISION_PROVIDERS.map((entry) => entry.id), ["jev", "classifier", "simplejev", "openjev"], "four providers, registry order is stable");
 for (const entry of DECISION_PROVIDERS) {
   assert.ok(typeof entry.label === "string" && entry.label.length > 0, `${entry.id} names itself for the select`);
   assert.ok(["jev", "labels"].includes(entry.schema), `${entry.id} declares a known wire schema`);
@@ -162,11 +162,11 @@ for (const entry of DECISION_PROVIDERS) {
   assert.equal(typeof entry.takesModel, "boolean", `${entry.id} declares its model need`);
 }
 assert.equal(normalizeDecisionProvider("classifier"), "classifier", "classifier survives");
-assert.equal(normalizeDecisionProvider("mystery"), "jev", "unknown providers degrade to jev");
+assert.equal(normalizeDecisionProvider("mystery"), "simplejev", "unknown providers degrade to the default");
 assert.equal(providerRequiresKey("jev"), true, "jev requires a key");
 assert.equal(providerRequiresKey("classifier"), false, "classifier is keyless");
 assert.equal(defaultEndpointFor("classifier"), CLASSIFIER_DEFAULT_ENDPOINT, "classifier defaults to its own endpoint");
-assert.equal(defaultEndpointFor("mystery").includes("typesafe"), true, "unknown providers default to the jev endpoint");
+assert.equal(defaultEndpointFor("mystery").includes("simple-jev"), true, "unknown providers default to the default (simplejev) endpoint");
 
 // Classifier request: one Choice maps to labels + composed instructions.
 const triage = triageIntentQuestions();
@@ -199,7 +199,31 @@ const routed = await evaluateDecisionCall({ provider: "classifier", endpoint: ""
 assert.equal(routed.ok, true, "classifier resolves without a key");
 assert.equal(routed.answers.intent.choice, "feature", "classifier answers normalize through the dispatcher");
 assert.ok(!("Authorization" in (seenHeaders ?? {})), "keyless calls send no auth header");
-assert.equal((await evaluateDecisionCall({ provider: "mystery", endpoint: "https://x.test/v1", apiKey: "", model: "m", state: "s", questions: {}, fetchImpl: classifierFetch })).error.includes("no key"), true, "unknown providers fall back to the keyed jev path");
+// An unknown id degrades to the DEFAULT, and the default is keyless — so the
+// failure here is the body shape, not a missing key. The keyed path is opt-in.
+// A neutral fetch, because the classifier one above asserts its own URL.
+const silentFetch = async () => ({ status: 200, json: async () => ({ model: "m" }) });
+assert.equal(
+  (
+    await evaluateDecisionCall({
+      provider: "mystery", endpoint: "https://x.test/v1", apiKey: "",
+      model: "m", state: "s", questions: {}, fetchImpl: silentFetch,
+    })
+  ).error.includes("no answers"),
+  true,
+  "unknown providers fall back to the keyless default, so no key is demanded",
+);
+// And the keyed path is still reachable — by naming it.
+assert.equal(
+  (
+    await evaluateDecisionCall({
+      provider: "jev", endpoint: "https://x.test/v1", apiKey: "",
+      model: "m", state: "s", questions: {}, fetchImpl: silentFetch,
+    })
+  ).error.includes("no key"),
+  true,
+  "naming the keyed provider still demands a key",
+);
 // Keyless jev-schema providers send no auth header and still resolve.
 let keylessHeaders = null;
 const keylessFetch = async (url, opts) => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DECISION_PROVIDERS } from "../../lib/decision-api.mjs";
+import { DECISION_PROVIDERS, DEFAULT_DECISION_PROVIDER } from "../../lib/decision-api.mjs";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import type { DecisionApiConfig, ManagerRpc } from "./decision-api-types";
@@ -14,7 +14,7 @@ type DecisionApiDraft = {
 function useDecisionApiDraft(rpc: ManagerRpc) {
   const [endpoint, setEndpoint] = useState("");
   const [model, setModel] = useState("");
-  const [provider, setProvider] = useState("jev");
+  const [provider, setProvider] = useState(DEFAULT_DECISION_PROVIDER);
   const [key, setKey] = useState("");
   const [status, setStatus] = useState<DecisionApiConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -125,8 +125,7 @@ function DecisionApiProviderFields({ view }: { view: DecisionApiDraftView }) {
           disabled={view.status?.disabled}
           onChange={(event) => view.pickProvider(event.target.value)}
         >
-          <option value="jev">TypeSafe AI&apos;s Jev-compatible</option>
-          {DECISION_PROVIDERS.filter((entry) => entry.id !== "jev").map((entry) => (
+          {DECISION_PROVIDERS.map((entry) => (
             <option key={entry.id} value={entry.id}>{entry.label}</option>
           ))}
         </select>
