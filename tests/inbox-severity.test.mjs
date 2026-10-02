@@ -3,8 +3,14 @@ import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SEVERITY_ROUTINE, SEVERITY_ACTION, SEVERITY_ESCALATING, SEVERITY_STALL_MS, SEVERITY_OLD_MS, scoreEventSeverity, parseSeverityReasons } from "../lib/inbox-severity.mjs";
-import { ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshEventSeverity, countsForInboxBadge } from "../lib/inbox-events.mjs";
+import {
+  SEVERITY_ROUTINE, SEVERITY_ACTION, SEVERITY_ESCALATING, SEVERITY_STALL_MS, SEVERITY_OLD_MS,
+  SEVERITY_REVIEW_WAIT_MS, scoreEventSeverity, parseSeverityReasons,
+} from "../lib/inbox-severity.mjs";
+import {
+  ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshEventSeverity,
+  sweepEventSeverity, countsForInboxBadge,
+} from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
 // Severity tiers reorder the queue without changing what counts: a 3-day
@@ -27,6 +33,16 @@ assert.deepEqual(scoreEventSeverity({ kind: "question", ageMs: 0 }), { severity:
 assert.deepEqual(scoreEventSeverity({ kind: "error", ageMs: 0, errorRepetitions: 1 }), { severity: SEVERITY_ACTION, reasons: ["needs recovery"] }, "first errors act");
 assert.deepEqual(scoreEventSeverity({ kind: "paused", ageMs: 0, stallCount: 0 }), { severity: SEVERITY_ACTION, reasons: ["paused"] }, "fresh pauses act");
 assert.deepEqual(scoreEventSeverity({ kind: "completed", ageMs: 0 }), { severity: SEVERITY_ROUTINE, reasons: ["review"] }, "completions review quietly");
+assert.deepEqual(
+  scoreEventSeverity({ kind: "completed", ageMs: SEVERITY_REVIEW_WAIT_MS - 1 }),
+  { severity: SEVERITY_ROUTINE, reasons: ["review"] },
+  "a completion inside the review window stays routine",
+);
+assert.deepEqual(
+  scoreEventSeverity({ kind: "completed", ageMs: SEVERITY_REVIEW_WAIT_MS }),
+  { severity: SEVERITY_ESCALATING, reasons: ["unreviewed 2d"] },
+  "a finished card nobody opened escalates, naming how long it has waited",
+);
 const stalled = scoreEventSeverity({ kind: "paused", ageMs: SEVERITY_STALL_MS + 1 });
 assert.equal(stalled.severity, SEVERITY_ESCALATING, "pauses past 72h escalate");
 assert.ok(stalled.reasons[0].startsWith("stalled "), "stalls name their age");
@@ -108,6 +124,26 @@ assert.deepEqual(
 assert.equal(refreshEventSeverity(db, { cardId: "c1", nowMs: now }), 0, "re-running without new aging changes nothing");
 assert.equal(refreshEventSeverity(db, { cardId: "absent", nowMs: now }), 0, "unknown cards upgrade nothing");
 
+// The fleet sweep is the door the per-card one cannot reach: `shouldSyncThread`
+// skips completed cards, so a completion nobody opened would otherwise never be
+// re-scored and its review-wait tier could never fire.
+db.prepare(
+  "INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at, severity, severity_reasons)"
+  + " VALUES ('unseen', 'c1', 'completed', 's', 'unseen:1', ?, 0, '[\"review\"]')",
+).run(now - SEVERITY_REVIEW_WAIT_MS - 1000);
+assert.equal(sweepEventSeverity(db, { nowMs: now }), 1, "the fleet sweep reaches a completion no live sync watches");
+assert.deepEqual(
+  db.prepare("SELECT severity, severity_reasons FROM inbox_events WHERE id = 'unseen'").get(),
+  { severity: 2, severity_reasons: '["unreviewed 2d"]' },
+  "an old completion escalates on the fleet tick",
+);
+assert.equal(sweepEventSeverity(db, { nowMs: now }), 0, "the fleet sweep is idempotent on re-run");
+assert.equal(
+  db.prepare("SELECT resolved_at FROM inbox_events WHERE id = 'unseen'").get().resolved_at,
+  null,
+  "escalating a review request never resolves it — the badge still counts it",
+);
+
 // Badge rule frozen: severity never enters the count — unresolved actions
 // count at every tier, completions only while unread.
 assert.equal(countsForInboxBadge({ kind: "paused", archivedAt: null, resolvedAt: null }), true, "escalating pauses still count");
@@ -118,6 +154,8 @@ assert.equal(countsForInboxBadge({ kind: "question", archivedAt: 1, resolvedAt: 
 // stall escalation, and the extracted contract feeds severity to the panel.
 assert.match(serverInbox, /export function runInboxMigrations/, "the feature migration is owned by the inbox slice");
 assert.match(server, /refreshEventSeverity\(deps\.db, \{ cardId, nowMs: deps\.now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
+const reconciler = readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8");
+assert.match(reconciler, /sweepEventSeverity\(deps\.db, \{ nowMs: deps\.now\(\) \}\)/, "the reconcile tick reaches rows no live sync visits");
 assert.match(serverInbox, /ensureInboxSeverityColumns\(db\);/, "the feature module owns severity migrations");
 // The zod shapes moved to server/inbox-contract.ts, which is where the wire
 // contract lives. Asserting them against the behaviour file would only pin

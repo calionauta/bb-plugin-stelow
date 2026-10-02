@@ -38,7 +38,6 @@
     "lib/workflow-skills-sync.mjs:syncWorkflowSkills": 112,
     "server/bb-workflow-bridge.ts:renderInlineWorkflowScript": 54,
     "server/runtime/cli/cli-bundle-writer.ts:writeBundle": 68,
-    "server/runtime/cli/cli-review-subject.ts:deliverableSubject": 69,
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
     "server/runtime/workflow-seeding.ts:seedWorkflow": 72,
     "server/scopes.ts:runScopeCommand": 87,

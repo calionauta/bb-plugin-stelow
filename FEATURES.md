@@ -367,10 +367,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analysis/Planning/Execution/Review) + Done/Archived — the Bucket is not
-  rendered as a column (its header button + gallery own it); cards sit in their
-  stage's phase. The complete Build topology (inbox, phases, terminal
+- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+  named by the synced catalog (analysis/planning/execution/review) +
+  Done/Archived — the Bucket is not rendered as a column (its header button +
+  gallery own it); cards sit in their stage's phase. Column headings are
+  `PHASE_LABELS`, so the `review` phase currently reads **Evaluation** and a
+  host-side rename moves the board without a plugin edit. The complete Build
+  topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
   derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
@@ -576,7 +579,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  102 times: the card had a real type scale, invented by whoever needed a small
+  111 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -589,7 +592,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 76 raw buttons. A test does. The index itself then failed
+  long time next to 81 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -660,6 +663,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   with the section still closed. The note composer stays: five words of
   course-correction do not justify losing your place on the card to go find a
   thread. Removed capability, none: the ambiguity was the feature.
+- **Catch up** (`CatchUpSection`, `catchUp` RPC, `lib/card-catch-up.mjs`). A
+  card's own answer to "what changed since I last looked": a DETERMINISTIC delta
+  over the rows the card already wrote — stage moves, questions, answers, stalls,
+  failures, completions — anchored on the newest read the card recorded, or on
+  its creation when it has never been opened (the surface says which, rather than
+  implying "caught up" for a card nobody has looked at). Empty is a real answer
+  — "nothing changed" — and is rendered as one. Loads on demand because a
+  briefing costs a spawn and most card opens are not a return after a gap; the
+  facts always render, and a generation-tier model may only REPHRASE them
+  (`lib/card-briefing.mjs`, the `card-briefing` delegation site). The model is
+  told the list is all it has, is forbidden to infer progress or quality, and
+  told to say plainly when there is nothing — because a briefing that invents a
+  change is worse than no briefing, since the reader cannot tell it from the real
+  ones. Every failure path (spawn, timeout, empty output, no preset) degrades to
+  the facts, and `STELOW_COMMS=0` removes the prose and never the facts. It
+  writes nothing and advances nothing. Artifacts are deliberately NOT a fact
+  kind: the manifest carries a path and a stage and no registration time, so
+  "this is new since you looked" cannot be derived from it and is not guessed.
+  The section is named a summary of what the card recorded, never a channel —
+  the same reason "Conversation" became "Notes for the agent".
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -1018,7 +1041,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline.
+  to the agent, gate question answerable inline. A generated interface
+  mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
+  under decision is a layout, and source text is the one thing that cannot
+  answer it. The decision is the path alone (`artifactRenderKind` in
+  `lib/artifact-render.mjs`), and a mockup is framed under
+  `allow-scripts` without `allow-same-origin`, so a worker-authored page
+  runs without reaching the reader's bb session. A truncated file is
+  shown as source instead, because a partial page is a broken layout
+  presented as evidence — and it says so rather than failing silently.
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
@@ -1466,18 +1497,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   was resolved *by the archive*, the verbatim-`last_error` revival path is
   untested here — the unit tests cover it, this card cannot.
 - **Opening a completed card is what satisfies its review.** The completion's
-  review request is cleared by a read, and only by a read: the inbox row and
-  the board chip are two surfaces of one row's read state, so spending it moves
-  read state alone and the completion keeps its own lifecycle — "reviewed" never
-  reads downstream as "closed", and an archived card's row is refused the
+  review request is cleared by a read, and by accepting the result: the inbox row
+  and the board chip are two surfaces of one row's read state, so spending it
+  moves read state alone and the completion keeps its own lifecycle — "reviewed"
+  never reads downstream as "closed", and an archived card's row is refused the
   stamp entirely. Build, research and Explore each clear it in their own detail
   body, guarded on the completed status so opening a card mid-work cannot
-  silence a live question, error or pause. This is a guarantee about the
-  *wiring*, not about the handler: a handler test exercises the handler
-  directly and never asks who calls it, which is why the guarantee is pinned
-  from the components and asserts its own premise (the card detail is fetched
-  from the detail body alone — a new prefetch or peek would be a second way for
-  a card to lose its review without you choosing it).
+  silence a live question, error or pause. Acceptance is the second writer, and
+  deliberately so: a person who has just recorded that they reviewed and
+  accepted the result is not owed the request to review it again, and leaving
+  the row open would hold the badge above zero on a card with nothing left to
+  do. This is a guarantee about the *wiring*, not about the handler: a handler
+  test exercises the handler directly and never asks who calls it, which is why
+  the guarantee is pinned from the components and asserts its own premise (the
+  card detail is fetched from the detail body alone — a new prefetch or peek
+  would be a second way for a card to lose its review without you choosing it).
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
@@ -1779,12 +1813,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+  The excerpt the reviewer receives is chosen by the **artifact contract**, not
+  by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
+  first, so a long introduction cannot push a required table past the 12k cost
+  cap and have the reviewer judge a document with its required section missing.
+  A document that fits goes whole; with no contract — or one that names nothing
+  — the head slice is used, the prompt says so, and the card comment records
+  which of the two happened. A review of the contract's sections and a review of
+  the document's opening are different reviews, and the reader of the verdict is
+  the one who has to tell them apart. Every review record carries that choice as
+  an `Excerpt:` header beside its `Status:` and `Fingerprint:` lines, and
+  `bb stelow metrics --card` counts them (`lib/review-truncation.mjs`): how many
+  reviews read a cut artifact, and how many of those fell back to the opening —
+  the one cut that can have hidden a section the contract named. A card whose
+  reviews all read whole documents prints nothing, because a metric that is
+  always present is a number nobody learns to read. Records written before the
+  field existed are uncounted, never reported as reviews that saw everything.
 - **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
   Advancing a build card into gate/int-gate/plan-gate with a reviewer
   designated fires one hidden review of the gate's registered artifact,
   posted as a card comment for the human (and worker) before approval.
   Advisory and fire-and-forget — advance never waits; every miss (no
-  designation, no workflow, no artifact, thin file) stays silent.
+  designation, no workflow, no artifact, thin file) stays silent. The artifact's
+  own contract drives the excerpt here too, so the gate's required sections are
+  what the pre-review reads.
   diff-gate stays out (no single file). Eligibility resolves through the
   lib map, never inline.
 - **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
@@ -1900,13 +1952,47 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
   progress block; the Build board carries one glanceable Flow strip naming
   itself (finished count with a measured trail, typical/median and slow/p90
-  lead/cycle with the jargon glossed inline, expanding to Tempo and Atenção
+  lead/cycle with the jargon glossed inline, expanding to Timing and Attention
   tabs and a per-card table that opens
-  cards) fed by the board project filter. Tempo holds windows, legend, and
-  the lead/cycle table; Atenção holds right-now stuck (blocked status or
-  errored worker) and review-awaiting dones with an all-clear empty state —
+  cards) fed by the board project filter. Timing holds windows, legend, the
+  lead/cycle table, and **where the time went**: every finished card's
+  wall-clock split into time a question held it for you, time lost to a paused
+  worker or a lock wait or a failure, and an `unattributed` remainder the data
+  does not explain — three disjoint parts of one interval, computed as a union
+  rather than a sum (`lib/wait-attribution.mjs`), so overlapping windows can
+  never report a share above 100%. The remainder is never called work, and
+  host-caused stalls stay out of it by design (`lib/host-read-streak.mjs`).
+  Attention holds right-now stuck (blocked status or
+  errored worker) and review-awaiting dones — oldest first, each naming how long
+  it has waited — with an all-clear empty state —
   signal chips for both ride the closed header only when nonzero, so a calm
   board shows no amber. Empty boards render no strip.
+- **Review-wait aging** (`lib/inbox-severity.mjs`, `sweepEventSeverity`). A
+  finished card nobody has opened used to read identically whether it landed
+  this morning or a week ago: a completion is routine by tier and its card is
+  excluded from the live sync (`shouldSyncThread` skips `completed`), so no
+  sweep ever re-scored it. Past 48 hours an unread completion escalates on the
+  reconcile tick, reason chip reading `unreviewed Nd`, and the fleet-wide sweep
+  is the door that reaches rows no live sync visits. Escalating never resolves:
+  the badge still counts the review request.
+- **Acceptance receipt** (`acceptCard`, `lib/card-acceptance.mjs`). Done in
+  Stelow certifies verified finished work, not accepted-and-shipped work — the
+  worker drives it after the host verifies in code, and nothing human-driven
+  reaches it. Human review happened afterwards and was a read. A Done card can
+  now carry an optional **acceptance receipt**: a person says they reviewed the
+  result and a stamp plus one trail comment records it, so a card a human looked
+  at and accepted stops reading identically to one nobody has opened. It is a
+  receipt, never a gate — no status, stage, or worker message moves, so it
+  creates no phantom wait, and it is only ever written by a person. Accepting
+  **satisfies the review request** the completion row was asking, so the badge
+  stops counting a card whose review just happened; the row survives in Resolved
+  history. The receipt is **a timestamp and nothing else**, deliberately: the
+  host SDK exposes no operator identity (`useRpc`, `bb.sdk.threads`,
+  `bb.storage` — none answer "who is signed in", and every `displayName` in it
+  belongs to a project or a preset), so a name field would be free text wearing
+  attribution's clothes. Only a `completed` card can be accepted; an unfinished
+  one is refused naming Done, and an archived one naming restore. The row shows
+  on all three card kinds, because Research and Explore finish too.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

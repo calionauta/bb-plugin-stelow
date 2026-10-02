@@ -114,6 +114,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     cardStageSlug: seams.cardStageSlug,
     docDepths: (card) => seams.buildDocDepthsForCard(card),
     passingReviewCovers: seams.passingReviewCovers,
+    reviewFilesFor: seams.reviewFilesFor,
     pendingQuestions: core.fetchPendingQuestions,
     ...questionReads(core),
     ...researchReads(core),

@@ -8,6 +8,7 @@ import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { researchOpportunityHint } from "../../lib/research-opportunity-summary.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { ArtifactInventory, type ArtifactInventoryGroup } from "../artifacts/artifact-inventory";
+import { AcceptanceRow } from "./acceptance-row";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
 import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
@@ -75,7 +76,7 @@ function ResearchStatus({ card, detail, index, strategies, actions, onOpenRestar
             />
           </div>
         </div>
-        <ResearchQuestions
+        <ResearchReview
           card={card}
           detail={detail}
           setViewerFile={setViewerFile}
@@ -102,6 +103,28 @@ type ResearchQuestionsProps = Pick<
   ResearchStatusProps,
   "card" | "detail" | "setViewerFile" | "onQuestionsChanged"
 >;
+
+/**
+ * What a reader has to look at before this research is finished: its open
+ * questions, and the receipt for the human disposition of a completed one.
+ *
+ * Grouped because they answer the same question — "is there anything left for
+ * me here?" — and because the hero was carrying both inline, which put the
+ * status block over its function budget.
+ */
+function ResearchReview(props: ResearchQuestionsProps) {
+  return (
+    <>
+      <ResearchQuestions {...props} />
+      <AcceptanceRow
+        cardId={props.card.id}
+        status={props.card.status}
+        acceptanceLine={props.detail?.card.acceptanceLine}
+        onChanged={props.onQuestionsChanged}
+      />
+    </>
+  );
+}
 
 function ResearchQuestions({
   card,

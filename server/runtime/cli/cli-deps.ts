@@ -134,6 +134,11 @@ export type CliDeps = {
     card: WorkerCard,
     fingerprint: string | null,
   ) => Promise<boolean>;
+  /** The same review records the coverage gate reads, so the metrics readout
+   * counts the reviews that exist rather than a second, looser scan of them. */
+  reviewFilesFor: (
+    card: WorkerCard,
+  ) => Promise<Array<{ name: string; content: string | null }>>;
   pendingQuestions: (threadId: string | null) => Promise<PendingQuestions>;
   pendingAsks: (threadId: string | null) => Promise<PendingAsk[] | null>;
   openExpiredQuestionIds: (cardId: string) => string[];

@@ -150,7 +150,7 @@ export const cardRpcContract = {
     }),
   },
   flowMetrics: {
-    experimental_description: "Lead/cycle per finished card with p50/p90, plus stuck and review-awaiting now",
+    experimental_description: "Lead/cycle per finished card with p50/p90, where the time went, plus stuck and review-awaiting now",
     input: z
       .object({
         projectId: z.string().nullable().optional(),
@@ -167,6 +167,20 @@ export const cardRpcContract = {
           leadMs: z.number().nullable(),
           cycleMs: z.number().nullable(),
           doneAt: z.number().nullable(),
+          // Where the card's wall-clock went, split by cause and never summed
+          // across overlapping windows. `unattributedMs` is the honest residual:
+          // time the data does not explain, never time claimed as work.
+          wait: z.object({
+            totalMs: z.number(),
+            humanMs: z.number(),
+            systemMs: z.number(),
+            attributedMs: z.number(),
+            unattributedMs: z.number(),
+            humanShare: z.number(),
+            systemShare: z.number(),
+            unattributedShare: z.number(),
+          }),
+          reviewWaitMs: z.number().nullable(),
         }),
       ),
       summary: z.object({
@@ -176,12 +190,24 @@ export const cardRpcContract = {
         cycleP50Ms: z.number().nullable(),
         cycleP90Ms: z.number().nullable(),
       }),
+      wait: z.object({
+        totalMs: z.number(),
+        humanMs: z.number(),
+        systemMs: z.number(),
+        unattributedMs: z.number(),
+        humanShare: z.number(),
+        systemShare: z.number(),
+        unattributedShare: z.number(),
+      }),
       attention: z.array(
         z.object({
           cardId: z.string(),
           kind: z.enum(["build", "research", "explore"]),
           name: z.string(),
           reason: z.enum(["stuck", "review"]),
+          // How long a finished card has been waiting for a look. Null on stuck
+          // cards, whose own age lives in the card hero instead.
+          waitMs: z.number().nullable(),
         }),
       ),
     }),
@@ -232,6 +258,18 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  acceptCard: {
+    experimental_description: "Record a human acceptance of a finished card's result; a receipt, never a gate",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      // The stamp the receipt carries, or null when nothing was written. The
+      // host SDK exposes no operator identity, so this is the whole receipt
+      // (lib/card-acceptance.mjs).
+      acceptedAt: z.number().nullable(),
+    }),
+  },
   draftDoneComment: {
     experimental_description: "Draft a GitHub completion note with the cheap generation preset",
     input: z.object({ cardId: z.string() }).strict(),
@@ -239,6 +277,33 @@ export const cardRpcContract = {
       ok: z.boolean(),
       draft: z.string().nullable(),
       error: z.string().nullable(),
+    }),
+  },
+  catchUp: {
+    experimental_description: "What changed on a card since the reader last looked: deterministic facts, optionally phrased",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      /** `last-read` when a read is the anchor, `created` when the card has
+       * never been opened — the surface says which rather than implying
+       * "caught up" for a card nobody has looked at. */
+      anchor: z.enum(["last-read", "created"]).nullable(),
+      since: z.number().nullable(),
+      summary: z.string().nullable(),
+      facts: z.array(
+        z.object({
+          kind: z.enum(["stage", "question", "answer", "blocked", "resumed", "error", "completed"]),
+          at: z.number(),
+          text: z.string().nullable(),
+          stage: z.string().nullable(),
+          open: z.boolean().nullable(),
+        }),
+      ),
+      /** The model's phrasing of the facts, or null when it was unavailable,
+       * disabled, or produced nothing usable. Never a fact of its own. */
+      prose: z.string().nullable(),
+      source: z.string().nullable(),
     }),
   },
 };

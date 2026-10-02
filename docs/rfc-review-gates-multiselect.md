@@ -1,9 +1,17 @@
 # RFC: Review Gates as Multi-Select (replacing the cumulative ladder)
 
-Status: plan — not implemented. Motivation: the ladder cannot express
-"only interface alternatives" or "product spec + tech plan" (each rung
-implies all previous gates); the picker copy already promises
-checkpoints-you-pick while the UI delivers take-it-all rungs.
+Status: implemented. The atom set (`spec | interface | scope | tech | diff`)
+is live in `lib/review-gates.mjs`, the stage skip it drives in
+`lib/stage-skips.mjs` (`gateWaitsStage('diff-gate', …)` resolves from the
+`diff` atom), and the composer renders the multi-select picker. The ladder
+strings survive only as a normalization path for state written before the
+change (`normalizeReviewGates`), never as the live model — see
+`docs/rfc-review-gates-multiselect.md` §"Why the ladder strings remain".
+
+Motivation: the ladder cannot express "only interface alternatives" or
+"product spec + tech plan" (each rung implies all previous gates); the picker
+copy already promises checkpoints-you-pick while the UI delivered
+take-it-all rungs.
 
 ## 1. UX answers (locked)
 

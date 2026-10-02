@@ -212,6 +212,10 @@ function hostDeps(calls, options) {
     cardStageSlug: async (target) => options.stage ?? target.stage,
     docDepths: async () => options.docDepths ?? [],
     passingReviewCovers: async () => options.reviewCovers ?? false,
+    // The review records the metrics readout counts, so the fake answers the
+    // same question the coverage gate is asked. A metrics fake that could not
+    // would make the readout untestable and the two surfaces free to disagree.
+    reviewFilesFor: async () => options.reviewFiles ?? [],
     pendingQuestions: async () => options.pendingQuestions ?? [],
     pendingAsks: async () => options.pendingAsks ?? [],
     openExpiredQuestionIds: () => options.expiredQuestionIds ?? [],

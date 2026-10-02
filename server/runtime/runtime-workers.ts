@@ -14,6 +14,8 @@ import { createDraftingServer } from "../drafting.js";
 import { createGatePreReview } from "../review-preflight.js";
 import { createWorkerRespawnPreparation } from "./worker-respawn-preparation.js";
 import { createDisposableSpawner } from "./disposable-spawn.js";
+import { createBriefingRuntime } from "./card-briefing-runtime.js";
+import { bandForCardKindStage } from "../../lib/preset-staleness.mjs";
 import { strategyList, strategyRounds } from "./track-projection.js";
 import { text } from "./values.js";
 import { roundRelPath } from "./card-seams.js";
@@ -104,6 +106,37 @@ export function createDraftRuntime(
     stateDir: (card, workspace) =>
       workflowStateDir(deps.bb, workspace.path, card.id, card.dir_hash!),
     workspaceRelative,
+  });
+}
+
+/**
+ * The briefing surface: a disposable generation-tier spawn that may only
+ * rephrase the deterministic fact list. It lives here, beside the other two
+ * spawn-owning surfaces, because it shares their environment builder and their
+ * disposable spawner — and because a surface that spawns belongs with the
+ * workers that own the spawn path.
+ */
+export function createBriefingSurface(
+  deps: WorkerRuntimeDeps & {
+    workers: ReturnType<typeof createWorkers>;
+    spawnDisposable: ReturnType<typeof createDisposableSpawner>;
+  },
+) {
+  const { services, workers, spawnDisposable } = deps;
+  return createBriefingRuntime({
+    db: deps.db,
+    bb: deps.bb,
+    getCard: services.getCard,
+    isArchivedCard,
+    getPreset: (presetId) => services.presetServer.getPresetById(presetId),
+    getPresetForBand: services.presetServer.getPresetForBand,
+    getGenerationPresetId: services.presetServer.getGenerationPresetId,
+    presetParams: services.presetParams,
+    bandForCard: (card) => bandForCardKindStage(card.kind, card.stage),
+    cardWorkspace: services.cardWorkspace,
+    continuingEnvironment: workers.continuingEnvironment,
+    spawnDisposable,
+    stopThread: (threadId) => workers.stop(threadId),
   });
 }
 

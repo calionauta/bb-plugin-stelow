@@ -46,6 +46,22 @@ function WorkflowPhaseSection({ phase }: { phase: { id: string; label: string } 
   );
 }
 
+/** "Analysis, Planning, Execution, and Evaluation" — read from the catalog so
+ * a host rename moves this sentence with the board instead of against it. */
+function phaseList(phases: typeof WORKFLOW_PHASES): string {
+  const labels = phases.map((phase) => phase.label);
+  if (labels.length === 0) return "The workflow phases";
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
+/** The last phase's own name, which is the one this paragraph must name
+ * precisely: it holds the automated checks, and it is the phase whose old label
+ * collided with the human act of reviewing a finished card. */
+function reviewPhaseLabel(phases: typeof WORKFLOW_PHASES): string {
+  return phases[phases.length - 1]?.label ?? "The last phase";
+}
+
 export function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   return (
     // The one shared disclosure, not a second hand-rolled <details>. This section
@@ -54,11 +70,17 @@ export function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open
     // reader reads shape before words. DisclosureSection is the shape; the
     // content below is what this section was the only one able to say.
     <DisclosureSection title="Workflow map" subtitle="what each stage does" open={open} onToggle={onToggle}>
+      {/* The phase names come from the synced catalog, not from a sentence. The
+          label is host-owned methodology: it was renamed from Review to
+          Evaluation upstream precisely because "review" also names the human act
+          of reading a finished card, and a hardcoded copy of the old name would
+          have re-introduced the collision this paragraph exists to explain. */}
       <p className="max-w-4xl text-sm leading-6 text-muted-foreground">
-        Analysis, Planning, Execution, and Review are workflow phases. Review contains
-        automated checks (Code Review and Audit), not human review. Done is the completed
-        outcome after Audit, not a stage; Needs attention can occur in any phase. Each
-        stage links to the upstream Stelow skill or behavior document that defines it.
+        {phaseList(WORKFLOW_PHASES)} are workflow phases. {reviewPhaseLabel(WORKFLOW_PHASES)}{" "}
+        contains automated checks (Code Review and Audit), not human review. Done
+        is the completed outcome after Audit, not a stage; Needs attention can
+        occur in any phase. Each stage links to the upstream Stelow skill or
+        behavior document that defines it.
       </p>
       <div className="space-y-4">
         {WORKFLOW_PHASES.map((phase) => (

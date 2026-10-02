@@ -8,6 +8,7 @@ export type { ReviewSubject };
 import { workspaceRelative } from "../card-files.js";
 import type { WorkerCard } from "../../workers-types.js";
 import { parseReviewOutput } from "../../../lib/review-verdict.mjs";
+import type { ReviewExcerpt } from "../../../lib/review-verdict.mjs";
 
 export type ReviewVerdictInput = {
   threadId: string;
@@ -15,6 +16,11 @@ export type ReviewVerdictInput = {
   stamp: string;
   subject: ReviewSubject;
   parsed: ReturnType<typeof parseReviewOutput>;
+  /** What the reviewer was actually sent, and how it was chosen. Durable
+   * because a verdict nobody can scope is a verdict nobody can trust, and
+   * countable because a contract that never fits the cap is a fleet problem,
+   * not a per-review footnote (lib/review-truncation.mjs). */
+  excerpt: ReviewExcerpt | null;
 };
 
 /** Records the verdict on the card: a durable file in the card's own state dir
@@ -29,6 +35,7 @@ export async function recordVerdict(
   subject: ReviewSubject,
   output: string,
   permissionNote: string,
+  excerpt: ReviewExcerpt | null = null,
 ): Promise<CliResult> {
   const verdict: ReviewVerdictInput = {
     threadId,
@@ -36,6 +43,7 @@ export async function recordVerdict(
     stamp: roundTimestamp(),
     subject,
     parsed: parseReviewOutput(output, subject.artifactText),
+    excerpt,
   };
   const reviewPath = await writeVerdictFile(deps, card, verdict);
   const summary = `${reviewSummary(verdict.parsed)}${reviewPath ? ` Record: ${reviewPath}.` : ""}${permissionNote}`;
@@ -57,6 +65,13 @@ function reviewDocument(
   const status = verdict.parsed.status;
   const fingerprint = verdict.subject.fingerprint ?? "none";
   const summary = reviewSummary(verdict.parsed);
+  // Same header-line shape as Status/Fingerprint, because those are read back
+  // out of these files by the metric and the done gate. The excerpt is one more
+  // field on the review row, not a sentence a reader has to interpret.
+  const excerpt = verdict.excerpt;
+  const excerptLine = excerpt
+    ? `Excerpt: ${excerpt.selected}, ${excerpt.sentChars} of ${excerpt.originalChars} chars, ${excerpt.truncated ? "truncated" : "whole"}`
+    : "Excerpt: unknown";
   return [
     `# Review ${verdict.stamp}`,
     `Card: ${name}`,
@@ -64,6 +79,7 @@ function reviewDocument(
     `Preset: ${verdict.presetName}`,
     `Status: ${status}`,
     `Fingerprint: ${fingerprint}`,
+    excerptLine,
     "",
     summary,
     "",

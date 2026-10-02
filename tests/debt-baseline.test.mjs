@@ -77,7 +77,12 @@ const inheritedBaseline = [
   "lib/workflow-skills-sync.mjs:syncWorkflowSkills#1: 112 lines (baseline 112)",
   "server/bb-workflow-bridge.ts:renderInlineWorkflowScript#1: 54 lines (baseline 57)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
-  "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (recorded 69)",
+  // Paid: `deliverableSubject` was 69 lines because the research branch was
+  // written inline. Splitting the research deliverable into `researchSubject`
+  // — which the contract-aware excerpt needed anyway, since a research round
+  // has no depth contract to select sections from — took it under the budget,
+  // so `source-debt.json` no longer carries it and the gate requires the
+  // waiver dropped rather than left as a stale record.
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
   "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
   "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",

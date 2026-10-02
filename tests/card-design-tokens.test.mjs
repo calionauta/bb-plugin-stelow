@@ -78,9 +78,9 @@ test("a chip that asks for something never borrows the position vocabulary", () 
 });
 
 test("the review chip's label is not a workflow phase name", () => {
-  // `review` is a phase in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
-  // spreads PHASE_LABELS, so the board already carries a column header that
-  // reads "Review". A chip wearing that word is a position that does not
+  // `review` is a phase id in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
+  // spreads PHASE_LABELS, so the board already carries a column header for
+  // that phase. A chip wearing the bare word is a position that does not
   // exist. Read the label out of the component and the phase labels out of
   // the catalog, so neither side can drift without failing here.
   const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
@@ -90,7 +90,7 @@ test("the review chip's label is not a workflow phase name", () => {
   const phaseLabels = catalog.phases.map((phase) => phase.label);
   assert.ok(
     !phaseLabels.includes(chipLabel),
-    `the review chip's label is not a workflow phase name; \`review\` is one, and the board already has a column header that says Review. Got "${chipLabel}"`,
+    `the review chip's label is not a workflow phase name; \`review\` is a phase id, and the board already has a column header for it. Got "${chipLabel}"`,
   );
 });
 
@@ -224,4 +224,53 @@ test("every step of the scale names a size, and every exception says why", () =>
   // under two names — the DISCLOSURE_SUMMARY_CLASS failure, in the type scale.
   const sizes = TYPE_SCALE.map((step) => step.match(/text-(\[?\d+px|xs|sm|base|lg|xl)/)?.[1]);
   assert.equal(new Set(sizes).size, sizes.length, `two scale steps share a size: ${sizes.join(", ")}`);
+});
+
+test("the workflow map names the phases from the catalog, not from a sentence", () => {
+  // The phase label is host-owned methodology. It was renamed from "Review" to
+  // "Evaluation" upstream because "review" also names the human act of reading a
+  // finished card — and this very paragraph is the explanation. A hardcoded copy
+  // of the old name would have re-introduced the collision it explains, so the
+  // component reads the labels and this test reads the component.
+  const source = read("components/detail/workflow-map.tsx");
+  assert.match(
+    source,
+    /\{phaseList\(WORKFLOW_PHASES\)\} are workflow phases/,
+    "the phase names are rendered from the catalog, not typed into the copy",
+  );
+  assert.doesNotMatch(
+    source,
+    /Analysis, Planning, Execution, and Review are workflow phases/,
+    "the old hardcoded phase sentence is gone, not merely shadowed",
+  );
+  const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
+  const labels = catalog.phases.map((phase) => phase.label);
+  assert.ok(labels.length > 0, "the catalog still names phases for the map to render");
+  // The card and the column header read the same module, so the sentence a
+  // reader sees on the card cannot name a phase the board renders differently.
+  // PHASE_LABELS (the board's column source) and WORKFLOW_PHASES are re-exported
+  // from lib/workflow-catalog.mjs by the vocabulary module, so importing from
+  // there is importing the same catalog, not a copy.
+  assert.match(
+    source,
+    /import \{[^}]*WORKFLOW_PHASES[^}]*\} from "\.\.\/\.\.\/lib\/workflow-vocabulary\.mjs"/,
+    "the map reads WORKFLOW_PHASES from the same module the board's PHASE_LABELS comes through",
+  );
+  const vocabulary = read("lib/workflow-vocabulary.mjs");
+  assert.match(vocabulary, /PHASE_LABELS[\s\S]{0,400}WORKFLOW_PHASES|WORKFLOW_PHASES[\s\S]{0,400}PHASE_LABELS/,
+    "both names still come from the one catalog module, so the card and the column agree by construction");
+  assert.ok(
+    labels.length > 1,
+    "the map has more than one phase to name, so phaseList's join is exercised",
+  );
+  // A phase label written into the copy as a literal is how the old collision
+  // came back: the catalog is the one owner of these names, and a second copy in
+  // a component is the second source of truth the repo treats as a defect.
+  for (const label of labels) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b(?=[^.]*workflow phases)`, "i"),
+      `the phase name "${label}" is rendered from the catalog, not written into the copy`,
+    );
+  }
 });

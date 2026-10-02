@@ -198,14 +198,16 @@ async function buildDocDepthsForCard(
   }
   return buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
 }
-async function passingReviewCovers(
+/** The review records on a card, newest first. The one reader for a card's
+ * `reviews/` directory: the done gate checks coverage and the metrics readout
+ * counts coverage, and a second copy of this list-and-read is how the two would
+ * start disagreeing about which reviews exist. */
+async function reviewFilesFor(
   deps: CardSeamsDeps,
   card: WorkerCard,
-  fingerprint: string | null,
-): Promise<boolean> {
-  if (!fingerprint) return false;
+): Promise<Array<{ name: string; content: string | null }>> {
   const stateDir = await stateDirFor(deps, card);
-  if (!stateDir) return false;
+  if (!stateDir) return [];
   try {
     const listed = await deps.bb.sdk.files.listPaths({
       path: join(stateDir, "reviews"),
@@ -225,10 +227,19 @@ async function passingReviewCovers(
         .catch(() => null);
       files.push({ name: path.split("/").pop() ?? path, content });
     }
-    return reviewCoversFingerprint(files, fingerprint);
+    return files;
   } catch {
-    return false;
+    return [];
   }
+}
+
+async function passingReviewCovers(
+  deps: CardSeamsDeps,
+  card: WorkerCard,
+  fingerprint: string | null,
+): Promise<boolean> {
+  if (!fingerprint) return false;
+  return reviewCoversFingerprint(await reviewFilesFor(deps, card), fingerprint);
 }
 
 export function createCardSeams(deps: CardSeamsDeps) {
@@ -240,6 +251,7 @@ export function createCardSeams(deps: CardSeamsDeps) {
     ensureArtifactParent: ensureArtifactParent.bind(null, deps),
     buildDocDepthsForCard: buildDocDepthsForCard.bind(null, deps),
     passingReviewCovers: passingReviewCovers.bind(null, deps),
+    reviewFilesFor: reviewFilesFor.bind(null, deps),
   };
 }
 

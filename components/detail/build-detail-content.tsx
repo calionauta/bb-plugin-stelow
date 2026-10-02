@@ -7,6 +7,7 @@ import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
 import { ExecutionRunsSection } from "./execution-runs-section";
 import { BuildReviewTools } from "./build-detail-review-tools";
 import { BuildWorkspace } from "./build-detail-workspace";
+import { CatchUpSection } from "./catch-up-section";
 import { heroFor } from "./detail-hero";
 import { ExploreDetailBody } from "./explore-detail-body";
 import { InboxEventBanner, shouldShowInboxEventBanner } from "./inbox-event-banner";
@@ -87,6 +88,7 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
           sit below Artifacts and the workflow map — six sections down, past the
           diff's own visibility gate. A completed card leads with them. */}
       {card.status === "completed" ? <BuildReviewTools cardId={cardId} view={view} /> : null}
+      <CatchUpSection cardId={cardId} />
       <BuildWorkspace view={view} presetStale={presetStale} />
       <BuildProgressSection view={view} />
       <WorkflowMap open={view.mapOpen} onToggle={view.setMapOpen} />
