@@ -22,6 +22,7 @@ type CliAdvanceDeps = Pick<
 >;
 
 const USAGE = "Usage: bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>";
+import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 
 type ParsedCli = { projectId: string | null; dryRun: boolean; json: boolean; stage: string | undefined };
 
@@ -55,7 +56,7 @@ export async function advanceCli(
   const card = context.threadId ? deps.getCardByWorkerThread(context.threadId) : undefined;
   const workspace = card ? await deps.cardWorkspace(card) : null;
   const rootPath = workspace?.path ?? await deps.projectRoot(parsed.projectId);
-  if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+  if (!rootPath) return { exitCode: 1, stderr: workspaceUnavailable(USAGE) };
   const stateDir = card?.dir_hash ? await deps.stateDir(card, rootPath) : null;
   const guard = await deps.ensureArtifacts(rootPath, stateDir, Boolean(card?.dir_hash));
   if (guard) return { exitCode: 1, stderr: guard };

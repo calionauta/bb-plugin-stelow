@@ -13,6 +13,7 @@ import { lockBlockEvent } from "../../../lib/lock-blocked.mjs";
 import { refuse, usage, type CliCommandFn, type CliResult, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
+import { workspaceUnavailable } from "../../../lib/workspace-refusal.mjs";
 
 const USAGE =
   "Usage: bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]";
@@ -72,8 +73,7 @@ async function lockTarget(
   const card = ctx.threadId ? deps.getCardByWorkerThread(ctx.threadId) : undefined;
   const workspace = card ? await deps.cardWorkspace(card) : null;
   const rootPath = workspace?.path ?? (await deps.projectRoot(parsed.projectId));
-  if (!rootPath)
-    return refuse({ exitCode: 1, stderr: "Workspace path is unavailable." });
+  if (!rootPath) return refuse({ exitCode: 1, stderr: workspaceUnavailable(USAGE) });
   const stateDir = card?.dir_hash
     ? await deps.workflowStateDir(rootPath, card.id, card.dir_hash)
     : null;

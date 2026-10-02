@@ -19,6 +19,7 @@ import type { WorkerCard } from "../../workers-types.js";
 import type { GapTotals } from "../../../lib/metrics-format.mjs";
 
 const USAGE = "Usage: bb stelow gap-scopes [--card <card_id>]";
+import { CARD_WORKSPACE_UNAVAILABLE } from "../../../lib/workspace-refusal.mjs";
 
 /** The critique-gap view gap-scopes converts: the escalated rows, the scopes
  * already linked to them, and the fixed/documented/escalated tally it reports.
@@ -118,7 +119,7 @@ async function gapScopesTracking(
   const workspace = await deps.cardWorkspace(card).catch(() => null);
   const rootPath = workspace?.path ?? null;
   if (!rootPath)
-    return { result: { exitCode: 1, stderr: "Workspace path is unavailable." } };
+    return { result: { exitCode: 1, stderr: CARD_WORKSPACE_UNAVAILABLE } };
   const path = join(rootPath, "stelow.json");
   let data: LooseRecord;
   try {

@@ -6,6 +6,7 @@ import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers.js";
 import type { CliResult, CliRunContext } from "./cli-dispatch.js";
+import { CARD_WORKSPACE_UNAVAILABLE, workspaceUnavailable } from "../../lib/workspace-refusal.mjs";
 
 type Board = {
   error?: string | null;
@@ -117,8 +118,7 @@ function statusCommand(
     if (!workspace?.path) {
       return {
         exitCode: 1,
-        stderr: "Workspace path is unavailable for this card. Its checkout is not on "
-          + "this host — open the card to see its environment, or run this from a card that has one.",
+        stderr: CARD_WORKSPACE_UNAVAILABLE,
       };
     }
     return deps
@@ -248,8 +248,7 @@ async function doctorCommand(
   if (!root) {
     return {
       exitCode: 1,
-      stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
-        + "project: bb stelow doctor --project <proj_id>.",
+      stderr: workspaceUnavailable("bb stelow doctor --project <proj_id>"),
     };
   }
   const stateDir = card?.dir_hash
@@ -278,8 +277,7 @@ async function schemaCommand(
   if (!root) {
     return {
       exitCode: 1,
-      stderr: "Workspace path is unavailable. Run this from the card's thread, or name the "
-        + "project: bb stelow schema <command> --project <proj_id>.",
+      stderr: workspaceUnavailable("bb stelow schema <command> --project <proj_id>"),
     };
   }
   const result = await deps.runHelper(sub ? ["schema", sub] : ["schema"], root);

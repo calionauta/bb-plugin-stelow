@@ -1,6 +1,7 @@
 import { refuse, usage, type CliCommandFn, type CliResult, type CliRunContext, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
+import { workspaceUnavailable } from "../../../lib/workspace-refusal.mjs";
 
 const SYNC_SCOPES_USAGE =
   "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]";
@@ -37,8 +38,12 @@ async function helperContext(
     : undefined;
   const workspace = card ? await deps.cardWorkspace(card) : null;
   const rootPath = workspace?.path ?? (await deps.projectRoot(projectId));
-  if (!rootPath)
-    return refuse({ exitCode: 1, stderr: "Workspace path is unavailable." });
+  if (!rootPath) {
+    return refuse({
+      exitCode: 1,
+      stderr: workspaceUnavailable("bb stelow <command> --project <proj_id>"),
+    });
+  }
   const stateDir = card?.dir_hash
     ? await deps.workflowStateDir(rootPath, card.id, card.dir_hash)
     : null;

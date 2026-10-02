@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { PREVIEW_MAX_SESSIONS, appendLog, pickPort, previewAction, previewHints, previewKey, previewLogText, previewShape, previewSourceLabel, previewText, previewTransparency } from "../lib/preview-session.mjs";
+import { CARD_WORKSPACE_UNAVAILABLE } from "../lib/workspace-refusal.mjs";
 
 // --- The identity is the checkout, so two cards on one source share a server.
 assert.equal(previewKey("host_a", "/srv/app/"), previewKey("host_a", "/srv/app"), "a trailing slash is the same checkout");
@@ -81,7 +82,10 @@ assert.equal(none.available, false);
 assert.equal(none.checkout, "/srv/lib");
 assert.equal(none.url, null);
 assert.equal(none.state, "stopped");
-assert.equal(previewShape({ error: "Workspace path is unavailable." }).error, "Workspace path is unavailable.");
+assert.equal(
+  previewShape({ error: CARD_WORKSPACE_UNAVAILABLE }).error,
+  CARD_WORKSPACE_UNAVAILABLE,
+);
 
 // A stopped preview still shows what WOULD run and where it would be — the
 // user decides from that, so it must be visible before pressing anything.
