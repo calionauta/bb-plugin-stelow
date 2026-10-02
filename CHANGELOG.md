@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.4...v0.65.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* a publication reconcile that cannot ask reports it, instead of swallowing it ([#276](https://github.com/calionauta/bb-plugin-stelow/issues/276)) ([5385fc0](https://github.com/calionauta/bb-plugin-stelow/commit/5385fc04b5d671fc9c2ff4a36ffb8d72beaffa61))
+* the audit trail is built where the receipt was verified, not at the project root ([#274](https://github.com/calionauta/bb-plugin-stelow/issues/274)) ([1554397](https://github.com/calionauta/bb-plugin-stelow/commit/155439772f9a363969eb2f7b4d8763cb406943fd))
+
 ## [0.65.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.3...v0.65.4) (2026-10-02)
 
 
