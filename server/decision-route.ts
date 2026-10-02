@@ -7,14 +7,12 @@
  * key cascade lives — the three seams below cannot drift into three
  * different notions of "which endpoint does this point use".
  */
-import {
-  defaultEndpointFor,
+import {defaultEndpointFor,
   defaultModelFor,
   normalizeDecisionApiModel,
   normalizeDecisionProvider,
   providerRequiresKey,
-  resolveDecisionApiKey,
-} from "../lib/decision-api.mjs";
+  resolveDecisionApiKey, DEFAULT_DECISION_PROVIDER } from "../lib/decision-api.mjs";
 import { resolvePointRoute } from "../lib/decision-points.mjs";
 import type { ConfigRow, PointRow } from "./decision-store.js";
 
@@ -77,7 +75,7 @@ export function createDecisionRoute(ctx: DecisionRouteDeps) {
     usable: boolean;
   } => {
     const route = routeConfig(point);
-    const provider = normalizeDecisionProvider(route.provider ?? "jev");
+    const provider = normalizeDecisionProvider(route.provider ?? DEFAULT_DECISION_PROVIDER);
     const { key } = resolveDecisionApiKey({
       storedKey: route.apiKey ?? null,
       env: process.env,

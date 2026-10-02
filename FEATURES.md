@@ -1718,8 +1718,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
   `testDecisionApi`, `decision_api_config` table). One decision endpoint
   for every decision router, configured once in Manage agent presets.
-  Two providers: `jev` (state + questions schema, key required) and
-  `classifier` (classifier.dev labels schema, keyless, Choice only).
+  Four providers, two wire schemas: `jev` (TypeSafe, state + questions,
+  key required, the most capable), `simplejev`, `openjev` and `classifier`
+  (keyless). The default is `simplejev` — keyless AND deterministic, which is
+  what a gate needs: classifier.dev returned 0.89-0.93 on a clear case and
+  0.27-0.53 on an ambiguous one (spread 0.850 on the case that surfaced this),
+  while simplejev returns the same value every time. It is not unbiased — it
+  called a plainly generic hint "especifica" once — so an operator with a
+  TypeSafe key should configure `jev`.
   Reads report key presence and source, never
   the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
   value. A key saved here is the key every decision router uses unless the

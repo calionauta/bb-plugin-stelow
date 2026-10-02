@@ -120,3 +120,6 @@ export declare function evaluateDecisionCall(options: {
   timeoutMs?: number;
   fetchImpl?: unknown;
 }): Promise<DecisionApiResult>;
+
+/** The provider a fresh install uses: keyless and deterministic. */
+export declare const DEFAULT_DECISION_PROVIDER: string;
