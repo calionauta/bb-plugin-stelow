@@ -53,6 +53,7 @@ export function ResearchPanelDialogs(props: Props) {
         open={props.createOpen}
         onOpenChange={props.onCreateOpenChange}
         activeProjectId={props.projectId}
+        validProjectIds={(props.data.projects ?? []).map((project) => project.id)}
         strategies={props.data.strategies}
         researchPreset={props.preset.preset}
         hasBandPreset={props.preset.hasBandPreset}

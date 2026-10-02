@@ -293,8 +293,8 @@ const CompactFullscreenContent = React.forwardRef<
           aria-describedby={descriptionId || undefined}
           {...scopeProps}
           className={cn(
-            "fixed inset-0 z-50 grid h-[100dvh] w-screen grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto border bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
-            className,
+            "fixed inset-0 z-50 grid h-[100dvh] w-screen grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto overflow-x-hidden border bg-background",
+            "p-4 pb-[max(1rem,env(safe-area-inset-bottom))] [&>*]:min-w-0", className,
           )}
           {...domProps}
         >

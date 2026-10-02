@@ -112,7 +112,7 @@ function SettingsSection({ title, description, children }: { title: string; desc
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
-      <div className="grid gap-4">{children}</div>
+      <div className="grid min-w-0 gap-4">{children}</div>
     </section>
   );
 }
@@ -171,7 +171,7 @@ export function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onRe
 // into the same state as the individual checkboxes — never a second model.
 function ReviewGateBulkActions({ onChange }: { onChange: (value: ReviewGates) => void }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <button type="button" onClick={() => onChange([...REVIEW_GATE_VALUES])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Select all</button>
       <button type="button" onClick={() => onChange([])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Clear</button>
     </div>
@@ -256,14 +256,14 @@ function ReviewGatePicker({ label, hint, value, onChange, groupName }: { label: 
 // and the research creation dialog so it reads as one configuration.
 export function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: () => void }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-foreground">Agent configuration</span>
+    <div className="min-w-0 rounded-md border bg-muted/30 px-3 py-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-xs font-medium text-foreground">Agent configuration</span>
         <Button size="sm" variant="outline" className="shrink-0" onClick={onConfigure}>Configure presets</Button>
       </div>
-      <ul className="mt-0.5 space-y-0.5">
+      <ul className="mt-0.5 min-w-0 space-y-0.5">
         {lines.map((line) => (
-          <li key={line} className="text-xs text-muted-foreground">{line}</li>
+          <li key={line} className="break-words text-xs text-muted-foreground">{line}</li>
         ))}
       </ul>
     </div>

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./creation-settings";
+import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
 import { StartImmediatelyCheck } from "../start-immediately-check";
@@ -87,7 +88,7 @@ function CreateResearchSettings({ strategies, strategy, onStrategy, strategyAtte
   onOpenPresets: () => void;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div className="grid gap-1.5">
         <span className="text-xs font-medium text-foreground">Choose a strategy</span>
         <StrategyPicker strategies={strategies} value={strategy} onChange={onStrategy} groupName="strategy-pick" attentionSignal={strategyAttention} />
@@ -106,6 +107,7 @@ export type CreateResearchDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeProjectId: string | null;
+  validProjectIds?: string[];
   strategies: ResearchStrategyOption[];
   researchPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
   hasBandPreset: boolean;
@@ -113,17 +115,23 @@ export type CreateResearchDialogProps = {
   onOpenPresets: () => void;
 };
 
-export function CreateResearchDialog({ open, onOpenChange, activeProjectId, strategies, researchPreset, hasBandPreset, bucketGallery, onOpenPresets }: CreateResearchDialogProps) {
-  const submit = useCreateResearchSubmit({ activeProjectId, onClose: () => onOpenChange(false) });
-
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (next) submit.resetOnOpen();
-  }
+export function CreateResearchDialog({
+  open,
+  onOpenChange,
+  activeProjectId,
+  validProjectIds,
+  strategies,
+  researchPreset,
+  hasBandPreset,
+  bucketGallery,
+  onOpenPresets,
+}: CreateResearchDialogProps) {
+  const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
+  const submit = useCreateResearchSubmit({ activeProjectId: seedProjectId, onClose: () => onOpenChange(false) });
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
+    <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
+      <DialogContent fullscreenOnMobile className="overflow-y-auto overflow-x-hidden sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Start new research</DialogTitle>
           <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
@@ -142,7 +150,7 @@ export function CreateResearchDialog({ open, onOpenChange, activeProjectId, stra
           onOpenPresets={onOpenPresets}
         />
         <NewThreadComposer
-          defaultProjectId={activeProjectId ?? undefined}
+          defaultProjectId={seedProjectId ?? undefined}
           defaultProviderId={researchPreset?.providerId}
           defaultModel={researchPreset?.modelId}
           defaultReasoningLevel={researchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
@@ -151,7 +159,7 @@ export function CreateResearchDialog({ open, onOpenChange, activeProjectId, stra
           placeholder="What should Stelow investigate?"
           layout="contained"
           draftKey="stelow-research-create"
-          onSubmit={(request) => submit.start(request)}
+          onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
       </DialogContent>
     </Dialog>
