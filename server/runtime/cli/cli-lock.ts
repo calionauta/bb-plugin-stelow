@@ -1,15 +1,12 @@
 import {
   acquireWorkspaceClaims,
-  addClaimWaiters,
   checkWorkspaceClaims,
   releaseWorkspaceClaims,
   CLAIM_TTL_MS,
 } from "../../../lib/card-claims.mjs";
 import { resolveClaimKey } from "../../../lib/card-claim-key.mjs";
-import { isClaimTerminal } from "../../../lib/card-terminal.mjs";
 import { isLiveHolder, queueWaiters, reapDeadHolders } from "./cli-lock-waiters.js";
-import type { ClaimConflict, ClaimOutcome, LockOp, LockTarget } from "./cli-lock-types.js";
-import { lockBlockEvent } from "../../../lib/lock-blocked.mjs";
+import type { ClaimConflict, ClaimOutcome, LockTarget } from "./cli-lock-types.js";
 import { refuse, usage, type CliCommandFn, type CliResult, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
