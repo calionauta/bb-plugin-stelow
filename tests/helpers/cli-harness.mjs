@@ -169,7 +169,7 @@ function cardDeps(calls, options, card) {
     getCardByWorkerThread: (threadId) =>
       threadId === card.worker_thread_id ? card : undefined,
     cardWorkspace: async () =>
-      options.noWorkspace ? null : { path: WORKSPACE, hostId: "host1" },
+      options.noWorkspace ? null : { path: options.workspacePath ?? WORKSPACE, hostId: "host1" },
     updateCard: (...args) => calls.push(["updateCard", ...args]),
     logCardComment: (...args) => {
       calls.push(["comment", ...args]);
@@ -178,11 +178,11 @@ function cardDeps(calls, options, card) {
     recordInboxEvent: (...args) => calls.push(["inbox", ...args]),
     recordStageEvent: (...args) => calls.push(["stage", ...args]),
     stageEvents: () => options.stageEvents ?? [],
-    projectRoot: async () => WORKSPACE,
+    projectRoot: async () => options.projectRoot ?? WORKSPACE,
     workflowStateDir: async () => `${WORKSPACE}/.stelow/state`,
     ensureProjectArtifacts: async () => options.guard ?? null,
-    runHelper: async (args) => {
-      calls.push(["helper", args]);
+    runHelper: async (args, rootPath) => {
+      calls.push(["helper", args, rootPath]);
       return options.helper ?? { code: 0, stdout: "", stderr: "" };
     },
     seedWorkflow: async () => {
@@ -195,7 +195,7 @@ function cardDeps(calls, options, card) {
 /** The checkout, the Git identity, and the question surfaces. */
 function hostDeps(calls, options) {
   return {
-    cardCheckout: async () => (options.noCheckout ? null : { path: WORKSPACE }),
+    cardCheckout: async () => (options.noCheckout ? null : { path: options.checkoutPath ?? WORKSPACE }),
     gitEvidence: async () =>
       options.gitEvidence ?? {
         isGit: true,
