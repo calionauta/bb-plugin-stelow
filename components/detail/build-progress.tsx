@@ -18,12 +18,17 @@ import { ScopeXray } from "./scope-xray";
 import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
 import type { rpcContract } from "../../server";
+import type { GapTotals } from "../../lib/metrics-format.mjs";
 
 type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-type GapSummary = {
-  matched: boolean; total: number; fixed: number; documented: number; escalated: number;
+/** The card's own gap view: the shared tally, plus the per-gap rows and the
+ * scope state the progress panel needs. The four numbers come from the one
+ * owner in `lib/metrics-format.mjs` rather than being restated, so a resolution
+ * added to the registry is a field added there and here cannot drift apart. */
+type GapSummary = GapTotals & {
+  matched: boolean;
   items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
 };
