@@ -88,15 +88,12 @@ test("a hand-written <summary> keeps the tokens SUMMARY_BASE guarantees", () => 
       .filter(Boolean));
 
   const composedElsewhere = summariesViaConstant();
-  // `build-publication.tsx` is listed, not fixed. Its violation is inherited
-  // (present at the base commit) and the line carrying it is 900 characters
-  // inside a ternary, so fixing it means extracting a component from a function
-  // this card never touched — a larger change than the defect warrants here, and
-  // one this card's scope does not cover. Recording it is the honest move: a
-  // guard that passed over it is how it stayed invisible, and a guard that
-  // fails on a file nobody is working is how a suite goes red for a reason
-  // unrelated to the change in front of it.
-  const DEFERRED = new Set(["components/detail/build-publication.tsx"]);
+  // No deferrals. There was one — `build-publication.tsx`, inherited at the base
+  // commit, whose 900-character line hid a hand-written summary — but the whole
+  // Advanced Git disclosure was refactored away upstream, taking the violation
+  // with it. The empty set stays because it is the shape a future deferral
+  // takes: named, counted, and never a file nobody is working on.
+  const DEFERRED = new Set();
   const regressions = [...handWritten, ...composedElsewhere]
     .filter((entry) => ![...DEFERRED].some((file) => entry.startsWith(file)));
   const deferred = [...handWritten, ...composedElsewhere]
