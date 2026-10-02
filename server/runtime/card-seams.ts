@@ -9,6 +9,7 @@
  * let preview, diff, and the done gates disagree about where a card is.
  */
 import { dirname } from "node:path";
+import { readReviewFiles } from "./review-records.js";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   parseArtifactManifest,
@@ -198,39 +199,14 @@ async function buildDocDepthsForCard(
   }
   return buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
 }
-/** The review records on a card, newest first. The one reader for a card's
- * `reviews/` directory: the done gate checks coverage and the metrics readout
- * counts coverage, and a second copy of this list-and-read is how the two would
- * start disagreeing about which reviews exist. */
+/** The review records on a card, newest first. Delegates to the one reader so
+ * the done gate, the metrics readout and the flow strip cannot disagree about
+ * which reviews exist. */
 async function reviewFilesFor(
   deps: CardSeamsDeps,
   card: WorkerCard,
 ): Promise<Array<{ name: string; content: string | null }>> {
-  const stateDir = await stateDirFor(deps, card);
-  if (!stateDir) return [];
-  try {
-    const listed = await deps.bb.sdk.files.listPaths({
-      path: join(stateDir, "reviews"),
-      includeFiles: true,
-      includeDirectories: false,
-    });
-    const paths = array(record(listed).paths)
-      .map((entry) => text(record(entry).path))
-      .filter((path) => path.endsWith(".md"))
-      .sort()
-      .reverse();
-    const files: Array<{ name: string; content: string | null }> = [];
-    for (const path of paths) {
-      const content = await deps.bb.sdk.files
-        .read({ path })
-        .then((f) => f.content)
-        .catch(() => null);
-      files.push({ name: path.split("/").pop() ?? path, content });
-    }
-    return files;
-  } catch {
-    return [];
-  }
+  return readReviewFiles({ bb: deps.bb, cardWorkspace: deps.cardWorkspace }, card);
 }
 
 async function passingReviewCovers(
