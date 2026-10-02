@@ -22,7 +22,12 @@ type PublicationAction =
   | "push_terminal"
   | "pull_request_ready"
   | "pull_request_draft"
-  | "pull_request_merge";
+  | "pull_request_merge"
+  /**
+   * Written by the publication reconciler, never by the panel: the base branch
+   * already contains this branch's files. The proof a squash merge leaves.
+   */
+  | "reconciled_integrated";
 type PreparedEnvironment =
   | { card: PublicationCard; environmentId: string; snapshot: PublicationSnapshot }
   | { error: string };

@@ -4,24 +4,34 @@
  *
  * `integrationPending` reads only `publication_events`, and that is on purpose —
  * the board lists every card, so a per-card git call would turn a scroll into a
- * spawn. The design has one hole: a pull request merged outside the panel writes
- * no event, so the chip keeps reporting work as still owed after it has already
- * landed. The board cannot close that hole from a read without giving up the
- * reason it is cheap.
+ * spawn. The design has one hole: work that landed outside the panel writes no
+ * event, so the chip keeps reporting it as owed. Measured on this board:
+ * `card_e3u00eb4` was merged through a pull request the panel never saw, and
+ * `card_oqm8gyae` was committed by hand on a `rescue/` branch that no code path
+ * in this repository creates.
  *
- * This pass closes it from the forge's side. It asks the one question whose
- * answer is decisive — "is this card's pull request merged?" — and records the
- * landing only when the platform answers yes. Nothing is inferred from a
- * working tree, a merge base or a branch name: a card with no pull request, a
- * workspace that is gone, or a status BB cannot read is left alone, so the chip
- * goes on saying what it recorded rather than what it guessed.
+ * This pass closes it by asking the SAME question the worktree cleanup gate asks
+ * before it deletes a directory — `integrationProof`, over `isWorkIntegrated`:
+ *
+ * - the forge, for "is this card's pull request merged" — decisive while it
+ *   holds, because a merged pull request stays merged;
+ * - the content, for "does the base branch already contain these files" — the
+ *   proof a squash leaves behind, and the one that sees a merge nobody recorded.
+ *
+ * Nothing is inferred from a merge base, a branch name, or the absence of
+ * unpushed commits — that last one is not a proof, since a pushed and unmerged
+ * branch has none either. When neither proof answers, the card is left exactly
+ * as the ledger described it: a chip reading "No commit recorded" is honest, and
+ * a chip reading "landed" on an inference is not.
  *
  * It is a reconcile rule, not a read: it runs on the same tick as the other
- * sweeps, it is idempotent (a card that already records a merge is skipped), and
- * it cannot fail the reconcile — one card's forge error is one card's silence.
+ * sweeps, it is idempotent, and it cannot fail the reconcile — one card's git or
+ * forge error is one card's silence.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { publicationEvents, recordPublication } from "./artifacts-publication-status.js";
+import { recordPublication } from "./artifacts-publication-status.js";
+import { integrationProof, type GitRunner } from "./integration-proof.js";
+import { hasRecordedIntegration } from "../lib/integration-pending.mjs";
 import type {
   ArtifactsPublicationDeps,
   PublicationCard,
@@ -30,17 +40,10 @@ import type {
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
-/** The only action that means the work reached the base branch. */
-const LANDED = "pull_request_merge";
-
-export function createPublicationReconcile(deps: ArtifactsPublicationDeps) {
-  return { reconcilePublications: () => reconcilePublications(deps) };
-}
-
 /**
- * The slice a wiring root already holds. Kept here so the root adds a call, not
- * a facade: the wiring file has a line budget, and the shape of these deps is
- * this module's business.
+ * Everything this pass needs, as the wiring root already holds it. The shape
+ * lives here so the root adds a call rather than a facade — and so the test can
+ * hand it the same object the root does.
  */
 export type PublicationReconcileCore = {
   db: Db;
@@ -51,10 +54,13 @@ export type PublicationReconcileCore = {
   getCard: (cardId: string) => PublicationCard | undefined;
   checkout: (card: PublicationCard) => Promise<PublicationCheckout | null>;
   cardStatusOf: (value: unknown) => string;
+  /** The worktree the card worked in, so the content proof has a directory. */
+  discardEvidence: (card: PublicationCard) => Promise<{ checkoutPath?: string | null } | null>;
+  runGitIn: GitRunner;
 };
 
-export function publicationReconcileFor(core: PublicationReconcileCore) {
-  return createPublicationReconcile({
+function publicationDepsFor(core: PublicationReconcileCore): ArtifactsPublicationDeps {
+  return {
     db: core.db,
     bb: core.bb,
     now: core.now,
@@ -62,7 +68,11 @@ export function publicationReconcileFor(core: PublicationReconcileCore) {
     cardNotFound: core.cardNotFound,
     cards: { get: core.getCard, checkout: core.checkout },
     cardStatusOf: core.cardStatusOf,
-  });
+  };
+}
+
+export function createPublicationReconcile(core: PublicationReconcileCore) {
+  return { reconcilePublications: () => reconcilePublications(core) };
 }
 
 /**
@@ -77,34 +87,55 @@ function pendingCandidates(db: Db): string[] {
   return rows.map((row) => row.id);
 }
 
-function alreadyLanded(deps: ArtifactsPublicationDeps, cardId: string): boolean {
-  return publicationEvents(deps, cardId).some((event) => event.action === LANDED);
+type Landing = { prUrl: string | null; by: "pr" | "content" };
+
+async function provedLanding(
+  core: PublicationReconcileCore,
+  card: PublicationCard,
+): Promise<Landing | null> {
+  // The forge first: a merged pull request stays merged, so it survives the base
+  // branch moving on. The content proof does not — it holds only while the trees
+  // still match — which is why it is the second answer, not the only one.
+  const checkout = await core.checkout(card).catch(() => null);
+  const environmentId = checkout?.environmentId ?? null;
+  const pullRequest = environmentId
+    ? await core.bb.sdk.environments.pullRequest({ environmentId }).catch(() => null)
+    : null;
+  const prUrl = pullRequest?.outcome === "available" && pullRequest.pullRequest?.state === "merged"
+    ? pullRequest.pullRequest.url ?? null
+    : null;
+
+  const evidence = await core.discardEvidence(card).catch(() => null);
+  const verdict = await integrationProof({
+    runGitIn: core.runGitIn,
+    checkoutPath: evidence?.checkoutPath ?? null,
+    recorded: hasRecordedIntegration(core.db, card.id) || prUrl !== null,
+  });
+  if (!verdict.integrated) return null;
+  if (prUrl !== null) return { prUrl, by: "pr" };
+  // "recorded" means the ledger already said so; there is nothing to write.
+  return verdict.proof === "content" ? { prUrl: null, by: "content" } : null;
 }
 
-export async function reconcilePublications(
-  deps: ArtifactsPublicationDeps,
-): Promise<void> {
-  for (const cardId of pendingCandidates(deps.db)) {
+export async function reconcilePublications(core: PublicationReconcileCore): Promise<void> {
+  const deps = publicationDepsFor(core);
+  for (const cardId of pendingCandidates(core.db)) {
     try {
-      if (alreadyLanded(deps, cardId)) continue;
-      const card = deps.cards.get(cardId);
+      if (hasRecordedIntegration(core.db, cardId)) continue;
+      const card = core.getCard(cardId);
       if (!card) continue;
-      const checkout = await deps.cards.checkout(card).catch(() => null);
-      if (!checkout?.environmentId) continue;
-      const status = await deps.bb.sdk.environments
-        .pullRequest({ environmentId: checkout.environmentId })
-        .catch(() => null);
-      if (status?.outcome !== "available") continue;
-      const pullRequest = status.pullRequest;
-      if (pullRequest?.state !== "merged") continue;
+      const landing = await provedLanding(core, card);
+      if (!landing) continue;
       recordPublication(
         deps,
         cardId,
-        LANDED,
-        "Reconciled: this card's pull request is merged, so its work is already on the base branch."
-          + " Recorded by the publication reconciler, which asks the forge rather than the ledger.",
+        landing.by === "pr" ? "pull_request_merge" : "reconciled_integrated",
+        landing.by === "pr"
+          ? "Reconciled: this card's pull request is merged, so its work is already on the base branch."
+          : "Reconciled: the base branch already contains this branch's files, so the work is integrated."
+            + " Proved by content — the proof a squash merge leaves and a commit id does not.",
         null,
-        pullRequest.url,
+        landing.prUrl,
       );
     } catch {
       // A reconcile pass reports nothing and stops nothing. The next tick retries.

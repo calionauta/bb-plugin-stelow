@@ -16,7 +16,7 @@ import { createExecutionNative } from "../../execution-native.js";
 import { createBoundaryVersionReader } from "../../execution-boundary.js";
 import { createExecutionLifecycle } from "../../execution-lifecycle.js";
 import { createExecutionReconcile } from "../../execution-reconcile.js";
-import { publicationReconcileFor } from "../../publication-reconcile.js";
+import { createPublicationReconcile } from "../../publication-reconcile.js";
 import { createExecutionAdvance } from "../../execution-advance.js";
 import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
@@ -151,11 +151,11 @@ function buildReconcile(
   native: ReturnType<typeof buildNative>,
   lifecycle: ReturnType<typeof buildLifecycle>,
 ) {
-  const { bb, db, now, randomId, getCard, cardWorkspace } = core;
-  const publication = publicationReconcileFor({
-    db, bb, now, randomId,
-    cardNotFound: core.ERRORS.cardNotFound,
-    getCard,
+  const { bb, db, now, randomId, getCard, cardWorkspace, git } = core;
+  const publication = createPublicationReconcile({
+    db, bb, now, randomId, cardNotFound: core.ERRORS.cardNotFound,
+    getCard, runGitIn: git.runGitIn,
+    discardEvidence: (card) => git.discardEvidence(card as WorkerCard),
     checkout: (card) => core.seams.cardCheckout(card as WorkerCard),
     cardStatusOf: readCardStatus,
   });

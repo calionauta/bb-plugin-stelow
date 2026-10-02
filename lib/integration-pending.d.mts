@@ -29,3 +29,9 @@ export declare function integrationPendingLabel(
   card: IntegrationPendingCard,
   integration: IntegrationPending | null,
 ): string | null;
+
+/**
+ * Is the work recorded as integrated for this card? One definition, asked by
+ * the board chip, the reconciler and the worktree cleanup gate.
+ */
+export declare function hasRecordedIntegration(db: unknown, cardId: string): boolean;
