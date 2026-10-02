@@ -10,6 +10,9 @@ type BuildCardState = {
   intent: string;
   activity: CardActivity;
   workerThreadId?: string | null;
+  /** When the host stopped answering this card's state read (see
+   * lib/host-read-streak.mjs). Null whenever the host is answering. */
+  readMissSince?: number | null;
 };
 
 export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: { children: ReactNode; tone?: string; className?: string; title?: string; icon?: ReactNode }) {
@@ -69,13 +72,54 @@ const ACTIVITY_PILL_CLASS: Record<string, string> = {
   running: "stelow-activity-working",
   "awaiting-answer": "stelow-activity-waiting",
   error: "stelow-activity-error",
+  held: "stelow-activity-onhold",
 };
-const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answer": "⏳", error: "✗" };
-const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
-const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
+const ACTIVITY_GLYPH: Record<string, string> = {
+  running: "●",
+  "awaiting-answer": "⏳",
+  error: "✗",
+  held: "⏸",
+};
+const ACTIVITY_LABEL: Record<string, string> = {
+  idle: "Paused",
+  running: "Working",
+  "awaiting-answer": "Waiting for you",
+  error: "Failed",
+  held: "Waiting on the host",
+};
+const ACTIVITY_TITLE: Record<string, string> = {
+  running: "Worker is actively working",
+  "awaiting-answer": "Waiting for your answer",
+  error: "Worker failed. Needs attention.",
+  held: "The host has this card's next message queued and has not dispatched it yet. "
+    + "The card continues on its own — nothing to do.",
+};
 
-export function ReviewChip() {
-  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
+// The review request, not a workflow position. Three decisions are load
+// bearing here, and none of them is the styling:
+//
+// - NO DOT. A dot is this vocabulary's "here is a position" tell — the stage
+//   pill, the activity pill and the attention chip all carry one — and on a
+//   terminal card the stage pill is deliberately suppressed (see
+//   BuildStatusPills), so a dot left the chip sitting in the vacated slot and
+//   reading as the card's next checkpoint instead of a request about work
+//   that is already finished.
+// - NOT the bare word "Review". `review` is a phase id in the stage catalog
+//   and BUILD_BOARD_COLUMN_LABELS spreads PHASE_LABELS, so the board already has
+//   a column header for that phase — currently labelled "Evaluation". A chip
+//   wearing the bare id is a position that does not exist.
+// - ONE component for the tile and the list row. The board tile used to carry
+//   a private copy of this chip, a dot and a type size away from the list
+//   row, which is exactly the drift the shared-vocabulary rule exists to
+//   prevent and the one rule no test could see.
+//
+// `label` exists so a surface that has a more specific sentence can supply it,
+// but the default is the one name this request gets: "Ready for review" is
+// already what the Inbox calls the same row (FEATURES.md, Recover), and a
+// request with two names is one the reader has to reconcile.
+export function ReviewChip({ label = "Ready for review" }: { label?: string }) {
+  const cls = "rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300";
+  return <span title="Open this card to clear it." className={cls}>{label}</span>;
 }
 
 export function attentionLabel(activity: string): string {
@@ -97,6 +141,37 @@ export function ActivityPill({ activity, detail }: { activity: CardActivity; det
   </span>;
 }
 
+/**
+ * The host has stopped answering this card's state read.
+ *
+ * It borrows the activity pill's shape and nothing else, on purpose: it is a
+ * property of the READ, so it renders beside the activity rather than as one —
+ * the card is still showing the activity it was last verified on, and erasing
+ * that to make room for this would destroy the only true thing the tile says.
+ *
+ * Deliberately inert, for the reason `stelow-activity-onhold` is: nothing the
+ * reader can do changes this, and a state you cannot act on must not wear the
+ * colours of one you should. What it must not be is invisible — a card frozen
+ * on a stale projection used to look like a normally idle card, which is how
+ * three unreadable cards on 2026-09-30 were explained by theory instead of by
+ * a measurement. The card's hero carries the sentence; this carries the name.
+ */
+const READ_MISS_TITLE = "The host has not answered this card's state read. "
+  + "What this tile shows is its last verified projection, so it is stale. "
+  + "The plugin log names the card once per outage, and the next successful read clears this — nothing to do.";
+
+export function ReadMissPill() {
+  return (
+    <span
+      className="stelow-activity-pill stelow-activity-unreadable max-w-full truncate"
+      title={READ_MISS_TITLE}
+    >
+      <span aria-hidden>⏱</span>
+      Host not answering
+    </span>
+  );
+}
+
 // One attention chip for tiles and list rows alike: amber dot + action
 // label ("Answer required", "Worker failed", "Paused. Resume it."). Callers
 // show it only when the activity pill doesn't already say it — the pair
@@ -106,6 +181,68 @@ export function AttentionChip({ label }: { label: string }) {
     <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
     <span>{label}</span>
   </span>;
+}
+
+/**
+ * A card whose worker ran out of work and is waiting for the user.
+ *
+ * Amber, like the attention chip it appears alongside — this is a "needs
+ * you" state, not a failure. It is a separate component rather than a branch
+ * inside the attention chip because the two say different things: attention
+ * means a specific known thing is outstanding, pause means the worker simply
+ * stopped producing and the user has to decide what to do about it.
+ */
+export function PausedChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-zinc-500" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * A card that has stopped.
+ *
+ * Red, and it does not pulse: the card's own border already pulses to say
+ * something is wrong, and a pulsing chip on a pulsing card reads as one
+ * alarm rather than two. This is the label the border could not carry —
+ * `card_e3u00eb4` was outlined in amber like a card waiting for an answer,
+ * and nothing on the card said otherwise.
+ */
+export function ErrorChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * What a finished card still owes its repository.
+ *
+ * Amber is the same tone as AttentionChip on purpose: both mean "this card
+ * wants a person", and a reader who learns one tone should not have to learn
+ * a second for the same call to action. The difference is in the text, not
+ * the color — the label names the missing step.
+ */
+export function IntegrationPendingChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+      <span>{label}</span>
+    </span>
+  );
 }
 
 // Dot tone for hill dots. List rows keep their own inline mapping on
@@ -185,6 +322,14 @@ export function BuildStatusPills({ card, statusTone, intentLabel }: {
       ? <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
       : <Pill title="Not started — parked in Bucket. Nothing runs until you start it.">Not started</Pill>) : null}
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
-    {card.activity === "awaiting-answer" ? <ActivityPill activity={card.activity} /> : null}
+    {/* The three states a reader must be able to tell apart from across the
+        board without opening anything: someone is waiting on THEM, the host is
+        holding the card and it will move by itself, or the card's own state has
+        stopped being readable and what the tile shows is now stale. Everything
+        else stays on the card. */}
+    {card.activity === "awaiting-answer" || card.activity === "held"
+      ? <ActivityPill activity={card.activity} />
+      : null}
+    {card.readMissSince != null ? <ReadMissPill /> : null}
   </>;
 }

@@ -331,6 +331,7 @@ test("gap summary links escalated gaps and reports unscoped ones", () => {
     },
     { leadMs: 10, cycleMs: 20 },
     (status) => status === "done",
+    (status) => status === "skipped",
   );
   assert.equal(summary.pendingScopes, 1);
   assert.equal(summary.unscoped, 1);

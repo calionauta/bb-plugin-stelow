@@ -13,6 +13,8 @@ import {
   detailInputFiles,
   detailHero,
   detailHeroActions,
+  lifecycleDialogs,
+  buildDetailBody,
   detailComment,
   detailTimeline,
   detailScopes,
@@ -188,6 +190,36 @@ assert.match(
   detailHeroActions,
   /<HeroErrorNote card=\{card\} \/>/,
   "a decision hero keeps the worker error beside the question",
+);
+// "Answering below resumes the worker" is a claim that a conversation exists.
+// On an unowned card it does not — the conversation is refused until the
+// records agree — so the sentence has to name the action that does work. Both
+// arms are pinned because the fix is a gate, and a gate that closes on one
+// case and forgets the other is a regression that reads as an improvement.
+assert.match(
+  detailHero,
+  /isOwnershipRefusal\(card\.lastError\)/,
+  "the error note distinguishes an unowned card from an ordinary failure",
+);
+assert.match(
+  detailHero,
+  /Restart fresh… in the card actions menu is what clears this/,
+  "and names the door that does work",
+);
+assert.doesNotMatch(
+  lifecycleDialogs,
+  /Try Retry first/,
+  "the repair dialog reads its advice instead of re-spelling it, so it cannot drift",
+);
+assert.match(
+  lifecycleDialogs,
+  /description=\{repairDescription\(cardLastError\)\}/,
+  "and the dialog picks its advice from the card's own error",
+);
+assert.match(
+  buildDetailBody,
+  /cardLastError=\{card\?\.lastError \?\? null\}/,
+  "the detail body hands the dialog the error the choice depends on",
 );
 assert.match(
   detailHeroActions,

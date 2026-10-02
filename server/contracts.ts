@@ -1,19 +1,104 @@
 import { z } from "zod";
 
-export const statusSchema = z.enum([
+/**
+ * Two status vocabularies, where there was one list pretending to be both.
+ *
+ * This file used to export a single `statusSchema` with twelve values, and every
+ * caller used it for whatever status it had in hand. That is why it had twelve:
+ * it was the union of a card's statuses and a trackable's, plus `planning` and
+ * `approved`, which belong to neither — `approved` is a scope MAP status and
+ * `planning` is a stage name. A single enum serving two axes is the collision the
+ * vocabulary work exists to end, and it had a second life as the only status
+ * validator at the RPC boundary, where it refused nothing, because it accepted
+ * anything anyone might send.
+ *
+ * The union also hid the more useful failure: nothing can reach `planning` or
+ * `approved` as a status at all, and an enum admitting unreachable values cannot
+ * fail fast on a reachable one.
+ *
+ * **These are written out rather than derived from `CARD_STATUSES` and
+ * `TRACKABLE_STATUSES`, and that is not laziness.** A `.ts` file cannot derive a
+ * type from a `lib/*.mjs` constant in this tree: importing the module by
+ * extension resolves its runtime and its declarations as two unrelated type
+ * identities, which propagates a nominal mismatch through the whole RPC type
+ * graph and fails `tsc` far from the import that caused it. Deriving was tried
+ * and reverted; `tests/status-axis-boundary.test.mjs` pins both lists to the
+ * machine instead, so the duplication cannot drift and the constraint is recorded
+ * rather than rediscovered.
+ *
+ * Split rather than narrowed: narrowing to a card's five would have broken every
+ * scope, task, workflow and workflow phase, which are trackables and legitimately
+ * hold `blocked`, `done`, `skipped`, `escalated` and `failed`.
+ */
+export const cardStatusSchema = z.enum([
   "draft",
-  "planning",
-  "approved",
+  "pending",
   "in-progress",
   "completed",
   "archived",
-  "pending",
-  "done",
-  "skipped",
-  "blocked",
-  "escalated",
-  "failed",
 ]);
+
+export const trackableStatusSchema = z.enum([
+  "pending",
+  "in-progress",
+  "blocked",
+  "done",
+  "completed",
+  "skipped",
+  "failed",
+  "escalated",
+]);
+
+/**
+ * A boundary question's framing.
+ *
+ * Resolved from the `[Stelow boundary <id>]` marker against the run's boundary
+ * contract, then shaped in lib/ — the card renders `showOptions` and the copy,
+ * and never re-implements the rule. Null for an ordinary question.
+ */
+export const boundaryShapeSchema = z.object({
+  kind: z.enum(["reaction", "confirmation"]),
+  showOptions: z.boolean(),
+  heading: z.string(),
+  notice: z.string().nullable(),
+});
+
+/**
+ * A thread's token usage, in per-leg detail.
+ *
+ * Declared once because it was declared twice, and the leg set is exactly the
+ * kind of detail that rots quietly: a leg added for a child thread and not for
+ * the parent renders as "no usage" on the run it belongs to. Nullable per leg,
+ * not optional — a leg nobody reported is unknown, and a zero there would read
+ * as "this cost nothing".
+ */
+export const tokenBreakdownSchema = z
+  .object({
+    input: z.number().nullable(),
+    output: z.number().nullable(),
+    cached: z.number().nullable(),
+    reasoning: z.number().nullable(),
+    total: z.number().nullable(),
+  })
+  .nullable();
+
+/**
+ * The scope/task tally both card surfaces render.
+ *
+ * One shape for the board's list and the card's detail, because they are the
+ * same four numbers read at two zoom levels — and a copy is how a reader ends
+ * up comparing "3 of 8 scopes" on a tile against "8 scopes" on the card it
+ * opened. `elapsedMs` is nullable because an unstarted card has no elapsed
+ * time, and a zero there would read as "no time spent" rather than "never
+ * began".
+ */
+export const scopeSummarySchema = z.object({
+  scopesTotal: z.number(),
+  scopesDone: z.number(),
+  tasksTotal: z.number(),
+  tasksDone: z.number(),
+  elapsedMs: z.number().nullable(),
+});
 
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 export const reviewModeSchema = z.enum([
@@ -36,7 +121,7 @@ export const taskSchema = z.object({
   id: z.string(),
   name: z.string(),
   kind: z.string().optional(),
-  status: statusSchema,
+  status: trackableStatusSchema,
   source: z.string().optional(),
   note: z.string().optional(),
 });
@@ -46,7 +131,7 @@ export const scopeSchema = z.object({
   name: z.string(),
   kind: z.string().optional(),
   type: z.string().optional(),
-  status: statusSchema,
+  status: trackableStatusSchema,
   source: z.string().optional(),
   gap: z.string().optional(),
   tasks: z.array(taskSchema),
@@ -117,14 +202,14 @@ export const workflowSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  status: statusSchema,
+  status: trackableStatusSchema,
   stage: z.string(),
   appetite: z.string(),
   reviewMode: z.string(),
   reviewGates: z.array(reviewGateAtomSchema),
   dirHash: z.string().optional(),
   cwd: z.string().optional(),
-  phases: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema })),
+  phases: z.array(z.object({ id: z.string(), name: z.string(), status: trackableStatusSchema })),
   scopes: z.array(scopeSchema),
   artifacts: z.array(artifactSchema),
 });

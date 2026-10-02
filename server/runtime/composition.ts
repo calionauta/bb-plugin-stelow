@@ -83,6 +83,7 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
   }, 45_000);
   const reconciler = startReconciler({
     db: deps.db,
+    bb: deps.bb,
     syncThreadState: deps.syncThreadState,
     scopeProgress: createScopeProgressSync({
       getCard: deps.getCard,

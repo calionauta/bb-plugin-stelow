@@ -1,9 +1,17 @@
+import { DEFAULT_ENVIRONMENT_KIND } from "./preset-environment-kind.mjs";
+
 export type PresetManagerPreset = {
   id: string;
   name: string;
   providerId: string;
   modelId: string;
   reasoningLevel: string;
+  /**
+   * The host roster's verdict on that level for that provider. `null` means the
+   * host did not say (roster unreadable, or a provider with no declared
+   * ladder), which is not the same as supported — see `listPresets`.
+   */
+  reasoningLevelSupported: boolean | null;
   permissionMode: string;
   environmentKind: string;
   builtIn: boolean;
@@ -17,7 +25,14 @@ export type PresetManagerForm = {
   modelId: string;
   reasoningLevel: string;
   permissionMode: "accept-edits" | "auto" | "full";
-  environmentKind: "project-default" | "new-worktree";
+  /**
+   * A plain string, not the two-option union: an installed row's kind can
+   * genuinely hold a value outside the schema, and the form has to be able to
+   * carry it so `PresetEnvironmentKindField` can name it rather than hide it.
+   * The two options are `ENVIRONMENT_KINDS`; the save path refuses anything
+   * else with a reader-facing sentence.
+   */
+  environmentKind: string;
 };
 
 export type BandPresetEntry = {
@@ -33,9 +48,18 @@ export const EMPTY_PRESET_FORM: PresetManagerForm = {
   modelId: "",
   reasoningLevel: "medium",
   permissionMode: "full",
-  environmentKind: "project-default",
+  environmentKind: DEFAULT_ENVIRONMENT_KIND,
 };
 
+/**
+ * The form carries the preset's stored kind verbatim.
+ *
+ * An installed row's kind can genuinely hold a value outside the schema's two
+ * options — upgraded installs add the column with `ALTER TABLE` and no CHECK,
+ * and the CLI casts its flag blindly. A form that normalised it would hide the
+ * very fact the person needs to see, so the value travels as it is and
+ * `isKnownEnvironmentKind` decides what the control says about it.
+ */
 export function formFromPreset(preset: PresetManagerPreset): PresetManagerForm {
   return {
     id: preset.id,
@@ -45,7 +69,6 @@ export function formFromPreset(preset: PresetManagerPreset): PresetManagerForm {
     reasoningLevel: preset.reasoningLevel,
     permissionMode:
       preset.permissionMode as PresetManagerForm["permissionMode"],
-    environmentKind:
-      preset.environmentKind as PresetManagerForm["environmentKind"],
+    environmentKind: preset.environmentKind ?? DEFAULT_ENVIRONMENT_KIND,
   };
 }

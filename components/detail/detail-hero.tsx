@@ -1,5 +1,7 @@
 import { archivedCardDetailPresentation } from "../../lib/card-detail-presentation.mjs";
 import { lockWaitHero } from "../../lib/lock-blocked.mjs";
+import { readMissHero } from "../../lib/host-read-streak.mjs";
+import { isOwnershipRefusal } from "../../lib/ownership-refusal.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 // Detail hero: one status reading per card — decision, error, paused,
@@ -7,7 +9,7 @@ import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 // three detail bodies render around it. Priority order is the contract:
 // archived first, then open questions, then failure, then lifecycle.
 
-export type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
+export type HeroKind = "decision" | "error" | "paused" | "held" | "unreadable" | "working" | "calm";
 
 export type HeroCardState = {
   activity: string;
@@ -15,7 +17,12 @@ export type HeroCardState = {
   stage: string;
   workerThreadId: string | null;
   lastError: string | null;
+  /** When the host stopped answering this card's state read, with the
+   * measurement's sentence derived from it (lib/host-read-streak.mjs). Null
+   * whenever the host is answering. */
+  readMissSince?: number | null;
 };
+
 
 export type HeroDetailState = {
   pendingQuestions: Array<unknown>;
@@ -32,6 +39,12 @@ export type HeroDetailState = {
     internal: boolean;
     expiresAt: number;
   } | null;
+  /** The host's hold on the card's next dispatch, with its sentence already
+   * derived server-side (lib/host-hold.mjs). Null when nothing is held. */
+  hostHold?: { summary: string | null } | null;
+  /** The native Workflows run that owns the card's stage, with its sentence
+   * already derived server-side (lib/native-run.mjs). Null when none is live. */
+  nativeRun?: { summary: string | null } | null;
 } | null;
 
 export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
@@ -66,6 +79,17 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
       sub: "The agent is preparing a question. Nothing needs you yet.",
     };
   }
+  // The host owns the next dispatch, so this is checked before every idle
+  // branch. A held card is not stuck and not failed — it is a card whose
+  // message is already queued, and the sentence says so in the host's own
+  // words rather than offering a recovery for a card that is already on its
+  // way. Falls through to the calm hero when the record is unreadable, so a
+  // missed read can never invent a state.
+  if (card.activity === "held" && detail?.hostHold?.summary) {
+    return { kind: "held", title: `Waiting on the host — ${stageLabel(card.stage)}`, sub: detail.hostHold.summary };
+  }
+  const unreadable = unreadableHero(card);
+  if (unreadable) return unreadable;
   if (card.activity === "error") {
     return {
       kind: "error",
@@ -85,14 +109,23 @@ function workerHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroK
   // Firing it on every turn would cry wolf and teach the signal to be ignored.
   // Fresh idles still get the subtle resume row in the calm hero below.
   if (isKnownStall(card, detail)) return stalledHero(card, detail);
-  if (card.activity === "running") {
-    return {
-      kind: "working",
-      title: `Working — ${stageLabel(card.stage)}`,
-      sub: "The agent advances on its own. Nothing needs you right now.",
-    };
-  }
+  if (card.activity === "running") return workingHero(card, detail);
   return null;
+}
+
+/**
+ * The card is working — but a card can be working in two places.
+ *
+ * A thread turn is the ordinary one, and "the agent advances on its own"
+ * describes it honestly. A host Workflows run is not: the run is a subprocess
+ * that outlives the turn that started it, so the thread sits idle for the
+ * whole run and that sentence would describe a turn that is never coming. The
+ * run's own words name where the work is and that it needs nothing, which is
+ * the only honest reading of a card that looks stalled and is not.
+ */
+function workingHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } {
+  const sub = detail?.nativeRun?.summary ?? "The agent advances on its own. Nothing needs you right now.";
+  return { kind: "working", title: `Working — ${stageLabel(card.stage)}`, sub };
 }
 
 function isKnownStall(card: HeroCardState, detail: HeroDetailState): boolean {
@@ -145,10 +178,42 @@ function calmHero(card: HeroCardState): { kind: HeroKind; title: string; sub: st
   };
 }
 
+/**
+ * The host is not answering this card's state read.
+ *
+ * Above the failure and the stall branches, for the same reason the hold is
+ * above them: a verdict recorded before the reads stopped cannot be
+ * re-verified, and offering Retry or Resume for a card nobody can read is an
+ * action aimed at nothing. The stage is still named, because the last verified
+ * projection is real — it is just no longer fresh, which is what the derived
+ * sentence says.
+ *
+ * The wording lives in lib/host-read-streak.mjs so the card, the test and any
+ * future surface cannot say it three slightly different ways; this is the
+ * placement, and the placement is the part with a failure mode.
+ */
+function unreadableHero(card: HeroCardState): { kind: HeroKind; title: string; sub: string } | null {
+  return readMissHero(
+    card.readMissSince ?? null,
+    Date.now(),
+    stageLabel(card.stage),
+  );
+}
+
 export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }> = {
   decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
   error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
   paused: { wrap: "border-amber-500/40 bg-amber-500/5", dot: "bg-amber-500", alert: false },
+  // Held reads between paused and calm on purpose: it is a real wait, so it
+  // gets a visible surface, but nothing is wrong, so it borrows calm's neutral
+  // border rather than paused's amber. Amber here would ask for a decision the
+  // reader cannot make.
+  held: { wrap: "border-border bg-muted/40", dot: "bg-muted-foreground", alert: false },
+  // Unreadable is neither: something IS wrong, but it is the host and nothing
+  // on the card can fix it. It borrows the visible surface `held` earns for the
+  // same reason and takes an amber-free slate border instead, because this is a
+  // measurement the reader should see rather than a decision they should make.
+  unreadable: { wrap: "border-slate-500/40 bg-slate-500/5", dot: "bg-slate-500", alert: false },
   working: { wrap: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500", alert: false },
   calm: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: false },
 };
@@ -159,9 +224,16 @@ export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: bo
 // question. Shared by all three track detail bodies.
 export function HeroErrorNote({ card }: { card: { activity: string; lastError: string | null } }) {
   if (card.activity !== "error" || !card.lastError) return null;
+  // "Answering below resumes the worker" is a claim about a conversation that
+  // exists. On an unowned card it does not: the conversation is refused until
+  // the records agree, so the sentence points a reader at an answer box whose
+  // answer is discarded.
+  const trailing = isOwnershipRefusal(card.lastError)
+    ? "Restart fresh… in the card actions menu is what clears this; nothing on the card is waiting for an answer."
+    : "Answering below resumes the worker.";
   return (
     <p className="w-full rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs leading-5 text-destructive" title={card.lastError}>
-      <span className="font-semibold">Last worker error:</span> {card.lastError} Answering below resumes the worker.
+      <span className="font-semibold">Last worker error:</span> {card.lastError} {trailing}
     </p>
   );
 }

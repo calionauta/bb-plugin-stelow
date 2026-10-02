@@ -34,6 +34,21 @@ const researchPanelView = readFileSync(join(root, "components/panels/research-pa
 const explorePanelState = readFileSync(join(root, "components/panels/explore-panel-state.ts"), "utf8");
 const explorePanelView = readFileSync(join(root, "components/panels/explore-panel-view.tsx"), "utf8");
 const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
+const pills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
+
+// The review chip carries an affordance it never had. The tile's private copy
+// had no title at all, so the one thing a reader could do about the marker was
+// invisible; the list row's copy was equally silent. One title, one component.
+assert.match(
+  pills,
+  /title="Open this card to clear it\."/,
+  "the review chip names the action that clears it — opening the card is what marks the completion read",
+);
+assert.match(
+  pills,
+  /label = "Ready for review"/,
+  "the chip defaults to the Inbox's existing words for the same request, so one request has one name",
+);
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
 assert.deepEqual(viewsForTrack("research"), ["board", "list"], "research excludes hill");

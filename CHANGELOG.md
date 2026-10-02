@@ -6,6 +6,130 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.64.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.63.0...v0.64.0) (2026-10-02)
+
+
+### Features
+
+* rework is a number, and the card can read it ([#247](https://github.com/calionauta/bb-plugin-stelow/issues/247)) ([3c2295c](https://github.com/calionauta/bb-plugin-stelow/commit/3c2295cd2b22696f05b321d9dc565edccb7e8040))
+
+## [0.63.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.62.0...v0.63.0) (2026-10-02)
+
+
+### Features
+
+* a worktree is only reclaimable once the work is already integrated ([#243](https://github.com/calionauta/bb-plugin-stelow/issues/243)) ([110cfb2](https://github.com/calionauta/bb-plugin-stelow/commit/110cfb29ea511e9fd0c36e8d047bf13b97264012))
+
+## [0.62.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.2...v0.62.0) (2026-10-02)
+
+
+### Features
+
+* a finished card says whether it still owes the repository something ([#239](https://github.com/calionauta/bb-plugin-stelow/issues/239)) ([afbe4e1](https://github.com/calionauta/bb-plugin-stelow/commit/afbe4e13977f2baa3bf189b3c3424ccf1debd4f4))
+* the human loop, from waiting to looking ([#244](https://github.com/calionauta/bb-plugin-stelow/issues/244)) ([d1c94d6](https://github.com/calionauta/bb-plugin-stelow/commit/d1c94d670ee5e01bb6b43de822875683916dc7e3))
+
+
+### Bug Fixes
+
+* remember last project in New issue and contain mobile modal overflow ([#237](https://github.com/calionauta/bb-plugin-stelow/issues/237)) ([bd553bb](https://github.com/calionauta/bb-plugin-stelow/commit/bd553bba7dbf72caf1cea07edeae709afd504384))
+
+## [0.61.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.1...v0.61.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* an install that ran v0.61.0 can upgrade again ([#234](https://github.com/calionauta/bb-plugin-stelow/issues/234)) ([18c04d1](https://github.com/calionauta/bb-plugin-stelow/commit/18c04d1e738bac250deff224760d1790bd7f6606))
+
+## [0.61.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.0...v0.61.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* v0.61.0 refused to start on every install, and the refusal named a corrupt database ([#231](https://github.com/calionauta/bb-plugin-stelow/issues/231)) ([e51d4bc](https://github.com/calionauta/bb-plugin-stelow/commit/e51d4bc65e02ea90ed7c3a2f8cff31dbd6cdc8bb))
+
+## [0.61.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.6...v0.61.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* an install whose `presets` table predates this schema no longer starts. The plugin now throws `PresetSchemaError` at boot, naming the missing constraint or the column order it found and the command that unblocks it (`ALTER TABLE presets RENAME TO presets_legacy`, which keeps the rows for re-import). This affects installs carrying a `presets` table without the `reasoning_level` CHECK, or with a legacy column order gained by `ALTER TABLE ADD COLUMN`. The operator must run that rename once; the plugin then creates the current table and re-seeds the default preset. Cards, workspaces, inbox events and run files are untouched.
+
+### Features
+
+* a New-worktree preset gets a worktree, and a wrong-shaped presets table is refused instead of migrated ([#227](https://github.com/calionauta/bb-plugin-stelow/issues/227)) ([889044e](https://github.com/calionauta/bb-plugin-stelow/commit/889044ef4f51af919b957b819562f8e44112fa64))
+
+## [0.60.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.5...v0.60.6) (2026-10-01)
+
+
+### Bug Fixes
+
+* a card whose reads the host will not answer had a log line and no channel to its owner ([#225](https://github.com/calionauta/bb-plugin-stelow/issues/225)) ([e63fbb9](https://github.com/calionauta/bb-plugin-stelow/commit/e63fbb97fa39a1c9981ef0a0629c738df6e9bdd5))
+* the reasoning level was validated against the wrong set ([#223](https://github.com/calionauta/bb-plugin-stelow/issues/223)) ([de311d7](https://github.com/calionauta/bb-plugin-stelow/commit/de311d7f96ed14fc5cd4e8331ad57b30d04d6aa5))
+* the refusal named a door, and the test proved the words opened ([#224](https://github.com/calionauta/bb-plugin-stelow/issues/224)) ([0e94132](https://github.com/calionauta/bb-plugin-stelow/commit/0e94132fdfc23f75b7c6c4e495f762d4b3f9a939))
+
+## [0.60.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.4...v0.60.5) (2026-10-01)
+
+
+### Bug Fixes
+
+* the adversarial pass survived the suite, so the suite was the bug ([#221](https://github.com/calionauta/bb-plugin-stelow/issues/221)) ([0086d31](https://github.com/calionauta/bb-plugin-stelow/commit/0086d319b2797e867a9b2069855c9daf1ba80f87))
+
+## [0.60.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.3...v0.60.4) (2026-10-01)
+
+
+### Bug Fixes
+
+* the RPC boundary accepted every status, and a card's status was read through a scope's ([#218](https://github.com/calionauta/bb-plugin-stelow/issues/218)) ([0e9a70e](https://github.com/calionauta/bb-plugin-stelow/commit/0e9a70e8686162fb234cb2040424be797e67914b))
+
+## [0.60.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.2...v0.60.3) (2026-10-01)
+
+
+### Bug Fixes
+
+* a card's status gets an owner, and the review found a value it was missing ([#215](https://github.com/calionauta/bb-plugin-stelow/issues/215)) ([f6f2c72](https://github.com/calionauta/bb-plugin-stelow/commit/f6f2c722f2b96c4abdd77fe6aadfbcd3d69f26a9))
+
+## [0.60.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.1...v0.60.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* a preset's reasoning level is validated, stored, and pinned to both spawns ([#211](https://github.com/calionauta/bb-plugin-stelow/issues/211)) ([42da623](https://github.com/calionauta/bb-plugin-stelow/commit/42da62301ccd67be72af539ccfb5611cfa31edab))
+
+## [0.60.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.60.0...v0.60.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* a stage is named by its label on every surface, or not at all ([#209](https://github.com/calionauta/bb-plugin-stelow/issues/209)) ([b85364d](https://github.com/calionauta/bb-plugin-stelow/commit/b85364dd3acbc659046982f63e328c145cc28b5d))
+* stage names are written for a product team, and have exactly one owner ([#212](https://github.com/calionauta/bb-plugin-stelow/issues/212)) ([db82d27](https://github.com/calionauta/bb-plugin-stelow/commit/db82d276605027cf8c6351420d2196e27a36af47))
+
+## [0.60.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.59.0...v0.60.0) (2026-10-01)
+
+
+### Features
+
+* a card mid-workflow is running, the scope map stops contradicting the tracker, and a failed run holds its stage ([#203](https://github.com/calionauta/bb-plugin-stelow/issues/203)) ([302a759](https://github.com/calionauta/bb-plugin-stelow/commit/302a7590f5816ec30be3ed94882f329e03021db0))
+
+
+### Bug Fixes
+
+* a dead import that claimed a live rule was still wired ([#208](https://github.com/calionauta/bb-plugin-stelow/issues/208)) ([12e4fc0](https://github.com/calionauta/bb-plugin-stelow/commit/12e4fc0a024efd96971095a5e5c0aa78dca6ec34))
+
+## [0.59.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.2...v0.59.0) (2026-09-30)
+
+
+### Features
+
+* a card the host is holding is held, not paused ([#205](https://github.com/calionauta/bb-plugin-stelow/issues/205)) ([1c0df62](https://github.com/calionauta/bb-plugin-stelow/commit/1c0df628e26b49c46bdba2fe75572b943f27bf97))
+
+## [0.58.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.1...v0.58.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* a skipped rework scope is resolved everywhere, including the count on the card ([#202](https://github.com/calionauta/bb-plugin-stelow/issues/202)) ([a22f16b](https://github.com/calionauta/bb-plugin-stelow/commit/a22f16b955af90ff89d4fd45443d62a2bf862aac))
+* the shared checkout, a refused done and the review chip each say what was measured ([#201](https://github.com/calionauta/bb-plugin-stelow/issues/201)) ([f2daa0c](https://github.com/calionauta/bb-plugin-stelow/commit/f2daa0c5c82b0a3d60b733b5c631efff955615d0))
+
 ## [0.58.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.58.0...v0.58.1) (2026-09-30)
 
 

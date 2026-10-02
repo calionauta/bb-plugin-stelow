@@ -94,11 +94,15 @@ function harness({
   workerThreadId = "thread-old",
   scheduler = undefined,
   retryDelayMs = undefined,
+  presetOverride = null,
 } = {}) {
   const db = workerTestDb();
   const calls = [];
   const current = card({ worker_thread_id: workerThreadId });
   const bb = workerHost(calls, spawnError, environment);
+  // presetParams is identity here, so the resolved preset row is what the
+  // spawn receives — which is what makes the level under test observable.
+  const resolved = presetOverride ? { ...preset, ...presetOverride } : preset;
   const workers = createWorkers({
     db,
     bb,
@@ -106,8 +110,8 @@ function harness({
     getCard: () => current,
     updateCard: (cardId, fields) => calls.push(["updateCard", cardId, fields]),
     comment: (cardId, body) => calls.push(["comment", cardId, body]),
-    getPreset: () => preset,
-    getReliablePreset: () => preset,
+    getPreset: () => resolved,
+    getReliablePreset: () => resolved,
     presetParams: (value) => value,
     prepareRespawn: async () => ({
       prompt: "Continue the card",
@@ -143,7 +147,7 @@ test("fresh start refuses invalid states and completes success side effects", as
     .run("thread-old", "card-1");
   const result = await started.workers.fresh("card-1", "start");
   assert.deepEqual(result, { ok: true, error: null });
-  assert.ok(started.calls.some(([name, , body]) => name === "comment" && body.includes("continuing from the triage stage")));
+  assert.ok(started.calls.some(([name, , body]) => name === "comment" && body.includes("continuing from Triage")));
   assert.ok(started.calls.some(([name, , fields]) => name === "updateCard" && fields.auto_continue_count === 0));
   assert.ok(started.calls.some(([name]) => name === "card-state"));
   const retry = started.db.prepare("SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards").get();
@@ -190,6 +194,47 @@ test("environment selection pins project-default workers to declared source", ()
   });
 });
 
+// The ask itself. `new-worktree` must reach the host as `host` +
+// `managed-worktree`, because that is the shape bb turns into a real
+// provisioned worktree (under `sw-<cardId>`, machine supplied by the host).
+// It resolved to `{type:"project-default"}` instead, so a card on a
+// New-worktree preset shared one working tree with every other card while the
+// exposure report and the checkout label both spoke as if isolation existed.
+test("a new-worktree preset asks the host for a managed worktree, not the shared checkout", () => {
+  assert.deepEqual(workerEnvironment(
+    { path: "/repo", hostId: "host-source" },
+    { environmentKind: "new-worktree", machineId: null, baseBranch: null },
+  ), {
+    type: "host",
+    hostId: "host-source",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+  });
+  // The preset's base branch is the base the worktree branches from, in the
+  // host's own `{kind:"named"|"default"}` vocabulary.
+  assert.deepEqual(workerEnvironment(
+    { path: "/repo", hostId: "host-source" },
+    { environmentKind: "new-worktree", machineId: "host-machine", baseBranch: "develop" },
+  ), {
+    type: "host",
+    hostId: "host-machine",
+    workspace: { type: "managed-worktree", baseBranch: { kind: "named", name: "develop" } },
+  });
+  // An exploratory card already owns a private directory, so it stays
+  // unmanaged there; and an environment kind this build does not know must not
+  // silently start provisioning worktrees.
+  assert.equal(
+    workerEnvironment({ path: "/repo", hostId: "h" }, { environmentKind: "new-worktree", machineId: null }, true)
+      .workspace.type,
+    "unmanaged",
+    "an exploratory workspace is already its own directory",
+  );
+  assert.deepEqual(
+    workerEnvironment({ path: "/repo", hostId: "h" }, { environmentKind: "something-new", machineId: null }),
+    { type: "project-default" },
+    "an unrecognised environment kind stays on the project default",
+  );
+});
+
 test("initial and prepared replacement spawns share the worker spawn seam", async () => {
   const initial = harness({ workerThreadId: null });
   const args = { projectId: "project-1", environment: { type: "project-default" }, prompt: "Start" };
@@ -211,6 +256,33 @@ test("initial and prepared replacement spawns share the worker spawn seam", asyn
   assert.deepEqual(replaced.calls.slice(0, 3).map(([name]) => name), ["spawn", "archive", "stop"]);
   replaced.workers.dispose();
   replaced.db.close();
+});
+
+test("a restart spawns the replacement with the preset's reasoning level", async () => {
+  const { calls, workers, db } = harness({
+    presetOverride: {
+      provider_id: "acp-opencode",
+      model_id: "opencode/space-bunny-free",
+      reasoning_level: "high",
+      providerId: "acp-opencode",
+      modelId: "opencode/space-bunny-free",
+      reasoningLevel: "high",
+    },
+  });
+  assert.deepEqual(await workers.respawn("card-1", preset.id, "restart"), {
+    ok: true,
+    threadId: "thread-new",
+  });
+  const args = calls.find(([name]) => name === "spawn")[1];
+  assert.equal(args.providerId, "acp-opencode");
+  assert.equal(args.model, "opencode/space-bunny-free");
+  // The host accepts provider, model and reasoning level only together, so the
+  // three are pinned as a tuple: a restart that keeps the provider and model
+  // but loses the level — the exact regression — fails here.
+  assert.equal(args.reasoningLevel, "high");
+  assert.equal(args.executionInputSources.reasoningLevel, "explicit");
+  workers.dispose();
+  db.close();
 });
 
 test("respawn stops the predecessor only after the replacement exists", async () => {

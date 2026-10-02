@@ -3,7 +3,7 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
-import { liveBorderClass, statusTone } from "../../lib/detail-presentation.mjs";
+import { errorActivityLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { orderedDoingNow } from "../../lib/doing-now.mjs";
@@ -12,7 +12,11 @@ import {
   AttentionChip,
   BuildStatusPills,
   DoingNowPill,
+  ErrorChip,
+  IntegrationPendingChip,
+  PausedChip,
   LightweightStatusPills,
+  ReviewChip,
   ScopeStrip,
   attentionLabel,
 } from "../dashboard/build-status-pills";
@@ -57,27 +61,35 @@ export function CardRetryButton({ cardId, label }: { cardId: string; label: stri
 }
 
 export function CardMetaRows({ card }: { card: BoardCardItem }) {
+  const stopped = errorActivityLabel(card);
+  const paused = pausedActivityLabel(card);
   return (
     <>
       <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>
         {card.projectName}
       </div>
+      {stopped ? (
+        <div className="mt-2"><ErrorChip label={stopped.label} detail={stopped.detail} /></div>
+      ) : null}
+      {paused ? (
+        <div className="mt-2"><PausedChip label={paused.label} detail={paused.detail} /></div>
+      ) : null}
       {cardShowsAttention(card) ? (
         <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
+      ) : null}
+      {card.integrationPending ? (
+        <div className="mt-2">
+          <IntegrationPendingChip
+            label={card.integrationPending.label}
+            detail={card.integrationPending.detail}
+          />
+        </div>
       ) : null}
       {card.activity === "running" || card.activity === "awaiting-answer" ? (
         <div className="mt-2 max-w-full"><DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /></div>
       ) : null}
       {cardNeedsReview(card) ? (
-        <div
-          className={
-            "mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 "
-            + "text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
-          }
-        >
-          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-          <span>Review</span>
-        </div>
+        <div className="mt-2"><ReviewChip /></div>
       ) : null}
       {card.activity === "idle" ? (
         <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div>

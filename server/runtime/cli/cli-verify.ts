@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import {
   exploreVerifyReport,
   exploreVerifyText,
@@ -215,8 +215,11 @@ async function reworkLoopWarning(
           !gapState?.auditGapScopes.some((scope) => scope.gap === gap.description),
       )
       .map((gap) => gap.description),
+    // A skipped scope is resolved, not open — same rule the done gate applies
+    // (lib/trackables.mjs). Warning about it here told the worker to "finish"
+    // work that was deliberately set aside.
     openRework: (gapState?.auditGapScopes ?? [])
-      .filter((scope) => !isDoneStatus(scope.status))
+      .filter((scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status))
       .map((scope) => `${scope.id} (${scope.status})`),
   };
 }

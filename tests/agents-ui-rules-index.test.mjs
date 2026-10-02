@@ -91,5 +91,42 @@ test("the unenforced rules are named as debt rather than quietly listed", () => 
     /Known debt/,
     "a rule stated without a test must be declared as debt in the same breath, or it reads as enforced",
   );
-  assert.match(section, /101/, "the counted type-size migration is debt with a number, not a vague 'some places'");
+  // The debt carries a COUNT, and the count is measured here rather than
+  // trusted. It used to be a literal — first ~101, then 109 — and a literal in
+  // a document about how stale counts mislead is the drift it warns against,
+  // written by the same hand. Asserting the stated number against a fresh
+  // census makes the sentence true or red, never merely old.
+  const stated = section.match(/text-\[11px\]` still\s+appears in (\d+) places/);
+  assert.ok(stated, "the type-size debt names a measured count, not 'some places'");
+  const measured = countOccurrences(
+    [join(repoRoot, "components"), join(repoRoot, "lib")],
+    /text-\[11px\]/g,
+  );
+  assert.equal(
+    Number(stated[1]),
+    measured,
+    "the count in AGENTS.md is a measurement of this checkout, so it cannot drift unnoticed",
+  );
+  const statedButtons = section.match(/and (\d+) raw `<button>` elements/);
+  assert.ok(statedButtons, "the raw-button debt names a measured count too");
+  assert.equal(
+    Number(statedButtons[1]),
+    countOccurrences([join(repoRoot, "components")], /<button/g, [".tsx"]),
+    "the raw-button count is measured against components/**/*.tsx",
+  );
 });
+
+/** How many times `pattern` occurs across the given roots. Recursive and
+ * extension-filtered so the count is the one a reader would get from grep. */
+function countOccurrences(roots, pattern, extensions = [".ts", ".tsx", ".mjs"]) {
+  let total = 0;
+  for (const root of roots) {
+    for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
+      if (!entry.isFile()) continue;
+      if (!extensions.some((extension) => entry.name.endsWith(extension))) continue;
+      const text = readFileSync(join(entry.parentPath, entry.name), "utf8");
+      total += text.match(pattern)?.length ?? 0;
+    }
+  }
+  return total;
+}

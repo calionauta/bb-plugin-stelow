@@ -9,6 +9,10 @@ export interface PublicationCard {
   status: string;
   workspace_kind: "project" | "exploratory";
   workspace_host_id: string | null;
+  /** Which track owns the card. Decides whether delivery actions apply. */
+  kind: string;
+  /** What the user asked for. A finding is not a change. */
+  intent: string;
 }
 
 export interface PublicationEnvironment {
@@ -36,7 +40,7 @@ export interface ArtifactsPublicationDeps {
     get: (cardId: string) => PublicationCard | undefined;
     checkout: (card: PublicationCard) => Promise<PublicationCheckout | null>;
   };
-  normalizeStatus: (value: unknown) => string;
+  cardStatusOf: (value: unknown) => string;
 }
 
 const capabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });
@@ -81,6 +85,8 @@ const snapshotSchema = z.object({
     markDraft: capabilitySchema,
     mergePullRequest: capabilitySchema,
   }),
+  /** Why the delivery actions are limited, or null when they are not. */
+  relevanceNote: z.string().nullable(),
   events: z.array(z.object({
     id: z.string(),
     action: z.string(),

@@ -20,11 +20,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   composer remembers the last used selection.
   The fixed-height dialog with inner scroll never jumps. Bordered
   settings sections visibly contain the controls. BB's own Project, Environment,
-  branch, and provider/model controls are authoritative: Stelow forwards the
+  branch, and provider/model controls are authoritative: the Project picker
+  opens on the last project used (falling back to the board project when that
+  pick is gone), Stelow forwards the
   chosen checkout unchanged and keeps later workers in it, and forwards the
   chosen provider/model/reasoning/permission to the spawn — a choice
   differing from the analysis band preset is pinned as the card's preset
-  override, so restarts keep running what was picked. Spawns a hidden worker thread
+  override, so restarts keep running what was picked. The forwarded
+  reasoning level is validated against the same eight levels a preset may
+  hold, so a hand-crafted request naming anything else falls back to the
+  preset's level instead of reaching the worker. Spawns a hidden worker thread
   starting at triage. A failed submit never closes the dialog or loses the
   draft (the throw contract): a persistent warning names the cause in place
   — e.g. Build on a project without a Git source — so another workspace can
@@ -127,6 +132,46 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A composer posts back through `postIssueComment` behind an inline confirm
   naming the destination (`repo#number`, public and hard to undo) — human
   gesture only, payload validated server-side, mirror refreshed on success.
+- **A finished card says whether it still owes the repository something**
+  (`integrationPending`). `done` is a lifecycle state, not a publication state:
+  a card can complete with its work uncommitted, committed but never pushed, or
+  pushed as a pull request nobody merged, and the board read "Done" for all
+  three. A completed project card now carries one of three readings on the
+  board card, the list row, and the Git changes panel: **Not committed** (no
+  publication event recorded), **Local commit only** (committed, never pushed
+  or merged), and **PR not merged** / **Pushed, not merged** (remote-backed,
+  never on the base branch). A card whose pull request merged reads nothing, and
+  an exploratory workspace reads nothing — it has no base branch to land on, so
+  the question does not apply. A local squash is deliberately *not* treated as
+  publication: the panel offers it precisely because it cannot fetch or push.
+  The reading comes from the `publication_events` ledger and never from a live
+  `git` call, because the board lists every card and a per-card git invocation
+  would turn a scroll into a spawn. The chip is amber, matching
+  `AttentionChip`: both mean this card wants a person, and a reader who learned
+  one tone should not have to learn a second for the same call to action.
+- **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
+  A card whose worker halts recorded `activity: "error"` and put its reason in
+  a comment the board never renders, so the board showed the amber attention
+  border — the same one a card holding a question gets — and nothing else. An
+  error now has its own border, outranking attention rather than falling
+  through it: a broken card is not waiting for anything, and retrying is the
+  opposite action from answering. The card, the list row and the detail surface
+  all carry a **Stopped with an error** chip. An error with an empty
+  `last_error` — which happens when a worker halts by choice rather than
+  throwing — still says "Stopped" and says the reason is missing, because an
+  empty string is not a reason a reader can act on.
+- **Publication actions follow the card, not just the git state**
+  (`publishRelevanceNote`). The panel decided what to offer from the checkout
+  alone, so a card whose entire deliverable was a written finding reached Done
+  and was offered Commit, Push, Squash and Merge PR. It now reads the card's
+  own `kind` and `intent`: a build card that is not an investigation keeps
+  every delivery action, and an investigation — or any research or explore
+  card — keeps only Commit, with one sentence saying why. The local squash,
+  the publish step and the whole pull-request block are not rendered for them.
+  Hiding rather than disabling is deliberate: a greyed button invites a reader
+  to work out which policy refused them, and the note already answers it.
+  A commit stays available to a finding because a finding often arrives with
+  the fix that came out of it, and that fix is real work.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
@@ -177,7 +222,27 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agent-authored evidence from human authority, preserve Shape and Scope Map
   versions, and carry explicit disposition routes. Scope X-ray is a read-only
   server projection of approved nodes, dependency edges, provenance, and
-  freshness. Scope-map challenges name
+  freshness. What the card *draws* from it is
+  `lib/scope-xray-presentation.mjs`, and the two are no longer allowed to use
+  the same word for different things. The X-ray reads the **approved map**
+  (`<stateDir>/scope-map.json`, written at `scope`); the progress track reads
+  the **execution tracker** (`stelow.json` plus the latest spec, written at
+  `execution`). The empty state was keyed on the tracker, so a card holding an
+  approved seven-scope map and no tracker yet printed the seven scopes and "No
+  scopes broken down yet — the agent is still shaping the card" four lines
+  below it. The rule now asks the **map**: an approved map with nothing tracked
+  says the map is approved and tracking starts at execution, and only a card
+  with no map at all says it is still shaping. Freshness is said **once**, in
+  the header, as a sentence a reader can act on — it used to appear in the
+  header *and* on all seven nodes, from the same variable, which is how a
+  one-word fact became the most-repeated line on the card. A scope is labelled
+  only when it **deviates** from the map's baseline; a stale map is one header
+  fact, not seven. The raw contract words (`current`, `stale`, `blocked`,
+  `unknown`) never reach the card: `current` is a *staleness* value meaning
+  "this entry still matches the card's shape version", and printed beside a
+  scope id it read as "this is the scope being worked on" — the inverse of its
+  meaning. The dependency graph sits behind a disclosure rather than above the
+  fold. Scope-map challenges name
   their destination and stale artifact set. Native `needs_input` boundaries
   preserve contract ID, boundary ID, versions, and answer schema so a stale
   answer cannot silently resume a run. Refactors with more than one delivery
@@ -302,10 +367,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analysis/Planning/Execution/Review) + Done/Archived — the Bucket is not
-  rendered as a column (its header button + gallery own it); cards sit in their
-  stage's phase. The complete Build topology (inbox, phases, terminal
+- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+  named by the synced catalog (analysis/planning/execution/review) +
+  Done/Archived — the Bucket is not rendered as a column (its header button +
+  gallery own it); cards sit in their stage's phase. Column headings are
+  `PHASE_LABELS`, so the `review` phase currently reads **Evaluation** and a
+  host-side rename moves the board without a plugin edit. The complete Build
+  topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
   derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
@@ -511,7 +579,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  102 times: the card had a real type scale, invented by whoever needed a small
+  111 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -524,7 +592,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 76 raw buttons. A test does. The index itself then failed
+  long time next to 81 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -595,6 +663,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   with the section still closed. The note composer stays: five words of
   course-correction do not justify losing your place on the card to go find a
   thread. Removed capability, none: the ambiguity was the feature.
+- **Catch up** (`CatchUpSection`, `catchUp` RPC, `lib/card-catch-up.mjs`). A
+  card's own answer to "what changed since I last looked": a DETERMINISTIC delta
+  over the rows the card already wrote — stage moves, questions, answers, stalls,
+  failures, completions — anchored on the newest read the card recorded, or on
+  its creation when it has never been opened (the surface says which, rather than
+  implying "caught up" for a card nobody has looked at). Empty is a real answer
+  — "nothing changed" — and is rendered as one. Loads on demand because a
+  briefing costs a spawn and most card opens are not a return after a gap; the
+  facts always render, and a generation-tier model may only REPHRASE them
+  (`lib/card-briefing.mjs`, the `card-briefing` delegation site). The model is
+  told the list is all it has, is forbidden to infer progress or quality, and
+  told to say plainly when there is nothing — because a briefing that invents a
+  change is worse than no briefing, since the reader cannot tell it from the real
+  ones. Every failure path (spawn, timeout, empty output, no preset) degrades to
+  the facts, and `STELOW_COMMS=0` removes the prose and never the facts. It
+  writes nothing and advances nothing. Artifacts are deliberately NOT a fact
+  kind: the manifest carries a path and a stage and no registration time, so
+  "this is new since you looked" cannot be derived from it and is not guessed.
+  The section is named a summary of what the card recorded, never a channel —
+  the same reason "Conversation" became "Notes for the agent".
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -687,9 +775,39 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
     as two lines, and never says *which* agent touched *which* file — a shared
     working tree has no per-agent ownership, and inventing one would be a
     confident lie. So the lines read `src/a.ts is dirty in a shared working tree`.
-  - A host that cannot be read says so (`Could not read this host's threads`) and
-    is never reported as "nobody is there", because a missing check and a clean
-    one are different answers and the reader must be able to tell them apart.
+    Only the **count** of other threads is reported, not their ids or titles: the
+    count is what tells a reader whether to look further, and naming threads this
+    check cannot attribute anything to would invite exactly the attribution the
+    first bullet refuses.
+  - The four questions are asked in **one order, and an unmeasurable fact
+    outranks whatever sits behind it**. How many other agents share the checkout
+    is a question about the host alone — it reads the cached list, costs no
+    subprocess, and is true whatever this card holds — so it is asked first, and
+    everything after it is only reachable if there is somebody to compare
+    against. An empty checkout is therefore reported as `no-threads` whatever the
+    card claims, and costs no `git status`. This ordering is load-bearing rather
+    than cosmetic: claims are empty at rest, so a report that asked the file
+    question first answered "nothing overlaps" for every card on the host and
+    suppressed the thread count that was already sitting in the cached list.
+  - **An answer nobody measured is named, never rendered as a clean one.** A card
+    that has claimed no files gets `unknown-footprint` — *"1 other agent is in this
+    checkout. This card has not claimed any files, so nothing here can say whether
+    their work overlaps yours."* — and a claim ledger that could not be read lands
+    on the same answer, because it measured nothing. `no-checkout` (a card with no
+    checkout Stelow can read) and `unavailable` (a host that could not be read) say
+    the same thing about themselves. The family is one exported list,
+    `EXPOSURE_REASONS`, which the RPC schema, the server's type and this copy all
+    derive from — a reason invented in one place and forgotten in another is a
+    reason the reader is shown somebody else's answer for. `unreadable-tree`
+    completes it: a working tree that could not be read is overlap-unknown, not
+    overlap-none. None of them renders as *"No other agent is working in this
+    checkout."*
+  - The file list stays **this card's claims only**, intersected with what is dirty
+    in the shared tree; it is never the whole dirty set.
+  - Two declared limits. The on-disk `bb stelow lock` lives inside each card's own
+    state directory, so by itself it gives **no cross-card protection** — it
+    protects a card against its own repeat runs. And nothing here mediates a worker
+    running `git reset --hard`, or any other command that rewrites a shared tree.
   - It is a **report, not a guard**: it refuses nothing, resolves nothing, and
     changes no decision.
 - **Question recovery.** A worker may wait only for a real card form: a live
@@ -855,7 +973,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   **Workflow map** as two sibling sections that never pretend to be each
   other: progress is where this card is, the map is what each stage does.
   Before scopes exist the live checkpoint pill rides the subtitle line
-  (`where this card is · ● Plan gate`), never a detached floating hint —
+  (`where this card is · ● Product Review`), never a detached floating hint —
   element hints render without truncation so the pill ring is never clipped.
   A progress hero shows scope/task bars with counts (never percentages), what is doing
   now, and what is blocked — above the per-scope detail.
@@ -923,7 +1041,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline.
+  to the agent, gate question answerable inline. A generated interface
+  mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
+  under decision is a layout, and source text is the one thing that cannot
+  answer it. The decision is the path alone (`artifactRenderKind` in
+  `lib/artifact-render.mjs`), and a mockup is framed under
+  `allow-scripts` without `allow-same-origin`, so a worker-authored page
+  runs without reaching the reader's bb session. A truncated file is
+  shown as source instead, because a partial page is a broken layout
+  presented as evidence — and it says so rather than failing silently.
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
@@ -1009,8 +1135,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (build only). Every card names its checkout in one stored word
   (`environment_label`: isolated worktree, shared checkout, BB-managed,
   exploratory) plus the live branch on build cards — no guessing from
-  paths. Branch choice at creation stays BB's composer (project,
-  environment, branch forwarded unchanged); Stelow never re-picks it.
+  paths. Branch choice at creation stays BB's composer. Project and
+  branch are forwarded unchanged; the environment picker is *seeded*
+  from the active preset's worktree setting, and the person can always
+  change it. Stelow never overrides an environment the person picked.
+  The label is stored per path, not per intent: a card started from the
+  composer records `worktree`, while a card started by GitHub import,
+  the CLI or a restart records `managed` for the same preset — both are
+  correct for the shape they were given.
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
@@ -1040,6 +1172,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   actions its primary filter lists. The review marker rides the completion's
   own read state: `bb stelow done` writes it unread, opening the card clears
   it, and the board listens to `inbox-changed` so the marker never lingers.
+  One `ReviewChip` serves the board tile and the list row — the tile used to
+  carry a private copy that had drifted a dot and a type size away, which is
+  the drift the shared-vocabulary rule exists to prevent and the one rule no
+  test could see. The chip carries **no dot**: in this vocabulary a dot means
+  "here is a position" (the stage pill, the activity pill and the attention
+  chip all have one), and on a terminal card the stage pill is deliberately
+  suppressed, which left the review chip alone in the vacated slot and reading
+  as the card's next checkpoint. It reads **Ready for review** — the Inbox's
+  existing words for the same row — because `review` is a phase in the stage
+  catalog and the board already has a column header that says Review, so a
+  chip wearing that word is a position that does not exist. It also carries the
+  one affordance it never had: *Open this card to clear it.*
 - **Auto-continue** (`syncThreadState`, `lib/auto-continue.mjs`). A worker
   that narrates progress and stops idles after every stage (the provider
   ends a turn on any final text). While the finished turn left fresh
@@ -1052,6 +1196,153 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   in Decision API mode, a confident "no real progress" judgment vetoes the
   resume (the card pauses instead); every other outcome keeps the
   heuristic standing — the veto saves turns, never spends them.
+  The park that ends auto-continue names the turn that produced it, from
+  the finished turn's own Stelow verbs (`lastTurnStelowCalls`, read once
+  per idle sync): a turn that ran `bb stelow done` and had the gate refuse
+  it is told the refusal is the last thing on the card and that resuming
+  repeats it; a `done` that came back clean is a different sentence again,
+  because a gate that passed must not be described as one that refused.
+  That signal chooses words only — the nudge budget still governs whether
+  the worker is resumed, so a refused `done` is resumed exactly as before.
+  A refused `done` also leaves a card comment carrying the gate's stderr
+  (`bb stelow done refused: …`), which is the record the park sentence
+  points at; all eight build refusals go through that one seam, including
+  the two that return a `refuse({…})` object. Prose stays invisible: a
+  worker that stops having run nothing, asked nothing and committed
+  nothing gives the host no verifiable fact, and classifying prose to
+  manufacture a sentence for it is a classifier on the authority path.
+
+- **A held card is not a paused card** (`lib/host-hold.mjs`,
+  `server/runtime/worker-hold.ts`). The host can take a card's next message
+  and decline to dispatch it — the concurrency limit is full, the host went
+  offline, a permission interaction is open. The message is already on its way
+  and the host releases it on its own, so the card is neither stalled nor
+  failed: it is **held**, its own activity value. The card then says so, in
+  the host's own words (`Waiting on the host: 4 of 4 running on host
+  ubuntu-8gb-hel1-1. The host dispatches it as soon as it can — no action
+  needed.`), shows no amber attention chip, and offers **no Retry** — the
+  button used to sit there for ten minutes and queue a second copy of the
+  message already waiting. A held card raises **no inbox event**; the one rule
+  is that anything the host resumes by itself gets no button and no row, and
+  only what a person can move gets both. Hold detection covers every wait the
+  host names, on all three tracks: the research/explore sweep applies it too,
+  because those tracks never grew the duplicate-nudge pile (they do not
+  auto-continue) but a held card must not be reported as an idle one asking
+  for a retry nobody needs.
+  The delivery verdict is what makes this possible, and it is the whole fix:
+  `threads.send` answers with `{delivery:"sent"}` or `{delivery:"queued"}` and
+  does not throw for the second, so the plugin used to read a held dispatch as
+  a resume. That one word claimed the card was `running` on an idle thread,
+  spent the auto-continue budget on turns that never started (ten identical
+  nudges on card_e3u00eb4 before the budget ran out and the card parked
+  itself), and then presented the result as a pause needing a person. Now a
+  queued delivery projects the hold and **spends no budget**, and a held card
+  is never nudged at all — the pending message is the pending work.
+- **A card running a workflow is running, not stopped** (`lib/native-run.mjs`,
+  `server/runtime/card-live-runs.ts`, `server/runtime/build-thread-sync.ts`).
+  A native execution run is a `bb workflows run` subprocess, so it outlives the
+  turn that started it: on card_cbnihg4c the `planning-research` run was still
+  `running` while the coordinator thread sat idle. That is the **normal** shape
+  of a run, not a symptom. The plugin had a rule for exactly this —
+  `keepsCardRunning`, "a queued or running run keeps the card alive; a run
+  waiting on a boundary only while nothing else is asking the user" — and
+  **nothing called it**. Six references, all inside its own definition and
+  re-export. So the 45s sync read an idle thread, found no pending question,
+  took the idle branch, and told a card that was working that it had stopped: a
+  nudge it did not need, auto-continue budget spent on turns with nothing to do
+  with the run, and finally a `paused` inbox row whose Resume button would have
+  restarted a card mid-stage.
+  The sync now consults the rule **above** the auto-continue decision, because
+  the run *is* the pending work, and the lifecycle export is gone — one owner,
+  one reader. A card with a live run is never nudged, never parked, spends no
+  budget, and clears the idle timestamp it does not have. The detail answers
+  *why* it is not moving, the same split the host hold uses: the board says
+  `running`, the card says `The Tech Planning run is working now; the card's
+  thread is idle while it does. The card continues on its own — no action
+  needed.` The stage label travels with the run, because the card said "Tech
+  planning" and the run said "planning-research" and nothing on screen connected
+  them. A run waiting on a decision still yields to an open question — that
+  card is one the user is already in.
+- **A failed run holds the stage, and Retry run is the door**
+  (`lib/failed-run-gate.mjs`, `server/execution-lifecycle-retry.ts`,
+  `server/execution-advance-preflight.ts`). On card_cbnihg4c the `scope-map`
+  run failed with *"the recipe produced no task outputs"* and an empty staging
+  directory, and the card advanced to Tech Planning anyway — so `Failed · scope`
+  sat in Execution runs while the card was two stages on, reading as a
+  contradiction with no way to tell whether the scope work had happened. The
+  preflight both entry points share now refuses to leave a stage whose **newest**
+  run failed, and the refusal names the door: `Retry run to try it again —
+  the card cannot leave the stage until a run of it succeeds.`
+  "Newest for the **stage**" is the whole design, and it is what makes the hold
+  survivable. A retry writes a newer run, so the hold releases the moment the
+  retry starts and re-tightens by itself if the retry fails too — nothing to
+  clear and nothing to reconcile, where a rule keyed on *"a failed run exists"*
+  would need a way to delete the failed row, and **nothing in this plugin does
+  that**. The gate is not scoped to the card for the same reason: a card that
+  failed three stages ago and moved on cleanly is not stuck. `cancelled` is
+  deliberately not a blocking state — a person cancelling a run is a decision,
+  not a failure, and holding a stage on it would make Stop a dead end.
+  `Retry run` appears on a **failed** row, the row the gate points at, and starts
+  a fresh run of the same recipe at the card's current stage through the **same**
+  launch rule every other start uses — so it inherits that rule's refusals
+  (unknown recipe, wrong stage, a card that already owns a live run, a host
+  without the capability) instead of growing a second set. It refuses a run from
+  a stage the card has since left, naming the stage and the way back, because
+  re-running that recipe would write the old stage's artifacts over work the
+  card has since done. The failed run is left untouched: terminal states accept
+  no transitions, and rewriting history to make a retry look tidy would mean the
+  card could no longer show what actually happened. A refusal from the launch is
+  shown to the reader rather than swallowed, because a retry that is declined
+  leaves the card exactly where it was.
+  The card is **told** which run blocks (`detail.card.blockingRun`) rather than
+  re-deriving the rule in the UI, so the button and the gate cannot disagree.
+  That one fact decides two affordances: the Execution runs section **opens**
+  when a run is blocking — the card's own rule is that a section starts closed
+  unless it is `live` or `blocking`, and a closed section hid the very button the
+  refusal names — and **Retry run** appears on the blocking row only, never on a
+  failed run from a stage the card has left, which would only ever answer with an
+  error. The hold also fires on `--dry-run`, which is how a worker asks "may I
+  advance?" before committing: with the hold below the short-circuit the probe
+  said yes, the worker acted, and the real advance refused — so the one tool
+  meant to prevent the mistake was the one place it did not fire.
+  The run list names each run by the **stage label the card already uses**
+  ("Tech Planning"), not the host's recipe slug. It read
+  `planning-research / Running · planning` while every other surface said
+  "Tech Planning", and nothing on screen connected them — the same word meaning
+  two things, which is the mistake the Scope X-ray made in the other direction.
+- **A run the host stops answering about eventually fails**
+  (`server/execution-reconcile-run.ts`, `lib/execution-run-ledger.mjs`). The
+  liveness rule trusts the ledger, the ledger is written in exactly one place,
+  and that place used to return an error and change nothing. A run whose host
+  went away therefore stayed `running` in the database **forever**, and the
+  liveness rule — faithfully reading a stale row — held the card as "the run is
+  working now" indefinitely: no button, no inbox row, no park. A wedge wearing
+  the costume of a fix, introduced by the fix above and closed by this.
+  An unanswerable host now opens a decaying window (generous — ten minutes,
+  because this is a recovery path and not a latency budget), an answered poll
+  closes it, and a window that never closes fails the run — a state the card can
+  show, the stage gate can hold on, and Retry can act on. The clock starts at the
+  **first** failure, not at the run's start, so restarting the plugin cannot
+  condemn a healthy long-running workflow. `reconcile_failed_at` is the
+  reconciler's own bookkeeping and is deliberately **not** projected to the card:
+  a reader is told "the host stopped answering" through the run's reason, not
+  through a timestamp they would have to compare against a clock.
+- **One card, one coordinator thread, one pending band swap**
+  (`server/workers-respawn-guard.ts`, `server/workers-respawn.ts`,
+  `server/workers-scheduler.ts`). A card owns one `worker_thread_id`, and
+  replacing the worker spawns the replacement **before** stopping the old one —
+  the right order, since a failed spawn must not leave a card with no worker.
+  It also means two threads are briefly live for every respawn, and that window
+  is only safe if two respawns cannot overlap. A band swap on a stage advance,
+  an automatic spawn retry, and a manual Restart Worker are three independent
+  callers, none locked against the others, each spawning a thread; overlapping,
+  the first replacement is orphaned — unreachable by anything that stops a
+  card's worker, because it is no longer the card's `worker_thread_id`. A
+  concurrent caller is now **refused, not queued** (queueing reproduces the same
+  orphan one tick later), with a message that says to try again once it
+  settles. Separately, a deferred band swap no longer stacks a second armed
+  timer on one card: it overwrote the handle without cancelling the one it
+  replaced, so the orphan timer fired 10ms later and spawned a **third** thread.
 - **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
@@ -1068,7 +1359,36 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comments kept. Resolves the reliable-tier preset like any fresh start
   (card pin, reliable override, band, default). A reseed restarts the
   workflow, not the human's review choices: the card's current appetite
-  and gate set carry over.
+  and gate set carry over. It is also what an unverified-ownership card is
+  told to use, and a refused `done` now leaves the gate's own stderr as a
+  card comment for a reader deciding between this and a retry.
+  When the card's state records disagree with its state file, every surface
+  that refuses does so with one shared sentence
+  (`lib/ownership-refusal.mjs`) that names this action, says it lives in the
+  card actions menu, and says a retry cannot help — every command on an
+  unowned card is refused until the records agree. The confirm dialog stops
+  advising "try Retry first" for that case, and the error note stops claiming
+  there is an answer below, because on such a card the conversation is
+  refused too. **Eight server sites and two components** read that one
+  definition, and the eight are enumerated by name in a test that fails if a
+  site re-spells the verdict inline — so the count cannot drift, and it already
+  had: the comment claimed five when the true count was eight, and three sites
+  were telling a card to "try Retry first" for a card Retry cannot help.
+  The predicate that recognises the refusal is a prefix match, so a site may
+  append its own tail.
+  **The sentence names a door, and that is a behavioural claim, not a wording
+  one.** Restart fresh is genuinely the only thing that repairs a card whose
+  records disagree: it mints a new generation, writes a state file naming this
+  card, and repoints the card row at the generation it just created — and only
+  then, so a failed reseed leaves the card on its last verified records rather
+  than on a hash pointing nowhere. Archive is terminal and Delete is
+  irreversible, so naming a different action instead would be a lie in the other
+  direction. Asserting the sentence *contains* those words proves nothing and
+  passes unchanged against the exact change that would close the door, so the
+  door is proved by running the real reseed against a real workspace whose
+  records genuinely disagree and asking whether they agree afterwards — and by
+  asserting the surface actually *offers* the action, not just that it names
+  it.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
@@ -1182,6 +1502,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   still unverified against a real host. And because no error on this card
   was resolved *by the archive*, the verbatim-`last_error` revival path is
   untested here — the unit tests cover it, this card cannot.
+- **Opening a completed card is what satisfies its review.** The completion's
+  review request is cleared by a read, and by accepting the result: the inbox row
+  and the board chip are two surfaces of one row's read state, so spending it
+  moves read state alone and the completion keeps its own lifecycle — "reviewed"
+  never reads downstream as "closed", and an archived card's row is refused the
+  stamp entirely. Build, research and Explore each clear it in their own detail
+  body, guarded on the completed status so opening a card mid-work cannot
+  silence a live question, error or pause. Acceptance is the second writer, and
+  deliberately so: a person who has just recorded that they reviewed and
+  accepted the result is not owed the request to review it again, and leaving
+  the row open would hold the badge above zero on a card with nothing left to
+  do. This is a guarantee about the *wiring*, not about the handler: a handler
+  test exercises the handler directly and never asks who calls it, which is why
+  the guarantee is pinned from the components and asserts its own premise (the
+  card detail is fetched from the detail body alone — a new prefetch or peek
+  would be a second way for a card to lose its review without you choosing it).
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
@@ -1196,6 +1532,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   write nothing and publish nothing — panels reload only on real
   changes, and background refreshes never flash loading UI (first
   load owns the skeleton).
+- **When the host stops answering, the card says so instead of going quiet.**
+  A read the host will not answer used to be written to the server log and
+  nowhere else, so a card losing reads repeatedly was undiscoverable to the
+  person who owns it. A card that misses **6 consecutive reads** (~4m 30s at
+  the 45s reconcile) now carries a **Host not answering** chip on its board
+  tile and list row, and the open card's hero states the measured sentence —
+  how long the host has not answered, that the card is read as stale rather
+  than working, and that nothing here needs you. It deliberately names what
+  was measured and stops there: no cause is guessed, because none was.
+  It is its own column, `read_miss_since`, and sits *beside* `activity`
+  rather than inside it — activity is the last **verified** projection, and
+  overwriting it would erase the only true thing the card knows while the
+  host is silent. It is not `last_error` (that is the Resume button, and a
+  transport fault is not something a resume can fix) and it is not an inbox
+  row (every inbox kind is an action you resolve; this is neither, and a row
+  would hold the badge above zero asking for something that changes nothing).
+  It clears itself the moment a read answers, and when a card leaves the
+  sync's scope — a warning that outlived the fault would be a second lie.
 
 ## 6. Configure the workforce
 *When I want a different brain, cost, or permission, I want presets.*
@@ -1205,6 +1559,80 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   from BB's own pickers (live catalog with search, same as the new-card
   composer) shared with the card override dialog; environment kind stays a
   preset field. Built-ins protected.
+  The preset also carries its worktree setting, editable from this dialog as
+  an on/off field:
+  **Isolated worktree** seeds the card composer's environment picker on a
+  worktree of its own, and leaving it off means BB resolves its own default
+  for the project. It is deliberately not a "Project checkout vs Worktree"
+  pair — the two words mean opposite things in Stelow and in BB, and a
+  shared-checkout preset still records the card as `managed`, so a labelled
+  pair would promise a checkout the card does not get. The field is disabled
+  on built-in presets (flipping the built-in default's kind re-routes every
+  auto-started worker and is inherited by every preset created afterwards);
+  duplicate one to change it. A preset row shows a `worktree` pill, and New
+  preset inherits the current default's setting. An environment value the
+  schema never produced is named in the field's own sentence and refused on
+  save rather than sent to the server. Built-ins protected.
+  Two known limits, stated rather than hidden: on a personal/exploratory
+  project the card uses the exploratory workspace instead of the seeded
+  worktree, and that substitution is **silent** (no notice is written); and
+  BB's own re-seed rule re-applies every seed when a preset changes while the
+  dialog is open. Stelow freezes the environment picker for the duration of a
+  visit — it captures the seed when the dialog opens and re-reads it on reopen —
+  but the picker freezing is the *only* thing frozen: provider, model, reasoning
+  level and permission mode are still read live from the active preset, so
+  changing those mid-dialog re-seeds them, including over a choice already made.
+<<<<<<< HEAD
+  A preset's reasoning level is one of the eight levels the host offers, and it
+  is stored with the provider and model it belongs to — never on its own.
+  Saving a preset with any other level is refused, naming the levels that are
+  accepted. The level reaches the worker's spawn alongside its provider and
+  model, marked as an explicit choice, and both the card's first spawn and
+  every restart after it are covered by that.
+  **The eight are the host's global enum, and a valid level is not a supported
+  one** — every provider declares a subset of them (measured on this host:
+  `acp-opencode` declares low/medium/high/xhigh/max, `pi` declares none of
+  ultra/ultracode). So the save boundary checks the level against the chosen
+  provider's own ladder, read from the host roster
+  (`bb.sdk.providers.list()`, one in-process read that works with every
+  bridge down), and refuses a level that provider never declared — naming the
+  ladder that does apply, because "invalid level" would send you back to a
+  picker that is not where the mismatch lives. The manager list reports the same
+  verdict per row and renders an unsupported level as unsupported.
+  **Unverified is a third state, kept apart from both.** An unreadable roster,
+  a provider absent from the roster, and a provider declaring no ladder all
+  read as *not verified* rather than *supported*, and they do not block a save:
+  a card running at the provider default is recoverable, a preset you cannot
+  save is not. The list says "not verified" so a pass is never read as a claim.
+  **A wrong-shaped `presets` table stops the plugin rather than being repaired.**
+  Stelow no longer migrates that table: a fresh install gets the current shape
+  from the DDL, and an install carrying an older shape throws `PresetSchemaError`
+  at boot naming the missing `reasoning_level` CHECK or the column order it
+  found, plus the non-destructive unblock
+  (`ALTER TABLE presets RENAME TO presets_legacy`, which keeps your rows to
+  re-import by name). Cards, workspaces, inbox events and run files are
+  untouched. Concretely, this means **a preset's permission mode and provider
+  are no longer rewritten on every start** — an existing default preset you
+  edited is now left exactly as you set it.
+  **An install that ran v0.61.0 is unblocked at boot, once, and narrowly.**
+  v0.61.0 shipped the `presets` migration as a generated literal, so the host
+  recorded the wrong text at position 3 of its migration ledger (`3dc92d76…`
+  instead of the released `ba1ac500…`). The host keys that ledger by position
+  and checks it before running anything, so from then on **every** upgrade of
+  that install was refused with *"migration 3 does not match the recorded
+  statement"* — a message that reads like a corrupt database when the database
+  is fine, and no new migration can reach it because the check runs first. Before
+  the migrator, the plugin corrects that one record when — and only when — it
+  holds exactly that hash, and logs the correction naming the position and both
+  values. No schema changes and no data is touched: the statement the record
+  claims to describe has been unchanged since before v0.61.0, so the record was
+  simply a wrong transcription of it. **Any other value at that position is left
+  alone and the boot is still refused**, because a genuine mismatch is a real
+  signal and silencing it is worse than the defect; the same applies to a
+  statement that has itself drifted, which the repair declines out loud. A
+  healthy install is not written to at all.
+=======
+>>>>>>> a492f61 (fix: hold the environment control to the promise its docs make)
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
@@ -1216,8 +1644,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   boundaries; unset bands inherit the card preset. Research and Explore
   have their own band defaults, configured from each board's Agent
   Presets entry (fall back to the board default when unset).
+- **A New-worktree preset really gets a worktree.** Choosing `New-worktree` as
+  a preset's environment kind asks the host for a managed worktree and gets
+  one: `host` + `managed-worktree`, provisioned by bb under `sw-<cardId>` on its
+  own branch, branching from the preset's base branch where it names one and
+  from the host's default where it does not. Isolation needs no machine
+  selection and no environment provider id, because the host supplies the
+  machine itself. Every spawn path is covered because the answer lives in the
+  one function all of them route through — create, respawn, reseed, drafting and
+  the CLI review path — so a card cannot be isolated on create and back in the
+  shared checkout on its next restart. An environment kind this build does not
+  recognise still resolves to the shared project checkout, because an unknown
+  kind must not silently start provisioning worktrees.
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
-  takes effect on (re)start, with a stale-worker warning until then.
+  takes effect on (re)start, with a stale-worker warning until then. A refused
+  save (an unsupported reasoning level, a name collision) surfaces in the
+  assign dialog rather than closing over your choice having done nothing.
 - **Reliable-tier override** (`getReliablePreset`, `assignReliablePreset`,
   `reliable_preset` table). One optional board-level preset for reliable-tier
   spawns (worker starts, restarts, band swaps, research fan-out, automation
@@ -1414,12 +1856,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+  The excerpt the reviewer receives is chosen by the **artifact contract**, not
+  by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
+  first, so a long introduction cannot push a required table past the 12k cost
+  cap and have the reviewer judge a document with its required section missing.
+  A document that fits goes whole; with no contract — or one that names nothing
+  — the head slice is used, the prompt says so, and the card comment records
+  which of the two happened. A review of the contract's sections and a review of
+  the document's opening are different reviews, and the reader of the verdict is
+  the one who has to tell them apart. Every review record carries that choice as
+  an `Excerpt:` header beside its `Status:` and `Fingerprint:` lines, and
+  `bb stelow metrics --card` counts them (`lib/review-truncation.mjs`): how many
+  reviews read a cut artifact, and how many of those fell back to the opening —
+  the one cut that can have hidden a section the contract named. A card whose
+  reviews all read whole documents prints nothing, because a metric that is
+  always present is a number nobody learns to read. Records written before the
+  field existed are uncounted, never reported as reviews that saw everything.
 - **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
   Advancing a build card into gate/int-gate/plan-gate with a reviewer
   designated fires one hidden review of the gate's registered artifact,
   posted as a card comment for the human (and worker) before approval.
   Advisory and fire-and-forget — advance never waits; every miss (no
-  designation, no workflow, no artifact, thin file) stays silent.
+  designation, no workflow, no artifact, thin file) stays silent. The artifact's
+  own contract drives the excerpt here too, so the gate's required sections are
+  what the pre-review reads.
   diff-gate stays out (no single file). Eligibility resolves through the
   lib map, never inline.
 - **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
@@ -1535,13 +1995,47 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
   progress block; the Build board carries one glanceable Flow strip naming
   itself (finished count with a measured trail, typical/median and slow/p90
-  lead/cycle with the jargon glossed inline, expanding to Tempo and Atenção
+  lead/cycle with the jargon glossed inline, expanding to Timing and Attention
   tabs and a per-card table that opens
-  cards) fed by the board project filter. Tempo holds windows, legend, and
-  the lead/cycle table; Atenção holds right-now stuck (blocked status or
-  errored worker) and review-awaiting dones with an all-clear empty state —
+  cards) fed by the board project filter. Timing holds windows, legend, the
+  lead/cycle table, and **where the time went**: every finished card's
+  wall-clock split into time a question held it for you, time lost to a paused
+  worker or a lock wait or a failure, and an `unattributed` remainder the data
+  does not explain — three disjoint parts of one interval, computed as a union
+  rather than a sum (`lib/wait-attribution.mjs`), so overlapping windows can
+  never report a share above 100%. The remainder is never called work, and
+  host-caused stalls stay out of it by design (`lib/host-read-streak.mjs`).
+  Attention holds right-now stuck (blocked status or
+  errored worker) and review-awaiting dones — oldest first, each naming how long
+  it has waited — with an all-clear empty state —
   signal chips for both ride the closed header only when nonzero, so a calm
   board shows no amber. Empty boards render no strip.
+- **Review-wait aging** (`lib/inbox-severity.mjs`, `sweepEventSeverity`). A
+  finished card nobody has opened used to read identically whether it landed
+  this morning or a week ago: a completion is routine by tier and its card is
+  excluded from the live sync (`shouldSyncThread` skips `completed`), so no
+  sweep ever re-scored it. Past 48 hours an unread completion escalates on the
+  reconcile tick, reason chip reading `unreviewed Nd`, and the fleet-wide sweep
+  is the door that reaches rows no live sync visits. Escalating never resolves:
+  the badge still counts the review request.
+- **Acceptance receipt** (`acceptCard`, `lib/card-acceptance.mjs`). Done in
+  Stelow certifies verified finished work, not accepted-and-shipped work — the
+  worker drives it after the host verifies in code, and nothing human-driven
+  reaches it. Human review happened afterwards and was a read. A Done card can
+  now carry an optional **acceptance receipt**: a person says they reviewed the
+  result and a stamp plus one trail comment records it, so a card a human looked
+  at and accepted stops reading identically to one nobody has opened. It is a
+  receipt, never a gate — no status, stage, or worker message moves, so it
+  creates no phantom wait, and it is only ever written by a person. Accepting
+  **satisfies the review request** the completion row was asking, so the badge
+  stops counting a card whose review just happened; the row survives in Resolved
+  history. The receipt is **a timestamp and nothing else**, deliberately: the
+  host SDK exposes no operator identity (`useRpc`, `bb.sdk.threads`,
+  `bb.storage` — none answer "who is signed in", and every `displayName` in it
+  belongs to a project or a preset), so a name field would be free text wearing
+  attribution's clothes. Only a `completed` card can be accepted; an unfinished
+  one is refused naming Done, and an archived one naming restore. The row shows
+  on all three card kinds, because Research and Explore finish too.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
@@ -1558,6 +2052,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card on its last projection with an error the host caused, and a verified
   projection clears `last_error`, so a failure the host recovered from stops
   being displayed days later next to a worker that never needed reseeding.
+  Skipping silently was the other half of the defect, though: on 2026-09-30
+  three cards lost reads to a stalled daemon and recovered 71s later with
+  nothing to show for it. Nothing is written to the card — `last_error` feeds
+  `errorNeedsAttention` → `cardCanResume`, so a host fault recorded there
+  renders "Resume work" for something no resume can fix — the next reconcile
+  asks again 45s later, and after six consecutive misses (≈4.5 min) the plugin
+  log names the card and the streak exactly once. It is an operator-visible
+  trace, never a card verdict, because a host that will not answer is not
+  something a reader can act on and must not look like a card somebody can.
   Measured case: 26 daemon event-loop stalls on 2026-09-30 09:36–09:41 (max
   delay 29.6s) turned three live cards into the ownership refusal in the same
   second; all three recovered on their own 71s later.
@@ -1568,7 +2071,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pipelines. Missing files fail loud, never silently dropped.
 - **Exceptional card split** (`bb stelow ask --tag split`, `bb stelow split`,
   `lib/split-proposal.mjs`). The default is one focused card with scopes;
-  triage (or Choose work, before its choice is committed) may propose a
+  triage (or Prioritization, before its choice is committed) may propose a
   split only for 2+ substantial, independently auditable deliverables with
   distinct outcomes and acceptance criteria — never for bullets, files,
   UI/API slices, steps, or small fixes. The structured multi-select ask
@@ -1855,10 +2358,63 @@ one input, one artifact.*
   documented gap and an escalation whose rework scope finished are
   both settled, and listing them as open told the reader a card was
   waiting on findings nobody has to act on.
+  A scope the audit deliberately set aside is `skipped`, and
+  `skipped` is resolved everywhere this loop counts: the `done`
+  gate, the `verify` advisory, the batch writer's refusal check and
+  `gapSummary`'s `pendingScopes`. The count is the one a reader
+  actually sees, so it is the one with its own regression test
+  (`tests/gap-summary-skipped-scope.test.mjs`) — the advisory warning
+  was tested while the number was not, which meant the defect could
+  have been fixed in one surface and shipped in the other: a card
+  whose whole finding was "obsolete as a rework scope here" read
+  "1 scope still open" under a fix already written. The predicate
+  `isSkippedStatus` is required on both `buildGapSummary` and its
+  deps, not defaulted: `() => false` let a caller that forgot it get
+  the old counting with no error anywhere, the same failure one
+  layer down.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card
-  breakdown). Done means every gap has
+  breakdown). **Rework** is the number that says whether the loop is
+  converging (`lib/rework-metrics.mjs`): a finding that was closed in
+  one critique round and re-opened in a strictly later one. It was
+  unmeasurable before because the round boundary was destroyed on the
+  way out — `critique-gap-state` collected each critique artifact as its
+  own round and then joined them with newlines, so a finding fixed in
+  round 1 and re-opened in round 3 looked like one that was only ever
+  found once. A gap still open (`escalate`) is not rework, because it
+  was never closed; a finding new in a later round is counted apart as
+  `newAfterFirst`, because new work discovered later is a different
+  number. A card reviewed once reports `rate: null`, not 0 — one pass
+  cannot show convergence — and the line is printed only when something
+  came back. `--json` also carries `reviewerCoverage` (see the
+  contract-aware review entry above).
+  **The card and the flow strip read the same lines the CLI does.** The
+  card's "Gaps and rework" section carries both: the hint gains the reworked
+  count (a finding that came back is a fact about that section, and it is
+  the one metric that changes what a reader concludes from the list below
+  it), and the body carries the owner's full sentences for rework and for
+  reviewer coverage. The strip's Timing tab carries the same two lines over
+  the fleet, beside the wait breakdown. Every string is produced by the same `lib/` owner
+  the terminal calls, so the three surfaces cannot word a number
+  differently — the panel prints, it does not format. The card's hint is
+  the count and the body the full sentence, because a collapsed row already
+  carries five numbers and a long sentence among them reads as noise. The
+  strip's numbers
+  are read from the files a card left behind (`server/runtime/flow-coverage.ts`),
+  kept out of `flow-metrics.ts` because that function is pure over the
+  ledger and a workspace is not the ledger. Both lines are silent unless
+  there is something to say: no card reviewed twice means no rework line,
+  no cut artifact means no coverage line, and a permanent "0%" would be a
+  claim nobody measured.
+  **Every number a person reads about a card is formatted in one place**
+  (`lib/metrics-format.mjs`): the gap tally's shape, the escalation
+  rate, and the sentence. They were previously shaped in five files
+  with the rate derived twice under two different guards, so a card and
+  a fleet of the same card could disagree about whether a rate was a
+  measurement — `n/a` and `0%` are now decided once, and a card with no
+  findings has no rate rather than a false zero.
+  Done means every gap has
   a disposition and every escalation is executed — documented gaps
   are accepted debt for next cycle by definition, fixed gaps are
   auditable through the Decision section and trail. `verify --tests`
@@ -1922,3 +2478,206 @@ Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0
 From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
+
+**A stage is named by its label, on every surface, or not at all.**
+`stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
+is a database key, a CLI argument, and a prompt token — never a word to show a
+reader. The card UI mostly got this right on its own (pills, timeline, phase
+rail, board columns all route through the catalog), which is exactly why the two
+that did not were invisible: the mention picker's subtitle rendered
+`int-gate · in-progress`, and the worker-restart trail read *"continuing from
+the int-gate stage"*.
+
+The mention picker is the worst place to get this wrong, because it is the one
+surface where a card is chosen **before** it is opened — the stage in that row
+is often the only thing telling two cards apart. `tests/stage-vocabulary-surfaces.test.mjs`
+drives the provider the host actually registers and walks the whole catalog, so a
+stage that reaches the picker as a slug fails naming itself.
+
+One label per stage is enforced in `workflow-contracts.test.mjs`, and
+`tests/stage-vocabulary-rules.test.mjs` adds the two rules that made this one
+worth having: **only the catalog may declare a stage name** (a second map is how
+two surfaces start disagreeing, and the symptom is a reader concluding that
+"Interface gate" and `int-gate` are two different stages), and **no stage's label
+may be its own stored id** (shipping a stage with no name is a normal accident,
+and a variable name on screen is what it looks like).
+
+**The labels are written for a product team — a product manager, a designer, and
+a developer all reading the same card.** That was the actual complaint: `Plan
+gate`, `Diff gate`, `Interface selection`, `Shape proposal` and `Choose work` are
+the team's internal vocabulary printed at someone deciding whether to trust a
+plan. So the four decision stages are now named after **who decides**, which is
+the one fact a reader actually wants and the one a name can carry:
+
+| stage id | was | now | whose call |
+|---|---|---|---|
+| `gate` | Product gate | **Product Review** | product |
+| `int-gate` | Interface gate | **Design Review** | design |
+| `plan-gate` | Plan gate | **Technical Review** | engineering |
+| `diff-gate` | Diff gate | **Code Review** | engineering |
+
+and the rest follow one voice — a noun phrase naming the work, the shape
+"Tech Planning" already had: `select` → **Prioritization**, `context` → **Project
+Context**, `shape` → **Product Proposal**, `selection` → **Interface Choice**,
+`execution` → **Implementation**. "Diff" is gone because it is a git term, not a
+product one.
+
+The stored ids stay. They are database keys, CLI arguments and prompt tokens, and
+renaming one is a migration for no reader-visible gain. Only the labels moved, and
+each stage's `produces` line with it — those lines render beside the label on the
+workflow map and the stage timeline, so a label that says "Product Review" next to
+prose reading "Product gate: decides whether…" is the same word meaning two
+things, which is the bug this whole rule exists to prevent.
+
+What no test can decide is whether a label is *good* — "Plan gate" satisfied both
+machine rules for months. That is a product call, and it was made by a person.
+
+Status is the same shape of problem, and the answer turned out to be the mirror
+image of the stage rule: **names are axis-specific, appearance is not.**
+
+Every axis now has one owner and a name, beside the values it names:
+
+| axis | values live in | names live in | constrained by |
+|---|---|---|---|
+| stage | `data/stelow-stage-catalog.json` | `stageLabel()` | the catalog's own shape |
+| trackable | `lib/trackables.mjs` | `TRACKABLE_STATUS_LABELS` | `TRACKABLE_STATUSES` |
+| run | `execution_runs` CHECK | `RUN_STATUS_LABELS` | the SQL CHECK |
+| card | `lib/card-status.mjs` | `CARD_STATUS_LABELS` | `assertCardStatus` at both write paths |
+
+`statusTone` and `statusGlyph` are the deliberate exception: they are called with
+a card's status AND a scope's, and that is correct, because colour and shape are
+the one fact that does not need an axis. A finished card and a finished scope are
+both green; a status that reads "done" by colour also reads as done in high
+contrast and to someone who cannot see colour. So tone and glyph live together in
+`lib/detail-presentation.mjs` and answer for every axis, while names stay with
+their own.
+
+**A label and a sentence are different registers.** A label sits in a list and is
+a noun phrase ("Needs input"); a refusal reads "This run is ___" and needs a
+predicate ("waiting on a decision"). Substituting one for the other gives "This run
+is Needs input", and the tempting fix for that — keep a second map — is how raw
+slugs like "This run is succeeded" reached a reader in the first place. So both
+registers live beside the values (`RUN_STATUS_LABELS` and `RUN_STATUS_PHRASES`),
+the phrase defaults to the label, and only the four statuses that read
+differently are listed. A new status added to the CHECK constraint therefore gets
+a grammatical sentence without anyone remembering to add it.
+
+**Nothing a reader sees changed except where it was wrong.** These are the words
+that were already on screen, which is why the pass was kept separate from the
+stage labels, where rewording WAS the complaint: doing both in one change would
+have made the move unreviewable, because you could not tell whether a text got
+worse or merely moved.
+
+A card's five statuses (`draft`, `pending`, `in-progress`, `completed`,
+`archived`) were established by asking **who writes the value**, not which
+vocabulary the word appears in. That distinction earned its place immediately: a
+first version of this list had four values and asserted in its own comments that
+"`pending` is a trackable", so the validator threw on the creation of every
+Research and Explore card and on every drag back to Bucket — a regression the
+suite did not catch, because no test created a lightweight card.
+`pending` is both a card status and a trackable status, and sharing one entry
+between the two machines is precisely the collision this work exists to end.
+`tests/card-status-vocabulary.test.mjs` now cross-checks the literals read out of
+the two write paths against `CARD_STATUSES`, so a vocabulary that omits a value
+the app writes fails naming it.
+
+**The schema has no CHECK on `cards.status`, on purpose.** SQLite cannot add one
+to an existing table; it takes a rename, a rebuild, a copy and a drop. This repo
+has done that before, so the pattern is not foreign — but `cards` is the central
+table, threads write to it continuously, and a rebuild buys little when every app
+write already passes through two functions that refuse an unknown value by name.
+What a CHECK would add is protection against writes that bypass the app, and that
+is left open deliberately: a loud refusal at the boundary beats a constraint that
+fails during a migration. If the column is ever rebuilt for another reason, add
+the CHECK then, from `CARD_STATUSES`.
+
+`server/contracts.ts` no longer exports one twelve-value `statusSchema`. That single
+enum served **two** card sites and **six** pendency sites — tasks, scopes, board
+workflows and workflow phases — which is why it had twelve: it was the union of
+the two axes plus `planning` and `approved`, which belong to neither (`approved`
+is a scope MAP status, `planning` is a stage name). Nothing could reach those two
+as a status at all, and an enum admitting unreachable values cannot fail fast on
+a reachable one.
+
+It is now `cardStatusSchema` and `trackableStatusSchema`, split by axis. The
+boundary refuses `planning` and `approved`, and refuses `draft` where a pendency
+belongs. **Split rather than narrowed**: narrowing to a card's five would have
+broken every scope, task, workflow and phase, which legitimately hold `blocked`,
+`done`, `skipped`, `escalated` and `failed`. The axes overlap on exactly three
+values — `pending`, `in-progress`, `completed` — which is what makes the split
+safe rather than a new source of refusals.
+
+These two lists are written out rather than derived from the constants, and that
+is recorded in the file because it looks like the mistake it would otherwise be.
+A `.ts` file cannot take a type from a `lib/*.mjs` constant here: importing the
+module by extension resolves its runtime and its declarations as two unrelated
+type identities, which propagates a nominal mismatch through the whole RPC type
+graph and fails `tsc` in `rpc-surfaces.ts` — four files from the import that
+caused it. Deriving was tried and reverted;
+`tests/status-axis-boundary.test.mjs` pins both lists to the machine instead.
+
+**A card's status was being read through the pendency normalizer, at ten
+call sites**, and it only ever worked by accident: the scope vocabulary was an
+inaccurate superset containing all five card statuses, so every value passed
+through unchanged. Describing that vocabulary accurately turned the accident into
+a live fault — `normalizeStatus("archived")` returns `pending`, so every guard of
+the form `normalizeStatus(card.status) === "archived"` silently starts answering
+false. A card that cannot be archived, and a board that cannot tell an archived
+card from a live one, is not a type error; it is a card.
+
+The compiler found it, which is worth stating plainly: narrowing the scope
+vocabulary produced a type error pointing at `rpc-surfaces.ts`, four files from
+the annotation that was actually wrong. Cards now read through `readCardStatus`,
+and the injected dep is named `cardStatusOf` because **every** consumer of it was
+asking about a card — the GitHub issue flow, issue comments and artifact
+publication all ask "is this card archived?" and none asked about a scope. The
+scope reader stays, for scopes.
+
+The mention picker now names both rows. It was the one surface still printing
+`in-progress` and `pending` beside a properly-labelled stage — the same word
+meaning two things one string apart — and it carries **two axes**: a board
+workflow's status is a trackable (via the scope reader) while a card's is a card
+status, so the two rows are named by different vocabularies and both rows sit in
+the same picker.
+
+`tests/vocabulary-one-owner.test.mjs` holds the single-owner rule for all four
+axes, in one place, and checks both directions: nothing declares a map outside its
+owner (naming the file), and every owner still declares its map (so deleting a
+vocabulary cannot pass by leaving the permission behind). It is deliberately
+imperfect about *syntax* — it recognises a declaration shape, not every way one
+can be written — so it guards the four known maps rather than pretending to
+enforce a property no regex can enforce.
+
+Research-substep quality (`ready`, `missing`, `invalid`, `needs-depth`) is a fifth
+axis with its own vocabulary in `components/detail/research-quality-section.tsx`.
+It is not consolidated and the one-owner test does not claim it, because it was
+checked value by value and shares nothing with the axes above. Its two
+self-labelling entries — `ready: "ready"` and `missing: "missing"` — are now
+words, since a label that equals its stored value is the shape the stage rule
+forbids everywhere else.
+
+**Research ROUND status is the exception, and it is a trap rather than a
+collision.** The round type declares `ready | pending | missing`, and `pending`
+is also a card status and a pendency status. Nothing renders it today, so there is
+no wrong word on screen — but the first person to render a round's status would
+get a value that belongs to two other machines and no way to tell which. The
+round axis is therefore the one place where "no collision" would have been the
+wrong claim, and the honest description is "unused, and it should not be used
+without deciding whose `pending` this is".
+
+One overlap survives by decision rather than by accident: `completed` is both a
+board column and a card status, and they are labelled differently — "Done" on the
+board, "Completed" in a search result. A board column is a place and "Done" is the
+conventional name for it, so the convention is kept and the difference is pinned
+rather than left to be tidied away. It never appears twice on one screen: the card
+pill shows the column, the mention picker shows the status, and a reader is never
+shown both words for one card at once.
+
+**The host's own answer is the only authority on whether a worker is
+running.** A message the host queued has not been dispatched, whatever the
+call returned. Any projection that reads "running" from a call that did not
+throw is a phantom wait, and the three ways that shows are the same: a card
+that lies about working, a budget spent on turns that never started, and a
+notification asking a person to fix something the system is already fixing.
+When the host names a wait, read it (`threads.queuedMessages.list`), project
+it, and offer no action.

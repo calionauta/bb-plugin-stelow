@@ -3,6 +3,7 @@ import {
   createArtifactsPublication,
   runPublicationMigrations,
 } from "../../server/artifacts-publication.ts";
+import { readCardStatus } from "../../lib/card-status.mjs";
 
 export const CARD_ID = "card-1";
 export const ENVIRONMENT_ID = "env-1";
@@ -212,7 +213,9 @@ export function harness() {
       get: (cardId) => cardId === CARD_ID ? card : undefined,
       checkout: async () => publicationCheckout(),
     },
-    normalizeStatus: (value) => value,
+    // The real reader, for the same reason as the GitHub harness: an identity
+    // stub here makes the unit under test right by construction.
+    cardStatusOf: (value) => readCardStatus(value),
   });
   return {
     db,

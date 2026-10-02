@@ -29,6 +29,17 @@ assert.deepEqual(
   "only valid provenance values survive",
 );
 
+assert.deepEqual(
+  sanitizeComposerExecution({ reasoningLevel: "banana" }),
+  null,
+  "a reasoning level no host will honour is dropped, not carried to the spawn",
+);
+assert.deepEqual(
+  sanitizeComposerExecution({ providerId: "pi", reasoningLevel: "banana", model: "m" }),
+  { providerId: "pi", model: "m" },
+  "dropping the level leaves the rest of the choice intact",
+);
+
 // Merge: composer wins per-field, the base fills the gaps.
 assert.deepEqual(
   resolveComposerSpawn(base, null),
@@ -100,6 +111,11 @@ const server = [
   readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
   readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
+  // The restart spawn moved here when replacing a worker became its own
+  // module. It is listed because the rule below is about the SITES that must
+  // pin their sources, not about one file: drop this line and the restart
+  // spawn silently falls back to the environment's own sources.
+  readFileSync(join(root, "server/workers-respawn.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
   readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),

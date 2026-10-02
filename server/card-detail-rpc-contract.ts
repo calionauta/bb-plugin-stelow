@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { attachmentSchema, askOptionSchema, statusSchema } from "./contracts.js";
+import { EXPOSURE_REASONS } from "../lib/shared-checkout-exposure.mjs";
+import {
+  attachmentSchema,
+  askOptionSchema,
+  boundaryShapeSchema,
+  cardStatusSchema,
+  scopeSummarySchema,
+  tokenBreakdownSchema,
+  trackableStatusSchema,
+} from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
 
 /**
@@ -7,13 +16,6 @@ import { executionRunSchema } from "./execution-contract.js";
  * marker against the run's boundary contract, then shaped in lib/ — the card
  * renders `showOptions` and the copy, and never re-derives the rule.
  */
-const boundaryShapeSchema = z.object({
-  kind: z.enum(["reaction", "confirmation"]),
-  showOptions: z.boolean(),
-  heading: z.string(),
-  notice: z.string().nullable(),
-});
-
 export const cardDetailRpcContract = {
   /**
    * The cross-thread half of "who is in this card's files".
@@ -36,7 +38,9 @@ export const cardDetailRpcContract = {
       threads: z.number(),
       files: z.array(z.string()),
       lines: z.array(z.string()),
-      reason: z.enum(["isolated", "no-checkout", "no-threads", "no-overlap", "unavailable", "shared"]),
+      // One list, owned by lib/: a reason the schema does not know cannot be
+      // returned, and a reason with no schema cannot have a sentence.
+      reason: z.enum(EXPOSURE_REASONS),
     }),
   },
   cardDetail: {
@@ -58,26 +62,72 @@ export const cardDetailRpcContract = {
         researchStrategy: z.string().nullable(),
         researchStrategies: z.array(z.string()),
         exploreStage: z.string().nullable(),
-        status: statusSchema,
+        status: cardStatusSchema,
         stage: z.string(),
         workerThreadId: z.string().nullable(),
-        activity: z.enum(["idle", "running", "awaiting-answer", "error"]),
+        activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
         lastError: z.string().nullable(),
+        // The host-read latch (lib/host-read-streak.mjs). Null whenever the host
+        // is answering. Deliberately not `activity`: a transport fault is not a
+        // verdict, and `last_error` would turn it into a Resume button.
+        readMissSince: z.number().nullable(),
+        // The host's hold, with its sentence already derived. Null whenever the
+        // thread is free, so a consumer reads one nullable rather than
+        // re-deriving the reason from the kind.
+        hostHold: z.object({
+          kind: z.enum(["capacity", "offline", "permission", "scheduled", "queued"]),
+          holderId: z.string().nullable(),
+          reason: z.string().nullable(),
+          queued: z.number(),
+          summary: z.string().nullable(),
+        }).nullable(),
+        // The native Workflows run that owns this card's stage, with its
+        // sentence already derived. Null when no run is live. A card running a
+        // multi-hour workflow is `running` on a thread that never turns again,
+        // so this is what tells a reader the work is elsewhere and moving —
+        // the same split hostHold makes, for the same reason.
+        nativeRun: z.object({
+          id: z.string(),
+          normalizedStatus: z.enum(["queued", "running", "needs_input"]),
+          recipeId: z.string(),
+          stage: z.string(),
+          stageLabel: z.string().nullable(),
+          summary: z.string().nullable(),
+        }).nullable(),
+        // The failed run holding this card at its CURRENT stage, or null. The
+        // card is told which run blocks rather than re-deriving the rule, so
+        // the Retry button it offers and the refusal the advance returns cannot
+        // disagree about which run is the one. Scoped to the stage on purpose:
+        // a card carries failed runs for every stage it has passed, and only
+        // one of them is holding this one.
+        blockingRun: z.object({
+          id: z.string(),
+          recipeId: z.string(),
+          errorCode: z.string().nullable(),
+        }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
+        integrationPending: z.object({
+          state: z.enum(["unpublished", "local", "unmerged"]),
+          label: z.string(),
+          detail: z.string(),
+        }).nullable(),
+        // The human acceptance receipt, or null when nobody has recorded one.
+        // A stamp and nothing else: the host SDK has no operator identity, so
+        // a name here would be free text wearing attribution's clothes
+        // (lib/card-acceptance.mjs).
+        acceptedAt: z.number().nullable(),
+        // The disposition line a reader sees, derived where the receipt lives.
+        // Null whenever there is no receipt, so the surface reads one nullable
+        // rather than re-deriving the sentence.
+        acceptanceLine: z.string().nullable(),
         presetName: z.string().nullable(),
         presetProviderId: z.string().nullable(),
         presetModelId: z.string().nullable(),
         presetOverridden: z.boolean(),
         updatedAt: z.number(),
         stallCount: z.number(),
-        scopeSummary: z.object({
-          scopesTotal: z.number(),
-          scopesDone: z.number(),
-          tasksTotal: z.number(),
-          tasksDone: z.number(),
-          elapsedMs: z.number().nullable(),
-        }),
+        scopeSummary: scopeSummarySchema,
         presetId: z.string(),
         workerPresetId: z.string().nullable(),
         presetRestartPending: z.boolean(),
@@ -110,7 +160,7 @@ export const cardDetailRpcContract = {
           name: z.string(),
           kind: z.literal("scope"),
           type: z.string().optional(),
-          status: statusSchema,
+          status: trackableStatusSchema,
           source: z.string().optional(),
           gap: z.string().optional(),
           blockedBy: z.array(z.string()).optional(),
@@ -151,7 +201,7 @@ export const cardDetailRpcContract = {
               id: z.string(),
               name: z.string(),
               kind: z.literal("task"),
-              status: statusSchema,
+              status: trackableStatusSchema,
               source: z.string().optional(),
               note: z.string().optional(),
               blockedBy: z.array(z.string()).optional(),
@@ -315,15 +365,7 @@ export const cardDetailRpcContract = {
           endedAt: z.number().nullable(),
           endedReason: z.string().nullable(),
           tokenUsage: z.number().nullable(),
-          tokenBreakdown: z
-            .object({
-              input: z.number().nullable(),
-              output: z.number().nullable(),
-              cached: z.number().nullable(),
-              reasoning: z.number().nullable(),
-              total: z.number().nullable(),
-            })
-            .nullable(),
+          tokenBreakdown: tokenBreakdownSchema,
           children: z.array(
             z.object({
               threadId: z.string(),
@@ -331,15 +373,7 @@ export const cardDetailRpcContract = {
               status: z.string(),
               providerId: z.string().nullable(),
               tokenUsage: z.number().nullable(),
-              tokenBreakdown: z
-                .object({
-                  input: z.number().nullable(),
-                  output: z.number().nullable(),
-                  cached: z.number().nullable(),
-                  reasoning: z.number().nullable(),
-                  total: z.number().nullable(),
-                })
-                .nullable(),
+              tokenBreakdown: tokenBreakdownSchema,
             }),
           ),
         }),

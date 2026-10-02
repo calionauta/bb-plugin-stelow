@@ -10,6 +10,7 @@
 import Database from "better-sqlite3";
 import { createGithubAutomation } from "../../server/github-issues.ts";
 import { runGithubMigrations } from "../../server/github-migrations.ts";
+import { readCardStatus } from "../../lib/card-status.mjs";
 
 export const REPO = "acme/widgets";
 
@@ -156,7 +157,12 @@ function hostCardAccessors(state, db, options, nextId) {
       },
       workspace: async () => ({ path: "/workspace", hostId: null }),
       scopes: () => options.scopes ?? [],
-      normalizeStatus: (value) => value,
+      // The REAL reader, not an identity. Stubbing it made the unit under test
+      // correct by construction: with this as identity, every wiring mutation of
+      // the last commit survived the suite, including wiring it back to the SCOPE
+      // normalizer — which turns an archived card into a pending one, live, with
+      // nothing failing. A harness that cannot be wrong cannot test anything.
+      cardStatusOf: (value) => readCardStatus(value),
       statusLabel: (status) => status,
     },
   };

@@ -5,11 +5,12 @@ import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
+import { integrationPending } from "../lib/integration-pending.mjs";
 import { loadCardScopes } from "./scopes.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
-import { normalizeStatus } from "./scopes.js";
+import { readCardStatus } from "../lib/card-status.mjs";
 import { stallCount } from "../lib/worker-ledger.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
 import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
@@ -150,25 +151,25 @@ async function enrichCard(
     researchStrategy: row.research_strategy,
     researchStrategies: deps.strategyList(row),
     exploreStage: row.explore_stage ?? null,
-    status: normalizeStatus(row.status),
+    status: readCardStatus(row.status),
     stage: row.stage,
     workerThreadId: row.worker_thread_id,
     activity,
     lastError: row.last_error,
+    // The host-read latch, carried raw (see lib/host-read-streak.mjs). It is a
+    // measurement about the host, not a verdict about the card, which is why it
+    // travels beside `activity` instead of inside it: overwriting activity
+    // would erase the last verified projection the board is currently showing.
+    readMissSince: row.read_miss_since ?? null,
     needsAttention: attention !== null,
     hasPendingReview: hasPendingReview(deps.db, row.id),
+    integrationPending: integrationPending(deps.db, row),
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
     updatedAt: row.updated_at,
     stallCount: stallCount(deps.db, row.id),
-    scopeSummary: {
-      scopesTotal: summary.scopesTotal,
-      scopesDone: summary.scopesDone,
-      tasksTotal: summary.tasksTotal,
-      tasksDone: summary.tasksDone,
-      elapsedMs: summary.elapsedMs,
-    },
+    scopeSummary: scopeTally(summary),
     doingNow: summary.doingNow,
     executingScope: summary.executingScope,
   };
@@ -177,8 +178,8 @@ async function enrichCard(
 async function liveActivity(
   deps: CardsDeps,
   row: WorkerCard,
-): Promise<"idle" | "running" | "awaiting-answer" | "error"> {
-  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";
+): Promise<"idle" | "running" | "awaiting-answer" | "error" | "held"> {
+  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
   if (activity === "error" || !row.worker_thread_id) return activity;
   const pending = await deps.fetchPendingQuestions(row.worker_thread_id);
   return pending.length > 0 || deps.openExpiredQuestionIds(row.id).length > 0
@@ -189,7 +190,7 @@ async function liveActivity(
 function attentionState(
   deps: CardsDeps,
   row: WorkerCard,
-  activity: "idle" | "running" | "awaiting-answer" | "error",
+  activity: "idle" | "running" | "awaiting-answer" | "error" | "held",
 ): "question" | "error" | "idle" | null {
   if (isClaimTerminal(row.status)) {
     return activity === "awaiting-answer" ? "question" : null;
@@ -228,6 +229,20 @@ async function scopeSummary(
   } catch {
     return empty;
   }
+}
+
+/**
+ * The five counters, without the two names.
+ *
+ * `doingNow` and `executingScope` are computed alongside the tally because they
+ * come off the same scope read, and they are separate board fields — so the
+ * tally is projected rather than spread. Passing the whole summary would put
+ * two extra keys inside `scopeSummary`, and a consumer reading a key the
+ * contract does not declare is a consumer that breaks when the contract does.
+ */
+function scopeTally(summary: ScopeSummary) {
+  const { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs } = summary;
+  return { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs };
 }
 
 function readableCardPath(rootPath: string, path: string): string | null {

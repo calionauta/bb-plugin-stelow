@@ -1,12 +1,13 @@
 /**
- * The start rule and the one question the rest of the plugin asks about it.
- * Starting is mostly refusal — no card, archived card, a card that already owns
- * a run — and each refusal names what the user can do next rather than failing
- * silently. `keepsCardRunning` is the other half: whether a card with an open
- * native run must stay alive, which is the only reason a card is not allowed to
- * complete while its run is still open.
+ * The start rule. Starting is mostly refusal — no card, archived card, a card
+ * that already owns a run — and each refusal names what the user can do next
+ * rather than failing silently.
+ *
+ * Whether a card with an open run must stay alive is NOT decided here. It was,
+ * and it was never called; the rule now lives in `lib/native-run.mjs` with the
+ * sentence it derives, and the sync loop applies it.
  */
-import { activeExecutionRun, type ExecutionRun } from "../lib/execution-run-ledger.mjs";
+import type { ExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import type { LifecycleRuleDeps, StartContext } from "./execution-lifecycle-types.js";
 
@@ -28,8 +29,6 @@ export function createLifecycleStarter(deps: StartDeps) {
       recipeId: string;
       context: StartContext;
     }) => startExecutionRun(deps, cardId, recipeId, context),
-    keepsCardRunning: (cardId: string, openQuestionCount: number) =>
-      keepsCardRunning(deps, cardId, openQuestionCount),
   };
 }
 
@@ -54,14 +53,11 @@ export async function startExecutionRun(
  * A run that is queued or running keeps the card alive outright. A run waiting
  * on a boundary only does while nothing else is asking the user something:
  * a card with an open question is a card the user is already in.
+ *
+ * This rule moved to `lib/native-run.mjs` and is now applied by the sync loop,
+ * which is the only place that could act on it. It used to sit here, exported
+ * through the lifecycle facade, and called by nothing — so every card running a
+ * multi-hour workflow went idle, was nudged, and parked with a Resume button
+ * for work already in flight. The definition was never in doubt; only the
+ * caller was missing.
  */
-export function keepsCardRunning(
-  deps: StartDeps,
-  cardId: string,
-  openQuestionCount: number,
-): boolean {
-  const run = activeExecutionRun(deps.db, cardId);
-  if (!run) return false;
-  if (["queued", "running"].includes(run.normalizedStatus)) return true;
-  return run.normalizedStatus === "needs_input" && openQuestionCount === 0;
-}

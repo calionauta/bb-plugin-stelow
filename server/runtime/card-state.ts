@@ -1,6 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { clearClaimWaiters, waitersForFiles } from "../../lib/card-claims.mjs";
 import { isClaimTerminal } from "../../lib/card-terminal.mjs";
+import { assertCardStatus } from "../../lib/card-status.mjs";
+import { HELD_ACTIVITY } from "../../lib/host-hold.mjs";
 import { stripArchivedResuscitation } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
@@ -123,6 +125,12 @@ function finalCardWrite(
 }
 
 function writeCard(db: Db, cardId: string, fields: Record<string, unknown>): void {
+  // The single choke point every card update passes through. Validating here
+  // rather than in the schema is a deliberate trade, argued at length in
+  // lib/card-status.mjs: SQLite cannot add a CHECK to an existing table, and
+  // rebuilding `cards` under live threads costs more than it buys when this one
+  // function sees every write the app makes.
+  assertCardStatus(fields.status, `card update for ${cardId}`);
   const assignments = Object.keys(fields)
     .map((key) => `${key} = @${key}`)
     .join(", ");
@@ -164,7 +172,12 @@ function resolveAttentionEvents(
     deps.resolveInbox(cardId, current.updated_at, ["question", "error", "paused"], "completed");
     return;
   }
-  if (current.activity === "running") {
+  // A card that is moving again closes its own open rows, whether the host is
+  // the one moving it or a person is. `held` is in this list because a hold is
+  // the host taking the card back: the queued message is on its way, so a
+  // `paused` row left open beside it is a notification about a problem the
+  // host is already solving.
+  if (current.activity === "running" || current.activity === HELD_ACTIVITY) {
     deps.resolveInbox(cardId, current.updated_at, ["error", "paused"], "resumed");
   }
 }

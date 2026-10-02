@@ -273,6 +273,14 @@ export const detailHeroActions = readFileSync(
   join(root, "components", "detail", "detail-hero-actions.tsx"),
   "utf8",
 );
+export const lifecycleDialogs = readFileSync(
+  join(root, "components", "detail", "build-lifecycle-dialogs.tsx"),
+  "utf8",
+);
+export const buildDetailBody = readFileSync(
+  join(root, "components", "detail", "build-detail-body.tsx"),
+  "utf8",
+);
 export const detailComment = readFileSync(
   join(root, "components", "conversation", "use-detail-comment.ts"),
   "utf8",

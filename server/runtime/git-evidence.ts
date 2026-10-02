@@ -129,18 +129,23 @@ export function porcelainStatusArgs(): string[] {
 /**
  * The dirty paths of a working tree, raw — parsing belongs to the caller,
  * because only the caller knows whether it wants counts, patches or names.
- * Fail-soft: a non-Git path or a git error reads as nothing dirty, never as
- * an error, because every surface here reports and the caller names the fix.
+ *
+ * Fail-soft: a non-Git path or a git error reads as no files and `ok: false`,
+ * never as a thrown error, because every surface here reports and the caller
+ * names the fix. The `ok` flag exists for the caller that has to tell "clean"
+ * apart from "could not be read": collapsing those two is a confident lie about
+ * somebody's working tree, and it is why this returns a result rather than a
+ * bare string.
  */
-async function dirtyStatus(
+async function dirtyStatusResult(
   runGit: typeof runGitIn,
   checkoutPath: string,
-): Promise<string> {
+): Promise<{ ok: boolean; status: string }> {
   try {
     const result = await runGit(checkoutPath, porcelainStatusArgs(), 4 * 1024 * 1024);
-    return result.ok ? result.stdout : "";
+    return { ok: result.ok, status: result.ok ? result.stdout : "" };
   } catch {
-    return "";
+    return { ok: false, status: "" };
   }
 }
 
@@ -313,7 +318,7 @@ export function createGitEvidence(deps: GitEvidenceDeps) {
       recoveryGitEvidence(runGitIn, path),
     gitTouchedSince: (gitRoot: string, fromHead: string) =>
       gitTouchedSince(runGitIn, gitRoot, fromHead),
-    dirtyStatusIn: (checkoutPath: string) => dirtyStatus(runGitIn, checkoutPath),
+    dirtyStatusResultIn: (checkoutPath: string) => dirtyStatusResult(runGitIn, checkoutPath),
     discardEvidence: createDiscardEvidence({
       db: deps.db,
       cardWorkspace: deps.cardWorkspace,

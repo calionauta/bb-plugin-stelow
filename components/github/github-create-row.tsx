@@ -8,13 +8,18 @@ export function GithubCreateRow({ repos, checked, onCheckedChange, repo, onRepoC
   if (repos.length === 0) return null;
   const selected = repo ?? repos[0] ?? null;
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
         <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="size-4 accent-primary" />
         Also create issue{repos.length === 1 ? ` in ${repos[0]}` : " in the project repo"}
       </label>
       {repos.length > 1 ? (
-        <select value={selected ?? ""} onChange={(event) => onRepoChange(event.target.value || null)} className="h-10 cursor-pointer rounded-md border bg-background px-2 text-sm" aria-label="GitHub repository for the new issue">
+        <select
+          value={selected ?? ""}
+          onChange={(event) => onRepoChange(event.target.value || null)}
+          className="h-10 w-full max-w-full cursor-pointer truncate rounded-md border bg-background px-2 text-sm"
+          aria-label="GitHub repository for the new issue"
+        >
           <option value="">Pick a repository</option>
           {repos.map((name) => <option key={name} value={name}>{name}</option>)}
         </select>

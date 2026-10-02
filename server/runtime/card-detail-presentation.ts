@@ -1,5 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { acceptanceLine, isAccepted } from "../../lib/card-acceptance.mjs";
 import { hasPendingReview } from "../../lib/inbox-events.mjs";
+import { integrationPending } from "../../lib/integration-pending.mjs";
 import { diagnoseScopeSync } from "../../lib/spec-scope-reader.mjs";
 import { errorNeedsAttention, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { doingNowNames } from "../../lib/doing-now.mjs";
@@ -12,11 +14,15 @@ import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
+import type { HostHold } from "../../lib/host-hold.mjs";
+import type { NativeRunRef } from "../../lib/native-run.mjs";
+import type { BlockingRun } from "../../lib/failed-run-gate.mjs";
 import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
-import { latestSpecTech, loadCardScopes, normalizeStatus } from "../scopes.js";
+import { latestSpecTech, loadCardScopes } from "../scopes.js";
+import { readCardStatus } from "../../lib/card-status.mjs";
 import type { ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
@@ -59,7 +65,7 @@ export type DetailParts = {
   fileEnvironmentId: string | null;
   scopes: unknown[];
   artifacts: unknown[];
-  activity: "idle" | "running" | "awaiting-answer" | "error";
+  activity: "idle" | "running" | "awaiting-answer" | "error" | "held";
   preset: Preset;
   workerHistory: unknown[];
   questionStaleness: Map<string, Staleness>;
@@ -71,6 +77,16 @@ export type DetailParts = {
   scopeXray: ScopeXray | null;
   /** The card-level file-claim wait, derived from `scopes`. Null when free. */
   fileLocks: BlockedFileWait | null;
+  /** The host's hold on the card's next dispatch, with its derived sentence.
+   * Null when the thread is free. Read on the detail only — see readHold. */
+  hold: (HostHold & { summary: string | null }) | null;
+  /** The card's live native run, with its derived sentence. Null when no run
+   * owns the card. Read on the detail only — see readNativeRun. */
+  nativeRun: (NativeRunRef & { summary: string | null }) | null;
+  /** The failed run holding the card at its current stage, or null. The card is
+   * told this rather than re-deriving it, so its affordances cannot disagree
+   * with the advance gate. */
+  blockingRun: BlockingRun | null;
 };
 
 /**
@@ -122,7 +138,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     splitAction: splitActionState({
       kind: normalizeKind(card.kind),
       stage: card.stage,
-      status: normalizeStatus(card.status),
+      status: readCardStatus(card.status),
       archived: isArchivedCard(card),
       openProposal: Boolean(splitOpen),
       openQuestions,
@@ -138,6 +154,8 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
     fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
+    nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
     workerHistory: parts.workerHistory,
@@ -184,8 +202,16 @@ function detailCard(
   flow: { leadMs: number | null; cycleMs: number | null },
 ) {
   const { card, preset } = parts;
-  const db = deps.db;
-  const cardId = card.id;
+  return {
+    ...cardIdentity(deps, card, parts),
+    ...cardLifecycle(deps, card, parts),
+    ...cardPreset(preset),
+    ...cardProgress(deps, card, parts, flow),
+  };
+}
+
+/** Who the card is. */
+function cardIdentity(deps: CardDetailDeps, card: WorkerCard, parts: DetailParts) {
   return {
     id: card.id,
     name: card.name,
@@ -203,21 +229,68 @@ function detailCard(
     researchStrategy: card.research_strategy,
     researchStrategies: deps.strategyList(card),
     exploreStage: card.explore_stage ?? null,
-    status: normalizeStatus(card.status),
+  };
+}
+
+/**
+ * What the card is doing, and the two waits that explain an idle one.
+ *
+ * `hostHold` and `nativeRun` sit together because they answer the same
+ * question — "why is this card not moving?" — from two different owners: the
+ * host holding the next message, and a Workflows run working the stage. Each
+ * carries its own derived sentence, so the card never writes a second version
+ * of a reason `lib/host-hold.mjs` or `lib/native-run.mjs` already owns.
+ */
+function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailParts) {
+  const db = deps.db;
+  const cardId = card.id;
+  return {
+    status: readCardStatus(card.status),
     stage: card.stage,
     workerThreadId: card.worker_thread_id,
     activity: parts.activity,
     lastError: card.last_error,
+    // The host-read latch, with its sentence derived where the measurement
+    // lives. Read beside `activity`, which it never overwrites.
+    readMissSince: card.read_miss_since ?? null,
+    hostHold: parts.hold,
+    nativeRun: parts.nativeRun,
+    blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
+    // The same ladder the board reads, so opening a card cannot disagree
+    // with the chip that sent the reader here.
+    integrationPending: integrationPending(db, card),
+    // The human acceptance receipt, read beside the review request it answers.
+    // The line is derived where the receipt lives so the card, the trail
+    // comment and any future surface cannot say it three ways.
+    acceptedAt: isAccepted(card.accepted_at) ? card.accepted_at : null,
+    acceptanceLine: acceptanceLine(card.accepted_at),
+  };
+}
+
+/** Which preset the card's worker runs on, and whether the card overrode it. */
+function cardPreset(preset: DetailParts["preset"]) {
+  return {
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
+    presetId: preset.id,
+  };
+}
+
+/** The counters and timings the card's own header reads. */
+function cardProgress(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  parts: DetailParts,
+  flow: { leadMs: number | null; cycleMs: number | null },
+) {
+  return {
     presetOverridden: hasPresetOverride(deps.db, card.id),
     updatedAt: card.updated_at,
     stallCount: stallCount(deps.db, card.id),
     scopeSummary: scopeSummary(parts.scopes),
-    presetId: preset.id,
     workerPresetId: card.worker_preset_id,
     presetRestartPending: (card.preset_restart_pending ?? 0) === 1,
     leadMs: flow.leadMs,

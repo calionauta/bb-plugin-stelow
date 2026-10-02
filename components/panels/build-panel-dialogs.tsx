@@ -89,6 +89,7 @@ export function BuildPanelDialogs(props: Props) {
         open={props.createOpen}
         onOpenChange={props.onCreateOpenChange}
         activeProjectId={props.projectId}
+        validProjectIds={(props.data.projects ?? []).map((project) => project.id)}
         analysisPreset={props.analysisWorkerPreset}
         appetite={props.appetite}
         reviewGates={props.reviewGates}

@@ -7,6 +7,7 @@ import {
   canSquashMerge,
   publicationBlocker,
 } from "../lib/vcs-publication.mjs";
+import { publishRelevanceNote } from "../lib/publish-relevance.mjs";
 import type { ArtifactsPublicationDeps, PublicationCard, PublicationSnapshot } from "./artifacts-publication.js";
 
 type EnvironmentStatus = Awaited<
@@ -42,6 +43,7 @@ export function unavailablePublication(
     mergeBase: null,
     pullRequest: null,
     pullRequestMessage: null,
+    relevanceNote: null,
     capabilities: {
       commit: blocked,
       squashMerge: blocked,
@@ -106,7 +108,7 @@ async function availableSnapshot(
   card: PublicationCard,
   events: PublicationSnapshot["events"],
 ): Promise<PublicationSnapshot> {
-  if (deps.normalizeStatus(card.status) !== "completed") {
+  if (deps.cardStatusOf(card.status) !== "completed") {
     return unavailablePublication("Only completed cards can publish changes.", events);
   }
   const checkout = await deps.cards.checkout(card).catch(() => null);
@@ -128,6 +130,7 @@ async function availableSnapshot(
     return unavailablePublication(message, events);
   }
   return projectSnapshot(
+    card,
     checkout.source,
     checkout.environmentId,
     Boolean(checkout.environment.isWorktree),
@@ -176,6 +179,7 @@ function projectCapabilities(
 }
 
 function projectSnapshot(
+  card: PublicationCard,
   source: string,
   environmentId: string,
   isWorktree: boolean,
@@ -213,6 +217,7 @@ function projectSnapshot(
     pullRequestMessage: pullRequest.outcome === "unavailable" && "message" in pullRequest
       ? pullRequest.message
       : null,
+    relevanceNote: publishRelevanceNote(card.kind, card.intent),
     capabilities: projectCapabilities(status, pullRequest),
     events,
   };

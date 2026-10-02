@@ -31,7 +31,22 @@ const server = [
   readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/wiring/host-surfaces.ts"), "utf8"),
 ].join("\n");
-const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
+// The panel's rendering lives in several files by design: build-publication
+// keeps the polling, the rest is pure functions of their inputs. These pins
+// guard what a reader sees, so they read the whole surface rather than one
+// file that happens to hold it today.
+const publication = [
+  "build-publication.tsx",
+  "build-publication-body.tsx",
+  "build-publication-workspace.tsx",
+  "build-publication-pull-request.tsx",
+  "build-publication-history.tsx",
+  "build-publication-checkout.tsx",
+  "build-publication-actions.tsx",
+  "copy-text.ts",
+]
+  .map((file) => readFileSync(join(root, "components/detail", file), "utf8"))
+  .join("\n");
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
 const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
 const commitDiff = readFileSync(join(root, "components/detail/build-commit-diff.tsx"), "utf8");
@@ -169,16 +184,16 @@ assert.match(publication, /Save local commit to/, "a BB-selected default checkou
 assert.match(publication, /default checkout selected in BB/, "the publication panel explains that BB's checkout choice is respected");
 assert.match(
   publication,
-  /cannot fetch remote updates, merge incoming changes, push, or create a pull request/,
+  /cannot fetch remote updates, merge incoming\s+changes, push, or create a pull request/,
   "the publication panel does not promise remote synchronization the BB API does not expose",
 );
 assert.match(publication, /Advanced Git operations/, "local squash integration is progressively disclosed");
 assert.match(
   publication,
-  /DisclosureChevron open=\{advancedGitOpen\} \/>Advanced Git operations/,
-  "the disclosure arrow reads explicit open state, never CSS hope",
+  /onToggle=\{\(event\) => setOpen\(\(event\.currentTarget as HTMLDetailsElement\)\.open\)\}/,
+  "the disclosure reads explicit open state, never CSS hope",
 );
-assert.match(publication, /publication\.pullRequest\.state === "draft" \? <Button/, "ready/draft resolves to one contextual action from PR state");
+assert.match(publication, /if \(pullRequest\.state === "draft"\) \{/, "ready/draft resolves to one contextual action from PR state");
 assert.match(publication, /Squash branch locally/, "local squash integration uses plain-language copy");
 assert.match(publication, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(actions, /submitting/, "publication confirmations prevent duplicate write requests");
@@ -233,11 +248,15 @@ assert.match(publication, /Saved locally on/, "a successful local save has an ex
 assert.match(publication, /View commit/, "recorded local commits can be inspected from Done");
 assert.match(server, /parsePushRemoteUrl/, "the remote comes from git's own To line, never an assumed host");
 assert.match(publication, /branchWebLinks/, "branch links are built from the parsed remote, not hardcoded");
-assert.match(publication, /publication && \(pushed \|\| publication\.pullRequest\) \? branchWebLinks/, "remote links need a branch proven to exist remotely, never a failed first push");
+assert.match(
+  publication,
+  /publication && \(pushed \|\| publication\.pullRequest\)\s*\? branchWebLinks/,
+  "remote links need a branch proven to exist remotely, never a failed first push",
+);
 assert.match(publication, /last push outcome unknown/, "an ended shell admits ignorance instead of claiming unpushed");
 assert.match(publication, /On GitHub/, "a pushed branch links out to the remote it landed on");
-assert.match(publication, /View branch ↗/, "the branch is one click away after pushing");
-assert.match(publication, /Open pull request ↗/, "the next step after pushing is a link, not a paragraph");
+assert.match(publication, /View branch/, "the branch is one click away after pushing");
+assert.match(publication, /Open pull request/, "the next step after pushing is a link, not a paragraph");
 assert.match(publication, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
 assert.match(publication, /pushed to origin\./, "a finished push reads as published in the outcome line");
 assert.match(publication, /Completed at \{verifiedHeadSha\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
@@ -246,7 +265,8 @@ assert.match(
   /runPublicationMutation\(\{[\s\S]*refreshPublication: loadPublication,[\s\S]*refreshCard: onChanged/,
   "publication actions route both refreshes through the tested partial-failure lifecycle",
 );
-assert.match(publication, /setPushTerminals\(\{ ok: false, error:/, "push-shell listing failures stay visible instead of disappearing");
+assert.match(publication, /setPushTerminals\(unreadablePushShells\(err\)\)/, "push-shell listing failures stay visible instead of disappearing");
+assert.match(publication, /ok: false,[\s\S]*?Unable to list push shells\./, "the unreadable-list shape is a failed read, not an empty one");
 assert.match(publication, /action === "sync" \? \[10000, 25000\] : \[8000, 20000\]/, "push and sync results refresh automatically at their established follow-up times");
 assert.match(
   actions,

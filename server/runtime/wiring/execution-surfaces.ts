@@ -21,12 +21,16 @@ import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
 import { approveScopeMapOnCard, type ScopeMapApprovalDeps } from "../../scope-map-approval.js";
 import { createResearchTrackSync } from "../research-track-sync.js";
+import type { HostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { createBuildThreadSync } from "../build-thread-sync.js";
+import { readHostHold } from "../worker-hold.js";
 import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
+import { cardLiveRuns } from "../card-live-runs.js";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
+import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
 import type { AnswerBoundaryPort } from "../question-answers.js";
 import type { RuntimeCore } from "../runtime-core.js";
@@ -168,7 +172,7 @@ function buildAdvance(
   native: ReturnType<typeof buildNative>,
   scopeMapApproved: (stateDir: string | null) => Promise<boolean>,
 ) {
-  const { bb, getCard, cardWorkspace, updateCard, presetServer, workers } = core;
+  const { bb, db, getCard, cardWorkspace, updateCard, presetServer, workers } = core;
   const ERRORS = core.ERRORS;
   return createExecutionAdvance({
     errors: {
@@ -176,6 +180,7 @@ function buildAdvance(
       cardArchived: ERRORS.cardArchived,
       workspaceUnavailable: ERRORS.workspaceUnavailable,
     },
+    db,
     getCard,
     getCardByWorkerThread: core.ledger.getCardByWorkerThread,
     cardWorkspace,
@@ -226,8 +231,15 @@ function buildWorktreeCleanup(core: RuntimeCore) {
  * on the lifecycle they share.
  */
 function buildThreadSync(core: RuntimeCore) {
-  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
-  const trackSync = createResearchTrackSync({
+  return {
+    trackSync: buildTrackSync(core),
+    syncThreadState: buildBuildSync(core, buildTrackSync(core)),
+  };
+}
+
+function buildTrackSync(core: RuntimeCore) {
+  const { bb, db, now, getCard, updateCard, workers } = core;
+  return createResearchTrackSync({
     bb,
     db,
     now,
@@ -240,6 +252,9 @@ function buildThreadSync(core: RuntimeCore) {
     recordStageEvent: core.ledger.recordStageEvent,
     markThreadRunning: core.trackProjection.markThreadRunning,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
     noteAgentOutput: core.trackProjection.noteAgentOutput,
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
@@ -248,7 +263,14 @@ function buildThreadSync(core: RuntimeCore) {
     exploreArtifact: core.researchArtifacts.exploreArtifact,
     idleAttentionMs: IDLE_ATTENTION_MS,
   });
-  const syncThreadState = createBuildThreadSync({
+}
+
+/** The build-card sync's deps, named in one place so `buildBuildSync` reads as a
+ * list of collaborators rather than a wall of wiring. */
+function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTrackSync>) {
+  const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
+  const readStreaks = createReadStreaks(bb);
+  return createBuildThreadSync({
     bb,
     db,
     now,
@@ -260,6 +282,10 @@ function buildThreadSync(core: RuntimeCore) {
     syncResearch: trackSync.syncResearch,
     syncExplore: trackSync.syncExplore,
     syncQuestions: core.questions.syncOpenQuestionInbox,
+    readHold: (card) => Promise.resolve(
+      card.worker_thread_id ? readHostHold(bb, card.worker_thread_id) : null,
+    ),
+    liveRuns: (card) => cardLiveRuns(db, card.id),
     applyFailed: (cardId, threadId, error) =>
       workers.applyFailed(cardId, threadId, error),
     logComment: core.ledger.commentCard,
@@ -270,8 +296,36 @@ function buildThreadSync(core: RuntimeCore) {
     interfacePick: INTERFACE_PICK,
     auditDoneNudge: AUDIT_DONE_NUDGE,
     idleAttentionMs: IDLE_ATTENTION_MS,
+    noteUnreadable: readStreaks.unreadable,
+    noteReadable: readStreaks.readable,
+    forgetUnreadable: readStreaks.forget,
   });
-  return { trackSync, syncThreadState };
+}
+
+/**
+ * The unreadable-read streak table for one wiring of the sync.
+ *
+ * Per-wiring and not on `core`: this is a counter behind a threshold, and
+ * putting it on the shared runtime would make it look like a service every
+ * other surface could reach for. It exists because the sync's other two
+ * channels for a host fault are both wrong — `last_error` renders a Resume
+ * button for a transport fault, and pure silence leaves the next occurrence
+ * explained by theory instead of a measurement.
+ *
+ * The warn and the card latch come from this one table, so they cannot disagree:
+ * both fire on the tick the streak reaches READ_STREAK_WARN_AT. The recovery
+ * line is here rather than in the module because a module with no clock and no
+ * logger cannot know that a host came back — and because the operator reading
+ * a warn an hour later is owed the ending, not just the alarm.
+ */
+function createReadStreaks(bb: RuntimeCore["bb"]) {
+  return createHostReadStreak((cardId, streak) =>
+    bb.log.warn(
+      `Stelow could not read card ${cardId}'s workflow state on ${streak} consecutive checks; `
+        + "its last verified projection is now stale and no verdict about the card was written. "
+        + "The card shows a 'Host not answering' marker from here. "
+        + "The host is not answering — no card action fixes this.",
+    ));
 }
 
 /** Register the boot reconcile and the interval that keeps it honest. */
@@ -325,7 +379,7 @@ async function auditReworkNote(
   const gaps = await critiqueGapState(card).catch(() => null);
   if (!gaps?.matched) return "";
   const open = (gaps.auditGapScopes ?? []).filter(
-    (scope) => !isDoneStatus(scope.status),
+    (scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status),
   );
   return open.length > 0
     ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`

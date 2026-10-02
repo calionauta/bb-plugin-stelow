@@ -31,10 +31,3 @@ turn debugging the CLI; report the exact error and move on.`;
   }
   return buildContinueNudge(interfacePick);
 }
-
-/** Short human status for the GitHub completion summary (English). */
-export function statusLabelForSummary(status: string): string {
-  if (status === "in-progress") return "in progress";
-  if (status === "done" || status === "completed") return "done";
-  return status;
-}

@@ -1,5 +1,6 @@
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { workflowEntryForOwner } from "../../../lib/workflow-state-identity.mjs";
@@ -15,13 +16,16 @@ import {
 } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
+import type { GapTotals } from "../../../lib/metrics-format.mjs";
 
 const USAGE = "Usage: bb stelow gap-scopes [--card <card_id>]";
 
 /** The critique-gap view gap-scopes converts: the escalated rows, the scopes
- * already linked to them, and the fixed/documented/escalated tally it reports. */
+ * already linked to them, and the fixed/documented/escalated tally it reports.
+ * The tally's shape belongs to lib/metrics-format.mjs, the same owner the
+ * metrics readout and the card header read it from. */
 type CritiqueGapView = {
-  totals: { total: number; fixed: number; documented: number; escalated: number };
+  totals: GapTotals;
   escalated: Array<{ description: string }>;
   auditGapScopes: Array<{ gap: string | null }>;
 };
@@ -131,13 +135,11 @@ async function gapScopesTracking(
   const entry = workflowEntryForOwner(array(data.workflows), cardId) as
     | WorkflowEntry
     | null;
-  if (!entry)
-    return {
-      result: {
-        exitCode: 1,
-        stderr: "No workflow entry owns this card. Reseed the workflow.",
-      },
-    };
+  // A tracking file with no entry for this card is the ownership verdict, not a
+  // variant of the missing-file refusal above, so it reads the shared sentence
+  // rather than its own words: the worker reading this stderr cannot reseed
+  // itself, and the door that does work is named in one place for every reader.
+  if (!entry) return { result: { exitCode: 1, stderr: OWNERSHIP_UNVERIFIED } };
   return { path, data, entry };
 }
 

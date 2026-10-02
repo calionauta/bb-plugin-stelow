@@ -1,26 +1,30 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
+import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
+import { readMissUpdates, readRecoveredUpdates } from "../../lib/host-read-streak.mjs";
 import {
-  lastTurnAdvancedStages,
-  nextAutoContinue,
-  shouldAutoContinue,
-} from "../../lib/auto-continue.mjs";
+  clearLeftScopeRead,
+  noteReadableRead,
+  noteUnreadableRead,
+} from "./build-read-channel.js";
+import { persistStandardIdle } from "./build-thread-park.js";
+import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/native-run.mjs";
+import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import {
   isActiveStatus,
   isIdleStatus,
-  projectIdleTimestamp,
-  projectNoProgress,
   projectRunningState,
   projectStateMetadata,
   projectThreadError,
   shouldSyncThread,
 } from "./thread-state-projection.js";
 import { syncTerminalIdle } from "./build-thread-terminal.js";
-import { recordPausedAfter } from "./paused-inbox.js";
+import { readStelowCalls, type StelowCalls } from "./stelow-turn-verbs.js";
 import { sendAgentInput } from "./thread-send.js";
 import type { WorkflowStateResolution } from "./workflow-state.js";
 
@@ -49,6 +53,13 @@ type BuildThreadSyncDeps = {
   syncResearch: (card: WorkerCard) => Promise<void>;
   syncExplore: (card: WorkerCard) => Promise<void>;
   syncQuestions: (card: WorkerCard) => Promise<string[] | null>;
+  readHold: (card: WorkerCard) => Promise<HostHold | null>;
+  /**
+   * The card's live native runs, if any. An idle thread is not an idle card
+   * when a host Workflows run owns the stage — see lib/native-run.mjs, which
+   * carries the rule and the reason it exists.
+   */
+  liveRuns: (card: WorkerCard) => NativeRunRef[];
   applyFailed: (cardId: string, threadId: string, error: string | null) => Promise<void>;
   logComment: (cardId: string, body: string) => void;
   recordInbox: (
@@ -64,6 +75,15 @@ type BuildThreadSyncDeps = {
   interfacePick: string;
   auditDoneNudge: string;
   idleAttentionMs: number;
+  // Operator-visible logging plus the card's own latch — both decided by the
+  // same streak crossing the same threshold. `last_error` feeds
+  // `errorNeedsAttention` → `cardCanResume`, so a transport fault written there
+  // renders "Resume work" for something no resume can fix; these three do the
+  // counting instead, and the card hears about it through a column that is not
+  // a verdict and not an action.
+  noteUnreadable: (cardId: string) => number;
+  noteReadable: (cardId: string) => void;
+  forgetUnreadable: (cardId: string) => void;
 };
 
 type ThreadSnapshot = {
@@ -76,7 +96,14 @@ type ThreadSnapshot = {
 export function createBuildThreadSync(deps: BuildThreadSyncDeps) {
   return async function syncThreadState(cardId: string): Promise<void> {
     const card = deps.getCard(cardId);
-    if (!shouldSyncThread(card)) return;
+    if (!shouldSyncThread(card)) {
+      deps.forgetUnreadable(cardId);
+      // A card nobody is syncing will never take the latch off by reading, so
+      // the scope exit is the second door out. Without it an archived card
+      // carries a warning about a host that may have come back an hour ago.
+      if (card) clearLeftScopeRead(deps, card, readRecoveredUpdates);
+      return;
+    }
     if (card.kind === "research") {
       await deps.syncResearch(card);
       return;
@@ -109,16 +136,33 @@ async function readBuildThread(
   if (state.kind === "unresolved") {
     deps.updateCard(card.id, {
       activity: "error",
-      last_error: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
+      last_error: OWNERSHIP_UNVERIFIED,
     });
     return null;
   }
   // An unreadable workspace is nobody's verdict. Returning here leaves the
   // card on its last verified projection instead of overwriting it with a
-  // failure the host caused, and the next tick (45s) asks again. Silently is
-  // the honest answer: a card that has been syncing for hours has nothing new
-  // to say because one read timed out.
-  if (state.kind === "unreadable") return null;
+  // failure the host caused, and the next tick (45s) asks again. What is NOT
+  // written is `activity` and `last_error` — that is what keeps a transport
+  // fault out of the Resume button, and it is why the projection the reader is
+  // looking at survives the outage instead of being erased by it.
+  //
+  // Silence still costs the trace, so the miss is counted. The streak decides
+  // both channels at once: at READ_STREAK_WARN_AT consecutive misses the host is
+  // named once in the plugin log (lib/host-read-streak.mjs) AND the card is told
+  // its reads are failing, by latching a timestamp on its own column. The card
+  // is not asked to do anything about it, and `readRecoveredUpdates` takes the
+  // latch off on the first read that answers — a warning that outlived the fault
+  // would be a second lie. `readStateBlob` has three `unreadable` returns and all
+  // of them land here, so one call site counts all of them.
+  if (state.kind === "unreadable") {
+    noteUnreadableRead(deps, card, deps.now, readMissUpdates);
+    return null;
+  }
+  // Both remaining answers mean the host DID answer — including `unresolved`,
+  // which is a verdict about the card rather than about the host. Either ends
+  // the outage, so either takes the latch back off.
+  noteReadableRead(deps, card, readRecoveredUpdates);
   const metadata = projectStateMetadata(card, state.blob);
   applyIntent(deps, card, metadata.intent);
   const thread = await deps.bb.sdk.threads.get({ threadId: card.worker_thread_id! });
@@ -229,13 +273,37 @@ async function syncIdle(
     noteFreshOutput(deps, snapshot);
     return false;
   }
+  // The host owns the next move: a message is queued and the host has not
+  // dispatched it. Nothing in this file can advance the card, and nothing in it
+  // should try — the pending message IS the pending work, so a nudge here would
+  // queue a duplicate of a message that is already waiting to be delivered.
+  // That duplication is what turned one held card into ten.
+  const hold = await deps.readHold(snapshot.card);
+  if (hold) {
+    deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    noteFreshOutput(deps, snapshot);
+    return true;
+  }
+  // A host Workflows run outlives the turn that started it, so the thread being
+  // idle says nothing about the card. This check sits ABOVE the auto-continue
+  // decision on purpose: the run IS the pending work, so a nudge here would
+  // interrupt a card that is mid-workflow, and the park below would offer a
+  // Resume for a card that is already working.
+  if (keepsCardRunning(deps.liveRuns(snapshot.card), questionIds.length)) {
+    deps.updateCard(snapshot.card.id, runUpdates(snapshot.lastOutput));
+    noteFreshOutput(deps, snapshot);
+    return true;
+  }
   const transitioning = snapshot.card.activity !== "idle";
+  // One fetch, two readers: the terminal park names what the finished turn ran,
+  // the resume below reads the same window for its advance scan.
+  const calls = await readStelowCalls(deps.bb, snapshot.card.worker_thread_id);
   if (snapshot.stage === "audit") {
-    const resumed = await syncTerminalIdle(deps, snapshot, transitioning);
+    const resumed = await syncTerminalIdle(deps, snapshot, transitioning, calls);
     if (!resumed) noteFreshOutput(deps, snapshot);
     return resumed;
   }
-  const resumed = await resumeWithProgress(deps, snapshot, transitioning);
+  const resumed = await resumeWithProgress(deps, snapshot, transitioning, calls);
   if (!resumed) noteFreshOutput(deps, snapshot);
   return resumed;
 }
@@ -244,8 +312,9 @@ async function resumeWithProgress(
   deps: BuildThreadSyncDeps,
   snapshot: ThreadSnapshot,
   transitioning: boolean,
+  calls: StelowCalls,
 ): Promise<boolean> {
-  const progressed = await detectProgress(deps, snapshot);
+  const progressed = detectProgress(snapshot, calls);
   const decision = shouldAutoContinue({
     status: snapshot.status,
     stage: snapshot.stage,
@@ -264,30 +333,34 @@ async function resumeWithProgress(
   return false;
 }
 
-async function detectProgress(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-): Promise<boolean> {
+/**
+ * Whether the finished turn moved anything.
+ *
+ * New text is the cheap signal and the one that carries most resumes. A turn
+ * that only ran a command has identical text, so the turn's own verbs are the
+ * fallback — and `null` (a failed read, no thread) counts as no progress
+ * rather than as progress, because a resume the host cannot justify is the
+ * failure this repo keeps refusing.
+ */
+function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
   if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
     return true;
   }
-  try {
-    const recent = await deps.bb.sdk.threads.events.list({
-      threadId: snapshot.card.worker_thread_id!,
-      order: "desc",
-      limit: "100",
-      types: ["turn/completed", "turn/started", "item/completed"],
-    });
-    return lastTurnAdvancedStages(recent);
-  } catch {
-    return false;
-  }
+  return calls?.advanced ?? false;
 }
 
 async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): Promise<boolean> {
   const input = buildContinueInput(buildContinueNudge(deps.interfacePick), "private");
-  const sent = await sendAgentInput(deps.bb, snapshot.card, input);
-  if (!sent) return false;
+  const dispatch = await sendAgentInput(deps.bb, snapshot.card, input);
+  if (dispatch.delivery === "refused") return false;
+  if (dispatch.delivery === "queued") {
+    // The host took the message and is holding it. The card is not running and
+    // this nudge earned no turn, so the budget is left alone — spending it on a
+    // dispatch that never started is how a held card exhausted all ten and then
+    // parked itself as if a person were needed.
+    deps.updateCard(snapshot.card.id, holdUpdates(snapshot.lastOutput));
+    return true;
+  }
   const next = nextAutoContinue({
     stage: snapshot.stage,
     autoCount: snapshot.card.auto_continue_count ?? 0,
@@ -298,50 +371,6 @@ async function resumeWorker(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot)
     autoContinueFields(next, snapshot.lastOutput),
   );
   return true;
-}
-
-function persistStandardIdle(
-  deps: BuildThreadSyncDeps,
-  snapshot: ThreadSnapshot,
-  transitioning: boolean,
-  vetoed: boolean,
-): void {
-  const noProgress = projectNoProgress(
-    snapshot.card,
-    transitioning,
-    snapshot.lastOutput,
-  );
-  if (noProgress) {
-    deps.logComment(
-      snapshot.card.id,
-      "Worker stopped with no new output — treated as paused. If this repeats, inspect " +
-      "the thread before retrying: a silent stop usually means the worker is waiting on " +
-      "input it never asked for.",
-    );
-  }
-  const idleAt = projectIdleTimestamp(
-    snapshot.card,
-    transitioning,
-    noProgress,
-    deps.now(),
-    deps.idleAttentionMs,
-  );
-  deps.updateCard(snapshot.card.id, {
-    activity: "idle",
-    last_assistant_text: snapshot.lastOutput,
-    last_error: null,
-    last_idle_at: idleAt,
-  });
-  if (idleAt == null) return;
-  const suffix = vetoed
-    ? " Auto-continue vetoed the resume: the last output showed no real progress."
-    : "";
-  recordPausedAfter(
-    deps,
-    snapshot.card.id,
-    idleAt,
-    `Idle with unfinished work — retry continues in place, restart begins fresh.${suffix}`,
-  );
 }
 
 function noteFreshOutput(deps: BuildThreadSyncDeps, snapshot: ThreadSnapshot): void {

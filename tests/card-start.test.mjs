@@ -50,6 +50,7 @@ const githubServer = [
 ].map((file) => readFileSync(join(root, file), "utf8")).join("\n");
 const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
+const projectSeed = readFileSync(join(root, "components", "creation", "use-project-seed.ts"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
 const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
 const explorePanelDialogs = readFileSync(join(root, "components", "panels", "explore-panel-dialogs.tsx"), "utf8");
@@ -120,15 +121,37 @@ assert.equal(((githubImport.match(/onViewBucket/g) ?? []).length + (githubAuto.m
 assert.match(buildDialog, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
 // Build creation: one dialog component owns draft, intent, error, and
 // start — the panel keeps the open flag plus board defaults.
-assert.match(buildDialog, /export function CreateBuildDialog\(\{ open, onOpenChange, activeProjectId, analysisPreset/, "the build dialog lives in the creation module");
+assert.match(
+  buildDialog,
+  /export function CreateBuildDialog\(\{[^}]*validProjectIds,/,
+  "the build dialog lives in the creation module",
+);
 assert.match(buildPanelDialogs, /import \{ CreateBuildDialog \} from "\.\.\/creation\/create-build-dialog"/, "the board panel reads the shared dialog");
 assert.doesNotMatch(app, /rpc\.call\("createCard",/, "no local build submit survives in the panel");
-assert.match(buildDialog, /function handleOpenChange\(next: boolean\) \{\s*\n\s*onOpenChange\(next\);\s*\n\s*if \(next\) submit\.resetOnOpen\(\);/, "every open resets to started with a clean error");
+assert.match(
+  projectSeed,
+  /onOpenChange\(next\);\s*\n\s*if \(next\) \{\s*\n\s*reset\(\);/,
+  "every open resets to started with a clean error",
+);
+assert.match(
+  projectSeed,
+  /if \(next\) \{\s*\n\s*reset\(\);\s*\n\s*reseedOnOpen\(\);/,
+  "every open reseeds the project from the last pick",
+);
+assert.match(
+  buildDialog,
+  /onOpenChange=\{\(next\) => openChange\(next, onOpenChange, submit\.resetOnOpen\)\}/,
+  "the build dialog resets through the shared open handler",
+);
 assert.match(buildDialog, /function resetOnOpen\(\) \{[\s\S]*setStartImmediately\(true\);[\s\S]*setCreateGithubIssue\(false\);[\s\S]*setCreateGithubRepo\(null\);[\s\S]*setError\(null\);/, "reset restores started default, GitHub opt-in state, and clears the error");
 assert.match(researchDialog, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 // Research creation: one dialog component owns draft, strategy, error,
 // and start — the panel keeps the open flag plus the strategy catalog.
-assert.match(researchDialog, /export function CreateResearchDialog\(\{ open, onOpenChange, activeProjectId, strategies, researchPreset/, "the research dialog lives in the creation module");
+assert.match(
+  researchDialog,
+  /export function CreateResearchDialog\(\{\s*\n\s*open,\s*\n\s*onOpenChange,\s*\n\s*activeProjectId,\s*\n\s*validProjectIds,/,
+  "the research dialog lives in the creation module",
+);
 assert.match(
   researchPanelDialogs,
   /import \{ CreateResearchDialog \} from "\.\.\/creation\/create-research-dialog"/,
@@ -139,7 +162,11 @@ assert.match(researchDialog, /function resetOnOpen\(\) \{\s*\n\s*setStrategy\(nu
 assert.match(exploreDialog, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");
 // Explore creation: one dialog component owns draft, stage, error, and
 // start — the panel keeps the open flag plus the technique catalog.
-assert.match(exploreDialog, /export function CreateExploreDialog\(\{ open, onOpenChange, activeProjectId, stages, explorePreset/, "the explore dialog lives in the creation module");
+assert.match(
+  exploreDialog,
+  /export function CreateExploreDialog\(\{\s*\n\s*open,\s*\n\s*onOpenChange,\s*\n\s*activeProjectId,\s*\n\s*validProjectIds,/,
+  "the explore dialog lives in the creation module",
+);
 assert.ok(
   explorePanelDialogs.includes('import { CreateExploreDialog } from "../creation/create-explore-dialog"'),
   "the board panel reads the shared explore dialog",

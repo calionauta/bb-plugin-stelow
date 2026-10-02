@@ -52,6 +52,20 @@ assert.match(
   /asked host with weird workspace/,
   "unrecognized shapes name themselves instead of vanishing",
 );
+// The one shape no union variant covers must still be diagnosable. It said
+// "unknown shape" in the server log, which is true and useless: it did not
+// say whether the caller sent an environment record, an empty object, or a
+// variant this build has never heard of.
+assert.match(
+  environmentFallbackNotice({ hostId: "host_x", path: "/p" }, fallback) ?? "",
+  /asked a shape carrying hostId, path/,
+  "a shape with no type names the keys it carried",
+);
+assert.match(
+  environmentFallbackNotice({}, fallback) ?? "",
+  /asked an empty object/,
+  "an empty request says so rather than saying nothing",
+);
 
 // Wiring pin: creation surfaces the substitution (log plus card comment),
 // shared by build/research/explore through createCardInternal.

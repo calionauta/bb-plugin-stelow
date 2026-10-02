@@ -29,6 +29,15 @@ export type WorkerCard = {
   last_error: string | null;
   last_assistant_text: string | null;
   last_idle_at: number | null;
+  /** When the host stopped answering this card's state read, or null. The
+   * measurement itself lives in the streak table; this is the latch the reader
+   * sees, and it is never a verdict about the card. See lib/host-read-streak. */
+  read_miss_since: number | null;
+  /** The human acceptance receipt, or null when nobody has recorded one. A
+   * stamp and nothing else — the host SDK exposes no operator identity, so a
+   * name field would be free text wearing attribution's clothes.
+   * See lib/card-acceptance.mjs. */
+  accepted_at: number | null;
   environment_label: string | null;
   created_at: number;
   updated_at: number;
@@ -42,3 +51,42 @@ export type WorkerScheduler = {
 };
 
 export type WorkerSpawnArgs = SpawnArgs;
+
+/** The preset a card's worker runs on, as the spawn sites read it. */
+export type Preset = {
+  id: string;
+  name: string;
+  provider_id: string;
+  model_id: string;
+  reasoning_level: string;
+  permission_mode: string;
+  environment_kind: string;
+  base_branch: string | null;
+  machine_id: string | null;
+  instructions: string;
+};
+
+/**
+ * What a respawn is being asked to do beyond "start a worker".
+ *
+ * These live here rather than in `workers.ts` so the replacement module can
+ * name them without importing the composition root back — which is a cycle,
+ * and the architecture gate is right to refuse one.
+ */
+export type RespawnOptions = {
+  strategyId?: string;
+  flavor?: "restart" | "append";
+  roundNo?: number;
+  roundStamp?: string;
+  roundFile?: string;
+  previousProjectId?: string | null;
+};
+
+export type RespawnPreparation =
+  | { error: string }
+  | {
+    prompt: string;
+    input?: SpawnArgs["input"];
+    projectPath: string;
+    workspace: { path: string; hostId: string | null } | null;
+  };

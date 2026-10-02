@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
-import { codeLinesOf as stripComments } from "./helpers/source-code.mjs";
+import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
 
 /**
  * The card's vocabulary must be named, or it cannot be checked.
@@ -45,6 +45,80 @@ function codeLinesOf(relative) {
 }
 
 const ALL = componentFiles().map((file) => file.replace(`${repoRoot}/`, ""));
+
+/**
+ * One function's own source, from its `export function NAME(` up to the brace
+ * that closes it. Extracting the block is what makes a rule about its body a
+ * rule about the body: a lazy `[\s\S]*?` to the end of the file would let a
+ * later sibling's dot satisfy a "this chip has no dot" check, which is a
+ * green test for a chip that has one.
+ */
+function functionSource(relative, name) {
+  const block = read(relative).match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`));
+  assert.ok(block, `${name} must exist as an exported function in ${relative}`);
+  return block[0];
+}
+
+test("a chip that asks for something never borrows the position vocabulary", () => {
+  // The review chip marks a REQUEST about finished work, so it must not use
+  // the tells that mean "here is a position". The stage pill, the activity
+  // pill and the attention chip all carry a dot, and on a terminal card the
+  // stage pill is suppressed on purpose — which left the review chip alone in
+  // the vacated slot, reading as the card's next checkpoint.
+  assert.doesNotMatch(
+    functionSource("components/dashboard/build-status-pills.tsx", "ReviewChip"),
+    /aria-hidden/,
+    "the review chip carries no dot. A dot in this vocabulary means a position, and this chip asks for a look at finished work",
+  );
+  assert.doesNotMatch(
+    codeOf(read("components/board/board-cards.tsx")),
+    /bg-emerald-500\/15/,
+    "the board tile re-spelled the shared review chip and drifted a dot and a type size away from the list row",
+  );
+});
+
+test("the review chip's label is not a workflow phase name", () => {
+  // `review` is a phase id in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
+  // spreads PHASE_LABELS, so the board already carries a column header for
+  // that phase. A chip wearing the bare word is a position that does not
+  // exist. Read the label out of the component and the phase labels out of
+  // the catalog, so neither side can drift without failing here.
+  const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
+  const chipLabel = read("components/dashboard/build-status-pills.tsx")
+    .match(/export function ReviewChip\(\{ label = "([^"]+)"/)?.[1];
+  assert.ok(chipLabel, "ReviewChip must default its label, so this check reads the shipped word rather than a copy of it");
+  const phaseLabels = catalog.phases.map((phase) => phase.label);
+  assert.ok(
+    !phaseLabels.includes(chipLabel),
+    `the review chip's label is not a workflow phase name; \`review\` is a phase id, and the board already has a column header for it. Got "${chipLabel}"`,
+  );
+});
+
+// A state the reader cannot act on must not wear the colours of one they
+// should. The host-read marker is the case: something IS wrong, it is on the
+// host, and no button on the card changes it — so it must not breathe (that
+// animation means "happening now, go look") and must not wear the error
+// channel's red (that means "this card failed"). Asserted against the class
+// lists rather than the hex values, so a palette change cannot quietly turn a
+// non-actionable state into an alarming one.
+test("the host-read marker is inert: no breathing, not the error channel", () => {
+  const styles = read("components/app-support/stelow-styles.css");
+  const rule = styles.match(/\.stelow-activity-unreadable \{([^}]*)\}/);
+  assert.ok(rule, "the host-read marker must have a tone of its own, not borrow the hold's or the error's");
+
+  const errorTone = styles.match(/\.stelow-activity-error \{([^}]*)\}/);
+  assert.ok(errorTone, "the error tone is the reference this is measured against");
+  for (const property of ["border-color", "color"]) {
+    const marker = rule[1].match(new RegExp(`${property}:\\s*([^;]+);`))?.[1].trim();
+    const error = errorTone[1].match(new RegExp(`${property}:\\s*([^;]+);`))?.[1].trim();
+    assert.notEqual(marker, error, `the host-read marker must not read as the failure channel's ${property}`);
+  }
+  assert.doesNotMatch(
+    styles.match(/\.stelow-activity-unreadable \{[^}]*\}/)[0],
+    /animation/,
+    "the breathing animation means \"happening now\"; a fault no button reaches must not pulse like a live one",
+  );
+});
 
 test("the vocabulary is named, and the names are the ones in use", () => {
   const disclosure = read("components/disclosure.tsx");
@@ -150,4 +224,53 @@ test("every step of the scale names a size, and every exception says why", () =>
   // under two names — the DISCLOSURE_SUMMARY_CLASS failure, in the type scale.
   const sizes = TYPE_SCALE.map((step) => step.match(/text-(\[?\d+px|xs|sm|base|lg|xl)/)?.[1]);
   assert.equal(new Set(sizes).size, sizes.length, `two scale steps share a size: ${sizes.join(", ")}`);
+});
+
+test("the workflow map names the phases from the catalog, not from a sentence", () => {
+  // The phase label is host-owned methodology. It was renamed from "Review" to
+  // "Evaluation" upstream because "review" also names the human act of reading a
+  // finished card — and this very paragraph is the explanation. A hardcoded copy
+  // of the old name would have re-introduced the collision it explains, so the
+  // component reads the labels and this test reads the component.
+  const source = read("components/detail/workflow-map.tsx");
+  assert.match(
+    source,
+    /\{phaseList\(WORKFLOW_PHASES\)\} are workflow phases/,
+    "the phase names are rendered from the catalog, not typed into the copy",
+  );
+  assert.doesNotMatch(
+    source,
+    /Analysis, Planning, Execution, and Review are workflow phases/,
+    "the old hardcoded phase sentence is gone, not merely shadowed",
+  );
+  const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
+  const labels = catalog.phases.map((phase) => phase.label);
+  assert.ok(labels.length > 0, "the catalog still names phases for the map to render");
+  // The card and the column header read the same module, so the sentence a
+  // reader sees on the card cannot name a phase the board renders differently.
+  // PHASE_LABELS (the board's column source) and WORKFLOW_PHASES are re-exported
+  // from lib/workflow-catalog.mjs by the vocabulary module, so importing from
+  // there is importing the same catalog, not a copy.
+  assert.match(
+    source,
+    /import \{[^}]*WORKFLOW_PHASES[^}]*\} from "\.\.\/\.\.\/lib\/workflow-vocabulary\.mjs"/,
+    "the map reads WORKFLOW_PHASES from the same module the board's PHASE_LABELS comes through",
+  );
+  const vocabulary = read("lib/workflow-vocabulary.mjs");
+  assert.match(vocabulary, /PHASE_LABELS[\s\S]{0,400}WORKFLOW_PHASES|WORKFLOW_PHASES[\s\S]{0,400}PHASE_LABELS/,
+    "both names still come from the one catalog module, so the card and the column agree by construction");
+  assert.ok(
+    labels.length > 1,
+    "the map has more than one phase to name, so phaseList's join is exercised",
+  );
+  // A phase label written into the copy as a literal is how the old collision
+  // came back: the catalog is the one owner of these names, and a second copy in
+  // a component is the second source of truth the repo treats as a defect.
+  for (const label of labels) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b(?=[^.]*workflow phases)`, "i"),
+      `the phase name "${label}" is rendered from the catalog, not written into the copy`,
+    );
+  }
 });

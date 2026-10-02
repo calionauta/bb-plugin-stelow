@@ -185,7 +185,7 @@ async function listAutomationRuleRuns(ctx: GithubAutomationDeps, { ruleId, limit
         number,
         cardId: row.card_id,
         cardName: card ? (card.display_name ?? card.name) : null,
-        cardStatus: card ? ctx.cards.normalizeStatus(card.status) : null,
+        cardStatus: card ? ctx.cards.cardStatusOf(card.status) : null,
         outcome: row.outcome,
         firedAt: row.fired_at,
       };

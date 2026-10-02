@@ -15,7 +15,7 @@
 import { execFile } from "node:child_process";
 import { loadCardScopes } from "../../scopes.js";
 import { summarizeTimeline } from "../../../lib/card-metrics.mjs";
-import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordSplitAnswer } from "../../../lib/split-proposal.mjs";
 import { consumeAskContract } from "../../../lib/ask-contracts.mjs";
@@ -27,6 +27,7 @@ import { createQuestionContractsGate } from "../question-contracts-gate.js";
 import { createCritiqueGapState } from "../critique-gap-state.js";
 import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader } from "../question-answers.js";
 import { createGapSummary } from "../gap-summary.js";
+import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
 import { createCardAdvance, createGateHandlers } from "../card-gates.js";
 import { createAuditTrailStatus } from "../card-audit-trail.js";
@@ -158,6 +159,11 @@ function buildGapSummary(
     summarizeTimeline,
     critiqueGapState,
     isDoneStatus,
+    isSkippedStatus,
+    readReviewFiles: (card) => readReviewFiles(
+      { bb: core.bb, cardWorkspace: core.cardWorkspace },
+      card,
+    ),
     now: core.now,
   });
 }

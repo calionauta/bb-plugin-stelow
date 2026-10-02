@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ownershipRepairAdvice } from "../../lib/ownership-refusal.mjs";
 import { ConfirmActionDialog } from "../manage/confirm-action-dialog";
 import type { useBuildDetailLifecycle } from "./use-build-detail-lifecycle";
 
@@ -17,8 +18,11 @@ type BuildLifecycleState = ReturnType<typeof useBuildDetailLifecycle>;
 const REPAIR_DESCRIPTION = [
   "Reseed state.md and stelow.json so a new worker restarts from the triage stage.",
   "Existing scope work and comments are kept.",
-  "Try Retry first — restart only if the worker itself is broken.",
 ].join(" ");
+
+function repairDescription(cardLastError: string | null): string {
+  return `${REPAIR_DESCRIPTION} ${ownershipRepairAdvice(cardLastError)}`;
+}
 
 const WORKER_RESTART_DESCRIPTION = [
   "Stops the running worker and starts a fresh one on this card's preset, continuing from the current stage (not from triage).",
@@ -46,14 +50,14 @@ const RESTORE_DESCRIPTION = [
   "Pending questions and errors return; nothing else moves.",
 ].join(" ");
 
-function WorkerConfirmDialogs({ state }: { state: BuildLifecycleState }) {
+function WorkerConfirmDialogs({ state, cardLastError }: { state: BuildLifecycleState; cardLastError: string | null }) {
   return (
     <>
       <ConfirmActionDialog
         open={state.repairOpen}
         onOpenChange={state.setRepairOpen}
         title="Restart with a fresh worker?"
-        description={REPAIR_DESCRIPTION}
+        description={repairDescription(cardLastError)}
         confirmLabel="Restart fresh"
         confirmTone="default"
         onConfirm={() => void state.doRepair()}
@@ -170,15 +174,18 @@ function PromoteCardDialog(
 }
 
 export function BuildLifecycleDialogs(
-  { state, cardDisplayName, cardStage }: {
+  { state, cardDisplayName, cardStage, cardLastError }: {
     state: BuildLifecycleState;
     cardDisplayName: string | null;
     cardStage: string | null;
+    /** The card's own last error, so the repair dialog can stop advising a
+     * retry for the one failure a retry cannot touch. */
+    cardLastError: string | null;
   },
 ) {
   return (
     <>
-      <WorkerConfirmDialogs state={state} />
+      <WorkerConfirmDialogs state={state} cardLastError={cardLastError} />
       <RemovalConfirmDialogs state={state} cardStage={cardStage} />
       <PromoteCardDialog state={state} cardDisplayName={cardDisplayName} />
     </>

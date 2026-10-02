@@ -3,9 +3,11 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { groupCardChecks, groupState, isExecutionUntracked } from "../../lib/card-checks.mjs";
 import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
-import { statusTone } from "../../lib/detail-presentation.mjs";
+import { statusGlyph, statusTone } from "../../lib/detail-presentation.mjs";
+import { isDoneStatus, trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
 import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
-import { isDoneStatus } from "../../lib/trackables.mjs";
+import { scopeEmptyState } from "../../lib/scope-xray-presentation.mjs";
+import { TEXT_META } from "../../lib/design-tokens";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
@@ -15,31 +17,30 @@ import { FileOccupancy } from "./file-occupancy";
 import { ScopeXray } from "./scope-xray";
 import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
+import { metricBodyLines, metricHint } from "../metrics/metrics-lines";
 import type { rpcContract } from "../../server";
+import type { GapTotals } from "../../lib/metrics-format.mjs";
 
 type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-type GapSummary = {
-  matched: boolean; total: number; fixed: number; documented: number; escalated: number;
+/** The card's own gap view: the shared tally, plus the per-gap rows and the
+ * scope state the progress panel needs. The four numbers come from the one
+ * owner in `lib/metrics-format.mjs` rather than being restated, so a resolution
+ * added to the registry is a field added there and here cannot drift apart. */
+type GapSummary = GapTotals & {
+  matched: boolean;
   items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
+  /** One critique round's findings per registered critique artifact, oldest
+   * first. The rework metric needs this boundary; the `items` list dedupes
+   * across rounds and so cannot express it. */
+  rounds: Array<Array<{ description: string; resolution: string }>>;
+  /** The card's review records, already parsed by the same reader the CLI and
+   * the strip use, so the coverage line on the card is the same sentence. */
+  reviews: Array<{ excerpt: { selected: string; truncated: boolean; sentChars: number | null; originalChars: number | null } }>;
 };
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft", planning: "Planning", approved: "Approved", "in-progress": "In progress",
-  completed: "Completed", archived: "Archived", pending: "Pending", done: "Done",
-  skipped: "Skipped", blocked: "Blocked", escalated: "Escalated", failed: "Failed",
-};
-const statusLabel = (status: string) => STATUS_LABELS[status] ?? status;
-const statusGlyph = (status: string) => {
-  if (isDoneStatus(status)) return "✓";
-  if (status === "skipped") return "↷";
-  if (["blocked", "failed", "escalated"].includes(status)) return status === "escalated" ? "↑" : status === "failed" ? "✗" : "⚠";
-  if (["in-progress", "approved"].includes(status)) return "●";
-  return status === "archived" ? "○" : "·";
-};
 
 function useGapSummary(cardId: string): GapSummary | null {
   const rpc = useRpc<typeof rpcContract>();
@@ -160,12 +161,20 @@ function BuildGaps({ summary }: { summary: GapSummary | null }) {
   if (!summary?.matched || !view) return null;
   const lead = formatGapMs(summary.leadMs);
   const cycle = formatGapMs(summary.cycleMs);
+  // Rework earns the hint because it is the fact that changes what a reader
+  // concludes from this section: "these are the same findings again" is a
+  // different situation from "these are the gaps this run found". It is the
+  // only metric offered here — the coverage line lives in the body, so a hint
+  // never becomes a second place a number is stated.
+  const rework = metricHint({ rounds: summary.rounds });
+  const bodyLines = metricBodyLines({ rounds: summary.rounds, reviews: summary.reviews });
   const tally = [
     `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
     `${summary.fixed} fixed`,
     `${summary.escalated} escalated`,
     lead ? `lead ${lead}` : null,
     cycle ? `cycle ${cycle}` : null,
+    rework,
   ].filter(Boolean).join(" · ");
   return (
     <DisclosureSection
@@ -177,6 +186,9 @@ function BuildGaps({ summary }: { summary: GapSummary | null }) {
       {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
       {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
       {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
+      {bodyLines.map((line) => (
+        <p key={line} className="text-xs text-muted-foreground">{line}</p>
+      ))}
     </DisclosureSection>
   );
 }
@@ -228,10 +240,25 @@ function ProgressDisclosure({ card, archivedPresentation, artifactTotal, default
   return <DisclosureSection title={archivedPresentation?.workflow.title ?? "Workflow progress"} subtitle={archivedPresentation ? undefined : positioned ? "where this card is" : <>where this card is · <CurrentStagePill stage={card.stage} /></>} hint={archivedPresentation?.workflow.hint ?? hint} action={action} defaultOpen={defaultOpen}>{children}</DisclosureSection>;
 }
 
-function emptyScopeCopy(card: BuildCard, archived: string | undefined): string {
-  if (archived) return archived;
-  if (card.status === "completed") return "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking.";
-  return "No scopes broken down yet — the agent is still shaping the card.";
+/**
+ * Why the card has no tracked scopes.
+ *
+ * The condition used to be `detail.scopes.length === 0`, which is not the
+ * condition for "this card has no scope map". The tracker is written at
+ * `execution`; the map is approved at `scope`. So a card holding an approved
+ * seven-scope map and no tracker yet printed the seven scopes from the X-ray
+ * and "No scopes broken down yet — the agent is still shaping the card" four
+ * lines below — both true, both about the word "scopes", and together a
+ * contradiction. The rule now asks the map, which is the thing the sentence
+ * is actually about. See lib/scope-xray-presentation.mjs.
+ */
+function emptyScopeCopy(card: BuildCard, detail: BuildDetail, archived: string | undefined): string | null {
+  return scopeEmptyState({
+    hasMap: detail.scopeXray !== null,
+    tracked: detail.scopes.length,
+    cardStatus: card.status,
+    archived,
+  }) ?? "";
 }
 
 function ScopesProgress({ detail }: { detail: BuildDetail }) {
@@ -264,7 +291,7 @@ function TimelineProgress({ card, detail, intentLabels, onPick }: { card: BuildC
 export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, intentLabels, onOpenArtifacts, onPickStage, onViewFile }: BuildProgressProps) {
   const gaps = useGapSummary(card.id);
   const progress = summarizeScopeProgress(detail.scopes);
-  const emptyScopes = emptyScopeCopy(card, archivedPresentation?.workflow.emptyScopes);
+  const emptyScopes = emptyScopeCopy(card, detail, archivedPresentation?.workflow.emptyScopes);
   return (
     <>
       <ProgressDisclosure card={card} archivedPresentation={archivedPresentation} artifactTotal={artifactTotal} defaultOpen={defaultOpen} onOpenArtifacts={onOpenArtifacts} progress={progress}>
@@ -273,7 +300,7 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
         <CardChecks card={card} detail={detail} gaps={gaps} />
         {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} /> : null}
         {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
-        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : <p className="text-xs text-muted-foreground">{emptyScopes}</p>}
+        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
         <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
         <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
       </ProgressDisclosure>

@@ -54,3 +54,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-release-published.mjs
+      # A `BREAKING CHANGE:` on a 0.x line computes 1.0.0, and a 1.0.0 tag is a
+      # claim about API stability that nobody on this line has made. It cannot
+      # be softened from a config file: `release-type` is passed above, and that
+      # sends release-please down a path which never reads the config file. So
+      # the claim is refused here instead, naming the `release-as` input as the
+      # way through rather than leaving a human to notice the number.
+      - name: Refuse an unearned major version on the pre-1.0 line
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-release-major-claim.mjs

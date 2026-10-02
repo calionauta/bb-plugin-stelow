@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PresetManagerFormView } from "./preset-manager-form";
 import { PresetManagerList } from "./preset-manager-list";
+import { isBuiltInPresetEdit } from "./preset-environment-kind.mjs";
 import type { PresetManagerForm, PresetManagerPreset } from "./preset-manager-types";
 
 export type PresetManagerEditorProps = {
@@ -32,9 +33,9 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
       <DialogHeader>
         <DialogTitle>Manage agent presets</DialogTitle>
         <DialogDescription>
-          Presets set the provider, model, reasoning level, and permission
-          mode used when a card starts its worker thread. Research
-          investigations use the research phase preset.
+          Presets set the provider, model, reasoning level, permission mode, and
+          whether cards work in an isolated worktree. Research investigations use
+          the research phase preset.
         </DialogDescription>
       </DialogHeader>
       <PresetManagerList
@@ -47,6 +48,7 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
       />
       <PresetManagerFormView
         form={props.form}
+        builtIn={isBuiltInPresetEdit(props.presets, props.form.id)}
         formOpen={props.formOpen}
         busy={props.busy}
         message={props.message}

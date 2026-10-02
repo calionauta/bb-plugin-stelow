@@ -114,8 +114,32 @@ async function eligibleArtifact(
   return typeof content === "string" &&
     content.trim() &&
     deps.reviewable(artifact.path, content)
-    ? { path: path ?? "", content }
+    ? { path: artifact.path, content }
     : null;
+}
+
+/**
+ * The gate pre-review's prompt.
+ *
+ * The artifact's own contract drives the excerpt, so the reviewer reads the
+ * sections the gate requires rather than whichever 12k of the document came
+ * first — a pre-review exists to catch a thin or off-scope document, and a head
+ * slice of a long one could not see the part the contract names.
+ */
+function preReviewPrompt(
+  card: WorkerCard,
+  stage: string,
+  artifact: { path: string; content: string },
+): string {
+  return buildReviewPrompt({
+    cardName: card.display_name ?? card.name,
+    request: card.prompt,
+    contractLabel: `pre-review for ${stage}`,
+    artifactContent: artifact.content,
+    deterministicFailures: [],
+    evidence: "verified",
+    contract: contractForBuildArtifact(artifact.path, artifact.content),
+  }).prompt;
 }
 
 async function waitForThread(
@@ -153,14 +177,7 @@ async function requestGatePreReview(
     const artifact = await eligibleArtifact(deps, card, kind);
     if (!artifact) return;
     const params = deps.presetAttachmentParams(reviewPreset);
-    const prompt = buildReviewPrompt({
-      cardName: card.display_name ?? card.name,
-      request: card.prompt,
-      contractLabel: `pre-review for ${stage}`,
-      artifactContent: artifact.content,
-      deterministicFailures: [],
-      evidence: "verified",
-    });
+    const prompt = preReviewPrompt(card, stage, artifact);
     const preThread = await deps.spawnDisposable(
       reviewSpawnArgs({ card, params, stage, prompt }),
       "review",

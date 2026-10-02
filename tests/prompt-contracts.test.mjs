@@ -45,6 +45,19 @@ const attentionSource = readFileSync(
   "utf8",
 );
 const cliRegistry = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli-registry.ts"), "utf8");
+// Every surface that refuses on unverified ownership. The corpus is declared
+// here rather than globbed so a NEW refusal site has to be added to this list,
+// which is the moment somebody has to decide whether it reads the shared
+// constant — instead of the pin quietly covering fewer files than it claims.
+const ownershipSurfaces = [
+  "../server/runtime/build-thread-sync.ts",
+  "../server/runtime/card-audit-trail.ts",
+  "../server/runtime/card-mutations.ts",
+  "../server/runtime/cli/cli-done-build.ts",
+  "../server/runtime/cli-inspection.ts",
+  "../components/detail/detail-hero.tsx",
+  "../components/detail/build-lifecycle-dialogs.tsx",
+].map((relative) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), relative), "utf8"));
 const restartPromptSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/worker-restart-prompt.ts"),
   "utf8",
@@ -258,6 +271,24 @@ const nudgeDefs = [
 ];
 assert.equal(nudgeDefs.length, 1, "AUDIT_DONE_NUDGE is defined once, not pasted per branch");
 assert.match(serverSource, /shouldDoneNudge\(\{/, "the audit branch resumes through the done-nudge budget");
+
+// The ownership refusal reached seven surfaces as a copied literal — five
+// server sites and two components — and each copy was a chance to be a
+// slightly different sentence pointing at a door that does not exist. The
+// predicate that recognises it is only as good as the number of definitions,
+// so "defined once" is the property worth pinning, not "mentions the phrase".
+const ownershipPhrase = "Workflow state ownership cannot be verified";
+const ownershipDefs = ownershipSurfaces.filter((source) => source.includes(`= "${ownershipPhrase}`));
+assert.equal(
+  ownershipDefs.length,
+  0,
+  `no surface re-defines the refusal sentence; ${ownershipDefs.length} do`,
+);
+assert.equal(
+  ownershipSurfaces.filter((source) => source.includes(ownershipPhrase)).length,
+  0,
+  "no surface pastes the refusal sentence at all — every one imports it",
+);
 
 // Explicit split rides the same rails: one const, the three build spawn
 // paths (research/explore are single-stage — no triage, no split clause),

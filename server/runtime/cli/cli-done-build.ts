@@ -7,6 +7,7 @@ import { doneBuildGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
+import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
 import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
@@ -43,6 +44,37 @@ type VerificationRun = {
  * post-trail re-sample, then the bundle and the state write. Each stage is one
  * refusal with the fix; the card only becomes Done when all of them pass. */
 export async function doneBuild(
+  deps: CliDeps,
+  exportRunBundle: ExportRunBundle,
+  card: WorkerCard,
+  questionPending: boolean,
+): Promise<CliResult> {
+  const result = await runDoneBuild(deps, exportRunBundle, card, questionPending);
+  if (result.exitCode === 0) return result;
+  // A refusal with no record is invisible to everyone but the worker's own
+  // turn. card_hh2nwqs4 ran done, was refused, and parked on a card whose
+  // history had no trace of why — so the park sentence had nothing to point
+  // at. One seam covers all eight refusal sites, including the two that return
+  // a `refuse({…})` object rather than a bare exit code.
+  //
+  // Accepted trade-off: a worker looping `done` leaves a comment per attempt.
+  // That is the point — the loop is bounded by MAX_DONE_NUDGES — and a single
+  // summary comment would hide exactly the repetition an operator needs to see.
+  try {
+    deps.logCardComment(
+      card.id,
+      "card",
+      card.id,
+      "agent",
+      `bb stelow done refused: ${result.stderr}`,
+    );
+  } catch {
+    /* a refusal must never be lost because the trail could not take it */
+  }
+  return result;
+}
+
+async function runDoneBuild(
   deps: CliDeps,
   exportRunBundle: ExportRunBundle,
   card: WorkerCard,
@@ -169,11 +201,7 @@ in the intended BB project; this card's state artifacts remain readable for refe
           .catch(() => null)
       : null;
     if (!stateBlob)
-      return refuse({
-        exitCode: 1,
-        stderr:
-          "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
-      });
+      return refuse({ exitCode: 1, stderr: OWNERSHIP_UNVERIFIED });
     currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
   }
   // Gates read tracked truth (mergePlanned: false): the read-time planned-task

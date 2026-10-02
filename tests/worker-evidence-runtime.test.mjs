@@ -3,6 +3,7 @@ import test from "node:test";
 import { createWorkerRespawnPreparation } from "../server/runtime/worker-respawn-preparation.ts";
 import { createQuestionStaleness } from "../server/runtime/question-staleness.ts";
 import { createDiscardEvidence } from "../server/runtime/discard-evidence.ts";
+import { OWNERSHIP_UNVERIFIED } from "../lib/ownership-refusal.mjs";
 
 function card(overrides = {}) {
   return {
@@ -101,7 +102,16 @@ test("worker respawn refuses unverifiable state before choosing a track prompt",
   });
   const prepare = createWorkerRespawnPreparation(deps);
   const result = await prepare(card({ dir_hash: "hash" }), preset(), "restart");
-  assert.match(result.error, /state cannot be verified/);
+  // Exact equality, not `/state cannot be verified/`: this path used to hold its
+  // own copy of the words, and a phrase match passes against BOTH the copy and
+  // the shared sentence — so it could not tell the drift this assertion exists
+  // to catch. Two components choose their copy from this refusal's prefix, so a
+  // site that spells it itself renders the wrong advice next to the right chip.
+  assert.equal(
+    result.error,
+    OWNERSHIP_UNVERIFIED,
+    "the Restart-worker path refuses with the one sentence every surface recognises",
+  );
 });
 
 test("worker respawn keeps the build continuation contract and workspace", async () => {

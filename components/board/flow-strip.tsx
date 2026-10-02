@@ -2,6 +2,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { DisclosureChevron } from "../disclosure";
 import { formatDuration } from "../../lib/card-metrics.mjs";
+import { AttentionRow, CoverageLines, WaitBreakdown } from "./flow-wait";
 import type { rpcContract } from "../../server";
 
 const FLOW_BUTTON_CLASS =
@@ -13,7 +14,7 @@ const FLOW_ROW_CLASS =
   + "hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 
 type FlowWindow = "all" | "30d" | "90d";
-type FlowTab = "tempo" | "atencao";
+type FlowTab = "timing" | "attention";
 const FLOW_WINDOWS: Array<{
   id: FlowWindow;
   label: string;
@@ -29,8 +30,9 @@ type FlowResult = Awaited<
 >;
 type FlowMetrics = Extract<
   FlowResult,
-  { items: unknown; summary: unknown; attention: unknown }
+  { items: unknown; summary: unknown; attention: unknown; coverage: unknown }
 >;
+type FlowCoverage = FlowMetrics["coverage"];
 type FlowKind = FlowMetrics["items"][number]["kind"];
 type FlowRow = FlowMetrics["items"][number];
 type FlowAttention = FlowMetrics["attention"][number];
@@ -49,7 +51,7 @@ type FlowViewState = {
 export function FlowStrip({ rpc, projectId, onOpenCard }: FlowStripProps) {
   const [open, setOpen] = useState(false);
   const [window, setWindow] = useState<FlowWindow>("all");
-  const [tab, setTab] = useState<FlowTab>("tempo");
+  const [tab, setTab] = useState<FlowTab>("timing");
   const result = useFlowMetrics(rpc, projectId, window);
   if (!result || result.summary.count === 0) return null;
   const preset =
@@ -212,10 +214,11 @@ function FlowDetails({
         setTab={view.setTab}
         attention={stuck.length + review.length}
       />
-      {view.tab === "tempo" ? (
-        <TempoDetails
+      {view.tab === "timing" ? (
+        <TimingDetails
           window={view.window}
           setWindow={view.setWindow}
+          result={result}
           rows={rows}
           onOpenCard={onOpenCard}
         />
@@ -243,16 +246,16 @@ function FlowTabBar({
       role="group"
       aria-label="Flow view"
     >
-      {(["tempo", "atencao"] as const).map((entry) => (
+      {(["timing", "attention"] as const).map((entry) => (
         <button
           key={entry}
           onClick={() => setTab(entry)}
           aria-pressed={tab === entry}
           className={`${FLOW_TAB_CLASS} ${tab === entry ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}
         >
-          {entry === "tempo"
-            ? "Tempo"
-            : `Atenção${attention > 0 ? ` (${attention})` : ""}`}
+          {entry === "timing"
+            ? "Timing"
+            : `Attention${attention > 0 ? ` (${attention})` : ""}`}
         </button>
       ))}
       <span className="ml-auto text-xs tabular-nums text-muted-foreground">
@@ -263,25 +266,36 @@ function FlowTabBar({
   );
 }
 
-type TempoDetailsProps = {
+type TimingDetailsProps = {
   window: FlowWindow;
   setWindow: Dispatch<SetStateAction<FlowWindow>>;
+  result: FlowMetrics;
   rows: FlowRow[];
   onOpenCard: (kind: FlowKind, cardId: string) => void;
 };
 
-function TempoDetails({
+function TimingDetails({
   window,
   setWindow,
+  result,
   rows,
   onOpenCard,
-}: TempoDetailsProps) {
+}: TimingDetailsProps) {
   return (
     <div className="space-y-2">
       <p className="text-xs leading-5 text-muted-foreground">
         Typical is the median (p50); slow is p90 — 9 of 10 finish within. Lead
         runs idea to done; cycle runs first real movement to done.
       </p>
+      <WaitBreakdown wait={result.wait} />
+      {/* The reviewer and rework readings, over the same finished cards. The
+          strings arrive rendered from the same lib owners the CLI and the card
+          call, so this panel cannot word a number differently from either — it
+          prints, it does not format. Both are "" unless there is something to
+          report: no card reviewed twice means no rework line, and no cut
+          artifact means no coverage line. A panel that always printed a row
+          would be a row nobody reads. */}
+      <CoverageLines coverage={result.coverage} />
       <div className="flex items-center gap-1" role="group" aria-label="Done window">
         {FLOW_WINDOWS.map((entry) => (
           <button
@@ -311,22 +325,21 @@ type AttentionDetailsProps = {
   onOpenCard: (kind: FlowKind, cardId: string) => void;
 };
 
+/**
+ * The two attention lists, right now rather than in the picked window.
+ *
+ * Reviews are sorted oldest-first: a finished card nobody has opened for a week
+ * is the one a reader needs to see, and a list sorted by anything else buries it
+ * under this morning's completions.
+ */
 function AttentionDetails({
   stuck,
   review,
   onOpenCard,
 }: AttentionDetailsProps) {
   const entries = [
-    ...stuck.map((entry) => ({
-      ...entry,
-      tone: "text-amber-700 dark:text-amber-300",
-      mark: "stuck",
-    })),
-    ...review.map((entry) => ({
-      ...entry,
-      tone: "text-emerald-700 dark:text-emerald-300",
-      mark: "to review",
-    })),
+    ...stuck,
+    ...review.slice().sort((a, b) => (b.waitMs ?? 0) - (a.waitMs ?? 0)),
   ];
   return (
     <div className="space-y-2">
@@ -341,17 +354,11 @@ function AttentionDetails({
       ) : (
         <ul className="max-h-56 space-y-0.5 overflow-auto">
           {entries.map((entry) => (
-            <li key={entry.cardId}>
-              <button
-                onClick={() => onOpenCard(entry.kind, entry.cardId)}
-                className={FLOW_ROW_CLASS}
-              >
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                <span className={`shrink-0 font-medium ${entry.tone}`}>
-                  {entry.mark}
-                </span>
-              </button>
-            </li>
+            <AttentionRow
+              key={entry.cardId}
+              entry={entry}
+              onOpenCard={onOpenCard}
+            />
           ))}
         </ul>
       )}

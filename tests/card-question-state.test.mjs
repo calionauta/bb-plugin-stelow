@@ -22,8 +22,10 @@ assert.equal("status" in finished, false, "finished updates never carry status")
 
 // Stored statuses are used as-is: no value produced anywhere needs healing,
 // so an unknown status reads as Inbox rather than crashing the board.
+// `approved` is a scope MAP status, never a card status (assertCardStatus
+// refuses it) — so it reads as Inbox like any other value no writer produces.
 assert.equal(researchColumnForStatus("in-progress"), "doing", "in-progress -> doing");
-assert.equal(researchColumnForStatus("approved"), "doing", "approved -> doing");
+assert.equal(researchColumnForStatus("approved"), "inbox", "approved is a map status, not a card one");
 assert.equal(researchColumnForStatus("pending"), "inbox", "pending -> inbox");
 assert.equal(researchColumnForStatus("draft"), "inbox", "unknown -> inbox");
 assert.equal(researchColumnForStatus("completed"), "done", "completed -> done");

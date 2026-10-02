@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { registerMentionProviders } from "../server/runtime/mentions.ts";
+import { stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { cardStatusLabel } from "../lib/card-status.mjs";
+import { trackableStatusLabel } from "../lib/trackables.mjs";
+
+/**
+ * A stage a reader can act on, by name.
+ *
+ * The mention picker is the one surface where a card is chosen BEFORE it is
+ * opened, so the stage in its subtitle is often the only thing that tells two
+ * cards apart. That makes it load-bearing: a slug there is not a cosmetic slip,
+ * it is the whole row.
+ *
+ * This test drives the provider the host actually registers. It is not a source
+ * pin: `registerMentionProviders` hands two providers to `bb.ui`, the host calls
+ * `search`, and the assertion is on the string that comes back. Reverting the
+ * label to the raw slug fails it, and no amount of leaving the function in place
+ * helps.
+ */
+function providerFixture(rows, workflows) {
+  const registered = [];
+  const bb = {
+    ui: { registerMentionProvider: (provider) => registered.push(provider) },
+    sdk: {},
+  };
+  registerMentionProviders(bb, {
+    db: {
+      prepare: () => ({
+        all: (...args) => (args.length ? rows.filter((r) => r.project_id === args[0]) : rows),
+      }),
+    },
+    loadBoard: async () => ({ workflows }),
+  });
+  const workflow = registered.find((p) => p.id === "workflow");
+  assert.ok(workflow, "the workflow mention provider is registered");
+  return (query, projectId) => workflow.search({ query, projectId });
+}
+
+// The expected subtitle is DERIVED from the catalog, not written out. An earlier
+// version of this file hardcoded "Interface gate" and failed the moment that
+// label was renamed — which is the wrong way round: a rename is not a
+// regression, and a test that cannot survive one trains people to ignore it.
+// What must never appear is the slug, so that is what the assertions name.
+const STAGE = "int-gate";
+const LABEL = stageLabel(STAGE);
+
+const CARD = {
+  id: "card_1",
+  project_id: "project_1",
+  display_name: "Useful card",
+  name: "useful",
+  stage: STAGE,
+  status: "in-progress",
+  intent: "feature",
+  dir_hash: "hash_1",
+};
+
+const WORKFLOW = {
+  id: "wf_1",
+  name: "Useful workflow",
+  stage: STAGE,
+  status: "in-progress",
+  appetite: "small",
+  reviewMode: "auto",
+  scopes: [],
+};
+
+test("a workflow mention names the stage the way the card does", async () => {
+  // A board workflow's status is a TRACKABLE status (`normalizeStatus` projects
+  // it to a ScopeStatus), so it is named by the trackable machine. This row and
+  // the card row below sit in the SAME picker with the same shape, which is
+  // exactly why an earlier version of this test pinned the raw slug as correct
+  // while the card row beside it had been fixed: the inconsistency looked like
+  // the spec.
+  const search = providerFixture([], [WORKFLOW]);
+  const [item] = await search("useful", "project_1");
+  assert.equal(
+    item.subtitle,
+    `${LABEL} · ${trackableStatusLabel(WORKFLOW.status)}`,
+    "the label the rest of the card uses",
+  );
+  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored stage slug");
+  assert.doesNotMatch(item.subtitle, new RegExp(WORKFLOW.status), "nor the stored trackable status");
+});
+
+test("a card mention names the stage the way the card does", async () => {
+  const search = providerFixture([CARD], []);
+  const [item] = await search("useful", "project_1");
+  assert.equal(item.subtitle, `${LABEL} · ${cardStatusLabel(CARD.status)} · feature`);
+  assert.doesNotMatch(item.subtitle, new RegExp(STAGE), "and never the stored slug");
+  assert.doesNotMatch(
+    item.subtitle,
+    new RegExp(CARD.status),
+    "and never the stored card status either — the same rule, the other axis",
+  );
+});
+
+test("every stage in the catalog reaches the picker as a label, not a slug", async () => {
+  // The two tests above pin ONE stage, so a catalog that gains a second
+  // unlabelled path is invisible. This walks the whole catalog and asks the same
+  // question of each: if a stage's label is ever its own id, the slug is on
+  // screen and this fails naming the stage that did it.
+  const { WORKFLOW_STAGES } = await import("../lib/workflow-vocabulary.mjs");
+  const rows = WORKFLOW_STAGES.map((stage, index) => ({
+    ...CARD,
+    id: `card_${index}`,
+    dir_hash: `hash_${index}`,
+    display_name: `Card ${stage.id}`,
+    stage: stage.id,
+  }));
+  const search = providerFixture(rows, []);
+  const items = await search("card", "project_1");
+  assert.equal(items.length, WORKFLOW_STAGES.length, "every stage got a row");
+
+  for (const stage of WORKFLOW_STAGES) {
+    const item = items.find((entry) => entry.title === `Card ${stage.id}`);
+    assert.ok(item, `${stage.id} produced a mention row`);
+    assert.doesNotMatch(
+      item.subtitle,
+      new RegExp(`(^| · )${stage.id}( · |$)`),
+      `${stage.id} reached the picker as a slug`,
+    );
+  }
+});
+
+test("an unknown stage still reaches the picker rather than vanishing", async () => {
+  // `stageLabel` falls back to the raw value on purpose: a card on a stage this
+  // build does not know about should still be findable and still say where it
+  // is. Swallowing it instead would hide the card from the only surface that
+  // could introduce it to a reader.
+  const search = providerFixture([{ ...CARD, stage: "stage_from_the_future" }], []);
+  const [item] = await search("useful", "project_1");
+  assert.match(item.subtitle, /^stage_from_the_future · /, "shown as-is, not dropped");
+});

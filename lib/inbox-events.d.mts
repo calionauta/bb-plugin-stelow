@@ -42,6 +42,8 @@ export declare function escalatePausedSummary(summary: unknown, idleMs: number):
 export declare function refreshStalledPaused(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; summary: string; occurred_at: number }>; run(...values: unknown[]): { changes: number } } }, input: { cardId: string; nowMs: number }): number;
 
 export declare function refreshEventSeverity(db: { prepare(query: string): { all(...values: unknown[]): unknown[]; get(...values: unknown[]): unknown; run(...values: unknown[]): { changes: number } } }, input: { cardId: string; nowMs: number }): number;
+
+export declare function sweepEventSeverity(db: { prepare(query: string): { all(...values: unknown[]): unknown[]; get(...values: unknown[]): unknown; run(...values: unknown[]): { changes: number } } }, input: { nowMs: number }): number;
 export declare function upsertPausedEvent(
   db: unknown,
   input: { cardId: string; summary: string; idleAt: number; nowMs: number; createId: () => string },

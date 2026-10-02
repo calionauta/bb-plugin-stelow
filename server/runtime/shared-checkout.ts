@@ -26,7 +26,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
-import { isManagedWorktree, sharedCheckoutExposure } from "../../lib/shared-checkout-exposure.mjs";
+import {
+  EXPOSURE_REASONS,
+  isManagedWorktree,
+  sharedCheckoutExposure,
+  threadsSharingCheckout,
+} from "../../lib/shared-checkout-exposure.mjs";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { WorkerCard } from "../workers-types.js";
 
@@ -49,8 +54,14 @@ export type SharedCheckoutReport = {
   threads: number;
   files: string[];
   lines: string[];
-  /** Why the answer is empty when nothing is wrong — the reader can tell. */
-  reason: "isolated" | "no-checkout" | "no-threads" | "no-overlap" | "unavailable" | "shared";
+  /**
+   * Why the answer is empty when nothing is wrong — the reader can tell.
+   *
+   * Derived from the lib's one list, never restated: a reason written out here
+   * and forgotten in the schema or the reader is a reason with no sentence, and
+   * a reason with no sentence falls through to "nobody is working here".
+   */
+  reason: (typeof EXPOSURE_REASONS)[number];
 };
 
 const EMPTY = (reason: SharedCheckoutReport["reason"]): SharedCheckoutReport => ({
@@ -65,7 +76,11 @@ type SharedCheckoutDeps = {
   db: Db;
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<{ path: string | null } | null>;
-  dirtyStatusIn: (checkoutPath: string) => Promise<string>;
+  /**
+   * The dirty paths, and whether the read happened. A report that treats an
+   * unreadable working tree as a clean one is stating a fact it never measured.
+   */
+  dirtyStatusResultIn: (checkoutPath: string) => Promise<{ ok: boolean; status: string }>;
   listThreads: () => Promise<unknown[]>;
   now: () => number;
 };
@@ -111,7 +126,9 @@ export function createSharedCheckoutReader(deps: SharedCheckoutDeps) {
  * The claim ledger, narrowed to this card — the same read the card-occupancy
  * section performs, so both halves of the answer agree about which files this
  * card holds. A ledger mid-migration answers nothing rather than failing a load
- * the reader asked for something advisory on.
+ * the reader asked for something advisory on; because overlap is now only ever
+ * measured after the checkout's population is known, an empty answer here lands
+ * on the honest label (`unknown-footprint`) instead of on "nothing overlaps".
  */
 function heldFilesFor(db: Db, cardId: string, checkoutPath: string, nowMs: number): string[] {
   try {
@@ -124,29 +141,51 @@ function heldFilesFor(db: Db, cardId: string, checkoutPath: string, nowMs: numbe
 }
 
 /**
- * The report once the host has been asked. Two branches, and the difference
- * matters to the reader: threads-in-the-checkout with no overlap in my files is
- * a clean answer, while an empty list is a statement about the host instead.
+ * The report once the host has been asked, and the order IS the rule.
+ *
+ * How many other agents share this checkout is a question about the host alone:
+ * it reads the cached thread list, costs no subprocess, and is true whatever
+ * this card happens to hold. So it is asked first, and everything after it is
+ * only reachable if there is somebody to compare against. Reading the order the
+ * other way is what produced the defect this replaces — an empty claim set
+ * short-circuited on `held.length === 0`, which suppressed the thread count and
+ * answered `no-overlap`: a measurement nobody made, rendered as a clean one.
+ *
+ * `threadsSharingCheckout` runs a second time inside `sharedCheckoutExposure`,
+ * over the same in-memory array. That is deliberate rather than an oversight:
+ * it filters on `environmentPath`, so pre-shaped threads would filter to `[]`.
  */
 async function exposureReport(
   deps: SharedCheckoutDeps,
   input: { cardId: string; checkoutPath: string; list: unknown[] },
 ): Promise<SharedCheckoutReport> {
+  const others = threadsSharingCheckout(input.list, { checkoutPath: input.checkoutPath });
+  // Nobody else here is a complete answer whatever this card holds, so it costs
+  // no ledger read and no subprocess to reach it.
+  if (others.length === 0) return EMPTY("no-threads");
   const held = heldFilesFor(deps.db, input.cardId, input.checkoutPath, deps.now());
-  if (held.length === 0) return EMPTY("no-overlap");
-  const dirty = await deps.dirtyStatusIn(input.checkoutPath).catch(() => "");
+  // Overlap is a relation between two sets, and one empty set is not the same
+  // thing as an empty relation. The count of others is still worth reporting.
+  if (held.length === 0) return { ...EMPTY("unknown-footprint"), threads: others.length };
+  // The one `git status`, spent only on the question that can be answered by it.
+  // A tree that could not be read is `unreadable-tree`, not `no-overlap`: an
+  // unmeasurable overlap is not a measured absence of one, and on a shared
+  // checkout the two are the difference between a clean answer and a blind one.
+  const tree = await deps.dirtyStatusResultIn(input.checkoutPath)
+    .catch(() => ({ ok: false, status: "" }));
+  if (!tree.ok) return { ...EMPTY("unreadable-tree"), threads: others.length };
+  const dirty = tree.status;
   const exposure = sharedCheckoutExposure({
     heldFiles: held,
     dirtyPaths: dirty,
     threads: input.list,
     checkoutPath: input.checkoutPath,
   });
-  const others = exposure.threads.length;
-  if (others === 0) return EMPTY("no-threads");
-  if (exposure.files.length === 0) return { ...EMPTY("no-overlap"), threads: others };
+  const count = exposure.threads.length;
+  if (exposure.files.length === 0) return { ...EMPTY("no-overlap"), threads: count };
   return {
     isolated: false,
-    threads: others,
+    threads: count,
     files: exposure.files,
     lines: exposure.lines,
     reason: "shared",
