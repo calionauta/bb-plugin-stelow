@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { playbookEntries, renderPlaybook } from "../../lib/playbook.mjs";
+import { renderStatusLine, type QuestionCount, type StatusBoardLine } from "../../lib/status-question-state.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers.js";
@@ -8,7 +9,7 @@ import type { CliResult, CliRunContext } from "./cli-dispatch.js";
 
 type Board = {
   error?: string | null;
-  workflows: Array<{ name: string; status: string; stage: string }>;
+  workflows: StatusBoardLine[];
 };
 
 type HelperResult = {
@@ -25,6 +26,13 @@ type InspectionDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<{ path: string } | null>;
   loadBoard: (projectId: string | null) => Promise<Board>;
   boardFromRoot: (root: string, dirHash: string | null) => Promise<Board>;
+  /**
+   * Open question counts per card, so `status` answers "is anything waiting
+   * on me?" without a worker having to ask a human to find out. A failed read
+   * returns null and the line simply omits the count — an unknown is never
+   * rendered as zero.
+   */
+  openQuestionsByCard: (cardIds: string[]) => Promise<Map<string, QuestionCount> | null>;
   projectRoot: (projectId: string | null) => Promise<string | null>;
   workflowStateDir: (
     root: string,
@@ -88,9 +96,7 @@ function renderBoard(board: Board, json: boolean): CliResult {
   if (board.error) return { exitCode: 1, stderr: board.error };
   return {
     exitCode: 0,
-    stdout: board.workflows
-      .map((workflow) => `${workflow.name}\t${workflow.status}\t${workflow.stage}`)
-      .join("\n"),
+    stdout: board.workflows.map((workflow) => renderStatusLine(workflow)).join("\n"),
   };
 }
 
@@ -116,8 +122,31 @@ function statusCommand(
     }
     return deps
       .boardFromRoot(workspace.path, card.dir_hash)
-      .then((board) => renderBoard(board, argv.includes("--json")));
+      .then((board) => withQuestionCounts(board, card, deps))
+      .then((enriched) => renderBoard(enriched, argv.includes("--json")));
   });
+}
+
+/**
+ * Attach this card's open question counts to the board it renders. A failed
+ * read leaves the board untouched: an unknown count is never shown as zero,
+ * because "0 open questions" is a claim that would stop a worker from asking
+ * the one question it actually needed to ask.
+ */
+async function withQuestionCounts(
+  board: Board,
+  card: WorkerCard,
+  deps: InspectionDeps,
+): Promise<Board> {
+  if (board.error || !board.workflows.length) return board;
+  const counts = await deps.openQuestionsByCard([card.id]);
+  if (!counts) return board;
+  const questions = counts.get(card.id);
+  if (!questions) return board;
+  return {
+    ...board,
+    workflows: board.workflows.map((workflow) => ({ ...workflow, questions })),
+  };
 }
 
 function playbookPaths(

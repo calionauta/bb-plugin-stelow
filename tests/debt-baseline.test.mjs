@@ -55,6 +55,13 @@ const inheritedBaseline = [
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 51 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
+  // dialog.tsx carries a 541-line file plus three oversized functions from the
+  // fork point; this card's one-line shell class (overflow-x-hidden) surfaced
+  // them as inherited. No growth — file and functions still at/under record.
+  "components/ui/dialog.tsx: 541 lines (recorded 541)",
+  "components/ui/dialog.tsx:Dialog#1: 62 lines (baseline 62)",
+  "components/ui/dialog.tsx:callback#4: 57 lines (baseline 76)",
+  "components/ui/dialog.tsx:callback#5: 76 lines (baseline 76)",
   // The gap row left this function entirely (gapChecksGroup, because the
   // rollup has to make done + open equal total), so the entry is no longer
   // oversized and the gate requires it dropped rather than left as a stale
@@ -75,7 +82,12 @@ const inheritedBaseline = [
   "lib/workflow-skills-sync.mjs:syncWorkflowSkills#1: 112 lines (baseline 112)",
   "server/bb-workflow-bridge.ts:renderInlineWorkflowScript#1: 54 lines (baseline 57)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
-  "server/runtime/cli/cli-review-subject.ts:deliverableSubject#1: 69 lines (recorded 69)",
+  // Paid: `deliverableSubject` was 69 lines because the research branch was
+  // written inline. Splitting the research deliverable into `researchSubject`
+  // — which the contract-aware excerpt needed anyway, since a research round
+  // has no depth contract to select sections from — took it under the budget,
+  // so `source-debt.json` no longer carries it and the gate requires the
+  // waiver dropped rather than left as a stale record.
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
   "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
   "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
@@ -83,6 +95,11 @@ const inheritedBaseline = [
   // 82 lines because it built its whole harness inline. The harness is now
   // creationHarness/creationDeps/creationDb/creationBb, so no callback in that
   // file is oversized and `source-debt.json` carries no entry for it.
+  // Recorded at 83 in scripts/source-debt.json and unchanged here: this card
+  // inverts assertions in this file but must not grow the harness, so the new
+  // fixtures live in their own files. The entry appears only because editing
+  // this file makes the gate report its existing debt.
+  "tests/server-drafting.test.mjs:harness#1: 83 lines (baseline 83)",
 ];
 
 function git(...command) {

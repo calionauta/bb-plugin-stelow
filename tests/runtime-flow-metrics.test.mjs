@@ -13,8 +13,8 @@ const SCHEMA = `
     id INTEGER PRIMARY KEY, card_id TEXT, stage TEXT, entered_at INTEGER
   );
   CREATE TABLE inbox_events (
-    card_id TEXT, kind TEXT, read_at INTEGER, archived_at INTEGER, resolved_at INTEGER,
-    holder_card_id TEXT, holder_file TEXT
+    card_id TEXT, kind TEXT, occurred_at INTEGER, read_at INTEGER, archived_at INTEGER,
+    resolved_at INTEGER, holder_card_id TEXT, holder_file TEXT
   );
 `;
 
@@ -44,10 +44,31 @@ function fixture() {
   // are NAMED so a migration adding one does not silently change what this row
   // means.
   db.prepare(
-    "INSERT INTO inbox_events (card_id, kind, read_at, archived_at, resolved_at) VALUES (?, 'completed', NULL, NULL, NULL)",
-  ).run("second");
+    "INSERT INTO inbox_events (card_id, kind, occurred_at, read_at, archived_at, resolved_at) VALUES (?, 'completed', ?, NULL, NULL, NULL)",
+  ).run("second", 250);
   return db;
 }
+
+// The one finished card inside the 150–250 done window, and its breakdown: no
+// question, pause or error rows, so every minute of it is unexplained. The
+// breakdown says so rather than calling the remainder work.
+const SECOND_CARD = {
+  cardId: "second",
+  kind: "research",
+  name: "Second",
+  leadMs: 200,
+  cycleMs: 150,
+  doneAt: 200,
+};
+const SECOND_WAIT = {
+  totalMs: 200,
+  humanMs: 0,
+  systemMs: 0,
+  unattributedMs: 200,
+  humanShare: 0,
+  systemShare: 0,
+  unattributedShare: 1,
+};
 
 test("flow metrics batches completed cards and filters by project and done window", () => {
   const db = fixture();
@@ -62,14 +83,11 @@ test("flow metrics batches completed cards and filters by project and done windo
       cycleP90Ms: 200,
     });
 
-    const window = flowMetrics(db, { projectId: "project-a", since: 150, until: 250 });
+    const window = flowMetrics(db, { projectId: "project-a", since: 150, until: 250, now: 1000 });
     assert.deepEqual(window.items, [{
-      cardId: "second",
-      kind: "research",
-      name: "Second",
-      leadMs: 200,
-      cycleMs: 150,
-      doneAt: 200,
+      ...SECOND_CARD,
+      wait: { ...SECOND_WAIT, attributedMs: 0 },
+      reviewWaitMs: 750,
     }]);
     assert.deepEqual(window.summary, {
       count: 1,
@@ -78,9 +96,10 @@ test("flow metrics batches completed cards and filters by project and done windo
       cycleP50Ms: 150,
       cycleP90Ms: 150,
     });
+    assert.deepEqual(window.wait, { ...SECOND_WAIT, attributedMs: 0 });
     assert.deepEqual(window.attention, [
-      { cardId: "second", kind: "research", name: "Visible second", reason: "review" },
-      { cardId: "blocked", kind: "build", name: "Blocked", reason: "stuck" },
+      { cardId: "second", kind: "research", name: "Visible second", reason: "review", waitMs: 750 },
+      { cardId: "blocked", kind: "build", name: "Blocked", reason: "stuck", waitMs: null },
     ]);
   } finally {
     db.close();
@@ -100,6 +119,27 @@ test("flow metrics returns null percentiles while retaining live attention", () 
       cycleP90Ms: null,
     });
     assert.equal(result.attention.length, 2);
+  } finally {
+    db.close();
+  }
+});
+
+test("a question window reaches the breakdown, and an answered one stops counting", () => {
+  const db = fixture();
+  try {
+    db.prepare(
+      "INSERT INTO inbox_events (card_id, kind, occurred_at, read_at, archived_at, resolved_at) VALUES ('second', 'question', 40, NULL, NULL, 90)",
+    ).run();
+    const second = (now) => flowMetrics(db, { projectId: "project-a", now }).items
+      .find((item) => item.cardId === "second").wait;
+    const split = second(1000);
+    assert.equal(split.humanMs, 50, "a question held the card for its open window");
+    assert.equal(split.unattributedMs, 150, "and the rest is still unexplained");
+    assert.equal(split.humanShare + split.systemShare + split.unattributedShare, 1, "the parts still partition the interval");
+
+    db.prepare("UPDATE inbox_events SET resolved_at = NULL WHERE kind = 'question'").run();
+    const open = second(1000);
+    assert.equal(open.humanMs, 160, "an open question is charged to the card's own done time, not to the caller's clock");
   } finally {
     db.close();
   }

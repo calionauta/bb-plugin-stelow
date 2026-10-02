@@ -89,6 +89,11 @@ export const cardRpcContract = {
           readMissSince: z.number().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),
+          integrationPending: z.object({
+            state: z.enum(["unpublished", "local", "unmerged"]),
+            label: z.string(),
+            detail: z.string(),
+          }).nullable(),
           presetName: z.string().nullable(),
           presetProviderId: z.string().nullable(),
           presetModelId: z.string().nullable(),
@@ -142,10 +147,25 @@ export const cardRpcContract = {
       leadMs: z.number().nullable(),
       cycleMs: z.number().nullable(),
       done: z.boolean(),
+      // The per-round findings, so the card can show rework without the metric
+      // being re-derived in the UI. Empty when no critique is matched, which the
+      // rework owner reads as "not measured" rather than "nothing reworked".
+      rounds: z.array(z.array(z.object({ description: z.string(), resolution: z.string() }))),
+      // The card's review coverage, already parsed, so the UI reads the same
+      // numbers the CLI and the flow strip do. Empty means "no readable
+      // reviews", which the owner reads as not-measured rather than "all whole".
+      reviews: z.array(z.object({
+        excerpt: z.object({
+          selected: z.string(),
+          truncated: z.boolean(),
+          sentChars: z.number().nullable(),
+          originalChars: z.number().nullable(),
+        }),
+      })),
     }),
   },
   flowMetrics: {
-    experimental_description: "Lead/cycle per finished card with p50/p90, plus stuck and review-awaiting now",
+    experimental_description: "Lead/cycle per finished card with p50/p90, where the time went, plus stuck and review-awaiting now",
     input: z
       .object({
         projectId: z.string().nullable().optional(),
@@ -162,6 +182,20 @@ export const cardRpcContract = {
           leadMs: z.number().nullable(),
           cycleMs: z.number().nullable(),
           doneAt: z.number().nullable(),
+          // Where the card's wall-clock went, split by cause and never summed
+          // across overlapping windows. `unattributedMs` is the honest residual:
+          // time the data does not explain, never time claimed as work.
+          wait: z.object({
+            totalMs: z.number(),
+            humanMs: z.number(),
+            systemMs: z.number(),
+            attributedMs: z.number(),
+            unattributedMs: z.number(),
+            humanShare: z.number(),
+            systemShare: z.number(),
+            unattributedShare: z.number(),
+          }),
+          reviewWaitMs: z.number().nullable(),
         }),
       ),
       summary: z.object({
@@ -171,12 +205,45 @@ export const cardRpcContract = {
         cycleP50Ms: z.number().nullable(),
         cycleP90Ms: z.number().nullable(),
       }),
+      wait: z.object({
+        totalMs: z.number(),
+        humanMs: z.number(),
+        systemMs: z.number(),
+        unattributedMs: z.number(),
+        humanShare: z.number(),
+        systemShare: z.number(),
+        unattributedShare: z.number(),
+      }),
+      // The two readings that need the files a card left behind, summed over
+      // the finished cards in scope. Read outside `flow-metrics` because that
+      // function is pure over the ledger, and a workspace is not the ledger.
+      // `rate` is null until a second round exists anywhere in scope.
+      coverage: z.object({
+        rework: z.object({
+          cardsWithRounds: z.number(),
+          comparable: z.number(),
+          reworked: z.number(),
+          rate: z.number().nullable(),
+          descriptions: z.array(z.string()),
+        }),
+        reviews: z.object({
+          counted: z.number(),
+          truncated: z.number(),
+          headCuts: z.number(),
+        }),
+        // Rendered by the same lib owners the CLI and the card call.
+        reworkLine: z.string(),
+        coverageLine: z.string(),
+      }),
       attention: z.array(
         z.object({
           cardId: z.string(),
           kind: z.enum(["build", "research", "explore"]),
           name: z.string(),
           reason: z.enum(["stuck", "review"]),
+          // How long a finished card has been waiting for a look. Null on stuck
+          // cards, whose own age lives in the card hero instead.
+          waitMs: z.number().nullable(),
         }),
       ),
     }),
@@ -227,6 +294,18 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  acceptCard: {
+    experimental_description: "Record a human acceptance of a finished card's result; a receipt, never a gate",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      // The stamp the receipt carries, or null when nothing was written. The
+      // host SDK exposes no operator identity, so this is the whole receipt
+      // (lib/card-acceptance.mjs).
+      acceptedAt: z.number().nullable(),
+    }),
+  },
   draftDoneComment: {
     experimental_description: "Draft a GitHub completion note with the cheap generation preset",
     input: z.object({ cardId: z.string() }).strict(),
@@ -234,6 +313,33 @@ export const cardRpcContract = {
       ok: z.boolean(),
       draft: z.string().nullable(),
       error: z.string().nullable(),
+    }),
+  },
+  catchUp: {
+    experimental_description: "What changed on a card since the reader last looked: deterministic facts, optionally phrased",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      /** `last-read` when a read is the anchor, `created` when the card has
+       * never been opened — the surface says which rather than implying
+       * "caught up" for a card nobody has looked at. */
+      anchor: z.enum(["last-read", "created"]).nullable(),
+      since: z.number().nullable(),
+      summary: z.string().nullable(),
+      facts: z.array(
+        z.object({
+          kind: z.enum(["stage", "question", "answer", "blocked", "resumed", "error", "completed"]),
+          at: z.number(),
+          text: z.string().nullable(),
+          stage: z.string().nullable(),
+          open: z.boolean().nullable(),
+        }),
+      ),
+      /** The model's phrasing of the facts, or null when it was unavailable,
+       * disabled, or produced nothing usable. Never a fact of its own. */
+      prose: z.string().nullable(),
+      source: z.string().nullable(),
     }),
   },
 };

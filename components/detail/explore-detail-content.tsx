@@ -4,6 +4,7 @@ import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { artifactRoleCounts } from "../../lib/artifact-roles.mjs";
 import { ArtifactGroups } from "../artifacts/artifact-inventory";
+import { AcceptanceRow } from "./acceptance-row";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
 import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
@@ -60,6 +61,12 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
           />
         )
         : null}
+      <AcceptanceRow
+        cardId={card.id}
+        status={card.status}
+        acceptanceLine={detail?.card.acceptanceLine}
+        onChanged={onChanged}
+      />
     </section>
   );
 }

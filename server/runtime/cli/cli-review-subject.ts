@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { contractForBuildArtifact } from "../../../lib/artifact-contracts.mjs";
+import { contractForBuildArtifact, contractForExplore } from "../../../lib/artifact-contracts.mjs";
 import {
   parseArtifactManifest,
   resolveArtifactPath,
@@ -24,6 +24,11 @@ export type ReviewSubject = {
   contractLabel: string;
   evidence: "verified" | "hypothesis-only";
   fingerprint: string | null;
+  /** The resolved depth contract, when there is one. The reviewer's excerpt is
+   * chosen from the headings this names, so a long document's required sections
+   * survive the cost cap (lib/review-excerpt.mjs). Null for subjects with no
+   * contract — research deliverables — where the head slice is used and said so. */
+  contract: unknown;
 };
 
 
@@ -76,6 +81,7 @@ and critique reports.`,
     contractLabel: `build document (${contract.id})`,
     evidence: "verified",
     fingerprint: null,
+    contract,
   };
 }
 
@@ -112,35 +118,7 @@ export async function deliverableSubject(
   deps: CliDeps,
   card: WorkerCard,
 ): Promise<ReviewSubject | Refusal> {
-  if (card.kind === "research") {
-    const readiness = await deps.researchArtifacts
-      .researchReadiness(card)
-      .catch(() => null);
-    if (!readiness)
-      return refuse({ exitCode: 1, stderr: "Unable to read card state — retry review." });
-    if (!readiness.ready || readiness.invalid.length > 0)
-      return refuse(researchVerifyRefusal(deps, card, readiness));
-    const history = deps.strategyRounds(card);
-    const latest = history[history.length - 1];
-    const strategyLabel =
-      researchStrategyById(latest?.id ?? "")?.label ?? latest?.id ?? "research";
-    const workspace = await deps.cardWorkspace(card);
-    const index = await deps.readResearchIndex(card).catch(() => null);
-    const indexText = index && index.ok === true ? index.content : "";
-    const primary =
-      workspace?.path && latest?.file
-        ? await deps.bb.sdk.files
-            .read({ path: resolveArtifactPath(workspace.path, latest.file) ?? "" })
-            .then((file) => file.content)
-            .catch(() => null)
-        : null;
-    return {
-      artifactText: `Research index:\n${typeof indexText === "string" ? indexText : ""}\n\nPrimary round:\n${typeof primary === "string" ? primary : ""}`,
-      contractLabel: `${strategyLabel} primary round`,
-      evidence: readiness.evidence,
-      fingerprint: readiness.fingerprint,
-    };
-  }
+  if (card.kind === "research") return researchSubject(deps, card);
   const artifact = await deps.researchArtifacts
     .exploreArtifact(card)
     .catch(() => ({
@@ -175,6 +153,47 @@ export async function deliverableSubject(
     contractLabel: `${techniqueLabel} stage deliverable`,
     evidence: "verified",
     fingerprint: artifact.fingerprint,
+    contract: contractForExplore(card.explore_stage ?? ""),
+  };
+}
+
+/**
+ * A research card's deliverable: its index plus the newest round.
+ *
+ * Split out of `deliverableSubject` when the explore branch and this one
+ * together crossed the function budget. There is no depth contract for a
+ * research round — the readiness check is the deterministic gate instead — so
+ * `contract` is explicitly null and the reviewer gets the head slice, reported
+ * as such rather than as a contract-aware excerpt.
+ */
+async function researchSubject(deps: CliDeps, card: WorkerCard): Promise<ReviewSubject | Refusal> {
+  const readiness = await deps.researchArtifacts
+    .researchReadiness(card)
+    .catch(() => null);
+  if (!readiness)
+    return refuse({ exitCode: 1, stderr: "Unable to read card state — retry review." });
+  if (!readiness.ready || readiness.invalid.length > 0)
+    return refuse(researchVerifyRefusal(deps, card, readiness));
+  const history = deps.strategyRounds(card);
+  const latest = history[history.length - 1];
+  const strategyLabel =
+    researchStrategyById(latest?.id ?? "")?.label ?? latest?.id ?? "research";
+  const workspace = await deps.cardWorkspace(card);
+  const index = await deps.readResearchIndex(card).catch(() => null);
+  const indexText = index && index.ok === true ? index.content : "";
+  const primary =
+    workspace?.path && latest?.file
+      ? await deps.bb.sdk.files
+          .read({ path: resolveArtifactPath(workspace.path, latest.file) ?? "" })
+          .then((file) => file.content)
+          .catch(() => null)
+      : null;
+  return {
+    artifactText: `Research index:\n${typeof indexText === "string" ? indexText : ""}\n\nPrimary round:\n${typeof primary === "string" ? primary : ""}`,
+    contractLabel: `${strategyLabel} primary round`,
+    evidence: readiness.evidence,
+    fingerprint: readiness.fingerprint,
+    contract: null,
   };
 }
 

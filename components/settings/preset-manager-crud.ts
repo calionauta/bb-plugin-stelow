@@ -3,7 +3,14 @@ import type { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePresetFormState, type PresetFormState } from "./preset-manager-form-state";
 import { asPresetReasoningLevel } from "./preset-execution-values.mjs";
-import type { PresetManagerPreset } from "./preset-manager-types";
+import {
+  ENVIRONMENT_KINDS,
+  isKnownEnvironmentKind,
+} from "./preset-environment-kind.mjs";
+import type {
+  PresetManagerForm,
+  PresetManagerPreset,
+} from "./preset-manager-types";
 
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
@@ -48,6 +55,22 @@ export function usePresetManagerCrud({
   };
 }
 
+/**
+ * What the save refuses, in the reader's words, or null when it may proceed.
+ *
+ * The environment is checked here rather than at the schema: the RPC's zod enum
+ * turns an out-of-enum kind into a raw validation string, and this form's one
+ * message line is no place for that. An installed row can genuinely hold such a
+ * value — upgraded installs add the column with `ALTER TABLE` and no CHECK — so
+ * this is a reachable state, not a theoretical one.
+ */
+function saveRefusal(form: PresetManagerForm): string | null {
+  if (!form.name.trim()) return "Name is required.";
+  if (isKnownEnvironmentKind(form.environmentKind)) return null;
+  return `Environment "${form.environmentKind}" is not one this dialog can set. `
+    + "Choose the isolated worktree option, or turn it off to use BB's default.";
+}
+
 export async function savePreset(
   rpc: ManagerRpc,
   {
@@ -62,8 +85,9 @@ export async function savePreset(
     onChanged: () => Promise<void>;
   },
 ): Promise<void> {
-  if (!state.form.name.trim()) {
-    setMessage("Name is required.");
+  const refusal = saveRefusal(state.form);
+  if (refusal) {
+    setMessage(refusal);
     return;
   }
   setBusy(true);
@@ -76,7 +100,11 @@ export async function savePreset(
       modelId: state.form.modelId,
       reasoningLevel: asPresetReasoningLevel(state.form.reasoningLevel),
       permissionMode: state.form.permissionMode,
-      environmentKind: state.form.environmentKind,
+      // Narrowed by the refusal above, which is what makes the cast safe here
+      // and not a way around it: the enum belongs to the RPC contract, while
+      // the dialog carries a wider string so it can name an unrecognised value
+      // instead of hiding it.
+      environmentKind: state.form.environmentKind as (typeof ENVIRONMENT_KINDS)[number],
       baseBranch: null,
       machineId: null,
       instructions: "",

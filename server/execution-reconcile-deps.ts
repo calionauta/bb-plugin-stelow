@@ -38,6 +38,12 @@ export type ReconcileDeps = {
   publishCard: (cardId: string) => void;
   native: ExecutionNative;
   lifecycle: ReconcileStopper;
+  /**
+   * Ask the forge whether a finished card's work already landed, and record it.
+   * Optional: a caller with no publication module is not forced to build one,
+   * and the reconcile still runs.
+   */
+  reconcilePublications?: () => Promise<void>;
 };
 
 /**

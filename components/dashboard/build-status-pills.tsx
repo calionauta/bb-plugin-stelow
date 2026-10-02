@@ -104,10 +104,10 @@ const ACTIVITY_TITLE: Record<string, string> = {
 //   BuildStatusPills), so a dot left the chip sitting in the vacated slot and
 //   reading as the card's next checkpoint instead of a request about work
 //   that is already finished.
-// - NOT the bare word "Review". `review` is a phase in the stage catalog and
-//   BUILD_BOARD_COLUMN_LABELS spreads PHASE_LABELS, so the board already has a
-//   column header that reads "Review". A chip with that word is a position
-//   that does not exist.
+// - NOT the bare word "Review". `review` is a phase id in the stage catalog
+//   and BUILD_BOARD_COLUMN_LABELS spreads PHASE_LABELS, so the board already has
+//   a column header for that phase — currently labelled "Evaluation". A chip
+//   wearing the bare id is a position that does not exist.
 // - ONE component for the tile and the list row. The board tile used to carry
 //   a private copy of this chip, a dot and a type size away from the list
 //   row, which is exactly the drift the shared-vocabulary rule exists to
@@ -181,6 +181,68 @@ export function AttentionChip({ label }: { label: string }) {
     <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
     <span>{label}</span>
   </span>;
+}
+
+/**
+ * A card whose worker ran out of work and is waiting for the user.
+ *
+ * Amber, like the attention chip it appears alongside — this is a "needs
+ * you" state, not a failure. It is a separate component rather than a branch
+ * inside the attention chip because the two say different things: attention
+ * means a specific known thing is outstanding, pause means the worker simply
+ * stopped producing and the user has to decide what to do about it.
+ */
+export function PausedChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-zinc-500" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * A card that has stopped.
+ *
+ * Red, and it does not pulse: the card's own border already pulses to say
+ * something is wrong, and a pulsing chip on a pulsing card reads as one
+ * alarm rather than two. This is the label the border could not carry —
+ * `card_e3u00eb4` was outlined in amber like a card waiting for an answer,
+ * and nothing on the card said otherwise.
+ */
+export function ErrorChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * What a finished card still owes its repository.
+ *
+ * Amber is the same tone as AttentionChip on purpose: both mean "this card
+ * wants a person", and a reader who learns one tone should not have to learn
+ * a second for the same call to action. The difference is in the text, not
+ * the color — the label names the missing step.
+ */
+export function IntegrationPendingChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+      <span>{label}</span>
+    </span>
+  );
 }
 
 // Dot tone for hill dots. List rows keep their own inline mapping on

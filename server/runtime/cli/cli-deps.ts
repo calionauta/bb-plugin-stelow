@@ -118,6 +118,16 @@ export type CliDeps = {
   cardCheckout: (card: WorkerCard) => Promise<CardCheckout | null>;
   gitEvidence: (path: string) => Promise<GitEvidence>;
   runGitIn: (cwd: string, args: string[]) => Promise<{ ok: boolean; stdout: string }>;
+  /** What destroying this card's checkout would cost: dirty files, unpushed
+   * commits, an upstream, and whether another live card shares the clone. */
+  discardEvidence: (
+    card: WorkerCard,
+  ) => Promise<Record<string, unknown>>;
+  /** Drop a worktree the card is done with. The one gate is enforced inside. */
+  cleanupWorktree: (cardId: string) => Promise<{ ok: boolean; error: string | null }>;
+  /** Has a merge into the base branch ever been recorded for this card?
+   * The only signal that survives a squash merge. */
+  hasRecordedMerge?: (cardId: string) => boolean;
   workingDiffFor: (workspacePath: string, cap: number) => Promise<string>;
   testCommandForCheckout: (path: string) => TestCommand | null;
   runHostTests: (
@@ -134,6 +144,11 @@ export type CliDeps = {
     card: WorkerCard,
     fingerprint: string | null,
   ) => Promise<boolean>;
+  /** The same review records the coverage gate reads, so the metrics readout
+   * counts the reviews that exist rather than a second, looser scan of them. */
+  reviewFilesFor: (
+    card: WorkerCard,
+  ) => Promise<Array<{ name: string; content: string | null }>>;
   pendingQuestions: (threadId: string | null) => Promise<PendingQuestions>;
   pendingAsks: (threadId: string | null) => Promise<PendingAsk[] | null>;
   openExpiredQuestionIds: (cardId: string) => string[];

@@ -76,12 +76,19 @@ assert.match(
   /event\.key === "w" \|\| event\.key === "W"/,
   "W opens the worker thread from a focused research/explore card",
 );
+// The row's chips moved into their own component when the integration chip
+// joined them; the rule it guards is the same one, so the pin follows the
+// code that carries it rather than the row that renders it.
 const listRow = trackLists.slice(
   trackLists.indexOf("function TrackListRow"),
   trackLists.indexOf("function rowTone"),
 );
+const listRowStatus = trackLists.slice(
+  trackLists.indexOf("function ListRowStatus"),
+  trackLists.indexOf("function TrackListRow"),
+);
 assert.match(
-  listRow,
+  listRowStatus,
   /showAttention\(card\) \? <AttentionChip label=\{attentionLabel\(card\.activity\)\}/,
   "rows follow the same rule — no duplicate state pair",
 );

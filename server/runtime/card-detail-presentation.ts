@@ -1,5 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { acceptanceLine, isAccepted } from "../../lib/card-acceptance.mjs";
 import { hasPendingReview } from "../../lib/inbox-events.mjs";
+import { integrationPending } from "../../lib/integration-pending.mjs";
 import { diagnoseScopeSync } from "../../lib/spec-scope-reader.mjs";
 import { errorNeedsAttention, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { doingNowNames } from "../../lib/doing-now.mjs";
@@ -256,6 +258,14 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
     blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
+    // The same ladder the board reads, so opening a card cannot disagree
+    // with the chip that sent the reader here.
+    integrationPending: integrationPending(db, card),
+    // The human acceptance receipt, read beside the review request it answers.
+    // The line is derived where the receipt lives so the card, the trail
+    // comment and any future surface cannot say it three ways.
+    acceptedAt: isAccepted(card.accepted_at) ? card.accepted_at : null,
+    acceptanceLine: acceptanceLine(card.accepted_at),
   };
 }
 

@@ -10,7 +10,8 @@ export const ISOLATED_WORKTREE_BENEFIT = "The agent works on a separate copy —
 const ISOLATED_WORKTREE_DETAILS = [
   "A managed git worktree on its own branch, created for this card and cleaned up after.",
   "Merging back stays yours: nothing lands in your checkout without review.",
-  "Needs a New-worktree preset in Agent Presets — without one the card parks with an explanation instead of starting in your checkout.",
+  "Needs a preset set to worktree in Agent Presets — create or edit one there — "
+    + "without one the card parks with an explanation instead of starting in your checkout.",
 ];
 
 export function IsolatedWorktreeCheck({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {

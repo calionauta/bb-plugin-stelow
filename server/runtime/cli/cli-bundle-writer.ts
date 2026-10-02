@@ -14,6 +14,7 @@ import {
 } from "../../../lib/run-bundle.mjs";
 import { sumTokenBreakdowns, tokenBreakdownFromEvents } from "../../../lib/token-usage.mjs";
 import { readCardStateBlob } from "./cli-card-state.js";
+import { resolveBundleSource } from "../../../lib/bundle-source-path.mjs";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 
@@ -97,6 +98,7 @@ async function readBundleSources(
   const workspace = await deps.cardWorkspace(card).catch(() => null);
   if (!workspace?.path)
     return { error: "The card has no workspace to export into." };
+  const stateDir = await cardStateDir(deps, card, workspace.path);
   const stateBlob = await readCardStateBlob(deps, card);
   const registered = stateBlob
     ? parseArtifactManifest(stateBlob).filter(
@@ -109,7 +111,7 @@ async function readBundleSources(
     return {
       error: `Refusing export dir "${targetRel}": relative path inside the workspace only.`,
     };
-  const { readable, unreadable } = await readRegisteredSources(deps, workspace.path, registered);
+  const { readable, unreadable } = await readRegisteredSources(deps, workspace.path, stateDir, registered);
   return {
     registered,
     readable,
@@ -120,25 +122,48 @@ async function readBundleSources(
   };
 }
 
+/** The card's staging dir, which is where artifacts that recorded themselves
+ * against staging actually live. Null when the card has no state dir. */
+async function cardStateDir(
+  deps: CliDeps,
+  card: WorkerCard,
+  workspacePath: string,
+): Promise<string | null> {
+  if (!card.dir_hash) return null;
+  return deps
+    .workflowStateDir(workspacePath, card.id, card.dir_hash)
+    .catch(() => null);
+}
+
 /** Reads each registered artifact once: an empty or unreadable source is
  * reported, never copied into the bundle. */
 async function readRegisteredSources(
   deps: CliDeps,
   workspacePath: string,
+  stateDir: string | null,
   registered: Array<{ path: string; stage?: string | null }>,
 ): Promise<{ readable: ReadableSource[]; unreadable: string[] }> {
   const readable: ReadableSource[] = [];
   const unreadable: string[] = [];
   for (const fields of registered) {
     const sourcePath = fields.path as string;
-    const full = resolveArtifactPath(workspacePath, sourcePath);
-    const content = full
-      ? await deps.bb.sdk.files
-          .read({ path: full })
-          .then((file) => file.content)
-          .catch(() => null)
-      : null;
-    if (typeof content !== "string" || !content.trim()) {
+    // Two roots, not one: a card that ran `stelow advance` from inside its own
+    // staging tree recorded staging-relative paths, and those are unreadable
+    // against the project root alone. The state dir is the retry, and the
+    // refusals for absolute paths and traversal apply to it exactly as they do
+    // to the first try — this widens where a source may be found, never what
+    // a manifest may name.
+    const candidates = resolveBundleSource(sourcePath, { projectRoot: workspacePath, stateDir });
+    let content: string | null = null;
+    for (const candidate of candidates) {
+      content = await deps.bb.sdk.files
+        .read({ path: candidate })
+        .then((file) => file.content)
+        .catch(() => null);
+      if (typeof content === "string" && content.trim()) break;
+      content = null;
+    }
+    if (content === null) {
       unreadable.push(sourcePath);
       continue;
     }

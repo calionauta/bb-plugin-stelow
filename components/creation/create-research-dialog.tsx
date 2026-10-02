@@ -15,8 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AgentConfigBox, CreateCardAlert, type ResearchStrategyOption } from "./creation-settings";
+import { useProjectSeed } from "./use-project-seed";
 import { StrategyPicker } from "./strategy-picker";
 import { composerExecutionOf } from "./composer-execution";
+import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 
 // Research creation dialog: strategy picker plus deferred start. Owns its
@@ -87,7 +89,7 @@ function CreateResearchSettings({ strategies, strategy, onStrategy, strategyAtte
   onOpenPresets: () => void;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div className="grid gap-1.5">
         <span className="text-xs font-medium text-foreground">Choose a strategy</span>
         <StrategyPicker strategies={strategies} value={strategy} onChange={onStrategy} groupName="strategy-pick" attentionSignal={strategyAttention} />
@@ -106,24 +108,66 @@ export type CreateResearchDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeProjectId: string | null;
+  validProjectIds?: string[];
   strategies: ResearchStrategyOption[];
-  researchPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; name: string } | null;
+  researchPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; name: string } | null;
   hasBandPreset: boolean;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: React.ReactNode };
   onOpenPresets: () => void;
 };
 
-export function CreateResearchDialog({ open, onOpenChange, activeProjectId, strategies, researchPreset, hasBandPreset, bucketGallery, onOpenPresets }: CreateResearchDialogProps) {
-  const submit = useCreateResearchSubmit({ activeProjectId, onClose: () => onOpenChange(false) });
+// Composer with the per-open project seed and the preset's environment seed.
+// Extracted for the same reason as the build dialog's: the shell plus one
+// composer is over the function budget, and the composer is the part with the
+// seed contract worth reading in one place.
+function CreateResearchComposer({
+  seedProjectId,
+  researchPreset,
+  seededEnvironment,
+  prompt,
+  onSubmit,
+}: {
+  seedProjectId: string | null;
+  researchPreset: CreateResearchDialogProps["researchPreset"];
+  seededEnvironment: ComposerEnvironmentSeed;
+  prompt: string;
+  onSubmit: (request: NewThreadRequest) => Promise<void>;
+}) {
+  return (
+    <NewThreadComposer
+      defaultProjectId={seedProjectId ?? undefined}
+      defaultProviderId={researchPreset?.providerId}
+      defaultModel={researchPreset?.modelId}
+      defaultReasoningLevel={researchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+      defaultPermissionMode={researchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+      defaultEnvironment={seededEnvironment}
+      initialPrompt={prompt}
+      placeholder="What should Stelow investigate?"
+      layout="contained"
+      draftKey="stelow-research-create"
+      onSubmit={onSubmit}
+    />
+  );
+}
 
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (next) submit.resetOnOpen();
-  }
+export function CreateResearchDialog({
+  open,
+  onOpenChange,
+  activeProjectId,
+  validProjectIds,
+  strategies,
+  researchPreset,
+  hasBandPreset,
+  bucketGallery,
+  onOpenPresets,
+}: CreateResearchDialogProps) {
+  const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
+  const submit = useCreateResearchSubmit({ activeProjectId: seedProjectId, onClose: () => onOpenChange(false) });
+  const seededEnvironment = useSeededComposerEnvironment(researchPreset?.environmentKind, open);
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
+    <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
+      <DialogContent fullscreenOnMobile className="overflow-y-auto overflow-x-hidden sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Start new research</DialogTitle>
           <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
@@ -141,17 +185,12 @@ export function CreateResearchDialog({ open, onOpenChange, activeProjectId, stra
           bucketGallery={bucketGallery}
           onOpenPresets={onOpenPresets}
         />
-        <NewThreadComposer
-          defaultProjectId={activeProjectId ?? undefined}
-          defaultProviderId={researchPreset?.providerId}
-          defaultModel={researchPreset?.modelId}
-          defaultReasoningLevel={researchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-          defaultPermissionMode={researchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-          initialPrompt={submit.prompt}
-          placeholder="What should Stelow investigate?"
-          layout="contained"
-          draftKey="stelow-research-create"
-          onSubmit={(request) => submit.start(request)}
+        <CreateResearchComposer
+          seedProjectId={seedProjectId}
+          researchPreset={researchPreset}
+          seededEnvironment={seededEnvironment}
+          prompt={submit.prompt}
+          onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
       </DialogContent>
     </Dialog>

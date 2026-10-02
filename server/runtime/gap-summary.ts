@@ -1,5 +1,7 @@
 import type { WorkerCard } from "../workers-types.js";
 import type { CritiqueGapState } from "./critique-gap-state.js";
+import { reviewExcerptRecords } from "../../lib/review-verdict.mjs";
+import type { ReviewFile } from "./review-records.js";
 
 type StageEvent = { stage: string; entered_at: number };
 type Timeline = { leadMs: number | null; cycleMs: number | null };
@@ -15,6 +17,16 @@ type GapSummary = {
   leadMs: number | null;
   cycleMs: number | null;
   done: boolean;
+  /** One critique round's findings per registered critique artifact, oldest
+   * first. Present only when a critique is matched; the rework metric needs the
+   * round boundary, which the deduplicated `items` list does not carry. */
+  rounds: Array<Array<{ description: string; resolution: string }>>;
+  /** The review records on this card, already parsed into the excerpt facts the
+   * coverage owner reads. Present so the card can show reviewer coverage beside
+   * the gap tally without a second read of the workspace. Empty means the card
+   * has no readable reviews, which the owner reads as "not measured" rather
+   * than "every review read the whole document". */
+  reviews: Array<{ excerpt: { selected: string; truncated: boolean; sentChars: number | null; originalChars: number | null } }>;
 };
 
 type GapSummaryDeps = {
@@ -22,6 +34,10 @@ type GapSummaryDeps = {
   stageEvents: (cardId: string) => StageEvent[];
   summarizeTimeline: (events: StageEvent[], input: { createdAt: number; endAt: number }) => Timeline;
   critiqueGapState: (card: WorkerCard) => Promise<CritiqueGapState>;
+  /** Required, not defaulted: the card shows reviewer coverage from these
+   * records, and an optional dep here would be a dep a caller can forget, with
+   * the card silently showing "no coverage" for a card that was reviewed. */
+  readReviewFiles: (card: WorkerCard) => Promise<ReviewFile[]>;
   isDoneStatus: (status: string) => boolean;
   // Required here for the same reason it is required on the function below: an
   // optional dep is a dep a caller can forget, and forgetting it restores the
@@ -43,6 +59,8 @@ function emptySummary(): GapSummary {
     leadMs: null,
     cycleMs: null,
     done: false,
+    rounds: [],
+    reviews: [],
   };
 }
 
@@ -56,6 +74,7 @@ export function buildGapSummary(
   // open - with no error anywhere, which is the exact defect this fixes. The
   // optional call goes with it: there is nothing left to be optional.
   isSkippedStatus: (status: string) => boolean,
+  reviews: GapSummary["reviews"],
 ): GapSummary {
   // Every finding the registry named, not just the escalated slice. Only an
   // escalation gets a rework scope, so `scopeStatus` stays null for the rest —
@@ -86,6 +105,12 @@ export function buildGapSummary(
     leadMs: timeline.leadMs,
     cycleMs: timeline.cycleMs,
     done: card.status === "completed",
+    // The round boundary, published. The items above dedupe across rounds on
+    // purpose (a re-audited finding is one finding), which is exactly what makes
+    // rework unmeasurable from it — so the rounds ride along beside the list
+    // that cannot express them.
+    rounds: state.critiqueRounds,
+    reviews,
   };
 }
 
@@ -108,6 +133,7 @@ export function createGapSummary(deps: GapSummaryDeps) {
         done: card.status === "completed",
       };
     }
-    return buildGapSummary(card, state, timeline, deps.isDoneStatus, deps.isSkippedStatus);
+    const reviews = reviewExcerptRecords(await deps.readReviewFiles(card).catch(() => []));
+    return buildGapSummary(card, state, timeline, deps.isDoneStatus, deps.isSkippedStatus, reviews);
   };
 }

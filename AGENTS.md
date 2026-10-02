@@ -180,7 +180,7 @@ entry does not exist outside this plugin.
 ## Code standards
 
 Quality rules live in the coding-standards skill — never restated here.
-Load `/skill:stelow-product-coding-standards` (KISS, DRY, convention over
+Load `/skill:stelow-workflow-coding-standards` (KISS, DRY, convention over
 configuration, plus LoB/SoC/Fail Fast/YAGNI with file/function size limits)
 before writing or reviewing code. If the skill is not installed, install it
 with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
@@ -189,7 +189,7 @@ with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 ### UI vocabulary: a design rule with no test is not a rule
 
 `AGENTS.md` has said *"touch targets are `min-h-11`; every clickable gets
-`cursor-pointer`"* for a long time, and 76 raw `<button>` elements sat next to a
+`cursor-pointer`"* for a long time, and 81 raw `<button>` elements sat next to a
 shared `ui/Button` that 50 files import and 19 never touch. A sentence in
 markdown does not intercept a commit. So UI rules here are enforced, and the
 enforcement is what tells you the rule is real:
@@ -215,10 +215,10 @@ document: a `DESIGN.md` was written here, found to be ~80% duplicated of those
 docstrings, and deleted.
 
 **Known debt, so it is not rediscovered as a surprise:** `text-[11px]` still
-appears in ~101 places doing the same job the scale already names — the size is
+appears in 111 places doing the same job the scale already names — the size is
 allowed, the test blocks growth, and the migration is owed but not urgent. The
 `min-h-11` rule above is the one this section is least able to keep: it is
-stated, not tested, and 76 raw buttons are the standing evidence.
+stated, not tested, and 81 raw buttons are the standing evidence.
 
 ## Test value (no bullshit tests)
 

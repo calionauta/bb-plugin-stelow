@@ -107,6 +107,20 @@ export const cardDetailRpcContract = {
         }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
+        integrationPending: z.object({
+          state: z.enum(["unpublished", "local", "unmerged"]),
+          label: z.string(),
+          detail: z.string(),
+        }).nullable(),
+        // The human acceptance receipt, or null when nobody has recorded one.
+        // A stamp and nothing else: the host SDK has no operator identity, so
+        // a name here would be free text wearing attribution's clothes
+        // (lib/card-acceptance.mjs).
+        acceptedAt: z.number().nullable(),
+        // The disposition line a reader sees, derived where the receipt lives.
+        // Null whenever there is no receipt, so the surface reads one nullable
+        // rather than re-deriving the sentence.
+        acceptanceLine: z.string().nullable(),
         presetName: z.string().nullable(),
         presetProviderId: z.string().nullable(),
         presetModelId: z.string().nullable(),

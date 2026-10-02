@@ -33,6 +33,11 @@ export type WorkerCard = {
    * measurement itself lives in the streak table; this is the latch the reader
    * sees, and it is never a verdict about the card. See lib/host-read-streak. */
   read_miss_since: number | null;
+  /** The human acceptance receipt, or null when nobody has recorded one. A
+   * stamp and nothing else — the host SDK exposes no operator identity, so a
+   * name field would be free text wearing attribution's clothes.
+   * See lib/card-acceptance.mjs. */
+  accepted_at: number | null;
   environment_label: string | null;
   created_at: number;
   updated_at: number;

@@ -28,6 +28,7 @@ const baseDeps = {
   projectRoot: async () => "/workspace",
   workflowStateDir: async () => "/workspace/.stelow/card-1",
   ensureProjectArtifacts: async () => null,
+  openQuestionsByCard: async () => new Map(),
   runHelper: async (args) => ({ code: 0, stdout: args.join(" "), stderr: "" }),
   readText: async () => "current_stage: execution\n",
   researchStrategySkill: () => null,
@@ -132,4 +133,34 @@ test("inspection dispatcher leaves unrelated commands to the main CLI", async ()
   const run = createInspectionCommand(deps());
 
   assert.equal(await run(["ask", "--thread", "thread-1"], {}), null);
+});
+
+// Regression pin for card_48uuhus1: a worker with no read-only way to learn
+// "is a question already pending?" fired `--question "ping"` at a human to
+// find out. `status` is the verb it already runs, so the count lives there.
+test("status reports open questions so a worker never has to ask a human", async () => {
+  const askedFor = [];
+  const run = createInspectionCommand(deps({
+    openQuestionsByCard: async (cardIds) => {
+      askedFor.push(...cardIds);
+      return new Map([["card-1", { expired: 1, live: 2 }]]);
+    },
+  }));
+
+  const result = await run(["status"], { threadId: "thread-1" });
+
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(askedFor, ["card-1"], "the card behind the thread is the one counted");
+  assert.match(result.stdout, /open-questions=3/, "the open question count is visible on the status line");
+});
+
+test("status omits the count when the read fails, rather than claiming zero", async () => {
+  // A failed live read is UNKNOWN. Rendering 0 would read as "nothing is
+  // waiting", which is exactly the wrong thing to tell a worker.
+  const run = createInspectionCommand(deps({ openQuestionsByCard: async () => null }));
+  const result = await run(["status"], { threadId: "thread-1" });
+
+  assert.equal(result.exitCode, 0);
+  assert.doesNotMatch(result.stdout, /open-questions/, "an unknown count is never rendered as a number");
+  assert.match(result.stdout, /one\tactive\ttriage/, "the rest of the status line still renders");
 });

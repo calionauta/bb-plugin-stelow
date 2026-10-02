@@ -16,6 +16,7 @@ import { createExecutionNative } from "../../execution-native.js";
 import { createBoundaryVersionReader } from "../../execution-boundary.js";
 import { createExecutionLifecycle } from "../../execution-lifecycle.js";
 import { createExecutionReconcile } from "../../execution-reconcile.js";
+import { publicationReconcileFor } from "../../publication-reconcile.js";
 import { createExecutionAdvance } from "../../execution-advance.js";
 import { createScopeMapReader } from "../../scope-map-reader.js";
 import { createWorktreeCleanup } from "../../worktree-cleanup.js";
@@ -28,6 +29,8 @@ import { registerRuntimeLifecycle } from "../composition.js";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
+import type { WorkerCard } from "../../workers-types.js";
+import { readCardStatus } from "../../../lib/card-status.mjs";
 import { cardLiveRuns } from "../card-live-runs.js";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
 import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
@@ -149,7 +152,15 @@ function buildReconcile(
   lifecycle: ReturnType<typeof buildLifecycle>,
 ) {
   const { bb, db, now, randomId, getCard, cardWorkspace } = core;
+  const publication = publicationReconcileFor({
+    db, bb, now, randomId,
+    cardNotFound: core.ERRORS.cardNotFound,
+    getCard,
+    checkout: (card) => core.seams.cardCheckout(card as WorkerCard),
+    cardStatusOf: readCardStatus,
+  });
   return createExecutionReconcile({
+    reconcilePublications: publication.reconcilePublications,
     db,
     bb,
     now,

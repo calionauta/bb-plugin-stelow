@@ -53,6 +53,7 @@ export function ExplorePanelDialogs(props: Props) {
         open={props.createOpen}
         onOpenChange={props.onCreateOpenChange}
         activeProjectId={props.projectId}
+        validProjectIds={(props.data.projects ?? []).map((project) => project.id)}
         stages={props.data.stages}
         explorePreset={props.preset.preset}
         hasBandPreset={props.preset.hasBandPreset}

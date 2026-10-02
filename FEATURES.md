@@ -20,7 +20,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   composer remembers the last used selection.
   The fixed-height dialog with inner scroll never jumps. Bordered
   settings sections visibly contain the controls. BB's own Project, Environment,
-  branch, and provider/model controls are authoritative: Stelow forwards the
+  branch, and provider/model controls are authoritative: the Project picker
+  opens on the last project used (falling back to the board project when that
+  pick is gone), Stelow forwards the
   chosen checkout unchanged and keeps later workers in it, and forwards the
   chosen provider/model/reasoning/permission to the spawn — a choice
   differing from the analysis band preset is pinned as the card's preset
@@ -137,6 +139,46 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A composer posts back through `postIssueComment` behind an inline confirm
   naming the destination (`repo#number`, public and hard to undo) — human
   gesture only, payload validated server-side, mirror refreshed on success.
+- **A finished card says whether it still owes the repository something**
+  (`integrationPending`). `done` is a lifecycle state, not a publication state:
+  a card can complete with its work uncommitted, committed but never pushed, or
+  pushed as a pull request nobody merged, and the board read "Done" for all
+  three. A completed project card now carries one of three readings on the
+  board card, the list row, and the Git changes panel: **Not committed** (no
+  publication event recorded), **Local commit only** (committed, never pushed
+  or merged), and **PR not merged** / **Pushed, not merged** (remote-backed,
+  never on the base branch). A card whose pull request merged reads nothing, and
+  an exploratory workspace reads nothing — it has no base branch to land on, so
+  the question does not apply. A local squash is deliberately *not* treated as
+  publication: the panel offers it precisely because it cannot fetch or push.
+  The reading comes from the `publication_events` ledger and never from a live
+  `git` call, because the board lists every card and a per-card git invocation
+  would turn a scroll into a spawn. The chip is amber, matching
+  `AttentionChip`: both mean this card wants a person, and a reader who learned
+  one tone should not have to learn a second for the same call to action.
+- **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
+  A card whose worker halts recorded `activity: "error"` and put its reason in
+  a comment the board never renders, so the board showed the amber attention
+  border — the same one a card holding a question gets — and nothing else. An
+  error now has its own border, outranking attention rather than falling
+  through it: a broken card is not waiting for anything, and retrying is the
+  opposite action from answering. The card, the list row and the detail surface
+  all carry a **Stopped with an error** chip. An error with an empty
+  `last_error` — which happens when a worker halts by choice rather than
+  throwing — still says "Stopped" and says the reason is missing, because an
+  empty string is not a reason a reader can act on.
+- **Publication actions follow the card, not just the git state**
+  (`publishRelevanceNote`). The panel decided what to offer from the checkout
+  alone, so a card whose entire deliverable was a written finding reached Done
+  and was offered Commit, Push, Squash and Merge PR. It now reads the card's
+  own `kind` and `intent`: a build card that is not an investigation keeps
+  every delivery action, and an investigation — or any research or explore
+  card — keeps only Commit, with one sentence saying why. The local squash,
+  the publish step and the whole pull-request block are not rendered for them.
+  Hiding rather than disabling is deliberate: a greyed button invites a reader
+  to work out which policy refused them, and the note already answers it.
+  A commit stays available to a finding because a finding often arrives with
+  the fix that came out of it, and that fix is real work.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
@@ -332,10 +374,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analysis/Planning/Execution/Review) + Done/Archived — the Bucket is not
-  rendered as a column (its header button + gallery own it); cards sit in their
-  stage's phase. The complete Build topology (inbox, phases, terminal
+- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+  named by the synced catalog (analysis/planning/execution/review) +
+  Done/Archived — the Bucket is not rendered as a column (its header button +
+  gallery own it); cards sit in their stage's phase. Column headings are
+  `PHASE_LABELS`, so the `review` phase currently reads **Evaluation** and a
+  host-side rename moves the board without a plugin edit. The complete Build
+  topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
   derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
@@ -539,7 +584,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  102 times: the card had a real type scale, invented by whoever needed a small
+  111 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -552,7 +597,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 76 raw buttons. A test does. The index itself then failed
+  long time next to 81 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -623,6 +668,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   with the section still closed. The note composer stays: five words of
   course-correction do not justify losing your place on the card to go find a
   thread. Removed capability, none: the ambiguity was the feature.
+- **Catch up** (`CatchUpSection`, `catchUp` RPC, `lib/card-catch-up.mjs`). A
+  card's own answer to "what changed since I last looked": a DETERMINISTIC delta
+  over the rows the card already wrote — stage moves, questions, answers, stalls,
+  failures, completions — anchored on the newest read the card recorded, or on
+  its creation when it has never been opened (the surface says which, rather than
+  implying "caught up" for a card nobody has looked at). Empty is a real answer
+  — "nothing changed" — and is rendered as one. Loads on demand because a
+  briefing costs a spawn and most card opens are not a return after a gap; the
+  facts always render, and a generation-tier model may only REPHRASE them
+  (`lib/card-briefing.mjs`, the `card-briefing` delegation site). The model is
+  told the list is all it has, is forbidden to infer progress or quality, and
+  told to say plainly when there is nothing — because a briefing that invents a
+  change is worse than no briefing, since the reader cannot tell it from the real
+  ones. Every failure path (spawn, timeout, empty output, no preset) degrades to
+  the facts, and `STELOW_COMMS=0` removes the prose and never the facts. It
+  writes nothing and advances nothing. Artifacts are deliberately NOT a fact
+  kind: the manifest carries a path and a stage and no registration time, so
+  "this is new since you looked" cannot be derived from it and is not guessed.
+  The section is named a summary of what the card recorded, never a channel —
+  the same reason "Conversation" became "Notes for the agent".
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -833,6 +898,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave
   exactly as before.
+  **Asking whether something is pending needs no question.** A worker on
+  card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
+  because no read-only verb reported the answer. `bb stelow status` now
+  appends `open-questions=<n>` per card when anything is open, which is that
+  probe's real answer. A card whose live read fails omits the column entirely
+  rather than printing `0`: an unknown is not a zero, and a zero is the claim
+  that stops a worker from asking the one question it needed to ask.
   A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
@@ -1018,7 +1090,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline.
+  to the agent, gate question answerable inline. A generated interface
+  mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
+  under decision is a layout, and source text is the one thing that cannot
+  answer it. The decision is the path alone (`artifactRenderKind` in
+  `lib/artifact-render.mjs`), and a mockup is framed under
+  `allow-scripts` without `allow-same-origin`, so a worker-authored page
+  runs without reaching the reader's bb session. A truncated file is
+  shown as source instead, because a partial page is a broken layout
+  presented as evidence — and it says so rather than failing silently.
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
@@ -1104,8 +1184,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (build only). Every card names its checkout in one stored word
   (`environment_label`: isolated worktree, shared checkout, BB-managed,
   exploratory) plus the live branch on build cards — no guessing from
-  paths. Branch choice at creation stays BB's composer (project,
-  environment, branch forwarded unchanged); Stelow never re-picks it.
+  paths. Branch choice at creation stays BB's composer. Project and
+  branch are forwarded unchanged; the environment picker is *seeded*
+  from the active preset's worktree setting, and the person can always
+  change it. Stelow never overrides an environment the person picked.
+  The label is stored per path, not per intent: a card started from the
+  composer records `worktree`, while a card started by GitHub import,
+  the CLI or a restart records `managed` for the same preset — both are
+  correct for the shape they were given.
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
@@ -1466,18 +1552,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   was resolved *by the archive*, the verbatim-`last_error` revival path is
   untested here — the unit tests cover it, this card cannot.
 - **Opening a completed card is what satisfies its review.** The completion's
-  review request is cleared by a read, and only by a read: the inbox row and
-  the board chip are two surfaces of one row's read state, so spending it moves
-  read state alone and the completion keeps its own lifecycle — "reviewed" never
-  reads downstream as "closed", and an archived card's row is refused the
+  review request is cleared by a read, and by accepting the result: the inbox row
+  and the board chip are two surfaces of one row's read state, so spending it
+  moves read state alone and the completion keeps its own lifecycle — "reviewed"
+  never reads downstream as "closed", and an archived card's row is refused the
   stamp entirely. Build, research and Explore each clear it in their own detail
   body, guarded on the completed status so opening a card mid-work cannot
-  silence a live question, error or pause. This is a guarantee about the
-  *wiring*, not about the handler: a handler test exercises the handler
-  directly and never asks who calls it, which is why the guarantee is pinned
-  from the components and asserts its own premise (the card detail is fetched
-  from the detail body alone — a new prefetch or peek would be a second way for
-  a card to lose its review without you choosing it).
+  silence a live question, error or pause. Acceptance is the second writer, and
+  deliberately so: a person who has just recorded that they reviewed and
+  accepted the result is not owed the request to review it again, and leaving
+  the row open would hold the badge above zero on a card with nothing left to
+  do. This is a guarantee about the *wiring*, not about the handler: a handler
+  test exercises the handler directly and never asks who calls it, which is why
+  the guarantee is pinned from the components and asserts its own premise (the
+  card detail is fetched from the detail body alone — a new prefetch or peek
+  would be a second way for a card to lose its review without you choosing it).
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
@@ -1519,6 +1608,29 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   from BB's own pickers (live catalog with search, same as the new-card
   composer) shared with the card override dialog; environment kind stays a
   preset field. Built-ins protected.
+  The preset also carries its worktree setting, editable from this dialog as
+  an on/off field:
+  **Isolated worktree** seeds the card composer's environment picker on a
+  worktree of its own, and leaving it off means BB resolves its own default
+  for the project. It is deliberately not a "Project checkout vs Worktree"
+  pair — the two words mean opposite things in Stelow and in BB, and a
+  shared-checkout preset still records the card as `managed`, so a labelled
+  pair would promise a checkout the card does not get. The field is disabled
+  on built-in presets (flipping the built-in default's kind re-routes every
+  auto-started worker and is inherited by every preset created afterwards);
+  duplicate one to change it. A preset row shows a `worktree` pill, and New
+  preset inherits the current default's setting. An environment value the
+  schema never produced is named in the field's own sentence and refused on
+  save rather than sent to the server. Built-ins protected.
+  Two known limits, stated rather than hidden: on a personal/exploratory
+  project the card uses the exploratory workspace instead of the seeded
+  worktree, and that substitution is **silent** (no notice is written); and
+  BB's own re-seed rule re-applies every seed when a preset changes while the
+  dialog is open. Stelow freezes the environment picker for the duration of a
+  visit — it captures the seed when the dialog opens and re-reads it on reopen —
+  but the picker freezing is the *only* thing frozen: provider, model, reasoning
+  level and permission mode are still read live from the active preset, so
+  changing those mid-dialog re-seeds them, including over a choice already made.
   A preset's reasoning level is one of the eight levels the host offers, and it
   is stored with the provider and model it belongs to — never on its own.
   Saving a preset with any other level is refused, naming the levels that are
@@ -1724,9 +1836,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a `delegation-site` marker fails the topology pin.
 - **Automatic card titles + inline rename** (`renameCard`). Creation keeps
   the instant prompt-derived heuristic, then a Generation burst proposes
-  a ≤60-char title fire-and-forget — silent on failure, never overwriting
-  a human rename that landed mid-flight. The open-card breadcrumb edits
-  inline with explicit Save/Cancel; blank restores the heuristic.
+  a ≤60-char title fire-and-forget. Every exit from the burst resolves to one
+  of eleven named outcomes (`lib/title-outcome.mjs`) and every non-delivery
+  leaves exactly one trail comment naming the cause, the preset that actually
+  ran, the retry state, and the next move — so a failure is countable instead
+  of inferred. Three outcomes deliberately leave no comment and go to the daemon
+  log instead: `card_gone` (no row left to comment on), `renamed_mid_burst`
+  (a human just named the card) and `archived_mid_burst` (a terminal card takes
+  no writes). A burst that timed out gets one retry on the same resolved preset,
+  capped at two in flight process-wide; a retry that succeeds still records, so
+  a working retry cannot erase the tally. A concurrent human rename always wins —
+  the rename check precedes the completion check, so a rename landing mid-burst
+  is never overwritten by a retry. An archived card is never renamed and never
+  receives a record. The open-card breadcrumb edits inline with explicit
+  Save/Cancel; blank restores the heuristic.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an
@@ -1779,12 +1902,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+  The excerpt the reviewer receives is chosen by the **artifact contract**, not
+  by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
+  first, so a long introduction cannot push a required table past the 12k cost
+  cap and have the reviewer judge a document with its required section missing.
+  A document that fits goes whole; with no contract — or one that names nothing
+  — the head slice is used, the prompt says so, and the card comment records
+  which of the two happened. A review of the contract's sections and a review of
+  the document's opening are different reviews, and the reader of the verdict is
+  the one who has to tell them apart. Every review record carries that choice as
+  an `Excerpt:` header beside its `Status:` and `Fingerprint:` lines, and
+  `bb stelow metrics --card` counts them (`lib/review-truncation.mjs`): how many
+  reviews read a cut artifact, and how many of those fell back to the opening —
+  the one cut that can have hidden a section the contract named. A card whose
+  reviews all read whole documents prints nothing, because a metric that is
+  always present is a number nobody learns to read. Records written before the
+  field existed are uncounted, never reported as reviews that saw everything.
 - **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
   Advancing a build card into gate/int-gate/plan-gate with a reviewer
   designated fires one hidden review of the gate's registered artifact,
   posted as a card comment for the human (and worker) before approval.
   Advisory and fire-and-forget — advance never waits; every miss (no
-  designation, no workflow, no artifact, thin file) stays silent.
+  designation, no workflow, no artifact, thin file) stays silent. The artifact's
+  own contract drives the excerpt here too, so the gate's required sections are
+  what the pre-review reads.
   diff-gate stays out (no single file). Eligibility resolves through the
   lib map, never inline.
 - **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
@@ -1900,13 +2041,47 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
   progress block; the Build board carries one glanceable Flow strip naming
   itself (finished count with a measured trail, typical/median and slow/p90
-  lead/cycle with the jargon glossed inline, expanding to Tempo and Atenção
+  lead/cycle with the jargon glossed inline, expanding to Timing and Attention
   tabs and a per-card table that opens
-  cards) fed by the board project filter. Tempo holds windows, legend, and
-  the lead/cycle table; Atenção holds right-now stuck (blocked status or
-  errored worker) and review-awaiting dones with an all-clear empty state —
+  cards) fed by the board project filter. Timing holds windows, legend, the
+  lead/cycle table, and **where the time went**: every finished card's
+  wall-clock split into time a question held it for you, time lost to a paused
+  worker or a lock wait or a failure, and an `unattributed` remainder the data
+  does not explain — three disjoint parts of one interval, computed as a union
+  rather than a sum (`lib/wait-attribution.mjs`), so overlapping windows can
+  never report a share above 100%. The remainder is never called work, and
+  host-caused stalls stay out of it by design (`lib/host-read-streak.mjs`).
+  Attention holds right-now stuck (blocked status or
+  errored worker) and review-awaiting dones — oldest first, each naming how long
+  it has waited — with an all-clear empty state —
   signal chips for both ride the closed header only when nonzero, so a calm
   board shows no amber. Empty boards render no strip.
+- **Review-wait aging** (`lib/inbox-severity.mjs`, `sweepEventSeverity`). A
+  finished card nobody has opened used to read identically whether it landed
+  this morning or a week ago: a completion is routine by tier and its card is
+  excluded from the live sync (`shouldSyncThread` skips `completed`), so no
+  sweep ever re-scored it. Past 48 hours an unread completion escalates on the
+  reconcile tick, reason chip reading `unreviewed Nd`, and the fleet-wide sweep
+  is the door that reaches rows no live sync visits. Escalating never resolves:
+  the badge still counts the review request.
+- **Acceptance receipt** (`acceptCard`, `lib/card-acceptance.mjs`). Done in
+  Stelow certifies verified finished work, not accepted-and-shipped work — the
+  worker drives it after the host verifies in code, and nothing human-driven
+  reaches it. Human review happened afterwards and was a read. A Done card can
+  now carry an optional **acceptance receipt**: a person says they reviewed the
+  result and a stamp plus one trail comment records it, so a card a human looked
+  at and accepted stops reading identically to one nobody has opened. It is a
+  receipt, never a gate — no status, stage, or worker message moves, so it
+  creates no phantom wait, and it is only ever written by a person. Accepting
+  **satisfies the review request** the completion row was asking, so the badge
+  stops counting a card whose review just happened; the row survives in Resolved
+  history. The receipt is **a timestamp and nothing else**, deliberately: the
+  host SDK exposes no operator identity (`useRpc`, `bb.sdk.threads`,
+  `bb.storage` — none answer "who is signed in", and every `displayName` in it
+  belongs to a project or a preset), so a name field would be free text wearing
+  attribution's clothes. Only a `completed` card can be accepted; an unfinished
+  one is refused naming Done, and an archived one naming restore. The row shows
+  on all three card kinds, because Research and Explore finish too.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
@@ -2246,7 +2421,46 @@ one input, one artifact.*
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card
-  breakdown). Done means every gap has
+  breakdown). **Rework** is the number that says whether the loop is
+  converging (`lib/rework-metrics.mjs`): a finding that was closed in
+  one critique round and re-opened in a strictly later one. It was
+  unmeasurable before because the round boundary was destroyed on the
+  way out — `critique-gap-state` collected each critique artifact as its
+  own round and then joined them with newlines, so a finding fixed in
+  round 1 and re-opened in round 3 looked like one that was only ever
+  found once. A gap still open (`escalate`) is not rework, because it
+  was never closed; a finding new in a later round is counted apart as
+  `newAfterFirst`, because new work discovered later is a different
+  number. A card reviewed once reports `rate: null`, not 0 — one pass
+  cannot show convergence — and the line is printed only when something
+  came back. `--json` also carries `reviewerCoverage` (see the
+  contract-aware review entry above).
+  **The card and the flow strip read the same lines the CLI does.** The
+  card's "Gaps and rework" section carries both: the hint gains the reworked
+  count (a finding that came back is a fact about that section, and it is
+  the one metric that changes what a reader concludes from the list below
+  it), and the body carries the owner's full sentences for rework and for
+  reviewer coverage. The strip's Timing tab carries the same two lines over
+  the fleet, beside the wait breakdown. Every string is produced by the same `lib/` owner
+  the terminal calls, so the three surfaces cannot word a number
+  differently — the panel prints, it does not format. The card's hint is
+  the count and the body the full sentence, because a collapsed row already
+  carries five numbers and a long sentence among them reads as noise. The
+  strip's numbers
+  are read from the files a card left behind (`server/runtime/flow-coverage.ts`),
+  kept out of `flow-metrics.ts` because that function is pure over the
+  ledger and a workspace is not the ledger. Both lines are silent unless
+  there is something to say: no card reviewed twice means no rework line,
+  no cut artifact means no coverage line, and a permanent "0%" would be a
+  claim nobody measured.
+  **Every number a person reads about a card is formatted in one place**
+  (`lib/metrics-format.mjs`): the gap tally's shape, the escalation
+  rate, and the sentence. They were previously shaped in five files
+  with the rate derived twice under two different guards, so a card and
+  a fleet of the same card could disagree about whether a rate was a
+  measurement — `n/a` and `0%` are now decided once, and a card with no
+  findings has no rate rather than a false zero.
+  Done means every gap has
   a disposition and every escalation is executed — documented gaps
   are accepted debt for next cycle by definition, fixed gaps are
   auditable through the Decision section and trail. `verify --tests`

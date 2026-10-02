@@ -36,7 +36,14 @@ const managerShell = [
   "preset-manager-editor.tsx",
   "preset-manager-form-state.ts",
 ].map((file) => readFileSync(join(root, "components/settings", file), "utf8")).join("\n");
-const managerForm = readFileSync(join(root, "components/settings/preset-manager-form.tsx"), "utf8");
+// The manager form's body moved into its own module so the shell could gain
+// the environment-kind field without outgrowing its recorded ceiling. The rule
+// this pin encodes is "one shared picker block, reached by both surfaces", so
+// it follows the use to wherever it now lives rather than naming a file.
+const managerForm = [
+  "preset-manager-form.tsx",
+  "preset-manager-form-body.tsx",
+].map((file) => readFileSync(join(root, "components/settings", file), "utf8")).join("\n");
 const managerList = readFileSync(join(root, "components/settings/preset-manager-list.tsx"), "utf8");
 
 // BB-owned pickers live with the shared settings block, not the app shell.

@@ -31,14 +31,30 @@ details.stelow-border-running {
   animation: stelow-card-attention 2.4s ease-in-out infinite;
 }
 
+/* A stopped card is not a card waiting for an answer. Amber says "this needs
+   you"; red says "this failed", and the two ask for opposite actions — answer
+   versus retry. It pulses, because a card that stopped silently is the failure
+   mode this exists to make visible. */
+.stelow-live-surface.stelow-border-error {
+  border-color: hsl(0 72% 51% / 0.8) !important;
+  animation: stelow-card-error 1.8s ease-in-out infinite;
+}
+
+@keyframes stelow-card-error {
+  0%, 100% { border-color: hsl(0 72% 51% / 0.55); }
+  50% { border-color: hsl(0 72% 51% / 0.95); }
+}
+
 .stelow-detail-surface.stelow-border-running,
-.stelow-detail-surface.stelow-border-attention {
+.stelow-detail-surface.stelow-border-attention,
+.stelow-detail-surface.stelow-border-error {
   box-shadow: inset 0 0 0 1px currentColor;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stelow-live-surface.stelow-border-running,
   .stelow-live-surface.stelow-border-attention,
+  .stelow-live-surface.stelow-border-error,
   details.stelow-border-running {
     animation: none;
   }
@@ -49,6 +65,12 @@ details.stelow-border-running {
 
   .stelow-live-surface.stelow-border-attention {
     border-color: hsl(38 92% 50% / 0.85) !important;
+  }
+
+  /* Without the pulse a stopped card must still read as stopped, so the red
+     goes fully opaque rather than settling at the resting alpha. */
+  .stelow-live-surface.stelow-border-error {
+    border-color: hsl(0 72% 51% / 0.95) !important;
   }
 }
 

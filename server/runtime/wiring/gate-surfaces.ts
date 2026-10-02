@@ -27,6 +27,7 @@ import { createQuestionContractsGate } from "../question-contracts-gate.js";
 import { createCritiqueGapState } from "../critique-gap-state.js";
 import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader } from "../question-answers.js";
 import { createGapSummary } from "../gap-summary.js";
+import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
 import { createCardAdvance, createGateHandlers } from "../card-gates.js";
 import { createAuditTrailStatus } from "../card-audit-trail.js";
@@ -159,6 +160,10 @@ function buildGapSummary(
     critiqueGapState,
     isDoneStatus,
     isSkippedStatus,
+    readReviewFiles: (card) => readReviewFiles(
+      { bb: core.bb, cardWorkspace: core.cardWorkspace },
+      card,
+    ),
     now: core.now,
   });
 }

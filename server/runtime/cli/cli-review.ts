@@ -103,41 +103,39 @@ async function runReview(
   const permissionNote = permissionNoteFor(params);
   const environment = await reviewEnvironment(deps, card, params);
   if ("refusal" in environment) return environment.refusal;
-  const prompt = buildReviewPrompt({
+  const { prompt, excerpt } = buildReviewPrompt({
     cardName: card.display_name ?? card.name,
     request: card.prompt,
     contractLabel: subject.contractLabel,
     artifactContent: subject.artifactText,
     deterministicFailures: [],
     evidence: subject.evidence,
+    contract: subject.contract,
   });
-  const spawned = await spawnReview(
-    deps,
-    card,
-    prompt,
-    params,
-    permissionNote,
-    environment.environment,
-  );
+  const spawned = await spawnReview(deps, card, prompt, params, permissionNote, environment.environment);
   if ("refusal" in spawned) return spawned.refusal;
   deps.logCardComment(
     card.id,
     "card",
     card.id,
     "agent",
-    `Review requested — reviewer thread ${spawned.threadId} (${reviewPresetRow.name}).${permissionNote}`,
+    `Review requested — reviewer thread ${spawned.threadId} (${reviewPresetRow.name}).`
+    + `${excerptNote(excerpt)}${permissionNote}`,
   );
   const polled = await awaitReviewer(deps, spawned.threadId);
   if ("refusal" in polled) return polled.refusal;
-  return recordVerdict(
-    deps,
-    card,
-    spawned.threadId,
-    reviewPresetRow.name,
-    subject,
-    polled.output,
-    permissionNote,
-  );
+  return recordVerdict(deps, card, spawned.threadId, reviewPresetRow.name, subject, polled.output, permissionNote, excerpt);
+}
+
+/** One sentence naming what the reviewer saw, or nothing when it saw it all.
+ *
+ * A review of the contract's sections and a review of the document's opening
+ * are different reviews, and the reader of the verdict is the one who has to
+ * tell them apart — so the excerpt is recorded on the card, not merely applied. */
+function excerptNote(excerpt: { truncated: boolean; sentChars: number; originalChars: number; selected: string }): string {
+  if (!excerpt.truncated) return "";
+  const how = excerpt.selected === "contract" ? "the contract's sections" : "the document's opening";
+  return ` Excerpt: ${how}, ${excerpt.sentChars} of ${excerpt.originalChars} chars.`;
 }
 
 /** Spelled out wherever the reader needs it: the reviewer is read-only, and

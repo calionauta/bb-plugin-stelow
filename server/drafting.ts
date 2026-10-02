@@ -7,6 +7,7 @@ import {
   validateCardName,
   validateDraftOutput,
 } from "../lib/draft-burst.mjs";
+import { createTitleBurst } from "./title-burst.js";
 import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import { workerEnvironment } from "./workers.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -67,8 +68,6 @@ type DraftingDeps = {
 
 const DRAFT_POLL_MS = 5_000;
 const DRAFT_POLLS = 36;
-const TITLE_POLL_MS = 5_000;
-const TITLE_POLLS = 12;
 
 function parseDraftArgs(args: string[], contextCardId?: string): DraftRequest | CliResult | null {
   if (args[0] !== "draft") return null;
@@ -301,41 +300,6 @@ async function spawnTitle(
   }, "card-title");
 }
 
-async function suggestCardName(
-  deps: DraftingDeps,
-  sleep: (delayMs: number) => Promise<void>,
-  cardId: string,
-): Promise<void> {
-  try {
-    const card = deps.getCard(cardId);
-    if (!card) return;
-    const resolution = resolveGenerationPreset(deps, card);
-    const params = deps.presetParams(resolution.preset);
-    let thread: { id: string };
-    try {
-      thread = await spawnTitle(deps, card, params);
-    } catch {
-      return;
-    }
-    const completion = await waitForThread(deps, sleep, thread.id, TITLE_POLLS, TITLE_POLL_MS);
-    if (completion.status === "failed" || completion.status === "error" || completion.timedOut) {
-      await deps.stopThread(thread.id).catch(() => undefined);
-      return;
-    }
-    const output = await readOutput(deps, thread.id);
-    await deps.stopThread(thread.id).catch(() => undefined);
-    const validated = validateCardName(output);
-    const live = deps.getCard(cardId);
-    if (!validated.ok || !validated.name || !live || titleOf(live) !== titleOf(card)) return;
-    deps.db
-      .prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?")
-      .run(validated.name, deps.now(), cardId);
-    deps.publish("card-state", { cardId });
-  } catch {
-    // Card creation already succeeded; title suggestion is always advisory.
-  }
-}
-
 async function command(
   deps: DraftingDeps,
   sleep: (delayMs: number) => Promise<void>,
@@ -353,7 +317,24 @@ export function createDraftingServer(deps: DraftingDeps) {
   const sleep = deps.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
   return {
     command: (args: string[], threadId?: string) => command(deps, sleep, args, threadId),
-    suggestCardName: (cardId: string) => suggestCardName(deps, sleep, cardId),
+    suggestCardName: createTitleBurst({
+      getCard: (cardId) => deps.getCard(cardId),
+      isArchivedCard: (card) => deps.isArchivedCard(card as unknown as DraftingCard),
+      resolveGenerationPreset: (card) => resolveGenerationPreset(deps, card as DraftingCard),
+      presetParams: (preset) => deps.presetParams(preset as DraftingPreset),
+      spawnTitle: (card, params) => spawnTitle(deps, card as unknown as DraftingCard, params as unknown as DraftingParams),
+      stopThread: (id) => deps.stopThread(id),
+      comment: (id, body) => deps.comment(id, body),
+      publish: (event, payload) => deps.publish(event, payload),
+      readOutput: (id) => readOutput(deps, id),
+      waitForThread: (id, polls, pollMs) => waitForThread(deps, sleep, id, polls, pollMs),
+      writeTitle: (cardId, name) => {
+        deps.db
+          .prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?")
+          .run(name, deps.now(), cardId);
+      },
+      log: (message) => deps.bb.log.warn(message),
+    }),
     draftDoneComment: async (cardId: string): Promise<{ ok: boolean; draft: string | null; error: string | null }> => {
       const card = deps.getCard(cardId);
       if (!card) return { ok: false, draft: null, error: "Card not found." };

@@ -75,7 +75,13 @@ const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
-assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) => flowMetrics\(core\.db, input\)/, "RPC dispatch uses the measured flow runtime");
+assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) =>\s*\n?\s*buildFlowMetrics\(/, "RPC dispatch uses the measured flow runtime");
+// The handler enriches the pure ledger summary with the coverage readings, and
+// the coverage read is fail-soft. The dispatch must therefore go through the
+// module-scope builder rather than calling the pure function inline, which is
+// what the two-line form above asserts.
+assert.match(server, /async function buildFlowMetrics\(/, "the flow handler owns the coverage seam, not the pure ledger summary");
+assert.match(server, /\.catch\(\(\) => EMPTY_COVERAGE\)/, "a workspace the strip cannot read costs it a line, not the whole panel");
 assert.match(server, /leadMs: flow\.leadMs/, "detail reuses the one helper for lead time");
 assert.match(server, /cycleMs: flow\.cycleMs/, "detail reuses the one helper for cycle time");
 const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
@@ -133,8 +139,10 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 // from attention; empty attention reads one calm line, never an empty box.
 const attentionContract = /attention: z\s*\.array\([\s\S]*?reason: z\s*\.enum\(\["stuck",\s*"review"\]\)/;
 assert.match(server, attentionContract, "attention items are contracted with a closed reason set");
-assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");
-assert.match(flowStrip, /useState<FlowTab>\("tempo"\)/, "tempo is the default tab, not a second stacked section");
+assert.match(flowStrip, /type FlowTab = "timing" \| "attention"/, "timing and attention share one closed tab type");
+assert.match(flowStrip, /useState<FlowTab>\("timing"\)/, "timing is the default tab, not a second stacked section");
+assert.match(flowStrip, /entry === "timing"\s*\n\s*\? "Timing"/, "tab labels are English, matching the rest of the card UI");
+assert.doesNotMatch(flowStrip, /Tempo|Atenção/, "no non-English UI copy survives in the strip");
 assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
 assert.match(
   flowStrip,

@@ -37,6 +37,8 @@ export const NO_GAPS = {
   auditGapScopes: [],
   critiqueText: "",
   totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+  // No critiqueRounds: a card with no report has not been reviewed once, and
+  // the rework metric must not read that as a clean single pass.
 };
 export const WORKSPACE = "/w";
 
@@ -212,6 +214,10 @@ function hostDeps(calls, options) {
     cardStageSlug: async (target) => options.stage ?? target.stage,
     docDepths: async () => options.docDepths ?? [],
     passingReviewCovers: async () => options.reviewCovers ?? false,
+    // The review records the metrics readout counts, so the fake answers the
+    // same question the coverage gate is asked. A metrics fake that could not
+    // would make the readout untestable and the two surfaces free to disagree.
+    reviewFilesFor: async () => options.reviewFiles ?? [],
     pendingQuestions: async () => options.pendingQuestions ?? [],
     pendingAsks: async () => options.pendingAsks ?? [],
     openExpiredQuestionIds: () => options.expiredQuestionIds ?? [],

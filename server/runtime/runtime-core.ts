@@ -21,9 +21,11 @@ import { startRuntimeServices } from "./lifecycle-startup.js";
 import { createCardLedger, randomId } from "./card-ledger.js";
 import { createReadRuntime } from "./read-runtime.js";
 import {
+  createBriefingSurface,
   createDraftRuntime,
   createGatePreReviewRuntime,
   createWorkerRuntime,
+  type WorkerRuntimeDeps,
 } from "./runtime-workers.js";
 import { loadBoard, boardFromRoot } from "./board-read.js";
 import { roundRelPath } from "./card-seams.js";
@@ -71,8 +73,7 @@ export function createRuntimeCore(bb: BbPluginApi) {
     pluginUpdates,
     ...services,
     ...workers,
-    drafting: createDraftRuntime({ ...deps, ...workers }),
-    requestGatePreReview: createGatePreReviewRuntime({ ...deps, ...workers }),
+    ...createSpawnSurfaces(deps, workers),
     ...createReadRuntime({
       ...deps,
       workerEnvironmentOf: workers.workers.workerEnvironmentOf,
@@ -90,6 +91,24 @@ export function createRuntimeCore(bb: BbPluginApi) {
     ensureProjectArtifacts,
     runHelper,
     projectRoot,
+  };
+}
+
+/**
+ * The three surfaces that spawn their own threads: drafts, briefings and gate
+ * pre-reviews. They share an environment builder and a disposable spawner, so
+ * they are constructed together rather than three times inline — the inline
+ * version is what pushed the composition root past its function budget.
+ */
+function createSpawnSurfaces(
+  deps: WorkerRuntimeDeps,
+  workers: ReturnType<typeof createWorkerRuntime>,
+) {
+  const shared = { ...deps, ...workers };
+  return {
+    drafting: createDraftRuntime(shared),
+    briefings: createBriefingSurface(shared),
+    requestGatePreReview: createGatePreReviewRuntime(shared),
   };
 }
 

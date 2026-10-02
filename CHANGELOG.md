@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.1...v0.65.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* keep the publication wiring inside the line budget ([#261](https://github.com/calionauta/bb-plugin-stelow/issues/261)) ([b8a8091](https://github.com/calionauta/bb-plugin-stelow/commit/b8a80919d17c1ce670d8ca35f702d9c537df0a9f))
+
+## [0.65.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.0...v0.65.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* restore the test wiring the 0.65.0 release merge dropped ([#258](https://github.com/calionauta/bb-plugin-stelow/issues/258)) ([01c86d4](https://github.com/calionauta/bb-plugin-stelow/commit/01c86d449f4c8ffa3c0add40a94f5dcedd357c42))
+
+## [0.65.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.64.0...v0.65.0) (2026-10-02)
+
+
+### Features
+
+* a preset's worktree setting is authorable and is the composer's default ([#249](https://github.com/calionauta/bb-plugin-stelow/issues/249)) ([fedce5b](https://github.com/calionauta/bb-plugin-stelow/commit/fedce5b1d69ae591a1b4ef4d8da212138566c9e9))
+
+
+### Bug Fixes
+
+* let a worker see that a question is already open ([#256](https://github.com/calionauta/bb-plugin-stelow/issues/256)) ([3ad35b6](https://github.com/calionauta/bb-plugin-stelow/commit/3ad35b68c9e86d8d008d7c3f6231bcc236642b96))
+* refuse placeholder questions before they reach a human ([#253](https://github.com/calionauta/bb-plugin-stelow/issues/253)) ([b76c7ee](https://github.com/calionauta/bb-plugin-stelow/commit/b76c7ee37a0d413601645b269963d3154fee7d65))
+* the card-title burst leaves a cause-naming record (card_e3u00eb4) ([#251](https://github.com/calionauta/bb-plugin-stelow/issues/251)) ([ecbc741](https://github.com/calionauta/bb-plugin-stelow/commit/ecbc74141efb8aadbdb193053b95e96b692dbf08))
+* the pending chip says what it recorded, not what it guessed ([#252](https://github.com/calionauta/bb-plugin-stelow/issues/252)) ([c421e62](https://github.com/calionauta/bb-plugin-stelow/commit/c421e625cc1e756f809a0aebce59609a9b1cbd6b))
+* three conflict markers reached master through PR [#249](https://github.com/calionauta/bb-plugin-stelow/issues/249) ([#255](https://github.com/calionauta/bb-plugin-stelow/issues/255)) ([1e2348d](https://github.com/calionauta/bb-plugin-stelow/commit/1e2348ded03ef946ea4deac00287e14bb8a33c19))
+* wrap an overlong source line that broke the shape gate ([#254](https://github.com/calionauta/bb-plugin-stelow/issues/254)) ([2acdfce](https://github.com/calionauta/bb-plugin-stelow/commit/2acdfcef2edde571b1279531275ead9991bb2091))
+
+## [0.64.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.63.0...v0.64.0) (2026-10-02)
+
+
+### Features
+
+* rework is a number, and the card can read it ([#247](https://github.com/calionauta/bb-plugin-stelow/issues/247)) ([3c2295c](https://github.com/calionauta/bb-plugin-stelow/commit/3c2295cd2b22696f05b321d9dc565edccb7e8040))
+
+## [0.63.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.62.0...v0.63.0) (2026-10-02)
+
+
+### Features
+
+* a worktree is only reclaimable once the work is already integrated ([#243](https://github.com/calionauta/bb-plugin-stelow/issues/243)) ([110cfb2](https://github.com/calionauta/bb-plugin-stelow/commit/110cfb29ea511e9fd0c36e8d047bf13b97264012))
+
+## [0.62.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.2...v0.62.0) (2026-10-02)
+
+
+### Features
+
+* a finished card says whether it still owes the repository something ([#239](https://github.com/calionauta/bb-plugin-stelow/issues/239)) ([afbe4e1](https://github.com/calionauta/bb-plugin-stelow/commit/afbe4e13977f2baa3bf189b3c3424ccf1debd4f4))
+* the human loop, from waiting to looking ([#244](https://github.com/calionauta/bb-plugin-stelow/issues/244)) ([d1c94d6](https://github.com/calionauta/bb-plugin-stelow/commit/d1c94d670ee5e01bb6b43de822875683916dc7e3))
+
+
+### Bug Fixes
+
+* remember last project in New issue and contain mobile modal overflow ([#237](https://github.com/calionauta/bb-plugin-stelow/issues/237)) ([bd553bb](https://github.com/calionauta/bb-plugin-stelow/commit/bd553bba7dbf72caf1cea07edeae709afd504384))
+
 ## [0.61.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.1...v0.61.2) (2026-10-01)
 
 
