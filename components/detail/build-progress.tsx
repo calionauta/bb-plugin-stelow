@@ -4,16 +4,18 @@ import { groupCardChecks, groupState, isExecutionUntracked } from "../../lib/car
 import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { statusGlyph, statusTone } from "../../lib/detail-presentation.mjs";
-import { isDoneStatus, trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
-import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
+import { trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
+import { summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
 import { scopeEmptyState } from "../../lib/scope-xray-presentation.mjs";
 import { TEXT_META } from "../../lib/design-tokens";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
-import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
+import { ScopeProgressTrack } from "../dashboard/build-status-pills";
 import { CurrentStagePill } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
 import { FileOccupancy } from "./file-occupancy";
+import { BuildGaps, type GapSummary } from "./progress/build-gaps";
+import { ProgressRegion } from "./progress/progress-region";
 import { ScopeXray } from "./scope-xray";
 import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
@@ -22,11 +24,6 @@ import type { rpcContract } from "../../server";
 type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-type GapSummary = {
-  matched: boolean; total: number; fixed: number; documented: number; escalated: number;
-  items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
-  pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
-};
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
 
 function useGapSummary(cardId: string): GapSummary | null {
@@ -78,105 +75,6 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
   );
 }
 
-/**
- * How a gap reads once the critique is over. A disposition the registry
- * recorded is a fact about the finding, so it is the primary mark; the rework
- * scope only exists for an escalation, and is what a reader is waiting on when
- * one is still open.
- *
- * `unknown` is a real state, not a defensive branch: the registry validator
- * flags a row with a missing or unrecognised `resolution:` as a failure, but a
- * failure is a REPORT and does not stop the card from rendering it. Indexing a
- * record that lacks the key used to throw and take the whole open card down over
- * a typo in one row of a YAML file.
- */
-const GAP_RESOLUTION: Record<string, { label: string; dot: string; pill: string }> = {
-  fixed: { label: "Fixed", dot: "bg-emerald-500", pill: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-  documented: { label: "Documented", dot: "bg-muted-foreground/60", pill: "bg-muted text-muted-foreground" },
-  escalate: { label: "Escalated", dot: "bg-amber-500", pill: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
-  unknown: { label: "Unclassified", dot: "bg-amber-500/60", pill: "bg-muted text-muted-foreground" },
-};
-
-function GapItems({ items }: { items: GapSummary["items"] }) {
-  return (
-    <ul className="space-y-1 pt-2">
-      {items.map((item) => {
-        const resolution = GAP_RESOLUTION[item.resolution] ?? GAP_RESOLUTION.unknown;
-        const scopeDone = item.scopeStatus !== null && isDoneStatus(item.scopeStatus);
-        return (
-          <li key={item.description} className="flex items-start gap-2 text-xs">
-            <span
-              aria-hidden
-              className={`mt-1.5 size-2 shrink-0 rounded-full ${scopeDone ? "bg-emerald-500" : resolution.dot}`}
-            />
-            <span className="flex-1">{item.description}</span>
-            {item.scopeStatus ? (
-              <Pill tone={statusTone(item.scopeStatus)}>
-                <span className="mr-1">{statusGlyph(item.scopeStatus)}</span>
-                {statusLabel(item.scopeStatus)}
-              </Pill>
-            ) : (
-              <Pill tone={resolution.pill}>{resolution.label}</Pill>
-            )}
-            {item.resolution === "escalate" && !item.scopeStatus ? (
-              <span className="text-amber-700 dark:text-amber-300">no scope yet</span>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/**
- * Gaps and rework: a section like any other, not a free-standing panel.
- *
- * It was `rounded-lg border p-4` with its own uppercase heading — a different
- * box on a card of identical boxes, on a card whose visual hierarchy is
- * precisely "one hero, then sections of one shape". The list of gap items is
- * history — gaps a past run recorded — so it starts closed and its tally lives
- * in the header, which is the same contract every other section on the card
- * already follows.
- *
- * The list carries every gap the registry named, not only the escalated ones.
- * Gating it on `escalated > 0` made a critique of two documented gaps render a
- * header reading "2 gaps" above an empty section: the tally counted findings,
- * the body listed rework, and a reader could not reconcile them.
- */
-function BuildGaps({ summary }: { summary: GapSummary | null }) {
-  const view = gapSummaryPresentation(summary);
-  if (!summary?.matched || !view) return null;
-  const lead = formatGapMs(summary.leadMs);
-  const cycle = formatGapMs(summary.cycleMs);
-  const tally = [
-    `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
-    `${summary.fixed} fixed`,
-    `${summary.escalated} escalated`,
-    lead ? `lead ${lead}` : null,
-    cycle ? `cycle ${cycle}` : null,
-  ].filter(Boolean).join(" · ");
-  return (
-    <DisclosureSection
-      title="Gaps and rework"
-      subtitle="what the critique found"
-      hint={tally}
-      defaultOpen={summary.escalated > 0}
-    >
-      {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
-      {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
-      {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
-    </DisclosureSection>
-  );
-}
-
-function formatGapMs(ms: number | null): string | null {
-  if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return hours % 24 === 0 ? `${hours / 24}d` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 function ScopeSyncWarning({ card, detail }: { card: BuildCard; detail: BuildDetail }) {
   const copy = scopeSyncNotice(detail.scopeSync, {
@@ -187,8 +85,31 @@ function ScopeSyncWarning({ card, detail }: { card: BuildCard; detail: BuildDeta
 }
 
 function MentionedFiles({ card, detail, onViewFile }: { card: BuildCard; detail: BuildDetail; onViewFile: (file: ViewerFile) => void }) {
-  if (detail.mentionedFiles.length === 0) return null;
-  return <div className="space-y-1 border-t pt-3"><span className="text-xs font-medium text-muted-foreground">Files named in your request ({detail.mentionedFiles.length}):</span><p className="text-[11px] text-muted-foreground">Paths your request spells out that exist in this workspace. Nothing is inferred from a file name.</p><div className="flex flex-wrap gap-1">{detail.mentionedFiles.map((file) => <button key={file.path} onClick={() => onViewFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail.fileEnvironmentId, file.relPath, file.hostId, file.absolutePath) })} className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted" title={`Review ${file.display}`}><span>📄</span><span>{file.display}</span></button>)}</div></div>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {detail.mentionedFiles.map((file) => (
+        <button
+          key={file.path}
+          onClick={() => onViewFile({
+            display: file.display,
+            path: file.absolutePath,
+            target: fileLinkTarget(
+              card.workspaceKind === "exploratory",
+              detail.fileEnvironmentId,
+              file.relPath,
+              file.hostId,
+              file.absolutePath,
+            ),
+          })}
+          className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
+          title={`Review ${file.display}`}
+        >
+          <span aria-hidden>📄</span>
+          <span>{file.display}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 type BuildProgressProps = {
@@ -273,12 +194,32 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
       <ProgressDisclosure card={card} archivedPresentation={archivedPresentation} artifactTotal={artifactTotal} defaultOpen={defaultOpen} onOpenArtifacts={onOpenArtifacts} progress={progress}>
         {card.stage === "select" && !archivedPresentation ? <p className="text-xs text-muted-foreground">Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.</p> : null}
         <ScopeSyncWarning card={card} detail={detail} />
-        <CardChecks card={card} detail={detail} gaps={gaps} />
-        {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} /> : null}
-        {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
-        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
-        <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
-        <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
+        <ProgressRegion title="Checks" hint="what this card still owes">
+          <CardChecks card={card} detail={detail} gaps={gaps} />
+        </ProgressRegion>
+        {detail.fileOccupancy ? (
+          <ProgressRegion title="File claims" hint="files this card holds, and files it waits on">
+            <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} />
+          </ProgressRegion>
+        ) : null}
+        {detail.scopeXray ? (
+          <ProgressRegion title="Approved scope map" hint="what the card agreed to do">
+            <ScopeXray xray={detail.scopeXray} />
+          </ProgressRegion>
+        ) : null}
+        {detail.scopes.length > 0 ? (
+          <ProgressRegion title="Scopes" hint="each unit of work, in dependency order">
+            <ScopesProgress detail={detail} />
+          </ProgressRegion>
+        ) : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
+        <ProgressRegion title="Stage" hint="where the card is, and what each stage produces">
+          <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
+        </ProgressRegion>
+        {detail.mentionedFiles.length > 0 ? (
+          <ProgressRegion title="Files named in your request" hint="spelled out by you, never inferred">
+            <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
+          </ProgressRegion>
+        ) : null}
       </ProgressDisclosure>
       <BuildGaps summary={gaps} />
     </>
