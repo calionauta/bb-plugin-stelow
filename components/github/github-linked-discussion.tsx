@@ -38,38 +38,35 @@ export function LinkedDiscussionSection({ cardId }: { cardId: string }) {
   useEffect(() => { void loadDiscussion(); }, [loadDiscussion]);
   useDebouncedRealtime(["github-discussion"], () => { void loadDiscussion(); });
 
+  const createIssue = useCallback(async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const link = await rpc.call("createLinkedGithubIssue", { cardId, repo: createRepo });
+      if (link.ok) {
+        toast.success(`GitHub issue #${link.number} created and linked.`);
+        await loadDiscussion();
+      } else {
+        toast.error(link.error ?? "GitHub issue creation failed.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "GitHub issue creation failed.");
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, createRepo, cardId, loadDiscussion, rpc]);
+
   if (!discussion) return null;
   if (!discussion.linked) {
-    if (!discussion.canCreate || discussion.repos.length === 0) return null;
-    const selected = createRepo ?? discussion.repos[0] ?? null;
-    const create = async () => {
-      if (creating) return;
-      setCreating(true);
-      try {
-        const link = await rpc.call("createLinkedGithubIssue", { cardId, repo: createRepo });
-        if (link.ok) {
-          toast.success(`GitHub issue #${link.number} created and linked.`);
-          await loadDiscussion();
-        } else {
-          toast.error(link.error ?? "GitHub issue creation failed.");
-        }
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "GitHub issue creation failed.");
-      } finally {
-        setCreating(false);
-      }
-    };
     return (
-      <DisclosureSection title="Linked discussion" subtitle="link it">
-        <p className="text-xs text-muted-foreground">No linked issue yet — link one to mirror its thread here.</p>
-        {discussion.repos.length > 1 ? (
-          <select value={selected ?? ""} onChange={(event) => setCreateRepo(event.target.value || null)} className="h-10 cursor-pointer rounded-md border bg-background px-2 text-sm" aria-label="GitHub repository for the new issue">
-            <option value="">Pick a repository</option>
-            {discussion.repos.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-        ) : null}
-        <div><Button size="sm" disabled={creating} onClick={() => void create()}>{creating ? "Creating…" : `Create issue${discussion.repos.length === 1 ? ` in ${discussion.repos[0]}` : ""}`}</Button></div>
-      </DisclosureSection>
+      <UnlinkedDiscussionCard
+        canCreate={discussion.canCreate}
+        repos={discussion.repos}
+        creating={creating}
+        createRepo={createRepo}
+        onRepoChange={setCreateRepo}
+        onCreate={createIssue}
+      />
     );
   }
 
@@ -95,18 +92,20 @@ export function LinkedDiscussionSection({ cardId }: { cardId: string }) {
   };
 
   return (
-    <DisclosureSection title="Linked discussion" hint={discussion.comments.length ? `${discussion.comments.length} · mirror` : "mirror"}>
+    <DisclosureSection
+      title="Linked discussion"
+      // The linked issue's identity is the one fact this section owns, so it
+      // leads. It used to be a line inside the worker section — a different
+      // component, two scroll positions up — while the mirror sat here saying
+      // "Open on GitHub" with no name or number, so a reader could see that a
+      // link existed without ever learning which issue it was.
+      subtitle={discussion.repo && discussion.number ? `mirrored from ${discussion.repo}#${discussion.number}` : "link it"}
+      hint={discussion.comments.length ? `${discussion.comments.length} · mirror` : "mirror"}
+    >
       <div className="space-y-2">
         {discussion.url ? <div><UrlLink href={discussion.url} className="text-xs font-medium text-primary underline-offset-4 hover:underline">Open on GitHub ↗</UrlLink></div> : null}
         {discussion.comments.length ? discussion.comments.map((entry, index) => (
-          <div key={`${entry.author}-${entry.createdAt}-${index}`} className="rounded-lg border border-border bg-muted/30 p-2.5">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{entry.author || "Someone"}</span>
-              <span title={new Date(entry.createdAt).toLocaleString()}>{new Date(entry.createdAt).toLocaleString()}</span>
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">mirror</span>
-            </div>
-            <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
-          </div>
+          <MirroredComment key={`${entry.author}-${entry.createdAt}-${index}`} entry={entry} />
         )) : <p className="text-xs text-muted-foreground">No comments yet.</p>}
         {confirming ? (
           <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-2.5">
@@ -128,8 +127,83 @@ export function LinkedDiscussionSection({ cardId }: { cardId: string }) {
             <div><Button size="sm" variant="outline" disabled={!draft.trim() || posting} onClick={() => { setPostError(null); setConfirming(true); }}>Post to issue</Button></div>
           </div>
         )}
-        <p className="text-[11px] text-muted-foreground">Read-only mirror of the issue thread — external text is never fed to workers.</p>
+        <p className="text-xs text-muted-foreground">Read-only mirror of the issue thread — external text is never fed to workers.</p>
       </div>
     </DisclosureSection>
+  );
+}
+
+/**
+ * The unlinked half: create an issue and link it.
+ *
+ * Extracted from `LinkedDiscussionSection`, which was one function answering
+ * two unrelated questions — "is there a mirror to show" and "would you like
+ * to start one" — with their own state and their own lifecycle. The file
+ * budget gate caught this after the merge scope pushed the file past its
+ * recorded baseline, and the split is by question rather than by line count:
+ * creation is an affordance, the mirror is a reader, and neither needs the
+ * other's state.
+ */
+function UnlinkedDiscussionCard({
+  canCreate,
+  repos,
+  creating,
+  createRepo,
+  onRepoChange,
+  onCreate,
+}: {
+  canCreate: boolean;
+  repos: string[];
+  creating: boolean;
+  createRepo: string | null;
+  onRepoChange: (repo: string | null) => void;
+  onCreate: () => Promise<void>;
+}) {
+  if (!canCreate || repos.length === 0) return null;
+  const selected = createRepo ?? repos[0] ?? null;
+  return (
+    // Unlinked, this is an affordance rather than information: the import path
+    // already supplies the common case where a card arrives linked, so
+    // "create an issue" is something a reader goes looking for, not something
+    // that should hold a place in the primary reading path. It stays a real
+    // section — findable beats hidden — but it starts closed and names what it
+    // is for.
+    <DisclosureSection title="Linked discussion" subtitle="link an issue to mirror it here">
+      <p className="text-xs text-muted-foreground">
+        No linked issue yet. Cards imported from GitHub arrive linked; this is here when you want to
+        link one by hand.
+      </p>
+      {repos.length > 1 ? (
+        <select
+          value={selected ?? ""}
+          onChange={(event) => onRepoChange(event.target.value || null)}
+          className="h-10 cursor-pointer rounded-md border bg-background px-2 text-sm"
+          aria-label="GitHub repository for the new issue"
+        >
+          <option value="">Pick a repository</option>
+          {repos.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      ) : null}
+      <div>
+        <Button size="sm" disabled={creating} onClick={() => void onCreate()}>
+          {creating ? "Creating…" : `Create issue${repos.length === 1 ? ` in ${repos[0]}` : ""}`}
+        </Button>
+      </div>
+    </DisclosureSection>
+  );
+}
+
+/** One mirrored GitHub comment: who said it, when, and the body. */
+function MirroredComment({ entry }: { entry: LinkedDiscussionSnapshot["comments"][number] }) {
+  const when = new Date(entry.createdAt).toLocaleString();
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-2.5">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{entry.author || "Someone"}</span>
+        <span title={when}>{when}</span>
+        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">mirror</span>
+      </div>
+      <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
+    </div>
   );
 }

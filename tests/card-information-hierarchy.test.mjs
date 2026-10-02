@@ -46,6 +46,15 @@ const FACT_HOMES = [
     because: "a stage line above the hero, or beside it, competes with the hero for the reader's first glance",
   },
   {
+    fact: "which GitHub issue this card is linked to",
+    decidedIn: "components/github/github-linked-discussion.tsx",
+    evidence: /mirrored from \$\{discussion\.repo\}#\$\{discussion\.number\}/,
+    because: "the linked issue's identity belongs to the section that owns GitHub linkage. It was a line "
+      + "inside the worker section — a different component, two scroll positions up — while the mirror "
+      + "said 'Open on GitHub' and never named the issue, so a reader could see that a link existed "
+      + "without learning which issue it was",
+  },
+  {
     fact: "how many scopes are done",
     decidedIn: "components/detail/build-progress.tsx",
     evidence: /\$\{progress\.scopes\.done\}\/\$\{progress\.scopes\.total\} scopes/,
