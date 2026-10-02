@@ -101,6 +101,9 @@ export function PublicationBody(props: PublicationRenderState) {
         publishesToDefaultBranch={facts.publishesToDefaultBranch}
         defaultBranch={facts.publicationDefaultBranch}
       />
+      {publication.relevanceNote ? (
+        <p className="text-muted-foreground">{publication.relevanceNote}</p>
+      ) : null}
       <PublicationIntegration
         publication={publication}
         facts={facts}
@@ -137,9 +140,14 @@ function PublicationIntegration(props: {
   reloadPublication: () => Promise<void>;
 }) {
   const { publication, facts } = props;
+  // A card whose deliverable is a finding has nothing to integrate past its
+  // commit, so the local squash and the pull-request block are not rendered —
+  // the note above already says why. Hiding is not disabling: a disabled
+  // button invites the reader to work out which policy refused them.
+  const delivers = publication.relevanceNote === null;
   return (
     <>
-      {!facts.publishesToDefaultBranch ? (
+      {delivers && !facts.publishesToDefaultBranch ? (
         <LocalSquashDisclosure
           publication={publication}
           open={props.advancedGitOpen}
@@ -147,12 +155,14 @@ function PublicationIntegration(props: {
           setAction={props.setAction}
         />
       ) : null}
-      <PullRequestPanel
-        publication={publication}
-        mergeMethod={props.mergeMethod}
-        setMergeMethod={props.setMergeMethod}
-        setAction={props.setAction}
-      />
+      {delivers ? (
+        <PullRequestPanel
+          publication={publication}
+          mergeMethod={props.mergeMethod}
+          setMergeMethod={props.setMergeMethod}
+          setAction={props.setAction}
+        />
+      ) : null}
       <PublicationHistory events={publication.events} openCommit={props.openCommit} />
       {publication.pullRequest?.state === "merged" ? (
         <WorktreeCleanupSuggestion
@@ -201,6 +211,7 @@ function WorkspaceBody(props: {
         />
       ) : facts.savedSha ? (
         <SavedWorkspace
+          publication={publication}
           facts={facts}
           pushTerminals={props.pushTerminals}
           pushTerminalsLoading={props.pushTerminalsLoading}
@@ -218,6 +229,7 @@ function WorkspaceBody(props: {
  * shells that ran, and the GitHub links. One block because it is one state.
  */
 function SavedWorkspace(props: {
+  publication: PublicationStatus;
   facts: ReturnType<typeof sectionFacts>;
   pushTerminals: PushShellList | null;
   pushTerminalsLoading: boolean;
@@ -225,7 +237,7 @@ function SavedWorkspace(props: {
   setAction: (action: PublicationAction | null) => void;
   openCommit: (sha: string) => void;
 }) {
-  const { facts } = props;
+  const { facts, publication } = props;
   return (
     <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-950 dark:text-emerald-100">
       <SavedCommitSummary
@@ -236,7 +248,9 @@ function SavedWorkspace(props: {
         pushUnknown={facts.pushUnknown}
         openCommit={props.openCommit}
       />
-      <BranchPublishStep pushed={facts.pushed} behind={facts.behind} setAction={props.setAction} />
+      {publication.relevanceNote === null ? (
+        <BranchPublishStep pushed={facts.pushed} behind={facts.behind} setAction={props.setAction} />
+      ) : null}
       <PushShells
         terminals={props.pushTerminals}
         loading={props.pushTerminalsLoading}

@@ -147,6 +147,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   would turn a scroll into a spawn. The chip is amber, matching
   `AttentionChip`: both mean this card wants a person, and a reader who learned
   one tone should not have to learn a second for the same call to action.
+- **Publication actions follow the card, not just the git state**
+  (`publishRelevanceNote`). The panel decided what to offer from the checkout
+  alone, so a card whose entire deliverable was a written finding reached Done
+  and was offered Commit, Push, Squash and Merge PR. It now reads the card's
+  own `kind` and `intent`: a build card that is not an investigation keeps
+  every delivery action, and an investigation — or any research or explore
+  card — keeps only Commit, with one sentence saying why. The local squash,
+  the publish step and the whole pull-request block are not rendered for them.
+  Hiding rather than disabling is deliberate: a greyed button invites a reader
+  to work out which policy refused them, and the note already answers it.
+  A commit stays available to a finding because a finding often arrives with
+  the fix that came out of it, and that fix is real work.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
