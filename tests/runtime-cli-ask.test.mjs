@@ -12,11 +12,11 @@ test("ask refuses a thread that owns no card", async () => {
     "--thread",
     "thr_other",
     "--question",
-    "Q?",
+    "Which slice ships first?",
     "--option",
-    "A",
+    "First slice ships first",
     "--option",
-    "B",
+    "Second slice ships first",
   ]);
   assert.equal(result.exitCode, 2);
   assert.match(result.stderr, /No card owns thread "thr_other"/);
@@ -34,7 +34,7 @@ test("ask refuses --locale: question content is English-only", async () => {
     "--thread",
     "thr_worker",
     "--question",
-    "Q?",
+    "Which slice ships first?",
     "--locale",
     "pt",
   ]);
@@ -52,7 +52,7 @@ test("ask refuses an unknown --tag by name", async () => {
     "--tag",
     "merge",
     "--question",
-    "Q?",
+    "Which slice ships first?",
   ]);
   assert.equal(result.exitCode, 2);
   assert.match(result.stderr, /--tag split/);
@@ -68,15 +68,44 @@ test("ask with an open question refuses before the human is pinged again", async
     "--thread",
     "thr_worker",
     "--question",
-    "Q?",
+    "Which slice ships first?",
     "--option",
-    "A",
+    "First slice ships first",
     "--option",
-    "B",
+    "Second slice ships first",
   ]);
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /already open|pending/i);
   assert.deepEqual(callsNamed(calls, "requestInput"), []);
+});
+
+test("a placeholder probe never reaches the human", async () => {
+  // Regression pin for card_48uuhus1: a worker probing "is a question already
+  // pending?" ran --question "ping" --option "a" --option "b", and the host
+  // interrupted a human with a nonsense form. The ask never fired.
+  const { invoke, calls } = cliHarness();
+  const result = await invoke([
+    "ask",
+    "--thread",
+    "thr_worker",
+    "--question",
+    "ping",
+    "--option",
+    "a",
+    "--option",
+    "b",
+  ]);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr, /placeholder/);
+  assert.deepEqual(
+    callsNamed(calls, "requestInput"),
+    [],
+    "a probe must never open an interaction",
+  );
+  const persisted = calls.find(
+    ([entry, sql]) => entry === "run" && sql.includes("expired_questions"),
+  );
+  assert.equal(persisted, undefined, "a refused ask is not persisted as answerable");
 });
 
 test("an unanswered ask is persisted as an expired row, never dropped", async () => {
@@ -88,11 +117,11 @@ test("an unanswered ask is persisted as an expired row, never dropped", async ()
     "--thread",
     "thr_worker",
     "--question",
-    "Q?",
+    "Which slice ships first?",
     "--option",
-    "A",
+    "First slice ships first",
     "--option",
-    "B",
+    "Second slice ships first",
   ]);
   assert.equal(result.exitCode, 1);
   assert.match(result.stdout, /STOP and wait/);
@@ -100,7 +129,7 @@ test("an unanswered ask is persisted as an expired row, never dropped", async ()
     ([entry, sql]) => entry === "run" && sql.includes("expired_questions"),
   );
   assert.ok(expired, "the question stays answerable on the card");
-  assert.equal(expired[2][3], "Q?");
+  assert.equal(expired[2][3], "Which slice ships first?");
   assert.deepEqual(
     callsNamed(calls, "updateCard").map(([, , fields]) => fields.activity),
     ["awaiting-answer", "running", "awaiting-answer"],
@@ -182,9 +211,9 @@ test("a standard ask at the split point carries the consequence disclosure", asy
     "--question",
     "Split this card?",
     "--option",
-    "A",
+    "First slice ships first",
     "--option",
-    "B",
+    "Second slice ships first",
   ]);
   // The rendered question travels in the interaction payload, so the
   // disclosure is observable where the human reads it.
