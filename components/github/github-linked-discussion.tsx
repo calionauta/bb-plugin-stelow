@@ -159,7 +159,12 @@ function UnlinkedDiscussionCard({
   onRepoChange: (repo: string | null) => void;
   onCreate: () => Promise<void>;
 }) {
-  if (!canCreate || repos.length === 0) return null;
+  // A card with no GitHub access still renders this section — one that says
+  // why there is nothing to link. Returning null made the affordance "closed
+  // section, or nowhere": a card the user could not link showed nothing at all,
+  // so a section they could not see was a section they could not want. Now the
+  // shape is always present and never promises an action it cannot offer.
+  const noRepos = !canCreate || repos.length === 0;
   const selected = createRepo ?? repos[0] ?? null;
   return (
     // Unlinked, this is an affordance rather than information: the import path
@@ -169,6 +174,46 @@ function UnlinkedDiscussionCard({
     // section — findable beats hidden — but it starts closed and names what it
     // is for.
     <DisclosureSection title="Linked discussion" subtitle="link an issue to mirror it here">
+      {noRepos
+        ? (
+          <NoGitHubAccess />
+        )
+        : (
+          <CreateIssueForm
+            repos={repos}
+            selected={selected}
+            creating={creating}
+            onRepoChange={onRepoChange}
+            onCreate={onCreate}
+          />
+        )}
+    </DisclosureSection>
+  );
+}
+
+/**
+ * The unlinked card that CAN create: pick a repository, create the issue.
+ *
+ * Its own component so the section above reads as "empty state or form" rather
+ * than as one function holding two answers. The prompt asks when a repo list
+ * is longer than one, so the select appears only when there is a choice to
+ * make.
+ */
+function CreateIssueForm({
+  repos,
+  selected,
+  creating,
+  onRepoChange,
+  onCreate,
+}: {
+  repos: string[];
+  selected: string | null;
+  creating: boolean;
+  onRepoChange: (repo: string | null) => void;
+  onCreate: () => Promise<void>;
+}) {
+  return (
+    <>
       <p className="text-xs text-muted-foreground">
         No linked issue yet. Cards imported from GitHub arrive linked; this is here when you want to
         link one by hand.
@@ -189,7 +234,26 @@ function UnlinkedDiscussionCard({
           {creating ? "Creating…" : `Create issue${repos.length === 1 ? ` in ${repos[0]}` : ""}`}
         </Button>
       </div>
-    </DisclosureSection>
+    </>
+  );
+}
+
+/**
+ * The unlinked card with no GitHub access: why there is nothing to link, and
+ * where to go instead.
+ *
+ * Its own component because it is a different ANSWER from the create form, not
+ * a shorter version of it — the form asks a question this card cannot ask, this
+ * states the fact and stops. Both cases used to collapse to `null`, which is
+ * what made the affordance invisible on exactly the cards that needed it.
+ */
+function NoGitHubAccess() {
+  return (
+    <p className="text-xs text-muted-foreground">
+      No linked issue, and this card has no GitHub repository it can create one in. Link one from a
+      repository mapped to this workspace, or create the issue on GitHub and link it from the
+      card&apos;s actions.
+    </p>
   );
 }
 

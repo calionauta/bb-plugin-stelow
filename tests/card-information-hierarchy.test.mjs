@@ -273,3 +273,42 @@ test("which scope is running is named once", () => {
   assert.equal(doing.length, 1, "one vocabulary for the running scope");
   assert.equal(executing.length, 0, "the second vocabulary is gone");
 });
+
+// ---------------------------------------------------------------------------
+// An affordance a reader cannot see is one they cannot want.
+//
+// `UnlinkedDiscussionCard` returned null when the card had no GitHub
+// repository, so the "link an issue" affordance existed only where it had
+// nothing to do — the section was visible exactly when it was useless, and
+// absent exactly when a reader was stuck. The section is now always present;
+// one case states the fact, the other offers the form.
+// ---------------------------------------------------------------------------
+
+const linkedDiscussion = read("components/github/github-linked-discussion.tsx");
+
+test("the unlinked discussion section is never silently absent", () => {
+  // Pinning the exact `if (!canCreate || ...) return null;` line was the first
+  // attempt and it was blind in the same way as the B1 guard: reintroduce the
+  // regression as `if (noRepos) return null;` and the suite stayed green. The
+  // property is therefore about the COMPONENT, not about one spelling of its
+  // guard: the unlinked card must not have an early return at all, and both
+  // answers must be reachable.
+  const unlinked = linkedDiscussion.slice(
+    linkedDiscussion.indexOf("function UnlinkedDiscussionCard("),
+    linkedDiscussion.indexOf("function CreateIssueForm("),
+  );
+  assert.ok(unlinked.length > 0, "the unlinked component is present");
+  assert.doesNotMatch(
+    unlinked,
+    /\breturn null\b/,
+    "the unlinked section must never return null — an affordance that vanishes is not "
+    + "findable, and the case it would vanish for is the case a reader is stuck on",
+  );
+  assert.match(linkedDiscussion, /function NoGitHubAccess\(\)/, "the no-access case states the fact");
+  assert.match(linkedDiscussion, /function CreateIssueForm\(/, "the creatable case offers the form");
+  assert.match(
+    linkedDiscussion,
+    /noRepos[\s\S]{0,80}?\?\s*\(\s*<NoGitHubAccess \/>/,
+    "the section chooses between the two rather than collapsing",
+  );
+});
