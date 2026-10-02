@@ -1038,7 +1038,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline.
+  to the agent, gate question answerable inline. A generated interface
+  mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
+  under decision is a layout, and source text is the one thing that cannot
+  answer it. The decision is the path alone (`artifactRenderKind` in
+  `lib/artifact-render.mjs`), and a mockup is framed under
+  `allow-scripts` without `allow-same-origin`, so a worker-authored page
+  runs without reaching the reader's bb session. A truncated file is
+  shown as source instead, because a partial page is a broken layout
+  presented as evidence — and it says so rather than failing silently.
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a

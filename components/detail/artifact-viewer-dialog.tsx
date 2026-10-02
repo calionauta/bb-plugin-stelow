@@ -8,6 +8,7 @@ import {
 import { toast } from "sonner";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { OptionSection } from "./option-section";
+import { MOCKUP_SANDBOX, artifactRenderKind } from "../../lib/artifact-render.mjs";
 import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
@@ -113,16 +114,58 @@ type ArtifactContentProps = {
   scrollRef?: React.Ref<HTMLDivElement>;
 };
 
+// A generated interface mockup, shown as the page it is.
+//
+// Rendering its source shows the reader the recipe instead of the dish, and the
+// option under decision is a layout — the one thing source text cannot answer.
+// `srcdoc` rather than a URL because the file has no address of its own: it is
+// a workspace file, and the point is to read it without starting a server.
+//
+// The sandbox is the load-bearing part. A mockup is worker-authored, so
+// `allow-scripts` stays (an interactive mockup IS the evidence) and
+// `allow-same-origin` is withheld: together they would let the framed document
+// reach this app's origin, where the reader's session lives.
+//
+// ponytail: a mockup that references a sibling file by relative path (a CSS or
+// image next to it) will not resolve — srcdoc has no base URL. Self-contained
+// pages are what `interface-alternatives` produces, so this is the ceiling. If
+// mockups start shipping asset folders, serve the directory instead of the
+// file and point `src` at that address.
+function MockupFrame({ html, title }: { html: string; title: string }) {
+  return (
+    <iframe
+      srcDoc={html}
+      title={title}
+      sandbox={MOCKUP_SANDBOX}
+      referrerPolicy="no-referrer"
+      className="h-[46dvh] w-full rounded-md border border-border bg-background"
+    />
+  );
+}
+
 function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
-  const isMarkdown = file ? /\.mdx?$/i.test(file.display) || /\.mdx?$/i.test(file.path) : false;
+  const path = file?.display ?? file?.path ?? "";
+  const kind = artifactRenderKind(path);
+  // A truncated page is not the artifact: a mockup cut off mid-document
+  // renders as a broken layout presented as evidence, which is worse than the
+  // source it would otherwise have shown. Only a complete file is a page.
+  const asMockup = kind === "html" && !truncated;
   return (
     <div ref={scrollRef} className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
       {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
       {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
       {!loading && !loadError && content !== null ? (
-        isMarkdown ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div> : <SourceCode content={content} path={file?.display ?? "file.txt"} />
+        kind === "markdown" ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
+          : asMockup ? <MockupFrame html={content} title={`${path} — interface mockup`} />
+            : <SourceCode content={content} path={path || "file.txt"} />
       ) : null}
-      {truncated ? <p className="mt-2 text-xs text-muted-foreground">Truncated preview — open in the editor for the full file.</p> : null}
+      {truncated ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {kind === "html"
+            ? "Truncated — shown as source, because a partial page is not the mockup."
+            : "Truncated preview — open in the editor for the full file."}
+        </p>
+      ) : null}
     </div>
   );
 }
