@@ -267,4 +267,31 @@ export const cardRpcContract = {
       error: z.string().nullable(),
     }),
   },
+  catchUp: {
+    experimental_description: "What changed on a card since the reader last looked: deterministic facts, optionally phrased",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      /** `last-read` when a read is the anchor, `created` when the card has
+       * never been opened — the surface says which rather than implying
+       * "caught up" for a card nobody has looked at. */
+      anchor: z.enum(["last-read", "created"]).nullable(),
+      since: z.number().nullable(),
+      summary: z.string().nullable(),
+      facts: z.array(
+        z.object({
+          kind: z.enum(["stage", "question", "answer", "blocked", "resumed", "error", "completed"]),
+          at: z.number(),
+          text: z.string().nullable(),
+          stage: z.string().nullable(),
+          open: z.boolean().nullable(),
+        }),
+      ),
+      /** The model's phrasing of the facts, or null when it was unavailable,
+       * disabled, or produced nothing usable. Never a fact of its own. */
+      prose: z.string().nullable(),
+      source: z.string().nullable(),
+    }),
+  },
 };

@@ -660,6 +660,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   with the section still closed. The note composer stays: five words of
   course-correction do not justify losing your place on the card to go find a
   thread. Removed capability, none: the ambiguity was the feature.
+- **Catch up** (`CatchUpSection`, `catchUp` RPC, `lib/card-catch-up.mjs`). A
+  card's own answer to "what changed since I last looked": a DETERMINISTIC delta
+  over the rows the card already wrote — stage moves, questions, answers, stalls,
+  failures, completions — anchored on the newest read the card recorded, or on
+  its creation when it has never been opened (the surface says which, rather than
+  implying "caught up" for a card nobody has looked at). Empty is a real answer
+  — "nothing changed" — and is rendered as one. Loads on demand because a
+  briefing costs a spawn and most card opens are not a return after a gap; the
+  facts always render, and a generation-tier model may only REPHRASE them
+  (`lib/card-briefing.mjs`, the `card-briefing` delegation site). The model is
+  told the list is all it has, is forbidden to infer progress or quality, and
+  told to say plainly when there is nothing — because a briefing that invents a
+  change is worse than no briefing, since the reader cannot tell it from the real
+  ones. Every failure path (spawn, timeout, empty output, no preset) degrades to
+  the facts, and `STELOW_COMMS=0` removes the prose and never the facts. It
+  writes nothing and advances nothing. Artifacts are deliberately NOT a fact
+  kind: the manifest carries a path and a stage and no registration time, so
+  "this is new since you looked" cannot be derived from it and is not guessed.
+  The section is named a summary of what the card recorded, never a channel —
+  the same reason "Conversation" became "Notes for the agent".
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 

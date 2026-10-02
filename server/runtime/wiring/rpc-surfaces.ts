@@ -66,6 +66,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),
+    catchUp: (input: { cardId: string }) => core.briefings.catchUp(input.cardId),
     board: cards.cards.handlers.board as never,
     projects: listProjects(bb),
     flowMetrics: (input: FlowMetricsInput) => flowMetrics(core.db, input),
