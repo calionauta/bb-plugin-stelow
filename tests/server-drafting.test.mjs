@@ -239,16 +239,35 @@ test("title suggestion is advisory and never overwrites a concurrent human renam
   assert.deepEqual(raced.events, []);
 });
 
-test("title failure and timeout stop the hidden thread without changing the card", async () => {
+test("title failure and timeout stop the hidden thread, change nothing, and leave a record", async () => {
   const failed = harness({ statuses: ["failed"] });
   await failed.server.suggestCardName("card-1");
   assert.deepEqual(failed.stops, ["draft-1"]);
-  assert.equal(failed.row().display_name, "Login loop");
-  assert.deepEqual(failed.events, []);
+  assert.equal(failed.row().display_name, "Login loop", "a failure never renames the card");
+  // The silence this asserted is the defect. Now the cause is countable:
+  assert.equal(failed.comments.length, 1, "exactly one record per non-delivery");
+  assert.match(failed.comments[0].body, /ended in error/, "names the cause");
+  assert.match(failed.comments[0].body, /Rename inline/, "names the next move");
+  assert.deepEqual(failed.events, [{ event: "card-state", payload: { cardId: "card-1" } }]);
 
-  const timedOut = harness({ statuses: Array(12).fill("running") });
+  // 36 gets, not 12: the fixture falls back to "idle" (harness:77), so a
+  // 12-long script would turn the FIRST attempt into a success the moment
+  // TITLE_POLLS exceeds 12. 24 first-attempt polls + 12 retry polls.
+  const timedOut = harness({ statuses: Array(36).fill("running") });
   await timedOut.server.suggestCardName("card-1");
-  assert.deepEqual(timedOut.stops, ["draft-1"]);
+  assert.deepEqual(timedOut.stops, ["draft-1", "draft-1"], "both attempts stop their hidden thread");
   assert.equal(timedOut.row().display_name, "Login loop");
-  assert.deepEqual(timedOut.events, []);
+  assert.equal(timedOut.comments.length, 1, "one record for the whole burst, not one per attempt");
+  assert.match(timedOut.comments[0].body, /timed out/);
+  assert.match(timedOut.comments[0].body, /after one retry/, "names the retry state");
+});
+
+test("an errored thread is never retried, even when the error lands on the final poll", async () => {
+  // waitForThread sets timedOut: poll === polls - 1, so a final-poll error also
+  // sets timedOut. If classification checked the flag first, this would retry.
+  const errored = harness({ statuses: [...Array(23).fill("running"), "error"] });
+  await errored.server.suggestCardName("card-1");
+  assert.deepEqual(errored.stops, ["draft-1"], "no second attempt");
+  assert.equal(errored.comments.length, 1);
+  assert.match(errored.comments[0].body, /ended in error/, "classified thread_error, not timed_out");
 });

@@ -1790,9 +1790,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a `delegation-site` marker fails the topology pin.
 - **Automatic card titles + inline rename** (`renameCard`). Creation keeps
   the instant prompt-derived heuristic, then a Generation burst proposes
-  a ≤60-char title fire-and-forget — silent on failure, never overwriting
-  a human rename that landed mid-flight. The open-card breadcrumb edits
-  inline with explicit Save/Cancel; blank restores the heuristic.
+  a ≤60-char title fire-and-forget. Every exit from the burst resolves to one
+  of eleven named outcomes (`lib/title-outcome.mjs`) and every non-delivery
+  leaves exactly one trail comment naming the cause, the preset that actually
+  ran, the retry state, and the next move — so a failure is countable instead
+  of inferred. Three outcomes deliberately leave no comment and go to the daemon
+  log instead: `card_gone` (no row left to comment on), `renamed_mid_burst`
+  (a human just named the card) and `archived_mid_burst` (a terminal card takes
+  no writes). A burst that timed out gets one retry on the same resolved preset,
+  capped at two in flight process-wide; a retry that succeeds still records, so
+  a working retry cannot erase the tally. A concurrent human rename always wins —
+  the rename check precedes the completion check, so a rename landing mid-burst
+  is never overwritten by a retry. An archived card is never renamed and never
+  receives a record. The open-card breadcrumb edits inline with explicit
+  Save/Cancel; blank restores the heuristic.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an

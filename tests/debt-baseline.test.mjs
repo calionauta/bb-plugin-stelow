@@ -90,6 +90,11 @@ const inheritedBaseline = [
   // 82 lines because it built its whole harness inline. The harness is now
   // creationHarness/creationDeps/creationDb/creationBb, so no callback in that
   // file is oversized and `source-debt.json` carries no entry for it.
+  // Recorded at 83 in scripts/source-debt.json and unchanged here: this card
+  // inverts assertions in this file but must not grow the harness, so the new
+  // fixtures live in their own files. The entry appears only because editing
+  // this file makes the gate report its existing debt.
+  "tests/server-drafting.test.mjs:harness#1: 83 lines (baseline 83)",
 ];
 
 function git(...command) {
