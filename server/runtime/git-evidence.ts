@@ -175,10 +175,13 @@ async function gitCommonDir(
   if (!dir) return null;
   // Git resolves a relative answer against the directory it was invoked in, not
   // against the path we asked about: in a project checkout it answers `.git`,
-  // in one of its worktrees an absolute path to the same place. realpath of
-  // the joined path normalizes both, and also the symlinked temporary roots
-  // that mkdtemp and Tailscale hand out.
-  return realpathSync(nodeJoin(path, dir));
+  // in one of its worktrees an absolute path to the same place. Both shapes are
+  // valid, and `path.join` does not reset on an absolute second argument — it
+  // concatenates — so the absolute form must not be joined or it becomes
+  // `<checkout>/home/deploy/...`. realpath then normalizes the relative form and
+  // the symlinked temporary roots that mkdtemp and Tailscale hand out.
+  const absolute = isAbsolute(dir) ? dir : nodeJoin(path, dir);
+  return realpathSync(absolute);
 }
 
 /** What git can say about a path: root, branch, HEAD, dirty file count. */
