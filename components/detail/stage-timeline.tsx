@@ -1,5 +1,6 @@
 import { CURRENT_STAGE_PILL_CLASS } from "../dashboard/build-status-pills";
-import { PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { PHASE_LABELS, STAGE_SEQUENCE, STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { stageSummary } from "../../lib/stage-vocabulary-surfaces.mjs";
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
 // chip: passed / current / upcoming. Clicking an allowed target advances or
@@ -64,7 +65,11 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
   const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
   const clickable = canAdvance || canRegress;
   const produced = artifacts.filter((artifact) => artifact.stage === stage);
-  const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : [STAGE_PRODUCES[stage], STAGE_SKILL[stage] ? `Defined by ${STAGE_SKILL[stage]} — see the Workflow map below for the link.` : null].filter(Boolean).join(" "));
+  // A chip can show a sentence but not a link, so it says what the stage
+  // produces and stops there. It used to append "see the Workflow map below
+  // for the link" — a pointer to a component it cannot vouch for, which is
+  // what let two surfaces answer the same question in two different ways.
+  const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : stageSummary(stage)?.text ?? "");
   return (
     <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
       <button
@@ -72,7 +77,7 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
         disabled={!clickable || isCurrent}
         title={dimmedTitle}
         onClick={() => onPick(stage)}
-        className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}`}
+        className={stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}
         >
           {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
           <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
@@ -130,4 +135,31 @@ export function StageTimeline({ currentStage, nextStages, artifacts, onPick, ski
       })}
     </div>
   );
+}
+
+/**
+ * The stage chip's classes.
+ *
+ * Named because the class list outgrew the line it lived on, and because the
+ * size is part of what it asserts: the chip renders at `text-xs`, the smallest
+ * step still on the scale. It was `text-[11px]`, which made the number naming
+ * the stage smaller than the sentence beside it.
+ *
+ * `min-h-8` stays: it passes WCAG 2.5.8 AA and this repo's other controls honour
+ * `min-h-11`, but raising a touch target is a change to every stage chip's hit
+ * area and belongs to the card that owns the rule, not to a type migration.
+ */
+function stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance }: {
+  isCurrent: boolean;
+  passed: boolean;
+  skipReason: string | null;
+  isOffRoute: boolean;
+  canAdvance: boolean;
+}) {
+  return [
+    "relative inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+    "transition-colors cursor-pointer disabled:cursor-not-allowed",
+    "min-h-8",
+    chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance }),
+  ].filter(Boolean).join(" ");
 }

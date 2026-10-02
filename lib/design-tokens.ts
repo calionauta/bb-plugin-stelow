@@ -22,8 +22,22 @@
 /** The card's one authoritative state line. Exactly one per screen. */
 export const TEXT_STATE = "text-[16px] font-semibold leading-snug tracking-tight text-foreground";
 
-/** A section's own heading: the label on a collapsed row. */
-export const TEXT_SECTION = "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
+/**
+ * A section's own heading: the label on a collapsed row.
+ *
+ * Was `text-[11px]`, which is the whole reason this token needed a second look:
+ * the card's complaint was that section labels were the smallest text on the
+ * page, and importing this token changed the identifier without changing a
+ * single rendered pixel. 11px was also *below* `TEXT_META` (`text-xs`, 12px) —
+ * a section label smaller than the metadata under it, which is the scale
+ * reading itself backwards.
+ *
+ * 12px is the step the scale could actually take: `text-xs` is already
+ * `TEXT_META`, and two steps sharing a size is the same step under two names,
+ * which `card-design-tokens` fails. 12px sits above the old 11px, below
+ * `text-sm`, and remains distinct from every other step.
+ */
+export const TEXT_SECTION = "text-[12px] font-semibold uppercase tracking-wider text-muted-foreground";
 
 /** Running text the reader is expected to read rather than scan. */
 export const TEXT_BODY = "text-sm leading-relaxed text-foreground";
@@ -64,4 +78,13 @@ export const TYPE_EXCEPTIONS: Record<string, string> = {
   "text-[10px]": "a literal model id, where the string IS the content",
   "text-[15px]": "the card's own request text — the one passage read as prose",
   "text-[9px]": "superscript-grade annotation, nothing else",
+  // 11px is no longer a STEP — `TEXT_SECTION` moved to 12px, because a section
+  // label smaller than the metadata under it read the scale backwards and was
+  // the smallest text on the page. The size itself stays as a recorded
+  // exception for the ~100 sites that already use it: it is the same size doing
+  // the same job, and rewriting them here would bury one type decision under a
+  // hundred mechanical diffs. Those sites are counted, not invisible, and each
+  // becomes a one-token change whenever its file is next touched.
+  "text-[11px]": "legacy metadata and label text, awaiting migration onto a named step; "
+    + "no NEW site may use it and no section label uses it",
 };

@@ -1,4 +1,3 @@
-import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { checkoutNoteFor, WorkerSection } from "../worker-history/worker-history";
 import { LinkedDiscussionSection } from "../github/github-linked-discussion";
@@ -73,6 +72,17 @@ function presetPillTitle(card: BuildCard) {
   return card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker";
 }
 
+/**
+ * The completion summary's GitHub actions — and nothing else about GitHub.
+ *
+ * This used to also state which issue the card was linked to, inside the
+ * worker section, while the mirror a few components down named the link
+ * without ever naming the issue. Two components, two scroll positions, one
+ * fact stated once and the other not at all. The linked issue's identity now
+ * belongs to `LinkedDiscussionSection`, which owns GitHub linkage; what stays
+ * here is the card-specific part — whether a summary has already been posted,
+ * and the door to post or draft one.
+ */
 function GithubStatus({
   card,
   detail,
@@ -84,41 +94,28 @@ function GithubStatus({
   open: () => void;
   openDraft: () => void;
 }) {
+  if (card.status !== "completed") return null;
+  if (detail.githubLink?.postedAt) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      <span>
-        Imported from{" "}
-        <UrlLink
-          href={detail.githubLink?.url ?? ""}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          {detail.githubLink?.repo}#{detail.githubLink?.number}
-        </UrlLink>
-      </span>
-      {card.status === "completed"
-        ? detail.githubLink?.postedAt
-          ? (
-            <span className="text-emerald-700 dark:text-emerald-300">
-              ✓ Completion summary posted to GitHub
-            </span>
-          )
-          : (
-            <>
-            <button
-              onClick={open}
-              className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
-            >
-              Share completion summary on GitHub…
-            </button>
-            <button
-              onClick={openDraft}
-              className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
-            >
-              Draft GitHub comment…
-            </button>
-            </>
-          )
-        : <span>A completion summary can be posted once this card is Done.</span>}
+      <button
+        onClick={open}
+        className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
+      >
+        Share completion summary on GitHub…
+      </button>
+      <button
+        onClick={openDraft}
+        className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
+      >
+        Draft GitHub comment…
+      </button>
     </div>
   );
 }

@@ -46,7 +46,7 @@ const SECTION_FILES = [
   "components/detail/build-detail-hero.tsx",
   "components/detail/inbox-event-banner.tsx",
   "components/detail/build-progress.tsx",
-  "components/detail/workflow-map.tsx",
+  "components/detail/stage-section.tsx",
   "components/detail/research-quality-section.tsx",
   "components/detail/explore-quality-section.tsx",
   "components/detail/explore-detail-content.tsx",
@@ -94,8 +94,8 @@ test("a SECTION is the shared disclosure, not a second implementation of it", ()
     );
   }
   assert.ok(
-    read("components/detail/workflow-map.tsx").includes("<DisclosureSection"),
-    "the workflow map must use the shared disclosure",
+    read("components/detail/stage-section.tsx").includes("<DisclosureSection"),
+    "the stage reference must use the shared disclosure",
   );
 });
 
@@ -112,7 +112,7 @@ const EARNED = [
 /** Settled before the reader arrived. History does not get the first screen. */
 const UNEARNED = [
   "components/detail/input-files.tsx",
-  "components/detail/workflow-map.tsx",
+  "components/detail/stage-section.tsx",
   "components/detail/research-quality-section.tsx",
   "components/detail/explore-quality-section.tsx",
 ];
@@ -142,4 +142,31 @@ test("the rule for opening is one named function, not a condition per component"
     "the two exemptions must be named once, so 'why is this open' has one answer",
   );
   assert.match(token, /return live \|\| blocking;/, "and the rule must be exactly those two, not a third");
+});
+
+// ---------------------------------------------------------------------------
+// The workflow-progress disclosure used to hold six regions under one heading
+// with nothing between them, so a reader could not tell file contention from
+// scope progress. Regions now carry headings. Pinned here because the
+// regression is invisible — the card still renders, just unreadably.
+// ---------------------------------------------------------------------------
+
+const progressSource = read("components/detail/build-progress.tsx");
+const regionSource = read("components/detail/progress/progress-region.tsx");
+
+test("every workflow-progress region is named, so the regions can be told apart", () => {
+  const titles = [...progressSource.matchAll(/<ProgressRegion\s+title="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(titles.length >= 5, `the disclosure has named regions, found ${titles.length}`);
+  // One label covering unrelated things was the defect. Two regions sharing a
+  // title is the same defect wearing a heading.
+  assert.equal(new Set(titles).size, titles.length, `each region has its own title: ${titles.join(" | ")}`);
+});
+
+test("a region is a region, not a section surface", () => {
+  // card-surface-consistency reserves SECTION_SURFACE for card-level sections.
+  // A nested region that draws its own box is the "eight different shapes"
+  // defect coming back one level down.
+  assert.doesNotMatch(regionSource, /rounded-lg border bg-muted/, "a region must not draw a section surface");
+  assert.match(regionSource, /aria-label=\{title\}/, "a region is labelled for assistive tech");
+  assert.match(regionSource, /TEXT_SECTION/, "a region heading uses the named type scale");
 });

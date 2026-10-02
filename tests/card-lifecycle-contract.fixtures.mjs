@@ -189,6 +189,10 @@ export const buildProgress = readFileSync(
   join(root, "components/detail/build-progress.tsx"),
   "utf8",
 );
+export const stageSection = readFileSync(
+  join(root, "components/detail/stage-section.tsx"),
+  "utf8",
+);
 export const detailSource = [
   app,
   buildContent,
@@ -207,6 +211,7 @@ export const detailSource = [
   exploreQuality,
   buildLifecycleDialogs,
   buildProgress,
+  stageSection,
 ].join("\n");
 export const buildStatusPills = readFileSync(
   join(root, "components/dashboard/build-status-pills.tsx"),

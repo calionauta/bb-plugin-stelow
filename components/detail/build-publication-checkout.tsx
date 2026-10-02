@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { SUMMARY_BASE } from "../disclosure";
 import { z } from "zod";
 import type { PublicationAction } from "./build-publication-actions";
 import type { rpcContract } from "../../server";
@@ -69,7 +70,10 @@ export function LocalSquashDisclosure({
       open={open}
       onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground">
+      {/* SUMMARY_BASE carries list-none, focus-visible:outline and marker:hidden;
+          composing it here keeps keyboard focus visible (WCAG 2.4.7) and the marker
+          hidden, instead of restating a subset of what the token already guarantees. */}
+      <summary className={`flex items-center gap-1.5 font-medium text-foreground ${SUMMARY_BASE}`}>
         Advanced Git operations
       </summary>
       <div className="mt-2 space-y-2 text-muted-foreground">
