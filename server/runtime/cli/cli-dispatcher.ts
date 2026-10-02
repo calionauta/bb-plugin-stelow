@@ -9,6 +9,7 @@ import { createExportCommand } from "./cli-export.js";
 import { createFanOutCommand } from "./cli-fan-out.js";
 import { createGapScopesCommand } from "./cli-gap-scopes.js";
 import { createGapTriageCommand } from "./cli-gap-triage.js";
+import { createGcCommand } from "./cli-gc.js";
 import { createHelperPassthroughCommands } from "./cli-helper-passthrough.js";
 import { createLockCommand } from "./cli-lock.js";
 import { createManifestCommand } from "./cli-manifest.js";
@@ -39,6 +40,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createGapScopesCommand(deps),
     createMetricsCommand(deps),
     createStorageCommand(deps),
+    createGcCommand(deps),
     createManifestCommand(deps),
     createExportCommand(deps, exportRunBundle),
     createDoneCommand(deps, exportRunBundle),
