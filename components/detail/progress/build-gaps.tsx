@@ -1,6 +1,7 @@
 import { isDoneStatus, trackableStatusLabel as statusLabel } from "../../../lib/trackables.mjs";
 import { statusGlyph, statusTone } from "../../../lib/detail-presentation.mjs";
 import { gapSummaryPresentation } from "../../../lib/build-progress-presentation.mjs";
+import { metricBodyLines, metricHint } from "../../metrics/metrics-lines";
 import { DisclosureSection } from "../../disclosure";
 import { Pill } from "../../dashboard/build-status-pills";
 
@@ -8,6 +9,13 @@ export type GapSummary = {
   matched: boolean; total: number; fixed: number; documented: number; escalated: number;
   items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
+  /** One critique round's findings per registered critique artifact, oldest
+   * first. The rework metric needs this boundary; the `items` list dedupes
+   * across rounds and so cannot express it. */
+  rounds: Array<Array<{ description: string; resolution: string }>>;
+  /** The card's review records, already parsed by the same reader the CLI and
+   * the strip use, so the coverage line on the card is the same sentence. */
+  reviews: Array<{ excerpt: { selected: string; truncated: boolean; sentChars: number | null; originalChars: number | null } }>;
 };
 
 /**
@@ -80,12 +88,20 @@ export function BuildGaps({ summary }: { summary: GapSummary | null }) {
   if (!summary?.matched || !view) return null;
   const lead = formatGapMs(summary.leadMs);
   const cycle = formatGapMs(summary.cycleMs);
+  // Rework earns the hint because it is the fact that changes what a reader
+  // concludes from this section: "these are the same findings again" is a
+  // different situation from "these are the gaps this run found". It is the
+  // only metric offered here — the coverage line lives in the body, so a hint
+  // never becomes a second place a number is stated.
+  const rework = metricHint({ rounds: summary.rounds });
+  const bodyLines = metricBodyLines({ rounds: summary.rounds, reviews: summary.reviews });
   const tally = [
     `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
     `${summary.fixed} fixed`,
     `${summary.escalated} escalated`,
     lead ? `lead ${lead}` : null,
     cycle ? `cycle ${cycle}` : null,
+    rework,
   ].filter(Boolean).join(" · ");
   return (
     <DisclosureSection
@@ -97,6 +113,9 @@ export function BuildGaps({ summary }: { summary: GapSummary | null }) {
       {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
       {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
       {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
+      {bodyLines.map((line) => (
+        <p key={line} className="text-xs text-muted-foreground">{line}</p>
+      ))}
     </DisclosureSection>
   );
 }

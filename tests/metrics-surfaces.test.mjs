@@ -8,7 +8,7 @@ import { reworkMetricLine, summarizeRework } from "../lib/rework-metrics.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => readFileSync(join(root, relative), "utf8");
 
-const card = read("components/detail/build-progress.tsx");
+const card = read("components/detail/progress/build-gaps.tsx");
 const strip = read("components/board/flow-strip.tsx");
 const flowWait = read("components/board/flow-wait.tsx");
 const metricsLines = read("components/metrics/metrics-lines.tsx");
