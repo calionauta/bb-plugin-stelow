@@ -293,11 +293,17 @@ test("the unlinked discussion section is never silently absent", () => {
   // property is therefore about the COMPONENT, not about one spelling of its
   // guard: the unlinked card must not have an early return at all, and both
   // answers must be reachable.
+  // The slice originally stopped AT `CreateIssueForm`, which read as "the
+  // unlinked half is covered" while covering one function of the two that
+  // render it — an early return reinstated in the form passed 7/7. The comment
+  // claimed the component; the assertion covered a slice. Both unlinked
+  // components are inside the window now.
   const unlinked = linkedDiscussion.slice(
     linkedDiscussion.indexOf("function UnlinkedDiscussionCard("),
-    linkedDiscussion.indexOf("function CreateIssueForm("),
+    linkedDiscussion.indexOf("function MirroredComment("),
   );
   assert.ok(unlinked.length > 0, "the unlinked component is present");
+  assert.match(unlinked, /function CreateIssueForm\(/, "the create form is inside the guarded window");
   assert.doesNotMatch(
     unlinked,
     /\breturn null\b/,

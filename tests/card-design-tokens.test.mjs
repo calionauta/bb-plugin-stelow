@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
+import { TEXT_META, TEXT_SECTION, TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
 import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
 
 /**
@@ -224,4 +224,64 @@ test("every step of the scale names a size, and every exception says why", () =>
   // under two names — the DISCLOSURE_SUMMARY_CLASS failure, in the type scale.
   const sizes = TYPE_SCALE.map((step) => step.match(/text-(\[?\d+px|xs|sm|base|lg|xl)/)?.[1]);
   assert.equal(new Set(sizes).size, sizes.length, `two scale steps share a size: ${sizes.join(", ")}`);
+});
+
+/**
+ * The size the scale RENDERS, not the name it goes by.
+ *
+ * A card asked for larger section labels. The first two attempts "fixed" it by
+ * re-spelling the constant and then by importing the constant — and both times
+ * the suite went green, because nothing here asserted a size. `TEXT_SECTION` is
+ * the token, and a token test that reads its sizes back out of the token
+ * blesses whatever the token says, including the value it was written to fix.
+ *
+ * So these assert the rendered value and the ORDER it must respect. Reverting
+ * `TEXT_SECTION` to 11px fails here — which is the point: the fix for a
+ * complaint about a size has to be witnessed by something that knows the size.
+ */
+const renderedSize = (step) => {
+  // Keyed by the CAPTURE (`xs`, `sm`, ...), which is what the regex group yields.
+  const named = { xs: 12, sm: 14, base: 16, lg: 18, xl: 20 };
+  const literal = step.match(/text-\[(\d+(?:\.\d+)?)px\]/);
+  if (literal) return Number(literal[1]);
+  // The named steps, matched with their `text-` prefix so a class list like
+  // "text-xs text-muted-foreground" resolves instead of reading undefined.
+  const tailwind = step.match(/\btext-(xs|sm|base|lg|xl)\b/);
+  return tailwind ? named[tailwind[1]] : null;
+};
+
+test("a section label is not smaller than the metadata under it", () => {
+  const section = renderedSize(TEXT_SECTION);
+  const meta = renderedSize(TEXT_META);
+  assert.ok(section !== null && meta !== null, "both sizes are readable");
+  assert.ok(
+    section >= meta,
+    `a section heading must not be smaller than the metadata beneath it: TEXT_SECTION renders `
+    + `${section}px against TEXT_META at ${meta}px. 11px was exactly this bug — the scale read backwards`,
+  );
+});
+
+test("TEXT_SECTION renders at least 12px", () => {
+  // The specific receipt for the complaint: the label is now big enough. Named
+  // in the assertion so a reader knows what "big enough" was decided to be.
+  assert.ok(
+    renderedSize(TEXT_SECTION) >= 12,
+    `section labels render ${renderedSize(TEXT_SECTION)}px; the card that asked for this named 11px `
+    + "as too small, so anything under 12px is the unreverted defect",
+  );
+});
+
+test("the legacy 11px size is a recorded exception, never a step", () => {
+  // It stays usable by the ~100 sites already on it, but it must not be a STEP:
+  // a step is a size the scale offers on purpose, and 11px as a section label
+  // is the defect. This is the distinction the exception mechanism exists for.
+  assert.ok(
+    !TYPE_SCALE.some((step) => renderedSize(step) === 11),
+    "11px is not a step of the scale",
+  );
+  assert.ok(
+    "text-[11px]" in TYPE_EXCEPTIONS,
+    "11px remains available as a recorded exception rather than vanishing, so the existing sites "
+    + "stay legal while no new one may use it",
+  );
 });

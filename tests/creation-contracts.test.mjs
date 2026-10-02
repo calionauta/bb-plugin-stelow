@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { codeOf } from "./helpers/source-code.mjs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   root,
@@ -155,6 +155,25 @@ assert.doesNotMatch(
   detailSource,
   /function WorkflowMap\(/,
   "no local map copy survives in the detail slice",
+);
+// This used to be the whole guard, and it is one spelling wide: it names one
+// function in one file. Restoring `workflow-map.tsx` verbatim and rendering it
+// as a SIBLING of <StageSection — the exact three-section shape the card's
+// first item asked to remove — left every guard in the repo green. So the rule
+// is now stated where the duplication actually lives: across the whole detail
+// directory, the stage vocabulary is rendered from ONE component.
+const detailDir = join(root, "components", "detail");
+const detailFiles = readdirSync(detailDir).filter((name) => name.endsWith(".tsx"));
+const stageSectionReaders = detailFiles.filter((name) => {
+  const source = readFileSync(join(detailDir, name), "utf8");
+  return /WorkflowMap|STAGE_PRODUCES|STAGE_SKILL/.test(source);
+});
+assert.deepEqual(
+  stageSectionReaders,
+  [],
+  `only the merged stage section may render the stage vocabulary; these detail components still read `
+  + `it: ${stageSectionReaders.join(", ")}. A second reader is the three-sibling-sections defect, `
+  + "whatever the file or the symbol is called",
 );
 assert.doesNotMatch(
   app,

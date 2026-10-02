@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { conditionSpread, groupConditionsByType, isSharedCondition } from "../lib/scope-conditions-grouping.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = join(fileURLToPath(import.meta.url), "..", "..");
 
 /**
  * The card that prompted this: seven done scopes, each printing the same two
@@ -122,4 +127,51 @@ test("malformed input answers empty rather than throwing", () => {
   assert.deepEqual(groups, []);
   assert.equal(conditionSpread(null), 0);
   assert.equal(isSharedCondition(undefined), false);
+});
+
+// ---------------------------------------------------------------------------
+// The grouping has to be WIRED, not merely available.
+//
+// `tests/scope-conditions-grouping.test.mjs` exercises the lib's output, which
+// is exactly why a card could show twenty-one identical condition lines while
+// every assertion here passed: nothing checked that the scope list asked the lib
+// for its answer. Replacing the call with an empty set made shared conditions
+// revert to per-scope repetition — the original defect — and all five guards
+// stayed green.
+//
+// So this asserts the wiring: the list derives its shared-condition types from
+// the lib, and the card renders what that helper returns.
+// ---------------------------------------------------------------------------
+
+const listSource = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
+const relationsSource = readFileSync(join(root, "components", "detail", "scope-relations.tsx"), "utf8");
+
+test("the scope list derives its shared-condition types from the lib", () => {
+  assert.match(
+    listSource,
+    /sharedConditionTypesFor\(scopes\)/,
+    "the list asks the helper for its shared-condition types; an inline empty set here would "
+    + "silently restore one condition line per scope while every lib test still passed",
+  );
+  assert.match(
+    relationsSource,
+    /groupConditionsByType\(scopes\)\.filter\(isSharedCondition\)/,
+    "the helper itself groups by condition type, so the per-scope repetition cannot come back "
+    + "through a second code path",
+  );
+});
+
+test("the card renders the grouped conditions once, not per scope", () => {
+  // The grouped block lives outside every ScopeRow; a per-scope render would
+  // put `evidenceConditions` back inside the loop.
+  assert.match(
+    relationsSource,
+    /function ScopeConditions/,
+    "the grouped conditions are their own component",
+  );
+  assert.doesNotMatch(
+    listSource,
+    /scope\.conditions\.map\(/,
+    "the scope body must not iterate its own conditions — that is the fourteen-line wall",
+  );
 });
