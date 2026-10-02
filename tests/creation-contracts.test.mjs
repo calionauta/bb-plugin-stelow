@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { codeOf } from "./helpers/source-code.mjs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   root,
@@ -138,18 +138,42 @@ const progressSection = buildContent.slice(
 assert.ok(
   progressSection.length > 0 &&
     progressSection.indexOf("<BuildProgressSection") <
-      progressSection.indexOf("<WorkflowMap"),
-  "the workflow map is a sibling of extracted progress, never nested inside it",
+      progressSection.indexOf("<StageSection"),
+  "the stage section is a sibling of extracted progress, never nested inside it — the original rule, "
+    + "re-pinned from <WorkflowMap when the timeline, runs and stage reference merged into one "
+    + "section. The reasoning is unchanged: progress owns where the WORK is, the stage section owns "
+    + "where the card IS, and nesting one inside the other would make a reader scroll a scope list "
+    + "to find out which stage the card is on",
 );
 assert.match(
-  readFileSync(join(root, "components", "detail", "workflow-map.tsx"), "utf8"),
-  /export function WorkflowMap\(\{ open, onToggle/,
-  "the map lives in the detail module",
+  readFileSync(join(root, "components", "detail", "stage-section.tsx"), "utf8"),
+  /function StageReference\(\{ open, onToggle/,
+  "the stage reference lives in the stage section — it absorbed workflow-map.tsx when the map, the "
+    + "timeline and the run history became one section",
 );
 assert.doesNotMatch(
   detailSource,
   /function WorkflowMap\(/,
   "no local map copy survives in the detail slice",
+);
+// This used to be the whole guard, and it is one spelling wide: it names one
+// function in one file. Restoring `workflow-map.tsx` verbatim and rendering it
+// as a SIBLING of <StageSection — the exact three-section shape the card's
+// first item asked to remove — left every guard in the repo green. So the rule
+// is now stated where the duplication actually lives: across the whole detail
+// directory, the stage vocabulary is rendered from ONE component.
+const detailDir = join(root, "components", "detail");
+const detailFiles = readdirSync(detailDir).filter((name) => name.endsWith(".tsx"));
+const stageSectionReaders = detailFiles.filter((name) => {
+  const source = readFileSync(join(detailDir, name), "utf8");
+  return /WorkflowMap|STAGE_PRODUCES|STAGE_SKILL/.test(source);
+});
+assert.deepEqual(
+  stageSectionReaders,
+  [],
+  `only the merged stage section may render the stage vocabulary; these detail components still read `
+  + `it: ${stageSectionReaders.join(", ")}. A second reader is the three-sibling-sections defect, `
+  + "whatever the file or the symbol is called",
 );
 assert.doesNotMatch(
   app,

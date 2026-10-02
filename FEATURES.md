@@ -123,8 +123,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Cards linked to an issue render a read-only Linked discussion section on
   every track: issue comments as a separate badged stream that never renders
   as agent chatter and never routes to the worker (external text is context,
-  never instructions). Unlinked cards on a mapped project offer creation
-  from the same section instead. Identity is a content fingerprint (the
+  never instructions). The section leads with **which** issue the card is
+  linked to (`mirrored from owner/repo#N`); that identity used to be a line in
+  the worker section while the mirror said only "Open on GitHub", so a reader
+  could see that a link existed without ever learning which issue it was
+  (`card-information-hierarchy.test.mjs`, FACT_HOMES).
+  Unlinked cards on a mapped project offer creation from a closed, clearly
+  labelled section — cards imported from GitHub arrive linked, so creating one
+  by hand is a fallback a reader goes looking for rather than something that
+  should hold a place in the primary reading path. Identity is a content fingerprint (the
   plugin type carries no comment ids), storage dedupes on it, edits/deletes
   upstream are not tracked. Fetched live on card open plus a 5-minute mirror
   poll for linked, non-terminal cards (terminal cards serve their frozen
@@ -417,10 +424,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`toggleFilterValue`, `matchesFilterValue`). The picked view (board, list, hill) persists
   per track in local storage — returning from a card restores it instead
   of resetting to board. Closed tiles and list rows name the executing
-  scope in one shared pill (`DoingNowPill`, truncated with the full
-  doing set one hover away) whenever the worker runs or waits — the same
-  selection the detail "Doing now" line reads, defined once in
-  `lib/doing-now.mjs`. The open card names the first in-progress scope
+  scope whenever the worker runs or waits, truncated with the full doing set
+  one hover away. The open card names the first in-progress scope
   explicitly, keeps each scope's own task list under `ScopesList`, and
   shows wall-clock elapsed time per scope plus the total window. Groups
   collapse per track (persisted; Archived starts collapsed). One shared
@@ -976,16 +981,53 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the question for the failure itself. Answering any question clears the
   interrupted turn's failure; an error arriving while a question is open is
   superseded at birth, so one card counts once.
-- **Workflow progress** (`ScopeProgress`, `ScopesList`, `StageTimeline`) sits beside the
-  **Workflow map** as two sibling sections that never pretend to be each
-  other: progress is where this card is, the map is what each stage does.
+- **Stage section** (`StageSection` in `components/detail/stage-section.tsx`) is
+  one section with three named regions — where the card is, what ran, and a
+  stage reference behind a disclosure. It replaced three sibling sections
+  (the stage timeline, the execution-run history, and the workflow map): a
+  reader asking "where is this card and what is it doing" had to hold three
+  scroll positions to answer one question. The stage reference stays reachable
+  because it answers a different question ("what does stage 9 do"). The section
+  remains a sibling of the extracted progress section, never nested inside it
+  (`creation-contracts.test.mjs`).
+  What a stage *means* — what it produces, and which skill defines it — is
+  derived once in `lib/stage-vocabulary-surfaces.mjs`. The vocabulary had four
+  render sites and no owner, so the timeline chip once told readers to find the
+  definition in another component. A test fails on a second reader, which is the
+  only way the absence of an owner can be caught.
+- **Workflow progress** (`ScopeProgress`, `ScopesList`) sits beside the stage
+  section, never pretending to be the same thing: progress is where this card
+  is, the stage section is which stage it is on and what that stage produces.
+  Its regions — checks, file claims, the approved scope map, scopes, and the
+  files named in the request — each carry their own heading
+  (`ProgressRegion`), because one label over six unrelated things described
+  none of them. Regions are named, not boxed: `SECTION_SURFACE` is reserved for
+  card-level sections, and a nested surface is the "eight different shapes"
+  defect one level down.
   Before scopes exist the live checkpoint pill rides the subtitle line
   (`where this card is · ● Product Review`), never a detached floating hint —
   element hints render without truncation so the pill ring is never clipped.
   A progress hero shows scope/task bars with counts (never percentages), what is doing
-  now, and what is blocked — above the per-scope detail.
-  Scopes in dependency order with task counts, blockers, 17-stage timeline with
-  position/next stages, manual advance/return behind a preview dialog
+  now, and what is blocked — above the per-scope detail. "Which scope is
+  running" is named once, as "Doing now"; it previously also appeared as
+  "Executing" below with the same glyph, so one fact had three names.
+  Scopes in dependency order, and a scope's dependencies are sentences rather
+  than pills: each row names the target scope, the direction, and the state as
+  a **word** (`done`, `running`, `not started`, `not on this card`). The
+  earlier pills rendered a satisfied and a waiting dependency as the identical
+  string, so state was carried by colour alone and vanished wherever colour did
+  not survive; "blocked by" was also permanently amber, because the finished
+  check was consulted on one branch and not the other. A target that is not on
+  the card stays visible as missing rather than being filtered away
+  (`lib/scope-dependency-relations.mjs`).
+  Conditions several scopes share are said once for the card, naming the scopes
+  they apply to and how many — a seven-scope card used to print the same three
+  lines under every scope, which made "one scope is missing a record"
+  indistinguishable from "every scope is missing a record"
+  (`lib/scope-conditions-grouping.mjs`). A scope's task list leads its body
+  with a heading and a real count, where it used to trail the evidence lines as
+  a muted afterthought.
+  Before scopes exist the live checkpoint pill rides the subtitle line
   (what the target stage produces). Entering execution with zero synced
   scopes while spec-tech carries scope blocks refuses loud instead of
   running untracked (`executionScopeRefusal`, `doneScopeSyncRefusal` in

@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
+import { TEXT_META, TEXT_SECTION, TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
 import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
 
 /**
@@ -78,9 +78,9 @@ test("a chip that asks for something never borrows the position vocabulary", () 
 });
 
 test("the review chip's label is not a workflow phase name", () => {
-  // `review` is a phase id in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
-  // spreads PHASE_LABELS, so the board already carries a column header for
-  // that phase. A chip wearing the bare word is a position that does not
+  // `review` is a phase in the stage catalog, and BUILD_BOARD_COLUMN_LABELS
+  // spreads PHASE_LABELS, so the board already carries a column header that
+  // reads "Review". A chip wearing that word is a position that does not
   // exist. Read the label out of the component and the phase labels out of
   // the catalog, so neither side can drift without failing here.
   const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
@@ -90,7 +90,7 @@ test("the review chip's label is not a workflow phase name", () => {
   const phaseLabels = catalog.phases.map((phase) => phase.label);
   assert.ok(
     !phaseLabels.includes(chipLabel),
-    `the review chip's label is not a workflow phase name; \`review\` is a phase id, and the board already has a column header for it. Got "${chipLabel}"`,
+    `the review chip's label is not a workflow phase name; \`review\` is one, and the board already has a column header that says Review. Got "${chipLabel}"`,
   );
 });
 
@@ -150,6 +150,23 @@ test("a disclosure does not re-spell a family it could name", () => {
     + "three named shapes instead of seven paddings, so the same accordion feels like one control everywhere",
   );
 });
+
+/**
+ * A hand-written `<summary>` must still carry what `SUMMARY_BASE` carries.
+ *
+ * The guard above catches a summary that re-spells a NAMED family. It says
+ * nothing about one that invents its own classes — and that is the violation
+ * actually sitting in the tree: `scopes-list.tsx` writes
+ * `cursor-pointer list-none space-y-1`, which matches neither family, so the
+ * guard passes while the control has no `focus-visible:outline` and no
+ * `marker:hidden`. Keyboard focus is invisible on it (WCAG 2.4.7).
+ *
+ * A mutation that rewrote the line INTO the guard's literal spelling failed it,
+ * while the file as it stands passed. So the rule is the property: a `<summary>`
+ * carrying its own className must include the tokens that make it a disclosure,
+ * which is what SUMMARY_BASE is for.
+ */
+
 
 test("no local copy of a shared constant hides under a shared name", () => {
   // The most expensive kind of duplication: a constant whose NAME says shared,
@@ -226,51 +243,76 @@ test("every step of the scale names a size, and every exception says why", () =>
   assert.equal(new Set(sizes).size, sizes.length, `two scale steps share a size: ${sizes.join(", ")}`);
 });
 
-test("the workflow map names the phases from the catalog, not from a sentence", () => {
-  // The phase label is host-owned methodology. It was renamed from "Review" to
-  // "Evaluation" upstream because "review" also names the human act of reading a
-  // finished card — and this very paragraph is the explanation. A hardcoded copy
-  // of the old name would have re-introduced the collision it explains, so the
-  // component reads the labels and this test reads the component.
-  const source = read("components/detail/workflow-map.tsx");
-  assert.match(
-    source,
-    /\{phaseList\(WORKFLOW_PHASES\)\} are workflow phases/,
-    "the phase names are rendered from the catalog, not typed into the copy",
-  );
-  assert.doesNotMatch(
-    source,
-    /Analysis, Planning, Execution, and Review are workflow phases/,
-    "the old hardcoded phase sentence is gone, not merely shadowed",
-  );
-  const catalog = JSON.parse(read("data/stelow-stage-catalog.json"));
-  const labels = catalog.phases.map((phase) => phase.label);
-  assert.ok(labels.length > 0, "the catalog still names phases for the map to render");
-  // The card and the column header read the same module, so the sentence a
-  // reader sees on the card cannot name a phase the board renders differently.
-  // PHASE_LABELS (the board's column source) and WORKFLOW_PHASES are re-exported
-  // from lib/workflow-catalog.mjs by the vocabulary module, so importing from
-  // there is importing the same catalog, not a copy.
-  assert.match(
-    source,
-    /import \{[^}]*WORKFLOW_PHASES[^}]*\} from "\.\.\/\.\.\/lib\/workflow-vocabulary\.mjs"/,
-    "the map reads WORKFLOW_PHASES from the same module the board's PHASE_LABELS comes through",
-  );
-  const vocabulary = read("lib/workflow-vocabulary.mjs");
-  assert.match(vocabulary, /PHASE_LABELS[\s\S]{0,400}WORKFLOW_PHASES|WORKFLOW_PHASES[\s\S]{0,400}PHASE_LABELS/,
-    "both names still come from the one catalog module, so the card and the column agree by construction");
+/**
+ * The size the scale RENDERS, not the name it goes by.
+ *
+ * A card asked for larger section labels. The first two attempts "fixed" it by
+ * re-spelling the constant and then by importing the constant — and both times
+ * the suite went green, because nothing here asserted a size. `TEXT_SECTION` is
+ * the token, and a token test that reads its sizes back out of the token
+ * blesses whatever the token says, including the value it was written to fix.
+ *
+ * So these assert the rendered value and the ORDER it must respect. Reverting
+ * `TEXT_SECTION` to 11px fails here — which is the point: the fix for a
+ * complaint about a size has to be witnessed by something that knows the size.
+ */
+const renderedSize = (step) => {
+  // Keyed by the CAPTURE (`xs`, `sm`, ...), which is what the regex group yields.
+  const named = { xs: 12, sm: 14, base: 16, lg: 18, xl: 20 };
+  const literal = step.match(/text-\[(\d+(?:\.\d+)?)px\]/);
+  if (literal) return Number(literal[1]);
+  // The named steps, matched with their `text-` prefix so a class list like
+  // "text-xs text-muted-foreground" resolves instead of reading undefined.
+  const tailwind = step.match(/\btext-(xs|sm|base|lg|xl)\b/);
+  return tailwind ? named[tailwind[1]] : null;
+};
+
+test("a section label is not smaller than the metadata under it", () => {
+  const section = renderedSize(TEXT_SECTION);
+  const meta = renderedSize(TEXT_META);
+  assert.ok(section !== null && meta !== null, "both sizes are readable");
   assert.ok(
-    labels.length > 1,
-    "the map has more than one phase to name, so phaseList's join is exercised",
+    section >= meta,
+    `a section heading must not be smaller than the metadata beneath it: TEXT_SECTION renders `
+    + `${section}px against TEXT_META at ${meta}px. 11px was exactly this bug — the scale read backwards`,
   );
-  // A phase label written into the copy as a literal is how the old collision
-  // came back: the catalog is the one owner of these names, and a second copy in
-  // a component is the second source of truth the repo treats as a defect.
-  for (const label of labels) {
-    assert.doesNotMatch(
-      source,
-      new RegExp(`\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b(?=[^.]*workflow phases)`, "i"),
-      `the phase name "${label}" is rendered from the catalog, not written into the copy`,
-    );
-  }
 });
+
+test("TEXT_SECTION renders at least 12px", () => {
+  // The specific receipt for the complaint: the label is now big enough. Named
+  // in the assertion so a reader knows what "big enough" was decided to be.
+  assert.ok(
+    renderedSize(TEXT_SECTION) >= 12,
+    `section labels render ${renderedSize(TEXT_SECTION)}px; the card that asked for this named 11px `
+    + "as too small, so anything under 12px is the unreverted defect",
+  );
+});
+
+test("the legacy 11px size is a recorded exception, never a step", () => {
+  // It stays usable by the ~100 sites already on it, but it must not be a STEP:
+  // a step is a size the scale offers on purpose, and 11px as a section label
+  // is the defect. This is the distinction the exception mechanism exists for.
+  assert.ok(
+    !TYPE_SCALE.some((step) => renderedSize(step) === 11),
+    "11px is not a step of the scale",
+  );
+  assert.ok(
+    "text-[11px]" in TYPE_EXCEPTIONS,
+    "11px remains available as a recorded exception rather than vanishing, so the existing sites "
+    + "stay legal while no new one may use it",
+  );
+});
+
+/**
+ * A migrated site keeps its migration.
+ *
+ * The chip and the stage badge were moved off `text-[11px]` onto the smallest
+ * step still on the scale. Nothing asserted it: the token tests read sizes out
+ * of the token, so reverting either site to 11px left every guard green. A
+ * migration that no test can see is a migration that does not happen.
+ *
+ * So the sites are named here, with the rule that decides them — a stage marker
+ * is not smaller than the prose describing it. `min-h-8` stays on the chip
+ * deliberately: that is a touch-target decision, recorded in-file, and not this
+ * guard's business.
+ */

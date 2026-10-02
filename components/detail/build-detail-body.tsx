@@ -4,10 +4,10 @@ import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import { statusTone } from "../../lib/detail-presentation.mjs";
 import {
-  STAGE_PRODUCES,
   STAGE_SEQUENCE,
   stageLabel,
 } from "../../lib/workflow-vocabulary.mjs";
+import { stageProduces } from "../../lib/stage-vocabulary-surfaces.mjs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -248,7 +248,7 @@ function AdvanceDialogCopy({
         </p>
         <p className="rounded-md bg-muted p-2 text-xs">
           {pendingAdvance
-            ? STAGE_PRODUCES[pendingAdvance] ??
+            ? stageProduces(pendingAdvance) ??
               "The agent works on this stage and advances on its own once done."
             : ""}
         </p>

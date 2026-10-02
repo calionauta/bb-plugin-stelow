@@ -1,5 +1,6 @@
 import { scopeXrayPresentation } from "../../lib/scope-xray-presentation.mjs";
 import { Pill } from "../dashboard/build-status-pills";
+import { SUMMARY_BASE } from "../disclosure";
 import { TEXT_META, TEXT_SECTION } from "../../lib/design-tokens";
 
 export type ScopeXrayView = {
@@ -91,7 +92,7 @@ export function ScopeXray({ xray }: { xray: ScopeXrayView }) {
 function ScopeDependencies({ view }: { view: NonNullable<ReturnType<typeof scopeXrayPresentation>> }) {
   return (
     <details className="text-xs">
-      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+      <summary className={SUMMARY_BASE}>
         {view.dependencies.length} dependenc{view.dependencies.length === 1 ? "y" : "ies"} between scopes
       </summary>
       <ul className="mt-1 space-y-0.5 pl-1">

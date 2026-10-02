@@ -9,6 +9,7 @@ import {
   parseScopeTasks,
   diagnoseScopeSync,
   mergePlannedTasks,
+  plannedTaskGhosts,
 } from "../lib/spec-scope-reader.mjs";
 
 // Fixture mirroring the card_pttx9ion incident: the tech-planning output
@@ -76,14 +77,19 @@ assert.deepEqual(countScopeDialects(null), { machine: 0, human: 0 }, "junk never
 // the note the ScopesList already renders.
 const humanBlocks = splitScopeBlocks(HUMAN_SPEC);
 assert.deepEqual(parseScopeTasks(humanBlocks[0].body, "scope-1"), [
-  { id: "scope-1-t1", name: "Split overlay root", kind: "task", status: "pending", source: "planned", note: "Done: Root renders alone" },
-  { id: "scope-1-t2", name: "Wire trigger", kind: "task", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
-], "task table rows become planned tasks with Done Criterion notes");
+  { id: "1.1", name: "Split overlay root", kind: "task", status: "pending", source: "planned", note: "Done: Root renders alone" },
+  { id: "1.2", name: "Wire trigger", kind: "task", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
+], "task table rows become planned tasks with Done Criterion notes, keyed by the id the table DECLARES");
 assert.deepEqual(parseScopeTasks("no tables", "scope-9"), [], "no table means no tasks");
 assert.deepEqual(
   parseScopeTasks("| # | Task | Risk |\n|---|---|---|\n| 1.1 | X | LOW |\n", "scope-1"),
   [],
   "a table without a Done Criterion column is not a task table",
+);
+assert.deepEqual(
+  parseScopeTasks("| Task | Done Criterion |\n|---|---|\n| Only a name | shipped |\n", "scope-7"),
+  [{ id: "scope-7-t1", name: "Only a name", kind: "task", status: "pending", source: "planned", note: "Done: shipped" }],
+  "a table with no id column falls back to scope-N-tM, so a spec without one still parses",
 );
 
 // Diagnosis names the incident shape instead of collapsing to "no scopes".
@@ -146,3 +152,129 @@ assert.doesNotMatch(buildProgress, /No synced scopes on this card/, "the copy th
 assert.doesNotMatch(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]/, "the alarm list is not re-spelled in the view");
 
 console.log("scope sync guard test ok: dialects, task extraction, execution/done refusals, merge, wiring");
+
+// The duplication that reached a live card, and the reason the reader changed.
+//
+// A worker seeded tasks with the id the spec declared (`1.1`) but with its own
+// reworded text ("Extract the stage projection into lib as an .mjs pair" where
+// the spec said "Extract the per-surface stage projection into lib/ as a .mjs +
+// .d.mts pair with a node test"). Neither the id key nor the name key matched,
+// so mergePlannedTasks appended all four spec rows a second time as pending:
+// 4 tracked + 4 phantom = 8 tasks for 4 pieces of work.
+//
+// The card then read "12/12 scopes complete" beside "33/52 tasks". Both numbers
+// were true of different stores — scope status came from tracking, the task
+// count came from the projection — and nothing on the card said so. Four
+// verify/audit passes and every gate in the repo reported green; only a person
+// reading the card caught it, because the only symptom was a total that
+// disagreed with its own scope count.
+//
+// So the reader now honours the declared id column. The name key stays as the
+// fallback for specs that predate it, but it is no longer load-bearing.
+const reworded = [{ id: "scope-1", name: "Stage vocabulary", status: "done", tasks: [
+  { id: "1.1", name: "Extract the stage projection into lib as an .mjs pair", status: "done", source: "planned" },
+  { id: "1.2", name: "Point workflow-map and the chip at the projection", status: "done", source: "planned" },
+  { id: "1.3", name: "Point the advance dialog at the same projection", status: "done", source: "planned" },
+  { id: "1.4", name: "Anti-regression test on the catalog readers", status: "done", source: "planned" },
+] }];
+const afterReword = mergePlannedTasks(reworded, HUMAN_SPEC);
+assert.equal(
+  afterReword[0].tasks.length,
+  4,
+  "a worker that reworded its task text still matches on the DECLARED id — the four spec rows "
+  + "must not reappear as pending phantoms beside four real ones",
+);
+assert.ok(
+  afterReword[0].tasks.every((task) => task.status === "done"),
+  "and none of them is a pending duplicate",
+);
+
+// The id column is read when present, and the fallback still holds without it.
+const idColumn = parseScopeTasks(
+  "| # | Task | Done Criterion |\n|---|---|---|\n| 2.1 | Declared id | shipped |\n| 2.2 | Also declared | shipped |\n",
+  "scope-2",
+);
+assert.deepEqual(idColumn.map((task) => task.id), ["2.1", "2.2"], "the declared # column is the task id");
+
+// And a spec whose rows carry ids that match tracking exactly unions to nothing.
+const exact = [{ id: "scope-1", name: "Overlay split", status: "done", tasks: [
+  { id: "1.1", name: "anything at all", status: "done", source: "planned" },
+  { id: "1.2", name: "anything either", status: "done", source: "planned" },
+] }];
+assert.equal(
+  mergePlannedTasks(exact, HUMAN_SPEC)[0].tasks.length,
+  2,
+  "matching ids dedupe even when every word of the name differs — the id is the contract",
+);
+
+// ---------------------------------------------------------------------------
+// The matrix, both directions.
+//
+// Reading the declared `#` column fixed the case that reached a live card — and
+// only that case. A worker seeding `scope-1-t1` against a spec declaring `1.1`
+// still matched neither key, so the rows returned as phantoms in the OTHER
+// direction. Two schemes for one concept is the defect; the fix is to normalise
+// both, not to pick a winner and hope every worker agrees.
+//
+// The matrix below is the real guarantee. It is a matrix rather than one case
+// because the first fix passed a single case while leaving the mirror broken.
+// ---------------------------------------------------------------------------
+
+const SPEC_WITH_IDS = `[SCOPE-1] Overlay split
+[TYPE] refactor
+
+| # | Task | Done Criterion |
+|---|------|---------------|
+| 1.1 | Alpha | shipped |
+| 1.2 | Beta | shipped |
+`;
+const SPEC_WITHOUT_IDS = `[SCOPE-1] Overlay split
+[TYPE] refactor
+
+| Task | Done Criterion |
+|------|---------------|
+| Alpha | shipped |
+| Beta | shipped |
+`;
+const seededWith = (ids) => [{ id: "scope-1", name: "Overlay split", status: "done", tasks: ids.map((id) => ({
+  id, name: `reworded ${id}`, status: "done", source: "planned",
+})) }];
+
+for (const [label, spec, ids] of [
+  ["spec declares ids, worker seeds them", SPEC_WITH_IDS, ["1.1", "1.2"]],
+  ["spec declares ids, worker seeds the other scheme", SPEC_WITH_IDS, ["scope-1-t1", "scope-1-t2"]],
+  ["spec declares none, worker seeds generated ids", SPEC_WITHOUT_IDS, ["scope-1-t1", "scope-1-t2"]],
+  ["spec declares none, worker seeds table ids", SPEC_WITHOUT_IDS, ["1.1", "1.2"]],
+]) {
+  const out = mergePlannedTasks(seededWith(ids), spec);
+  assert.equal(
+    out[0].tasks.length,
+    2,
+    `${label}: two tasks for two pieces of work, not four — a row the worker already claimed must `
+    + "not reappear as a pending phantom",
+  );
+}
+
+// The unclaimed case is the one a card cannot see: with nothing seeded, the
+// merge ADDS the spec rows, which is correct (the plan exists) but means the
+// total now includes work nobody has done. `plannedTaskGhosts` names those rows
+// so the card can tell a projection from a task in progress.
+//
+// It is written against TRACKING, not the merged list. An earlier version read
+// the merged list, compared each planned row against a set that already
+// contained it, and therefore returned "none" in every case — including the one
+// it existed to catch. A guard that cannot fail is worse than no guard.
+assert.deepEqual(
+  plannedTaskGhosts(seededWith([]), SPEC_WITH_IDS).map((ghost) => ghost.id),
+  ["1.1", "1.2"],
+  "planned rows nobody claimed are named, not silently counted as pending work",
+);
+assert.deepEqual(plannedTaskGhosts(seededWith(["1.1", "1.2"]), SPEC_WITH_IDS), [], "fully claimed means no ghosts");
+assert.deepEqual(
+  plannedTaskGhosts(seededWith(["scope-1-t1", "scope-1-t2"]), SPEC_WITH_IDS),
+  [],
+  "ghosts honour the same normalisation as the merge, so one id scheme does not manufacture them",
+);
+assert.equal(plannedTaskGhosts(seededWith(["1.1"]), SPEC_WITH_IDS).length, 1, "a partial claim leaves exactly the rest");
+assert.deepEqual(plannedTaskGhosts(seededWith(["1.1", "1.2"]), null), [], "no spec means nothing invented");
+assert.deepEqual(plannedTaskGhosts(null, SPEC_WITH_IDS), [], "no tracking means nothing to compare against");

@@ -4,42 +4,25 @@ import { groupCardChecks, groupState, isExecutionUntracked } from "../../lib/car
 import { scopeSyncNotice } from "../../lib/scope-sync-notice.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { statusGlyph, statusTone } from "../../lib/detail-presentation.mjs";
-import { isDoneStatus, trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
-import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
+import { trackableStatusLabel as statusLabel } from "../../lib/trackables.mjs";
+import { summarizeScopeProgress } from "../../lib/build-progress-presentation.mjs";
 import { scopeEmptyState } from "../../lib/scope-xray-presentation.mjs";
 import { TEXT_META } from "../../lib/design-tokens";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
-import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
+import { ScopeProgressTrack } from "../dashboard/build-status-pills";
 import { CurrentStagePill } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
 import { FileOccupancy } from "./file-occupancy";
+import { BuildGaps, type GapSummary } from "./progress/build-gaps";
+import { ProgressRegion } from "./progress/progress-region";
 import { ScopeXray } from "./scope-xray";
-import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
-import { metricBodyLines, metricHint } from "../metrics/metrics-lines";
 import type { rpcContract } from "../../server";
-import type { GapTotals } from "../../lib/metrics-format.mjs";
 
 type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-/** The card's own gap view: the shared tally, plus the per-gap rows and the
- * scope state the progress panel needs. The four numbers come from the one
- * owner in `lib/metrics-format.mjs` rather than being restated, so a resolution
- * added to the registry is a field added there and here cannot drift apart. */
-type GapSummary = GapTotals & {
-  matched: boolean;
-  items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
-  pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
-  /** One critique round's findings per registered critique artifact, oldest
-   * first. The rework metric needs this boundary; the `items` list dedupes
-   * across rounds and so cannot express it. */
-  rounds: Array<Array<{ description: string; resolution: string }>>;
-  /** The card's review records, already parsed by the same reader the CLI and
-   * the strip use, so the coverage line on the card is the same sentence. */
-  reviews: Array<{ excerpt: { selected: string; truncated: boolean; sentChars: number | null; originalChars: number | null } }>;
-};
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
 
 function useGapSummary(cardId: string): GapSummary | null {
@@ -83,124 +66,28 @@ function CardChecks({ card, detail, gaps }: { card: BuildCard; detail: BuildDeta
   if (groups.length === 0) return null;
   const visible = pendingOnly ? groups.filter((group) => groupState(group) === "pending") : groups;
   return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      <div className="flex items-center gap-2"><h3 className="text-xs font-semibold text-foreground">Checks</h3><label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label></div>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        {/* No heading of its own: the enclosing ProgressRegion is already
+            called "Checks", so an h3 here repeated the label on one screen and
+            put a heading inside a heading. The region owns the name; this box
+            owns the content. */}
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={pendingOnly}
+            onChange={(event) => setPendingOnly(event.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          Pending only
+        </label>
+      </div>
       {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => <div key={group.id} className="space-y-0.5"><p className="text-xs"><span className="font-medium text-foreground">{group.label}</span><span className="ml-2 tabular-nums text-muted-foreground">{group.open.length}/{group.total} open</span>{groupState(group) === "done" ? <span className="ml-2 text-emerald-700 dark:text-emerald-300">✓</span> : null}</p>{group.open.length > 0 ? <p className="truncate text-[11px] text-muted-foreground" title={group.open.join(" · ")}>{group.open.slice(0, 3).join(" · ")}{group.open.length > 3 ? ` +${group.open.length - 3} more` : ""}</p> : null}</div>)}
     </div>
   );
 }
 
-/**
- * How a gap reads once the critique is over. A disposition the registry
- * recorded is a fact about the finding, so it is the primary mark; the rework
- * scope only exists for an escalation, and is what a reader is waiting on when
- * one is still open.
- *
- * `unknown` is a real state, not a defensive branch: the registry validator
- * flags a row with a missing or unrecognised `resolution:` as a failure, but a
- * failure is a REPORT and does not stop the card from rendering it. Indexing a
- * record that lacks the key used to throw and take the whole open card down over
- * a typo in one row of a YAML file.
- */
-const GAP_RESOLUTION: Record<string, { label: string; dot: string; pill: string }> = {
-  fixed: { label: "Fixed", dot: "bg-emerald-500", pill: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-  documented: { label: "Documented", dot: "bg-muted-foreground/60", pill: "bg-muted text-muted-foreground" },
-  escalate: { label: "Escalated", dot: "bg-amber-500", pill: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
-  unknown: { label: "Unclassified", dot: "bg-amber-500/60", pill: "bg-muted text-muted-foreground" },
-};
-
-function GapItems({ items }: { items: GapSummary["items"] }) {
-  return (
-    <ul className="space-y-1 pt-2">
-      {items.map((item) => {
-        const resolution = GAP_RESOLUTION[item.resolution] ?? GAP_RESOLUTION.unknown;
-        const scopeDone = item.scopeStatus !== null && isDoneStatus(item.scopeStatus);
-        return (
-          <li key={item.description} className="flex items-start gap-2 text-xs">
-            <span
-              aria-hidden
-              className={`mt-1.5 size-2 shrink-0 rounded-full ${scopeDone ? "bg-emerald-500" : resolution.dot}`}
-            />
-            <span className="flex-1">{item.description}</span>
-            {item.scopeStatus ? (
-              <Pill tone={statusTone(item.scopeStatus)}>
-                <span className="mr-1">{statusGlyph(item.scopeStatus)}</span>
-                {statusLabel(item.scopeStatus)}
-              </Pill>
-            ) : (
-              <Pill tone={resolution.pill}>{resolution.label}</Pill>
-            )}
-            {item.resolution === "escalate" && !item.scopeStatus ? (
-              <span className="text-amber-700 dark:text-amber-300">no scope yet</span>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/**
- * Gaps and rework: a section like any other, not a free-standing panel.
- *
- * It was `rounded-lg border p-4` with its own uppercase heading — a different
- * box on a card of identical boxes, on a card whose visual hierarchy is
- * precisely "one hero, then sections of one shape". The list of gap items is
- * history — gaps a past run recorded — so it starts closed and its tally lives
- * in the header, which is the same contract every other section on the card
- * already follows.
- *
- * The list carries every gap the registry named, not only the escalated ones.
- * Gating it on `escalated > 0` made a critique of two documented gaps render a
- * header reading "2 gaps" above an empty section: the tally counted findings,
- * the body listed rework, and a reader could not reconcile them.
- */
-function BuildGaps({ summary }: { summary: GapSummary | null }) {
-  const view = gapSummaryPresentation(summary);
-  if (!summary?.matched || !view) return null;
-  const lead = formatGapMs(summary.leadMs);
-  const cycle = formatGapMs(summary.cycleMs);
-  // Rework earns the hint because it is the fact that changes what a reader
-  // concludes from this section: "these are the same findings again" is a
-  // different situation from "these are the gaps this run found". It is the
-  // only metric offered here — the coverage line lives in the body, so a hint
-  // never becomes a second place a number is stated.
-  const rework = metricHint({ rounds: summary.rounds });
-  const bodyLines = metricBodyLines({ rounds: summary.rounds, reviews: summary.reviews });
-  const tally = [
-    `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
-    `${summary.fixed} fixed`,
-    `${summary.escalated} escalated`,
-    lead ? `lead ${lead}` : null,
-    cycle ? `cycle ${cycle}` : null,
-    rework,
-  ].filter(Boolean).join(" · ");
-  return (
-    <DisclosureSection
-      title="Gaps and rework"
-      subtitle="what the critique found"
-      hint={tally}
-      defaultOpen={summary.escalated > 0}
-    >
-      {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
-      {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
-      {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
-      {bodyLines.map((line) => (
-        <p key={line} className="text-xs text-muted-foreground">{line}</p>
-      ))}
-    </DisclosureSection>
-  );
-}
-
-function formatGapMs(ms: number | null): string | null {
-  if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return hours % 24 === 0 ? `${hours / 24}d` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 function ScopeSyncWarning({ card, detail }: { card: BuildCard; detail: BuildDetail }) {
   const copy = scopeSyncNotice(detail.scopeSync, {
@@ -211,8 +98,31 @@ function ScopeSyncWarning({ card, detail }: { card: BuildCard; detail: BuildDeta
 }
 
 function MentionedFiles({ card, detail, onViewFile }: { card: BuildCard; detail: BuildDetail; onViewFile: (file: ViewerFile) => void }) {
-  if (detail.mentionedFiles.length === 0) return null;
-  return <div className="space-y-1 border-t pt-3"><span className="text-xs font-medium text-muted-foreground">Files named in your request ({detail.mentionedFiles.length}):</span><p className="text-[11px] text-muted-foreground">Paths your request spells out that exist in this workspace. Nothing is inferred from a file name.</p><div className="flex flex-wrap gap-1">{detail.mentionedFiles.map((file) => <button key={file.path} onClick={() => onViewFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail.fileEnvironmentId, file.relPath, file.hostId, file.absolutePath) })} className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted" title={`Review ${file.display}`}><span>📄</span><span>{file.display}</span></button>)}</div></div>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {detail.mentionedFiles.map((file) => (
+        <button
+          key={file.path}
+          onClick={() => onViewFile({
+            display: file.display,
+            path: file.absolutePath,
+            target: fileLinkTarget(
+              card.workspaceKind === "exploratory",
+              detail.fileEnvironmentId,
+              file.relPath,
+              file.hostId,
+              file.absolutePath,
+            ),
+          })}
+          className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
+          title={`Review ${file.display}`}
+        >
+          <span aria-hidden>📄</span>
+          <span>{file.display}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 type BuildProgressProps = {
@@ -221,9 +131,7 @@ type BuildProgressProps = {
   archivedPresentation: { workflow: { title: string; hint: string; emptyScopes: string } } | null;
   artifactTotal: number;
   defaultOpen: boolean;
-  intentLabels: Record<string, string>;
   onOpenArtifacts: () => void;
-  onPickStage: (stage: string) => void;
   onViewFile: (file: ViewerFile) => void;
 };
 
@@ -265,13 +173,16 @@ function ScopesProgress({ detail }: { detail: BuildDetail }) {
   if (detail.scopes.length === 0) return null;
   const flow = { leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null };
   const elapsed = detail.card.scopeSummary.elapsedMs;
-  const activeScope = detail.card.executingScope;
   return (
     <>
       <ScopeProgress scopes={detail.scopes} flow={flow} />
       <ScopeProgressTrack done={detail.card.scopeSummary.scopesDone} total={detail.card.scopeSummary.scopesTotal} />
       {elapsed != null ? <p className="text-xs text-muted-foreground">Total scope time: {formatDuration(elapsed)}</p> : null}
-      {activeScope ? <p className="text-xs text-primary">● Executing: {activeScope}</p> : null}
+      {/* "Which scope is running" is stated once, by ScopesProgress, as
+          "Doing now". This line used to say "Executing" for the same fact, and
+          the section hint said "now:" — three names for one answer, so a reader
+          could not tell whether they agreed. */}
+
       <ScopesList
         scopes={detail.scopes}
         statusTone={statusTone}
@@ -282,13 +193,7 @@ function ScopesProgress({ detail }: { detail: BuildDetail }) {
   );
 }
 
-function TimelineProgress({ card, detail, intentLabels, onPick }: { card: BuildCard; detail: BuildDetail; intentLabels: Record<string, string>; onPick: (stage: string) => void }) {
-  const terminal = card.status === "completed" ? "completed" : card.status === "archived" ? "archived" : undefined;
-  const offRoute = card.intent && card.intent !== "unknown" ? `Not in this ${intentLabels[card.intent] ?? card.intent} route` : null;
-  return <div className="space-y-2 border-t pt-3"><StageTimeline currentStage={card.stage} terminal={terminal} nextStages={detail.nextStages} artifacts={detail.artifacts} onPick={onPick} skips={detail.stageSkips ?? { offRoute: [], skipped: [] }} offRouteReason={offRoute} />{card.status === "archived" ? null : <p className="text-xs text-muted-foreground">{card.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : "The agent advances on its own · click a lit stage to override"}</p>}</div>;
-}
-
-export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, intentLabels, onOpenArtifacts, onPickStage, onViewFile }: BuildProgressProps) {
+export function BuildProgress({ card, detail, archivedPresentation, artifactTotal, defaultOpen, onOpenArtifacts, onViewFile }: BuildProgressProps) {
   const gaps = useGapSummary(card.id);
   const progress = summarizeScopeProgress(detail.scopes);
   const emptyScopes = emptyScopeCopy(card, detail, archivedPresentation?.workflow.emptyScopes);
@@ -297,12 +202,29 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
       <ProgressDisclosure card={card} archivedPresentation={archivedPresentation} artifactTotal={artifactTotal} defaultOpen={defaultOpen} onOpenArtifacts={onOpenArtifacts} progress={progress}>
         {card.stage === "select" && !archivedPresentation ? <p className="text-xs text-muted-foreground">Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.</p> : null}
         <ScopeSyncWarning card={card} detail={detail} />
-        <CardChecks card={card} detail={detail} gaps={gaps} />
-        {detail.fileOccupancy ? <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} /> : null}
-        {detail.scopeXray ? <ScopeXray xray={detail.scopeXray} /> : null}
-        {detail.scopes.length > 0 ? <ScopesProgress detail={detail} /> : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
-        <TimelineProgress card={card} detail={detail} intentLabels={intentLabels} onPick={onPickStage} />
-        <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
+        <ProgressRegion title="Checks" hint="what this card still owes">
+          <CardChecks card={card} detail={detail} gaps={gaps} />
+        </ProgressRegion>
+        {detail.fileOccupancy ? (
+          <ProgressRegion title="File claims" hint="files this card holds, and files it waits on">
+            <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} />
+          </ProgressRegion>
+        ) : null}
+        {detail.scopeXray ? (
+          <ProgressRegion title="Approved scope map" hint="what the card agreed to do">
+            <ScopeXray xray={detail.scopeXray} />
+          </ProgressRegion>
+        ) : null}
+        {detail.scopes.length > 0 ? (
+          <ProgressRegion title="Scopes" hint="each unit of work, in dependency order">
+            <ScopesProgress detail={detail} />
+          </ProgressRegion>
+        ) : emptyScopes ? <p className={TEXT_META}>{emptyScopes}</p> : null}
+        {detail.mentionedFiles.length > 0 ? (
+          <ProgressRegion title="Files named in your request" hint="spelled out by you, never inferred">
+            <MentionedFiles card={card} detail={detail} onViewFile={onViewFile} />
+          </ProgressRegion>
+        ) : null}
       </ProgressDisclosure>
       <BuildGaps summary={gaps} />
     </>
