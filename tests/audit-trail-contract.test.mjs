@@ -40,8 +40,18 @@ assert.equal(noContract.state, "unsupported");
 assert.match(noContract.detail, /no audit-trail contract version/);
 
 // --- completion gate ----------------------------------------------------------
-assert.deepEqual(auditTrailGate({ build: okRun(), check: okRun(), verifiedGit: git }), {
-  ready: true, error: null, trailer: { head: HEAD, root: ROOT, artifacts: 2, path: "/repo/.stelow/x/audit-trail.md", contract: AUDIT_TRAIL_CONTRACT },
+const completes = auditTrailGate({ build: okRun(), check: okRun(), verifiedGit: git });
+assert.deepEqual(completes, {
+  ready: true,
+  error: null,
+  trailer: {
+    head: HEAD,
+    root: ROOT,
+    commonDir: null,
+    artifacts: 2,
+    path: "/repo/.stelow/x/audit-trail.md",
+    contract: AUDIT_TRAIL_CONTRACT,
+  },
 }, "a current trail at the verified commit completes");
 
 const unbuilt = auditTrailGate({ build: crashRun(1, "boom"), check: crashRun(1, "boom"), verifiedGit: git });
