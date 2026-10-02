@@ -2,6 +2,7 @@ import { selectBuildReviewArtifact } from "../../lib/build-review-target.mjs";
 import { Button } from "@/components/ui/button";
 import { SECTION_SURFACE } from "../disclosure";
 import { fileLinkTarget } from "../artifacts/artifact-inventory";
+import { AcceptanceRow } from "./acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
@@ -74,6 +75,21 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
           />
         </div>
       </div>
+      <BuildHeroBelow card={card} detail={detail} view={view} />
+    </section>
+  );
+}
+
+/**
+ * What sits under the status reading: the questions the card is waiting on, the
+ * human disposition of a finished result, and the split proposal when one is
+ * open. Cut by subject — everything here is "something else on this card"
+ * rather than the one status line above — because the hero was carrying all of
+ * it inline and crossing its function budget.
+ */
+function BuildHeroBelow({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
+  return (
+    <>
       {detail
         ? (
           <DetailQuestionSections
@@ -85,8 +101,14 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
           />
         )
         : null}
+      <AcceptanceRow
+        cardId={card.id}
+        status={card.status}
+        acceptanceLine={detail?.card.acceptanceLine}
+        onChanged={view.load}
+      />
       <HeroSplitAction detail={detail} view={view} />
-    </section>
+    </>
   );
 }
 
@@ -135,6 +157,10 @@ function BuildHeroActions({
   );
 }
 
+/**
+ * The human disposition of a finished result, on every card kind that can
+ * finish. It is a receipt, never a gate — see components/detail/acceptance-row.
+ */
 function RecoveryPrompt({ card, view }: { card: BuildCard; view: BuildDetailView }) {
   if (card.workspaceKind !== "exploratory") return null;
   const recovery = view.lifecycle.workspaceRecovery;

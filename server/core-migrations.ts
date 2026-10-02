@@ -28,6 +28,10 @@ const CARD_COLUMNS: Array<[string, string]> = [
   ["explore_stage", "TEXT"],
   ["split_from", "TEXT"],
   ["read_miss_since", "INTEGER"],
+  // Human acceptance of a finished result. A timestamp and nothing else: the
+  // host SDK exposes no operator identity, so a name here would be free text
+  // wearing attribution's clothes (lib/card-acceptance.mjs).
+  ["accepted_at", "INTEGER"],
 ];
 
 /**

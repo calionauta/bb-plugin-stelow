@@ -258,6 +258,18 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  acceptCard: {
+    experimental_description: "Record a human acceptance of a finished card's result; a receipt, never a gate",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      // The stamp the receipt carries, or null when nothing was written. The
+      // host SDK exposes no operator identity, so this is the whole receipt
+      // (lib/card-acceptance.mjs).
+      acceptedAt: z.number().nullable(),
+    }),
+  },
   draftDoneComment: {
     experimental_description: "Draft a GitHub completion note with the cheap generation preset",
     input: z.object({ cardId: z.string() }).strict(),

@@ -1486,18 +1486,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   was resolved *by the archive*, the verbatim-`last_error` revival path is
   untested here — the unit tests cover it, this card cannot.
 - **Opening a completed card is what satisfies its review.** The completion's
-  review request is cleared by a read, and only by a read: the inbox row and
-  the board chip are two surfaces of one row's read state, so spending it moves
-  read state alone and the completion keeps its own lifecycle — "reviewed" never
-  reads downstream as "closed", and an archived card's row is refused the
+  review request is cleared by a read, and by accepting the result: the inbox row
+  and the board chip are two surfaces of one row's read state, so spending it
+  moves read state alone and the completion keeps its own lifecycle — "reviewed"
+  never reads downstream as "closed", and an archived card's row is refused the
   stamp entirely. Build, research and Explore each clear it in their own detail
   body, guarded on the completed status so opening a card mid-work cannot
-  silence a live question, error or pause. This is a guarantee about the
-  *wiring*, not about the handler: a handler test exercises the handler
-  directly and never asks who calls it, which is why the guarantee is pinned
-  from the components and asserts its own premise (the card detail is fetched
-  from the detail body alone — a new prefetch or peek would be a second way for
-  a card to lose its review without you choosing it).
+  silence a live question, error or pause. Acceptance is the second writer, and
+  deliberately so: a person who has just recorded that they reviewed and
+  accepted the result is not owed the request to review it again, and leaving
+  the row open would hold the badge above zero on a card with nothing left to
+  do. This is a guarantee about the *wiring*, not about the handler: a handler
+  test exercises the handler directly and never asks who calls it, which is why
+  the guarantee is pinned from the components and asserts its own premise (the
+  card detail is fetched from the detail body alone — a new prefetch or peek
+  would be a second way for a card to lose its review without you choosing it).
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
@@ -1954,6 +1957,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   reconcile tick, reason chip reading `unreviewed Nd`, and the fleet-wide sweep
   is the door that reaches rows no live sync visits. Escalating never resolves:
   the badge still counts the review request.
+- **Acceptance receipt** (`acceptCard`, `lib/card-acceptance.mjs`). Done in
+  Stelow certifies verified finished work, not accepted-and-shipped work — the
+  worker drives it after the host verifies in code, and nothing human-driven
+  reaches it. Human review happened afterwards and was a read. A Done card can
+  now carry an optional **acceptance receipt**: a person says they reviewed the
+  result and a stamp plus one trail comment records it, so a card a human looked
+  at and accepted stops reading identically to one nobody has opened. It is a
+  receipt, never a gate — no status, stage, or worker message moves, so it
+  creates no phantom wait, and it is only ever written by a person. Accepting
+  **satisfies the review request** the completion row was asking, so the badge
+  stops counting a card whose review just happened; the row survives in Resolved
+  history. The receipt is **a timestamp and nothing else**, deliberately: the
+  host SDK exposes no operator identity (`useRpc`, `bb.sdk.threads`,
+  `bb.storage` — none answer "who is signed in", and every `displayName` in it
+  belongs to a project or a preset), so a name field would be free text wearing
+  attribution's clothes. Only a `completed` card can be accepted; an unfinished
+  one is refused naming Done, and an archived one naming restore. The row shows
+  on all three card kinds, because Research and Explore finish too.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

@@ -124,7 +124,7 @@
     "test:runtime-seams": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-seams.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-board-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-detail-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-wiring.test.mjs",
     "test:source-shape": "node tests/source-shape.test.mjs && node tests/debt-baseline.test.mjs",
     "test:source-budgets": "node tests/source-budgets.test.mjs && node tests/budget-lineage.test.mjs",
-    "test:completion-review": "node --test tests/completion-review-receipt.test.mjs"
+    "test:completion-review": "node --test tests/completion-review-receipt.test.mjs && node tests/card-acceptance.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-acceptance-receipt.test.mjs"
   },
   "files": [
     "dist",

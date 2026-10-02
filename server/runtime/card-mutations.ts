@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { acceptanceRefusal, acceptedDate } from "../../lib/card-acceptance.mjs";
 import { heuristicDisplayName } from "../../lib/draft-burst.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
@@ -30,6 +31,9 @@ type CardMutationDeps = {
     author: "user" | "agent",
     body: string,
   ) => string;
+  /** Close the card's open review request. Accepting a finished result is the
+   * act the completion row was asking for, so the row stops asking. */
+  markReviewSatisfied: (cardId: string) => Promise<{ marked: boolean }>;
   updateCard: (cardId: string, values: Record<string, unknown>) => void;
   errors: { cardNotFound: string; cardArchived: string };
 };
@@ -79,6 +83,7 @@ export function createCardMutationHandlers(deps: CardMutationDeps) {
       targetId: string;
       body: string;
     }) => addCardComment(deps, input),
+    acceptCard: (input: { cardId: string }) => acceptCard(deps, input),
   };
 }
 
@@ -106,6 +111,45 @@ async function updateCardIntent(
   }
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
+}
+
+/**
+ * Record that a person accepted this card's finished result.
+ *
+ * A receipt, never a gate: it is written only when a person writes it, it never
+ * blocks the workflow, and it creates no wait. What it changes is the audit
+ * trail — a Done card a human looked at and accepted stops reading identically
+ * to one nobody has opened.
+ *
+ * The trail comment is the openable record. Acceptance does not route to the
+ * worker: the card is Done, its worker has finished, and waking it would turn a
+ * disposition into new work.
+ */
+async function acceptCard(deps: CardMutationDeps, { cardId }: { cardId: string }) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound, acceptedAt: null };
+  const refusal = acceptanceRefusal({ status: card.status });
+  if (refusal) return { ok: false, error: refusal, acceptedAt: null };
+  const at = deps.now();
+  deps.db.prepare("UPDATE cards SET accepted_at = ?, updated_at = ? WHERE id = ?")
+    .run(at, at, cardId);
+  deps.logCardComment(
+    cardId,
+    "card",
+    cardId,
+    "user",
+    `Accepted the finished result on ${acceptedDate(at)}. Done certifies the verification; this records a human disposition of it.`,
+  );
+  // A person who has just accepted the result is not owed the review request
+  // again. Best-effort: the receipt is the record, and a failed close must not
+  // undo it.
+  try {
+    await deps.markReviewSatisfied(cardId);
+  } catch {
+    /* the acceptance itself is what was asked for */
+  }
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null, acceptedAt: at };
 }
 
 async function renameCard(

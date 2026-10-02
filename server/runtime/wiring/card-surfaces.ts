@@ -206,6 +206,13 @@ function buildCardMutations(core: RuntimeCore) {
     cardWorkspace: core.cardWorkspace,
     workflowStateDir: core.workflowStateDir,
     logCardComment: core.ledger.logCardComment,
+    // Accepting a finished result ANSWERS its review request. The completion
+    // row exists to say "audit evidence is ready to review", and a person who
+    // has just said they reviewed and accepted it is not owed that request
+    // again — leaving it open would hold the badge above zero on a card nobody
+    // has anything left to do with.
+    markReviewSatisfied: (cardId: string) =>
+      core.inbox.handlers.markCardNotificationsRead({ cardId, kind: "completed" }),
     updateCard: core.updateCard,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
