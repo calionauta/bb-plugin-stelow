@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.3...v0.65.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* the decision API defaults to a provider that answers the same way twice ([#271](https://github.com/calionauta/bb-plugin-stelow/issues/271)) ([17bca94](https://github.com/calionauta/bb-plugin-stelow/commit/17bca94db303889ce805a29235477dc8301a0544))
+
 ## [0.65.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.2...v0.65.3) (2026-10-02)
 
 
