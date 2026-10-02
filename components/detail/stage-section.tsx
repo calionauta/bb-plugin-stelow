@@ -140,9 +140,17 @@ function StageReference({ open, onToggle }: { open: boolean; onToggle: (open: bo
   );
 }
 
+/**
+ * The stage index badge.
+ *
+ * A stage marker, not body copy: it is a numeral in a circle, so it carries the
+ * smallest named step on the scale. It was `text-[11px]` — a size no longer on
+ * the scale and only available as a recorded exception — which made a stage
+ * number smaller than the sentence describing the stage beside it.
+ */
 const STAGE_INDEX_BADGE =
   "flex size-6 shrink-0 items-center justify-center rounded-full bg-background "
-  + "text-[11px] font-semibold text-muted-foreground ring-1 ring-border";
+  + "text-xs font-semibold text-muted-foreground ring-1 ring-border";
 
 function StageRow({ stage }: { stage: string }) {
   const summary = stageSummary(stage);

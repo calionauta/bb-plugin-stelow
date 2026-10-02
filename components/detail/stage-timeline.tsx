@@ -77,7 +77,7 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
         disabled={!clickable || isCurrent}
         title={dimmedTitle}
         onClick={() => onPick(stage)}
-        className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}`}
+        className={stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}
         >
           {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
           <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
@@ -135,4 +135,31 @@ export function StageTimeline({ currentStage, nextStages, artifacts, onPick, ski
       })}
     </div>
   );
+}
+
+/**
+ * The stage chip's classes.
+ *
+ * Named because the class list outgrew the line it lived on, and because the
+ * size is part of what it asserts: the chip renders at `text-xs`, the smallest
+ * step still on the scale. It was `text-[11px]`, which made the number naming
+ * the stage smaller than the sentence beside it.
+ *
+ * `min-h-8` stays: it passes WCAG 2.5.8 AA and this repo's other controls honour
+ * `min-h-11`, but raising a touch target is a change to every stage chip's hit
+ * area and belongs to the card that owns the rule, not to a type migration.
+ */
+function stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance }: {
+  isCurrent: boolean;
+  passed: boolean;
+  skipReason: string | null;
+  isOffRoute: boolean;
+  canAdvance: boolean;
+}) {
+  return [
+    "relative inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+    "transition-colors cursor-pointer disabled:cursor-not-allowed",
+    "min-h-8",
+    chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance }),
+  ].filter(Boolean).join(" ");
 }
