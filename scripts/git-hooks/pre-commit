@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+# The deterministic gates that would fail in CI anyway — before the commit
+# exists, and without waiting for a push.
+#
+# Harness-independent by construction: git runs this, so it fires the same from
+# pi, from opencode, from a shell and from an IDE. Nothing here is agent-aware.
+#
+# Deliberately the fast pair only. `typecheck` is ~35s and `npm test` ~3min;
+# they stay in CI, because a gate nobody waits for is a gate that gets
+# `--no-verify`. These two are ~12s together and they are the two that catch the
+# mistakes this repository actually makes: lint for dead code, and source-shape
+# for a function, a file or a line that crossed its budget.
+set -e
+
+if [ ! -d node_modules ]; then
+  echo "pre-commit: node_modules is missing — skipping (run npm install)"
+  exit 0
+fi
+
+echo "pre-commit: lint + source shape"
+npm run --silent lint
+npm run --silent quality:shape

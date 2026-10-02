@@ -1,5 +1,22 @@
 # Plugin development
 
+## Gates before a commit
+
+`npm test` and CI run the whole gate set; two of them are cheap enough to run
+before the commit exists, and both are wired as a git hook:
+
+```sh
+git config core.hooksPath scripts/git-hooks   # once per clone
+```
+
+- `lint` (oxlint) — dead code, unused imports.
+- `quality:shape` — a function, a file or a line over its budget.
+
+`typecheck` (~35s) and `npm test` (~3min) stay in CI: a gate nobody waits for is
+a gate that gets `--no-verify`. Run them yourself before a push, and do not
+reach for `--no-verify` to skip the two that are fast — the failures they catch
+are the ones that come back as a red CI five minutes later.
+
 ## Commands
 
 - `npm run build:reload` — after every change and after each `package.json#version` bump: builds the bundle and reloads the plugin in the running BB; use `npm run reload` when the UI still looks stale (do not rely on `npm run build` hot-reload alone).
