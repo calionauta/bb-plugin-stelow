@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { presetEnvironmentSeed } from "../../lib/preset-environment-seed.mjs";
+import { captureEnvironmentSeed, presetEnvironmentSeed } from "../../lib/preset-environment-seed.mjs";
 
 export type ComposerEnvironmentSeed = ReturnType<typeof presetEnvironmentSeed>;
 
@@ -12,19 +12,15 @@ export type ComposerEnvironmentSeed = ReturnType<typeof presetEnvironmentSeed>;
  * close the create dialog, a save refreshes the preset list, and the active
  * preset's kind can change under a live composer.
  *
- * Capturing once per open is what makes "picking something else always wins"
- * true rather than aspirational: the seed is read when the dialog opens and
- * then frozen, so nothing that happens underneath it can overwrite a person's
- * pick. The value itself is a module-level frozen constant from
- * `lib/preset-environment-seed.mjs`, so even the first render hands the host a
- * stable reference rather than a fresh literal.
+ * Capturing once per open is what makes the *environment* picker immune to
+ * that. It is deliberately the only field that is: provider, model, reasoning
+ * level and permission mode are still read live from the preset, so changing
+ * one of those mid-dialog re-seeds it. FEATURES.md says so in the same words.
  *
- * `open` is the reset key, and it has to be: this hook is called ABOVE
- * `<Dialog>`, and Radix unmounts `DialogContent` on close — not the component
- * holding the hook. A plain mount-once ref would therefore survive a close and
- * a reopen, and the picker would keep showing the preset as it was the first
- * time the panel mounted. Keying on `open` is what makes "reopening re-reads
- * the preset" true rather than merely intended.
+ * The rule itself lives in `captureEnvironmentSeed` so it can be executed by a
+ * test rather than read out of this file. The seed value is a frozen module
+ * constant from `lib/preset-environment-seed.mjs`, so even the first render
+ * hands the host a stable reference rather than a fresh literal.
  */
 export function useSeededComposerEnvironment(
   environmentKind: string | null | undefined,
@@ -34,8 +30,6 @@ export function useSeededComposerEnvironment(
   // meaningful value here (it means "seed nothing"), so it cannot double as
   // the "not captured yet" sentinel.
   const captured = useRef<{ open: boolean; seed: ComposerEnvironmentSeed } | null>(null);
-  if (captured.current?.open !== open) {
-    captured.current = { open, seed: presetEnvironmentSeed(environmentKind) };
-  }
+  captured.current = captureEnvironmentSeed(captured.current, open, environmentKind);
   return captured.current.seed;
 }

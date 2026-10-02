@@ -1,3 +1,5 @@
+import { DEFAULT_ENVIRONMENT_KIND } from "./preset-environment-kind.mjs";
+
 export type PresetManagerPreset = {
   id: string;
   name: string;
@@ -46,9 +48,18 @@ export const EMPTY_PRESET_FORM: PresetManagerForm = {
   modelId: "",
   reasoningLevel: "medium",
   permissionMode: "full",
-  environmentKind: "project-default",
+  environmentKind: DEFAULT_ENVIRONMENT_KIND,
 };
 
+/**
+ * The form carries the preset's stored kind verbatim.
+ *
+ * An installed row's kind can genuinely hold a value outside the schema's two
+ * options — upgraded installs add the column with `ALTER TABLE` and no CHECK,
+ * and the CLI casts its flag blindly. A form that normalised it would hide the
+ * very fact the person needs to see, so the value travels as it is and
+ * `isKnownEnvironmentKind` decides what the control says about it.
+ */
 export function formFromPreset(preset: PresetManagerPreset): PresetManagerForm {
   return {
     id: preset.id,
@@ -58,23 +69,6 @@ export function formFromPreset(preset: PresetManagerPreset): PresetManagerForm {
     reasoningLevel: preset.reasoningLevel,
     permissionMode:
       preset.permissionMode as PresetManagerForm["permissionMode"],
-    environmentKind: preset.environmentKind ?? "project-default",
+    environmentKind: preset.environmentKind ?? DEFAULT_ENVIRONMENT_KIND,
   };
-}
-
-export const ENVIRONMENT_KINDS = ["project-default", "new-worktree"] as const;
-
-/**
- * An installed row's kind arrives as a plain string, and a value outside the
- * schema's two options is genuinely reachable: upgraded installs add the
- * column with `ALTER TABLE` and no CHECK, and the CLI casts its flag blindly.
- *
- * The form carries the original value rather than normalising it, because a
- * control that silently showed `project-default` would hide the very fact the
- * person needs to see. The seed mapping is total and treats an unknown kind as
- * today's behaviour; the save path refuses it with a sentence that names both
- * options.
- */
-export function isKnownEnvironmentKind(value: string | null | undefined): boolean {
-  return ENVIRONMENT_KINDS.includes(value as (typeof ENVIRONMENT_KINDS)[number]);
 }

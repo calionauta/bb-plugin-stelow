@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PresetManagerFormView } from "./preset-manager-form";
 import { PresetManagerList } from "./preset-manager-list";
+import { isBuiltInPresetEdit } from "./preset-environment-kind.mjs";
 import type { PresetManagerForm, PresetManagerPreset } from "./preset-manager-types";
 
 export type PresetManagerEditorProps = {
@@ -20,20 +21,6 @@ export type PresetManagerEditorProps = {
   onSave: () => void;
   onClose: () => void;
 };
-
-/**
- * Editing a built-in keeps its own environment. Flipping the built-in default's
- * kind would re-route every auto-started worker through `firstWorktreePreset`,
- * un-park the automation gate, and become the inherited kind of every preset
- * created afterwards — a cascade the field's own help text names, so the
- * control is disabled rather than silently consequential.
- */
-function isBuiltInEdit(props: PresetManagerEditorProps): boolean {
-  if (!props.form.id) return false;
-  return props.presets.some(
-    (preset) => preset.id === props.form.id && preset.builtIn,
-  );
-}
 
 /**
  * What the dialog is for: the presets that exist, and the form that edits one.
@@ -61,7 +48,7 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
       />
       <PresetManagerFormView
         form={props.form}
-        builtIn={isBuiltInEdit(props)}
+        builtIn={isBuiltInPresetEdit(props.presets, props.form.id)}
         formOpen={props.formOpen}
         busy={props.busy}
         message={props.message}

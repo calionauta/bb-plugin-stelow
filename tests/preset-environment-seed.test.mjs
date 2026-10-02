@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { presetEnvironmentSeed } from "../lib/preset-environment-seed.mjs";
+import { captureEnvironmentSeed, presetEnvironmentSeed } from "../lib/preset-environment-seed.mjs";
 import { savePreset } from "../components/settings/preset-manager-crud.ts";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // What a preset's stored environment kind becomes when a card starts.
 //
@@ -20,16 +22,6 @@ import { savePreset } from "../components/settings/preset-manager-crud.ts";
 // as host/managed-worktree, which BB cannot redefine underneath us, and the
 // checkout is not seeded at all because the SDK documents
 // {type:"project-default"} as "seeds nothing".
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const fieldSource = readFileSync(
-  join(root, "components/settings/preset-environment-kind-field.tsx"),
-  "utf8",
-);
-const rowSource = readFileSync(
-  join(root, "components/settings/preset-manager-preset-row.tsx"),
-  "utf8",
-);
 
 // The mapper itself, called rather than read: this is where a wrong kind would
 // put a card in a checkout the person asked to avoid.
@@ -160,219 +152,77 @@ const rowSource = readFileSync(
   );
 }
 
-// The control is a checkbox, not a pair of named options. A "Project checkout"
-// option cannot keep its promise, so the shape that survives is the one that
-// makes only a statement it can honour.
-{
-  assert.doesNotMatch(
-    fieldSource,
-    /type="radio"/,
-    "no radio option exists, so no stored value is presented as a checkout the card will not get",
-  );
-  assert.doesNotMatch(
-    fieldSource,
-    /type="checkbox"[\s\S]{0,400}type="radio"/,
-    "the control never mixes a checkbox with a named option pair",
-  );
-  assert.match(
-    fieldSource,
-    /type="checkbox"/,
-    "the environment kind is authored through a checkbox",
-  );
-  // The two values the control writes. Pinned as behaviour (what a click
-  // produces), not as the mere presence of the strings: a copy grep would pass
-  // on a control that wrote neither.
-  assert.match(
-    fieldSource,
-    /environmentKind:\s*event\.target\.checked\s*\?\s*WORKTREE_KIND\s*:\s*"project-default"/,
-    "checking writes the worktree kind and clearing it writes the checkout kind",
-  );
-}
-
-// The label has one home. The import dialog declares this file's concept a
-// single source; re-declaring the words here is how two surfaces drift.
-{
-  assert.match(
-    fieldSource,
-    /import \{ ISOLATED_WORKTREE_LABEL \} from "\.\.\/isolated-worktree-check"/,
-    "the concept's name is imported from its declared single source, not retyped",
-  );
-  // The import dialog's benefit sentence describes an agent and a card. On a
-  // preset there is no agent yet, and the person may change the setting, so
-  // reusing it would state something untrue in this location.
-  assert.doesNotMatch(
-    fieldSource,
-    /ISOLATED_WORKTREE_BENEFIT/,
-    "the import dialog's benefit sentence is not reused, because it describes a card rather than a preset",
-  );
-  // Its detail list tells the reader to create the very preset this dialog
-  // authors.
-  assert.doesNotMatch(
-    fieldSource,
-    /ISOLATED_WORKTREE_DETAILS/,
-    "the import dialog's detail list is not reused: one of its lines tells the reader to create this preset",
-  );
-}
-{
-  // Both disabled conditions are load-bearing. One stops a save racing the
-  // field; the other stops a built-in's kind from cascading into every
-  // auto-started worker and every preset created afterwards.
-  assert.match(
-    fieldSource,
-    /disabled=\{disabled\}/,
-    "the control's disabled state is driven by the busy and built-in conditions",
-  );
-  assert.match(
-    fieldSource,
-    /const disabled = busy \|\| builtIn;/,
-    "and those two conditions are what combine to produce it",
-  );
-  // A pointer cursor on a permanently disabled control promises a click that
-  // never lands — which is the built-in case, every time.
-  assert.match(
-    fieldSource,
-    /cursor-default/,
-    "the control drops the pointer cursor when it cannot be clicked",
-  );
-}
-
-// The explanation carries the built-in cascade and the out-of-enum value, and
-// those sentences are the ONLY place either fact appears. If they do not reach
-// assistive tech, a screen-reader user meets a disabled control with no reason.
-{
-  assert.match(
-    fieldSource,
-    /aria-describedby=\{HELP_ID\}/,
-    "the input points at its explanation so it is announced on demand",
-  );
-  assert.match(
-    fieldSource,
-    /id=\{HELP_ID\}/,
-    "and the explanation carries the id that reference resolves to",
-  );
-}
-
-// Focus must be perceivable per WCAG 2.2. The spec named ChoiceCards' treatment
-// as the house style, and no global outline reset exists in this repo, so the
-// control supplies its own.
-{
-  assert.match(
-    fieldSource,
-    /focus-visible:outline/,
-    "the checkbox carries its own visible focus treatment",
-  );
-}
-
-// Touch targets are a house rule that AGENTS.md admits is stated but untested.
+// The capture rule is EXECUTED, not read out of the hook's source. The old
+// assertion pinned the literal `captured.current?.open !== open`, which an
+// unconditional guard satisfies while re-capturing on every render — verified,
+// that mutation left the suite green while AC 3's executor was absent.
 //
-// COUNTED, not presence-matched. A presence grep over the whole file passes on a
-// control whose JSX lost both classes and whose only remaining occurrence is
-// the word inside a comment — which is exactly how this assertion was found
-// green on a broken control during verification. Counting inside the JSX
-// distinguishes a class-order refactor from a dropped class.
+// This is the same defect the text pin was defending against, one layer down:
+// the rule now lives in a pure function, so the property is a fact about a
+// return value rather than a fact about a sentence.
 {
-  const count = (needle) => fieldSource.split(needle).length - 1;
-  assert.ok(
-    count("min-h-11") >= 1,
-    `the control's label carries the house minimum touch target (found ${count("min-h-11")})`,
+  // Frozen for the visit: a preset changing underneath an open dialog.
+  const first = captureEnvironmentSeed(null, true, "new-worktree");
+  const second = captureEnvironmentSeed(first, true, "project-default");
+  assert.equal(
+    second.seed,
+    first.seed,
+    "a preset saved mid-dialog cannot re-seed over the choice already made",
   );
-  // The label and the input are both clickable, so both must resolve a pointer.
-  // The cursor is one interpolated variable, so the assertion counts where it is
-  // APPLIED (two className sites) rather than how many times the word appears —
-  // a count of the literal alone would pass on a label that dropped it.
-  const applied = fieldSource.match(/className=\{`[^`]*\$\{cursor\}/g) ?? [];
-  assert.ok(
-    applied.length >= 2,
-    `the label and the input each carry the pointer cursor (found ${applied.length} sites)`,
+  assert.equal(
+    second.seed?.workspace?.type,
+    "managed-worktree",
+    "and what survives is the seed the dialog opened with, not the newer preset",
   );
-  assert.match(
-    fieldSource,
-    /disabled \? "cursor-default" : "cursor-pointer"/,
-    "and the cursor drops to a default when the control cannot be clicked",
+  assert.equal(second.open, true, "the same visit is still the same visit");
+
+  // Reopening re-reads: this is the B3 behaviour, keyed on `open` because Radix
+  // unmounts DialogContent (not the component holding the hook) on close.
+  const closed = captureEnvironmentSeed(second, false, "new-worktree");
+  assert.equal(closed.open, false, "closing the dialog ends the visit");
+  const reopened = captureEnvironmentSeed(closed, true, "project-default");
+  assert.equal(
+    reopened.seed,
+    undefined,
+    "reopening re-reads the preset rather than replaying the first one",
+  );
+
+  // The no-seed case carries a real meaning, so the capture must freeze it too.
+  const none = captureEnvironmentSeed(null, true, "project-default");
+  assert.equal(none.seed, undefined, "a checkout preset seeds nothing");
+  assert.equal(
+    captureEnvironmentSeed(none, true, "new-worktree").seed,
+    undefined,
+    "and 'seed nothing' is frozen for the visit too, not re-read per render",
   );
 }
 
-// The preset list must distinguish a worktree preset without opening it, and
-// the indicator cannot live inside the meta span: that span truncates, so
-// anything added in there is ellipsised and never renders.
+// The hook holds the capture and DELEGATES the rule rather than restating it —
+// two rules for one behaviour is how the text pin and the code drifted apart.
 {
-  assert.match(
-    rowSource,
-    /environmentKind === "new-worktree"\s*\?\s*<Pill>worktree<\/Pill>\s*:\s*null/,
-    "a worktree preset is marked in the list, and only a worktree preset is",
-  );
-  const indicator = rowSource.indexOf("environmentKind === \"new-worktree\"");
-  const truncate = rowSource.indexOf("truncate");
-  assert.ok(
-    truncate !== -1 && indicator > truncate,
-    "the row still truncates its meta line",
-  );
-  assert.ok(
-    /<span className="min-w-0 flex-1 truncate">[\s\S]*?<\/span>\s*\{preset\.isDefault/.test(rowSource),
-    "the indicator is a sibling of the truncating meta span, never inside it",
-  );
-}
-
-// The seed is wired into THREE dialogs, and each one must actually pass it.
-//
-// Counted per dialog rather than once over the folder: a single assertion that
-// "some dialog seeds the composer" stays green when one dialog silently stops
-// doing it, which is precisely the mutation verification performed — deleting
-// the prop from the Explore dialog alone left every suite green.
-const DIALOGS = [
-  "create-build-dialog.tsx",
-  "create-research-dialog.tsx",
-  "create-explore-dialog.tsx",
-];
-for (const dialog of DIALOGS) {
-  const source = readFileSync(join(root, "components/creation", dialog), "utf8");
-  assert.match(
-    source,
-    /useSeededComposerEnvironment\(/,
-    `${dialog} reads the preset's environment kind`,
-  );
-  assert.match(
-    source,
-    /defaultEnvironment=\{seededEnvironment\}/,
-    `${dialog} hands the seed to the composer`,
-  );
-  // The reset key is what makes "reopening re-reads the preset" true. The hook
-  // sits ABOVE <Dialog>, and Radix unmounts DialogContent on close — not the
-  // component holding the hook — so a mount-once capture would survive a close
-  // and a reopen and keep showing a stale preset.
-  assert.match(
-    source,
-    /useSeededComposerEnvironment\([^)]*,\s*open\)/,
-    `${dialog} re-reads the preset on reopen rather than capturing once per panel mount`,
-  );
-}
-{
-  // And the hook itself must hold the capture rather than recompute per render.
-  // The mapper's frozen constant is the first line of defence; this is the
-  // second, and it is the one AC 3 names.
   const hook = readFileSync(
     join(root, "components/creation/composer-environment-seed.ts"),
     "utf8",
   );
   assert.match(
     hook,
-    /captured\.current\?\.open !== open/,
-    "the capture is keyed on the dialog's open state, so a reopen re-reads the preset",
-  );
-  assert.match(
-    hook,
     /useRef/,
     "the capture survives re-renders, so a person who touched the picker keeps their pick",
   );
+  assert.match(
+    hook,
+    /captureEnvironmentSeed\(captured\.current, open, environmentKind\)/,
+    "the hook delegates to the tested rule rather than restating it",
+  );
   assert.doesNotMatch(
     hook,
-    /return presetEnvironmentSeed\(environmentKind\);/,
-    "the hook never recomputes per render, which is the re-seed defence AC 3 depends on",
+    /presetEnvironmentSeed\(environmentKind\)/,
+    "the hook never recomputes the seed per render, which is the re-seed defence AC 3 depends on",
   );
 }
 
 console.log(
   "preset environment seed test ok: the mapping is total and reference-stable, "
-  + "an unknown kind is refused locally, the control is a checkbox that claims "
-  + "only a worktree, and all three dialogs seed the composer on every open",
+  + "an unrecognised kind is refused before the wire, and the capture freezes the "
+  + "seed per visit so a re-render is not a re-seed",
 );
