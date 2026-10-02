@@ -1582,7 +1582,6 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   but the picker freezing is the *only* thing frozen: provider, model, reasoning
   level and permission mode are still read live from the active preset, so
   changing those mid-dialog re-seeds them, including over a choice already made.
-<<<<<<< HEAD
   A preset's reasoning level is one of the eight levels the host offers, and it
   is stored with the provider and model it belongs to — never on its own.
   Saving a preset with any other level is refused, naming the levels that are
@@ -1631,8 +1630,6 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   signal and silencing it is worse than the defect; the same applies to a
   statement that has itself drifted, which the repair declines out loud. A
   healthy install is not written to at all.
-=======
->>>>>>> a492f61 (fix: hold the environment control to the promise its docs make)
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
