@@ -893,6 +893,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave
   exactly as before.
+  **Asking whether something is pending needs no question.** A worker on
+  card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
+  because no read-only verb reported the answer. `bb stelow status` now
+  appends `open-questions=<n>` per card when anything is open, which is that
+  probe's real answer. A card whose live read fails omits the column entirely
+  rather than printing `0`: an unknown is not a zero, and a zero is the claim
+  that stops a worker from asking the one question it needed to ask.
   A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
