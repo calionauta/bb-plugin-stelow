@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureEnvironmentSeed, presetEnvironmentSeed } from "../lib/preset-environment-seed.mjs";
+import {
+  captureEnvironmentSeed,
+  isKnownEnvironmentKind,
+  presetEnvironmentSeed,
+  storableEnvironmentKind,
+} from "../lib/preset-environment-seed.mjs";
 import { savePreset } from "../components/settings/preset-manager-crud.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -219,6 +224,63 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
     /presetEnvironmentSeed\(environmentKind\)/,
     "the hook never recomputes the seed per render, which is the re-seed defence AC 3 depends on",
   );
+}
+
+// The card-override path writes this column too, and it has no form to refuse
+// in — so the out-of-enum case has to be settled before the wire, not after.
+// The audit flagged this as unrecorded; forwarding `preset.environmentKind ??
+// "project-default"` sent an upgraded install's unvalidated value straight into
+// a zod enum and surfaced a raw validation string as a failed assignment.
+{
+  assert.equal(
+    storableEnvironmentKind("new-worktree"),
+    "new-worktree",
+    "a worktree kind is stored as itself",
+  );
+  assert.equal(
+    storableEnvironmentKind("project-default"),
+    "project-default",
+    "and so is a checkout kind",
+  );
+  for (const unreachable of ["local", "", null, undefined, "NEW-WORKTREE"]) {
+    assert.equal(
+      storableEnvironmentKind(unreachable),
+      "project-default",
+      `an out-of-enum kind (${JSON.stringify(unreachable)}) falls back to something storable`,
+    );
+  }
+  // The two mappers answer different questions and must not drift into one
+  // another: seeding is about the composer, storing is about the wire.
+  assert.equal(
+    isKnownEnvironmentKind("project-default"),
+    true,
+    "the default kind is in the schema",
+  );
+  assert.equal(isKnownEnvironmentKind("local"), false, "and an unrecognised one is not");
+
+  const { classifyPresetSelection, runPresetAssignment } = await import(
+    "../lib/preset-assignment.mjs"
+  );
+  const calls = [];
+  const rpc = {
+    call: (method, args) => {
+      calls.push([method, args]);
+      return Promise.resolve({ preset: { id: "card-override-1" } });
+    },
+  };
+  await runPresetAssignment({
+    rpc,
+    cardId: "c1",
+    selected: "custom",
+    customValue: { providerId: "p", modelId: "m", environmentKind: "ignored" },
+    defaultPreset: { environmentKind: "local", reasoningLevel: "high", permissionMode: "ask" },
+  });
+  assert.equal(
+    calls[0]?.[1]?.environmentKind,
+    "project-default",
+    "the card-override write stores a value the schema can hold, not the row's raw one",
+  );
+  assert.ok(classifyPresetSelection("preset:p1").presetId === "p1", "the selection still classifies");
 }
 
 console.log(
