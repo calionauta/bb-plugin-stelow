@@ -2,7 +2,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { DisclosureChevron } from "../disclosure";
 import { formatDuration } from "../../lib/card-metrics.mjs";
-import { AttentionRow, WaitBreakdown } from "./flow-wait";
+import { AttentionRow, CoverageLines, WaitBreakdown } from "./flow-wait";
 import type { rpcContract } from "../../server";
 
 const FLOW_BUTTON_CLASS =
@@ -30,8 +30,9 @@ type FlowResult = Awaited<
 >;
 type FlowMetrics = Extract<
   FlowResult,
-  { items: unknown; summary: unknown; attention: unknown }
+  { items: unknown; summary: unknown; attention: unknown; coverage: unknown }
 >;
+type FlowCoverage = FlowMetrics["coverage"];
 type FlowKind = FlowMetrics["items"][number]["kind"];
 type FlowRow = FlowMetrics["items"][number];
 type FlowAttention = FlowMetrics["attention"][number];
@@ -287,6 +288,14 @@ function TimingDetails({
         runs idea to done; cycle runs first real movement to done.
       </p>
       <WaitBreakdown wait={result.wait} />
+      {/* The reviewer and rework readings, over the same finished cards. The
+          strings arrive rendered from the same lib owners the CLI and the card
+          call, so this panel cannot word a number differently from either — it
+          prints, it does not format. Both are "" unless there is something to
+          report: no card reviewed twice means no rework line, and no cut
+          artifact means no coverage line. A panel that always printed a row
+          would be a row nobody reads. */}
+      <CoverageLines coverage={result.coverage} />
       <div className="flex items-center gap-1" role="group" aria-label="Done window">
         {FLOW_WINDOWS.map((entry) => (
           <button

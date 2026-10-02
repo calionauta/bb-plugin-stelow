@@ -3,10 +3,11 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { contractForBuildArtifact } from "../../lib/artifact-contracts.mjs";
 import { parseArtifactManifest, resolveArtifactPath } from "../../lib/artifact-manifest.mjs";
 import { escalatedGaps, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import { addGapTotals as addTotals, emptyGapTotals } from "../../lib/metrics-format.mjs";
+import type { GapTotals } from "../../lib/metrics-format.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Workspace = { path: string; hostId: string | null };
-type GapTotals = { total: number; fixed: number; documented: number; escalated: number };
 type AuditGapScope = { id: string; name: string; status: string; gap: string | null };
 export type CritiqueGapState = {
   matched: boolean;
@@ -18,6 +19,13 @@ export type CritiqueGapState = {
   escalated: Array<{ description: string }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
+  /** One entry per registered critique artifact, oldest first. The round
+   * boundary is what makes rework measurable: `gaps` and `escalated` dedupe
+   * across rounds on purpose, so a finding fixed in round 1 and re-opened in
+   * round 3 is one row there and a rework event here. Empty when no critique
+   * report is individually readable, which the metric treats as "not
+   * measured" rather than "nothing reworked". */
+  critiqueRounds: Array<Array<{ description: string; resolution: string }>>;
 };
 
 type CritiqueDeps = {
@@ -33,36 +41,33 @@ type CritiqueAccumulator = {
   gaps: Array<{ description: string; resolution: string }>;
   escalated: Array<{ description: string }>;
   critiqueTexts: string[];
+  /** Kept per round rather than only as text: the joined form cannot say which
+   * finding belongs to which pass, and that is the whole of a rework metric. */
+  rounds: Array<Array<{ description: string; resolution: string }>>;
 };
 
 function emptyGapState(): CritiqueGapState {
   return {
     matched: false,
     failures: [],
-    totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+    totals: emptyGapTotals(),
     gaps: [],
     escalated: [],
     auditGapScopes: [],
     critiqueText: "",
+    critiqueRounds: [],
   };
 }
 
 function emptyAccumulator(): CritiqueAccumulator {
   return {
     failures: [],
-    totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+    totals: emptyGapTotals(),
     gaps: [],
     escalated: [],
     critiqueTexts: [],
+    rounds: [],
   };
-}
-
-function addGapTotals(target: GapTotals, summary: ReturnType<typeof summarizeGaps>) {
-  if (!summary.found) return;
-  target.total += summary.total;
-  target.fixed += summary.fixed;
-  target.documented += summary.documented;
-  target.escalated += summary.escalated;
 }
 
 function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
@@ -109,10 +114,11 @@ async function collectCritique(
     if (contractForBuildArtifact(fields.path, content)?.id !== "execution-critique") continue;
     matched = true;
     result.critiqueTexts.push(content);
+    result.rounds.push(registryGaps(content));
     for (const failure of validateGapRegistry(content)) {
       result.failures.push(`FAIL ${fields.label ?? fields.path}: ${failure.detail}`);
     }
-    addGapTotals(result.totals, summarizeGaps(content));
+    addTotals(result.totals, summarizeGaps(content));
     addRegistryGaps(result, content);
     addEscalatedGaps(result, content);
   }
@@ -160,6 +166,7 @@ export function createCritiqueGapState(deps: CritiqueDeps) {
       escalated: critique.escalated,
       auditGapScopes: auditGapScopes(deps, workspace.path, card.id),
       critiqueText: critique.critiqueTexts.join("\n\n"),
+      critiqueRounds: critique.rounds,
     };
   };
 }

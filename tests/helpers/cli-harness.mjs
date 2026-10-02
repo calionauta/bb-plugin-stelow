@@ -37,6 +37,8 @@ export const NO_GAPS = {
   auditGapScopes: [],
   critiqueText: "",
   totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
+  // No critiqueRounds: a card with no report has not been reviewed once, and
+  // the rework metric must not read that as a clean single pass.
 };
 export const WORKSPACE = "/w";
 

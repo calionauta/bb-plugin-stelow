@@ -75,7 +75,13 @@ const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
-assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) => flowMetrics\(core\.db, input\)/, "RPC dispatch uses the measured flow runtime");
+assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) =>\s*\n?\s*buildFlowMetrics\(/, "RPC dispatch uses the measured flow runtime");
+// The handler enriches the pure ledger summary with the coverage readings, and
+// the coverage read is fail-soft. The dispatch must therefore go through the
+// module-scope builder rather than calling the pure function inline, which is
+// what the two-line form above asserts.
+assert.match(server, /async function buildFlowMetrics\(/, "the flow handler owns the coverage seam, not the pure ledger summary");
+assert.match(server, /\.catch\(\(\) => EMPTY_COVERAGE\)/, "a workspace the strip cannot read costs it a line, not the whole panel");
 assert.match(server, /leadMs: flow\.leadMs/, "detail reuses the one helper for lead time");
 assert.match(server, /cycleMs: flow\.cycleMs/, "detail reuses the one helper for cycle time");
 const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;

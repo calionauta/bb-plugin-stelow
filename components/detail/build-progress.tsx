@@ -17,15 +17,28 @@ import { FileOccupancy } from "./file-occupancy";
 import { ScopeXray } from "./scope-xray";
 import { StageTimeline } from "./stage-timeline";
 import { ScopesList } from "./scopes-list";
+import { metricBodyLines, metricHint } from "../metrics/metrics-lines";
 import type { rpcContract } from "../../server";
+import type { GapTotals } from "../../lib/metrics-format.mjs";
 
 type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 export type BuildCard = Extract<RpcResult, { cards: unknown }>["cards"][number];
 export type BuildDetail = Extract<RpcResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-type GapSummary = {
-  matched: boolean; total: number; fixed: number; documented: number; escalated: number;
+/** The card's own gap view: the shared tally, plus the per-gap rows and the
+ * scope state the progress panel needs. The four numbers come from the one
+ * owner in `lib/metrics-format.mjs` rather than being restated, so a resolution
+ * added to the registry is a field added there and here cannot drift apart. */
+type GapSummary = GapTotals & {
+  matched: boolean;
   items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
   pendingScopes: number; unscoped: number; leadMs: number | null; cycleMs: number | null; done: boolean;
+  /** One critique round's findings per registered critique artifact, oldest
+   * first. The rework metric needs this boundary; the `items` list dedupes
+   * across rounds and so cannot express it. */
+  rounds: Array<Array<{ description: string; resolution: string }>>;
+  /** The card's review records, already parsed by the same reader the CLI and
+   * the strip use, so the coverage line on the card is the same sentence. */
+  reviews: Array<{ excerpt: { selected: string; truncated: boolean; sentChars: number | null; originalChars: number | null } }>;
 };
 type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode };
 
@@ -148,12 +161,20 @@ function BuildGaps({ summary }: { summary: GapSummary | null }) {
   if (!summary?.matched || !view) return null;
   const lead = formatGapMs(summary.leadMs);
   const cycle = formatGapMs(summary.cycleMs);
+  // Rework earns the hint because it is the fact that changes what a reader
+  // concludes from this section: "these are the same findings again" is a
+  // different situation from "these are the gaps this run found". It is the
+  // only metric offered here — the coverage line lives in the body, so a hint
+  // never becomes a second place a number is stated.
+  const rework = metricHint({ rounds: summary.rounds });
+  const bodyLines = metricBodyLines({ rounds: summary.rounds, reviews: summary.reviews });
   const tally = [
     `${summary.total} gap${summary.total === 1 ? "" : "s"}`,
     `${summary.fixed} fixed`,
     `${summary.escalated} escalated`,
     lead ? `lead ${lead}` : null,
     cycle ? `cycle ${cycle}` : null,
+    rework,
   ].filter(Boolean).join(" · ");
   return (
     <DisclosureSection
@@ -165,6 +186,9 @@ function BuildGaps({ summary }: { summary: GapSummary | null }) {
       {summary.items.length > 0 ? <GapItems items={summary.items} /> : null}
       {view.waitCopy ? <p className="text-xs text-amber-700 dark:text-amber-300">{view.waitCopy}</p> : null}
       {view.resolvedCopy ? <p className="text-xs text-muted-foreground">{view.resolvedCopy}</p> : null}
+      {bodyLines.map((line) => (
+        <p key={line} className="text-xs text-muted-foreground">{line}</p>
+      ))}
     </DisclosureSection>
   );
 }

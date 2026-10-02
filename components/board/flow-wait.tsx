@@ -84,6 +84,36 @@ export function WaitBreakdown({ wait }: { wait: WaitTotals }) {
   );
 }
 
+/** The reviewer and rework readings, for the finished cards in scope.
+ *
+ * Sits beside `WaitBreakdown` and in this file for the same reason that one
+ * does: both answer "where did the time and the effort go", so they are one
+ * subject and the strip's own budget is not a reason to split them apart.
+ *
+ * The strings arrive rendered from the same `lib/` owners the CLI and the card
+ * call, so this panel cannot word a number differently from either — it prints,
+ * it does not format. Both are "" unless there is something to report: no card
+ * reviewed twice means no rework line, and no cut artifact means no coverage
+ * line. A panel that always printed a row would be a row nobody reads.
+ */
+export function CoverageLines({
+  coverage,
+}: {
+  coverage: { reworkLine: string; coverageLine: string };
+}) {
+  const lines = [coverage.reworkLine, coverage.coverageLine].filter((line) => line.length > 0);
+  if (lines.length === 0) return null;
+  return (
+    <div className="space-y-0.5" aria-label="Review and rework">
+      {lines.map((line) => (
+        <p key={line} className="text-xs leading-5 text-muted-foreground">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export type AttentionEntry = {
   cardId: string;
   kind: "build" | "research" | "explore";

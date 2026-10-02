@@ -16,13 +16,16 @@ import {
 } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
+import type { GapTotals } from "../../../lib/metrics-format.mjs";
 
 const USAGE = "Usage: bb stelow gap-scopes [--card <card_id>]";
 
 /** The critique-gap view gap-scopes converts: the escalated rows, the scopes
- * already linked to them, and the fixed/documented/escalated tally it reports. */
+ * already linked to them, and the fixed/documented/escalated tally it reports.
+ * The tally's shape belongs to lib/metrics-format.mjs, the same owner the
+ * metrics readout and the card header read it from. */
 type CritiqueGapView = {
-  totals: { total: number; fixed: number; documented: number; escalated: number };
+  totals: GapTotals;
   escalated: Array<{ description: string }>;
   auditGapScopes: Array<{ gap: string | null }>;
 };

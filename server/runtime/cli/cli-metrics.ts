@@ -1,6 +1,14 @@
 import { formatDuration, summarizeTimeline } from "../../../lib/card-metrics.mjs";
+import {
+  emptyGapTotals,
+  escalationRate,
+  formatGapTotals,
+  formatRate,
+} from "../../../lib/metrics-format.mjs";
 import { excerptMetricLine, summarizeExcerpts } from "../../../lib/review-truncation.mjs";
 import { reviewExcerptRecords } from "../../../lib/review-verdict.mjs";
+import { reworkMetricLine, summarizeRework } from "../../../lib/rework-metrics.mjs";
+import type { GapTotals } from "../../../lib/metrics-format.mjs";
 import { noCardInContext, scanCardId, unknownCard } from "./cli-contract.js";
 import type { CliCommandFn, CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
@@ -216,6 +224,10 @@ async function cardMetrics(
   // whole document reads as a clean run rather than a metric full of zeros.
   const coverage = excerptMetricLine(reviews);
   if (coverage) lines.push(coverage);
+  // And silent when the card was reviewed once, or the loop converged: a rework
+  // number earns a line only when something actually came back.
+  const rework = reworkMetricLine(payload.rework);
+  if (rework) lines.push(rework);
   return { exitCode: 0, stdout: lines.join("\n") };
 }
 
@@ -231,14 +243,17 @@ function cardMetricsPayload(
   timeline: CardTimeline,
   gapState: {
     matched?: boolean;
-    totals: { total: number; fixed: number; documented: number; escalated: number };
+    totals?: GapTotals;
     auditGapScopes?: Array<{ id: string; name: string; status: string }>;
+    /** One critique round's findings per registered critique artifact, oldest
+     * first. Present only when the critique reports are individually readable;
+     * a card with one report has nothing to compare and reports no rate. */
+    critiqueRounds?: Array<Array<{ description: string; resolution: string }>>;
   } | null,
   reviews: ReviewCoverage,
 ) {
-  const totals = gapState?.matched
-    ? gapState.totals
-    : { total: 0, fixed: 0, documented: 0, escalated: 0 };
+  const totals = gapState?.matched && gapState.totals ? gapState.totals : emptyGapTotals();
+  const rework = summarizeRework(gapState?.critiqueRounds ?? []);
   return {
     card: cardId,
     name: card.name,
@@ -247,8 +262,17 @@ function cardMetricsPayload(
     cycleMs: timeline.cycleMs,
     byStage: timeline.byStage,
     gaps: totals,
-    escalatedRate: totals.total > 0 ? totals.escalated / totals.total : null,
+    escalatedRate: escalationRate(totals),
     reviewerCoverage: coveragePayload(reviews),
+    // Null rate when the card was reviewed once: one pass cannot say whether
+    // the loop is converging, and reporting 0% would claim it can.
+    rework: {
+      rounds: rework.rounds,
+      reworked: rework.reworked,
+      newAfterFirst: rework.newAfterFirst,
+      rate: rework.rate,
+      descriptions: rework.reworkedDescriptions,
+    },
     reworkScopes: (gapState?.auditGapScopes ?? []).map((scope) => ({
       id: scope.id,
       name: scope.name,
@@ -266,15 +290,11 @@ function stageLines(byStage: CardTimeline["byStage"]): string[] {
 }
 
 function gapLines(
-  totals: { total: number; fixed: number; documented: number; escalated: number },
-  payload: { escalatedRate: number | null; reworkScopes: Array<{ id: string; status: string }> },
+  totals: GapTotals,
+  payload: { reworkScopes: Array<{ id: string; status: string }>; rework: { rounds: number; reworked: number; rate: number | null; descriptions: string[] } },
 ): string[] {
-  const rate =
-    payload.escalatedRate === null
-      ? "n/a"
-      : `${Math.round(payload.escalatedRate * 100)}%`;
   return [
-    `Gaps: ${totals.total} total · ${totals.fixed} fixed · ${totals.documented} documented · ${totals.escalated} escalated (${rate} escalated)`,
+    formatGapTotals(totals),
     reworkScopeLine(payload.reworkScopes),
   ];
 }

@@ -2332,7 +2332,46 @@ one input, one artifact.*
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card
-  breakdown). Done means every gap has
+  breakdown). **Rework** is the number that says whether the loop is
+  converging (`lib/rework-metrics.mjs`): a finding that was closed in
+  one critique round and re-opened in a strictly later one. It was
+  unmeasurable before because the round boundary was destroyed on the
+  way out — `critique-gap-state` collected each critique artifact as its
+  own round and then joined them with newlines, so a finding fixed in
+  round 1 and re-opened in round 3 looked like one that was only ever
+  found once. A gap still open (`escalate`) is not rework, because it
+  was never closed; a finding new in a later round is counted apart as
+  `newAfterFirst`, because new work discovered later is a different
+  number. A card reviewed once reports `rate: null`, not 0 — one pass
+  cannot show convergence — and the line is printed only when something
+  came back. `--json` also carries `reviewerCoverage` (see the
+  contract-aware review entry above).
+  **The card and the flow strip read the same lines the CLI does.** The
+  card's "Gaps and rework" section carries both: the hint gains the reworked
+  count (a finding that came back is a fact about that section, and it is
+  the one metric that changes what a reader concludes from the list below
+  it), and the body carries the owner's full sentences for rework and for
+  reviewer coverage. The strip's Timing tab carries the same two lines over
+  the fleet, beside the wait breakdown. Every string is produced by the same `lib/` owner
+  the terminal calls, so the three surfaces cannot word a number
+  differently — the panel prints, it does not format. The card's hint is
+  the count and the body the full sentence, because a collapsed row already
+  carries five numbers and a long sentence among them reads as noise. The
+  strip's numbers
+  are read from the files a card left behind (`server/runtime/flow-coverage.ts`),
+  kept out of `flow-metrics.ts` because that function is pure over the
+  ledger and a workspace is not the ledger. Both lines are silent unless
+  there is something to say: no card reviewed twice means no rework line,
+  no cut artifact means no coverage line, and a permanent "0%" would be a
+  claim nobody measured.
+  **Every number a person reads about a card is formatted in one place**
+  (`lib/metrics-format.mjs`): the gap tally's shape, the escalation
+  rate, and the sentence. They were previously shaped in five files
+  with the rate derived twice under two different guards, so a card and
+  a fleet of the same card could disagree about whether a rate was a
+  measurement — `n/a` and `0%` are now decided once, and a card with no
+  findings has no rate rather than a false zero.
+  Done means every gap has
   a disposition and every escalation is executed — documented gaps
   are accepted debt for next cycle by definition, fixed gaps are
   auditable through the Decision section and trail. `verify --tests`

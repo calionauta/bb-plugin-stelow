@@ -147,6 +147,21 @@ export const cardRpcContract = {
       leadMs: z.number().nullable(),
       cycleMs: z.number().nullable(),
       done: z.boolean(),
+      // The per-round findings, so the card can show rework without the metric
+      // being re-derived in the UI. Empty when no critique is matched, which the
+      // rework owner reads as "not measured" rather than "nothing reworked".
+      rounds: z.array(z.array(z.object({ description: z.string(), resolution: z.string() }))),
+      // The card's review coverage, already parsed, so the UI reads the same
+      // numbers the CLI and the flow strip do. Empty means "no readable
+      // reviews", which the owner reads as not-measured rather than "all whole".
+      reviews: z.array(z.object({
+        excerpt: z.object({
+          selected: z.string(),
+          truncated: z.boolean(),
+          sentChars: z.number().nullable(),
+          originalChars: z.number().nullable(),
+        }),
+      })),
     }),
   },
   flowMetrics: {
@@ -198,6 +213,27 @@ export const cardRpcContract = {
         humanShare: z.number(),
         systemShare: z.number(),
         unattributedShare: z.number(),
+      }),
+      // The two readings that need the files a card left behind, summed over
+      // the finished cards in scope. Read outside `flow-metrics` because that
+      // function is pure over the ledger, and a workspace is not the ledger.
+      // `rate` is null until a second round exists anywhere in scope.
+      coverage: z.object({
+        rework: z.object({
+          cardsWithRounds: z.number(),
+          comparable: z.number(),
+          reworked: z.number(),
+          rate: z.number().nullable(),
+          descriptions: z.array(z.string()),
+        }),
+        reviews: z.object({
+          counted: z.number(),
+          truncated: z.number(),
+          headCuts: z.number(),
+        }),
+        // Rendered by the same lib owners the CLI and the card call.
+        reworkLine: z.string(),
+        coverageLine: z.string(),
       }),
       attention: z.array(
         z.object({

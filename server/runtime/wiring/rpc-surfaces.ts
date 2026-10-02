@@ -19,6 +19,18 @@ import {
 } from "../../../lib/review-gates.mjs";
 import { seedWorkflow } from "../workflow-seeding.js";
 import { flowMetrics } from "../flow-metrics.js";
+import { buildFlowCoverage } from "../flow-coverage.js";
+import type { FlowCoverage } from "../flow-coverage.js";
+
+/** What the strip renders when the coverage read fails outright: the same
+ * shape, with nothing counted and both lines empty. A board that cannot read
+ * the files still shows its ledger timings, and says nothing it did not measure. */
+const EMPTY_COVERAGE: FlowCoverage = {
+  rework: { cardsWithRounds: 0, comparable: 0, reworked: 0, rate: null, descriptions: [] },
+  reviews: { counted: 0, truncated: 0, headCuts: 0 },
+  reworkLine: "",
+  coverageLine: "",
+};
 
 type FlowMetricsInput = Parameters<typeof flowMetrics>[1];
 import { startWorkflowPrompt } from "../start-workflow-prompt.js";
@@ -39,6 +51,33 @@ export type RpcSurfacesDeps = {
   cards: CardSurfaces;
   host: HostSurfaces;
 };
+
+/** The flow strip's handler: the ledger summary, plus the two readings that
+ * need the files a card left behind.
+ *
+ * Module scope rather than inline in the handler table, because the seam is
+ * real: `flowMetrics` is pure over the ledger and returns synchronously, while
+ * the coverage read walks each card's workspace. A board panel that died on
+ * one unreadable workspace would be worse than one that reports less, so the
+ * coverage read is fail-soft to an empty, well-shaped reading rather than
+ * taking the whole strip down.
+ */
+async function buildFlowMetrics(
+  deps: Pick<RpcSurfacesDeps, "bb" | "core" | "gates">,
+  input: FlowMetricsInput,
+) {
+  const result = flowMetrics(deps.core.db, input);
+  const coverage = await buildFlowCoverage(
+    {
+      bb: deps.bb,
+      getCard: deps.core.getCard,
+      critiqueGapState: deps.gates.critiqueGapState,
+      cardWorkspace: deps.core.cardWorkspace,
+    },
+    result.items.map((item) => item.cardId),
+  ).catch(() => EMPTY_COVERAGE);
+  return { ...result, coverage };
+}
 
 /** Register every Stelow RPC on the host, from the assembled surfaces. */
 export function registerStelowRpc(deps: RpcSurfacesDeps): void {
@@ -69,7 +108,8 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     catchUp: (input: { cardId: string }) => core.briefings.catchUp(input.cardId),
     board: cards.cards.handlers.board as never,
     projects: listProjects(bb),
-    flowMetrics: (input: FlowMetricsInput) => flowMetrics(core.db, input),
+    flowMetrics: (input: FlowMetricsInput) =>
+      buildFlowMetrics({ bb, core, gates }, input),
     boardWorkflowDefaults: () => readBoardWorkflowDefaults(bb),
     ...gates.gateHandlers,
     cardDiff: gates.cardDiff,
