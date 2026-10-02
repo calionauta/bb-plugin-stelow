@@ -1,7 +1,7 @@
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { scopeElapsedMs } from "../../lib/scope-elapsed.mjs";
 import { useState } from "react";
-import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
+import { DisclosureChevron, SUMMARY_BASE, SUMMARY_LINK } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 
 import { scopeClaimLines, type ScopeClaimTone } from "../../lib/lock-blocked.mjs";
@@ -36,6 +36,8 @@ const CONDITION_TEXT = `${TEXT_META} text-amber-700 dark:text-amber-300`;
 const REWORK_PILL = "bg-amber-500/15 text-amber-700 dark:text-amber-300";
 const WAITING_PILL = "rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium "
   + "text-amber-700 dark:text-amber-300";
+/** A scope row's summary: the shared disclosure base plus the stacking this row needs. */
+const SCOPE_SUMMARY = `${SUMMARY_BASE} block space-y-1`;
 const DEP_PILL = "rounded-md border border-dashed px-1.5 py-0.5 text-muted-foreground";
 const BLOCKED_PILL = "rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 "
   + "text-amber-700 dark:text-amber-300";
@@ -213,7 +215,11 @@ function ScopeRow({ scope, isOpen, onToggle, waitingOn, byId, fns, sharedTypes }
   const tasksDone = scope.tasks.filter((task) => statusRank(task.status) === 4).length;
   return (
     <details key={scope.id} open={isOpen} onToggle={(event) => onToggle((event.currentTarget as HTMLDetailsElement).open)} className={`group rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
-      <summary className="cursor-pointer list-none space-y-1">
+      {/* SUMMARY_BASE carries focus-visible:outline and marker:hidden; the
+          hand-written classes dropped both, so a keyboard user got no focus
+          ring on every scope row (WCAG 2.4.7). space-y-1 stays because this
+          summary stacks a row, which SUMMARY_ROW's single-line shape does not. */}
+      <summary className={SCOPE_SUMMARY}>
         <ScopeSummaryRow
           scope={scope}
           isOpen={isOpen}

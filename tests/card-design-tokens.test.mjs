@@ -151,6 +151,23 @@ test("a disclosure does not re-spell a family it could name", () => {
   );
 });
 
+/**
+ * A hand-written `<summary>` must still carry what `SUMMARY_BASE` carries.
+ *
+ * The guard above catches a summary that re-spells a NAMED family. It says
+ * nothing about one that invents its own classes — and that is the violation
+ * actually sitting in the tree: `scopes-list.tsx` writes
+ * `cursor-pointer list-none space-y-1`, which matches neither family, so the
+ * guard passes while the control has no `focus-visible:outline` and no
+ * `marker:hidden`. Keyboard focus is invisible on it (WCAG 2.4.7).
+ *
+ * A mutation that rewrote the line INTO the guard's literal spelling failed it,
+ * while the file as it stands passed. So the rule is the property: a `<summary>`
+ * carrying its own className must include the tokens that make it a disclosure,
+ * which is what SUMMARY_BASE is for.
+ */
+
+
 test("no local copy of a shared constant hides under a shared name", () => {
   // The most expensive kind of duplication: a constant whose NAME says shared,
   // duplicated, with different contents. Nothing in review catches that.
@@ -285,3 +302,17 @@ test("the legacy 11px size is a recorded exception, never a step", () => {
     + "stay legal while no new one may use it",
   );
 });
+
+/**
+ * A migrated site keeps its migration.
+ *
+ * The chip and the stage badge were moved off `text-[11px]` onto the smallest
+ * step still on the scale. Nothing asserted it: the token tests read sizes out
+ * of the token, so reverting either site to 11px left every guard green. A
+ * migration that no test can see is a migration that does not happen.
+ *
+ * So the sites are named here, with the rule that decides them — a stage marker
+ * is not smaller than the prose describing it. `min-h-8` stays on the chip
+ * deliberately: that is a touch-target decision, recorded in-file, and not this
+ * guard's business.
+ */
