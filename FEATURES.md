@@ -147,6 +147,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   would turn a scroll into a spawn. The chip is amber, matching
   `AttentionChip`: both mean this card wants a person, and a reader who learned
   one tone should not have to learn a second for the same call to action.
+- **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
+  A card whose worker halts recorded `activity: "error"` and put its reason in
+  a comment the board never renders, so the board showed the amber attention
+  border — the same one a card holding a question gets — and nothing else. An
+  error now has its own border, outranking attention rather than falling
+  through it: a broken card is not waiting for anything, and retrying is the
+  opposite action from answering. The card, the list row and the detail surface
+  all carry a **Stopped with an error** chip. An error with an empty
+  `last_error` — which happens when a worker halts by choice rather than
+  throwing — still says "Stopped" and says the reason is missing, because an
+  empty string is not a reason a reader can act on.
 - **Publication actions follow the card, not just the git state**
   (`publishRelevanceNote`). The panel decided what to offer from the checkout
   alone, so a card whose entire deliverable was a written finding reached Done
