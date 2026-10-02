@@ -89,6 +89,11 @@ export const cardRpcContract = {
           readMissSince: z.number().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),
+          integrationPending: z.object({
+            state: z.enum(["unpublished", "local", "unmerged"]),
+            label: z.string(),
+            detail: z.string(),
+          }).nullable(),
           presetName: z.string().nullable(),
           presetProviderId: z.string().nullable(),
           presetModelId: z.string().nullable(),

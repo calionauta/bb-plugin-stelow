@@ -5,6 +5,7 @@ import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
+import { integrationPending } from "../lib/integration-pending.mjs";
 import { loadCardScopes } from "./scopes.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
@@ -162,6 +163,7 @@ async function enrichCard(
     readMissSince: row.read_miss_since ?? null,
     needsAttention: attention !== null,
     hasPendingReview: hasPendingReview(deps.db, row.id),
+    integrationPending: integrationPending(deps.db, row),
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,

@@ -130,6 +130,46 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A composer posts back through `postIssueComment` behind an inline confirm
   naming the destination (`repo#number`, public and hard to undo) — human
   gesture only, payload validated server-side, mirror refreshed on success.
+- **A finished card says whether it still owes the repository something**
+  (`integrationPending`). `done` is a lifecycle state, not a publication state:
+  a card can complete with its work uncommitted, committed but never pushed, or
+  pushed as a pull request nobody merged, and the board read "Done" for all
+  three. A completed project card now carries one of three readings on the
+  board card, the list row, and the Git changes panel: **Not committed** (no
+  publication event recorded), **Local commit only** (committed, never pushed
+  or merged), and **PR not merged** / **Pushed, not merged** (remote-backed,
+  never on the base branch). A card whose pull request merged reads nothing, and
+  an exploratory workspace reads nothing — it has no base branch to land on, so
+  the question does not apply. A local squash is deliberately *not* treated as
+  publication: the panel offers it precisely because it cannot fetch or push.
+  The reading comes from the `publication_events` ledger and never from a live
+  `git` call, because the board lists every card and a per-card git invocation
+  would turn a scroll into a spawn. The chip is amber, matching
+  `AttentionChip`: both mean this card wants a person, and a reader who learned
+  one tone should not have to learn a second for the same call to action.
+- **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
+  A card whose worker halts recorded `activity: "error"` and put its reason in
+  a comment the board never renders, so the board showed the amber attention
+  border — the same one a card holding a question gets — and nothing else. An
+  error now has its own border, outranking attention rather than falling
+  through it: a broken card is not waiting for anything, and retrying is the
+  opposite action from answering. The card, the list row and the detail surface
+  all carry a **Stopped with an error** chip. An error with an empty
+  `last_error` — which happens when a worker halts by choice rather than
+  throwing — still says "Stopped" and says the reason is missing, because an
+  empty string is not a reason a reader can act on.
+- **Publication actions follow the card, not just the git state**
+  (`publishRelevanceNote`). The panel decided what to offer from the checkout
+  alone, so a card whose entire deliverable was a written finding reached Done
+  and was offered Commit, Push, Squash and Merge PR. It now reads the card's
+  own `kind` and `intent`: a build card that is not an investigation keeps
+  every delivery action, and an investigation — or any research or explore
+  card — keeps only Commit, with one sentence saying why. The local squash,
+  the publish step and the whole pull-request block are not rendered for them.
+  Hiding rather than disabling is deliberate: a greyed button invites a reader
+  to work out which policy refused them, and the note already answers it.
+  A commit stays available to a finding because a finding often arrives with
+  the fix that came out of it, and that fix is real work.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
