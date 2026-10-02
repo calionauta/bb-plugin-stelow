@@ -11,6 +11,18 @@ import { startReconciler } from "../server/runtime/reconciler.ts";
 function fixtureDb() {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, status TEXT, worker_thread_id TEXT)");
+  // The tick sweeps inbox aging, so the fixture has to hold the table it
+  // reads. It is created empty on purpose: this test owns the reconciler's
+  // call order, not the sweep's scoring — `inbox-severity.test.mjs` owns that,
+  // and a second copy of the ladder here would be a second place for it to be
+  // wrong.
+  db.exec(`CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
+    summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
+    occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER,
+    resolved_at INTEGER, resolved_reason TEXT, severity INTEGER,
+    severity_reasons TEXT, occurrences INTEGER
+  )`);
   db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live", "in-progress", "thread-1");
   db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("done", "completed", null);
   ensureCardClaimsTables(db);
