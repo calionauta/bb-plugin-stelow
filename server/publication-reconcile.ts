@@ -22,7 +22,11 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { publicationEvents, recordPublication } from "./artifacts-publication-status.js";
-import type { ArtifactsPublicationDeps } from "./artifacts-publication.js";
+import type {
+  ArtifactsPublicationDeps,
+  PublicationCard,
+  PublicationCheckout,
+} from "./artifacts-publication.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -31,6 +35,34 @@ const LANDED = "pull_request_merge";
 
 export function createPublicationReconcile(deps: ArtifactsPublicationDeps) {
   return { reconcilePublications: () => reconcilePublications(deps) };
+}
+
+/**
+ * The slice a wiring root already holds. Kept here so the root adds a call, not
+ * a facade: the wiring file has a line budget, and the shape of these deps is
+ * this module's business.
+ */
+export type PublicationReconcileCore = {
+  db: Db;
+  bb: BbPluginApi;
+  now: () => number;
+  randomId: (prefix: string) => string;
+  cardNotFound: string;
+  getCard: (cardId: string) => PublicationCard | undefined;
+  checkout: (card: PublicationCard) => Promise<PublicationCheckout | null>;
+  cardStatusOf: (value: unknown) => string;
+};
+
+export function publicationReconcileFor(core: PublicationReconcileCore) {
+  return createPublicationReconcile({
+    db: core.db,
+    bb: core.bb,
+    now: core.now,
+    randomId: core.randomId,
+    cardNotFound: core.cardNotFound,
+    cards: { get: core.getCard, checkout: core.checkout },
+    cardStatusOf: core.cardStatusOf,
+  });
 }
 
 /**
