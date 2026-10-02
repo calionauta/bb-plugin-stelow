@@ -6,6 +6,7 @@ import {
   AttentionChip,
   IntegrationPendingChip,
   DoingNowPill,
+  ErrorChip,
   ReviewChip,
   ScopeStrip,
   attentionLabel,
@@ -26,6 +27,7 @@ import {
   LIGHTWEIGHT_VISIBLE_COLUMNS,
 } from "../../lib/tracks.mjs";
 import { useReturnFocus } from "./use-return-focus";
+import { errorActivityLabel } from "../../lib/detail-presentation.mjs";
 
 type ScopeSummary = {
   scopesDone: number;
@@ -86,9 +88,11 @@ function openWorkerThread(
  * render function that is already at its size budget.
  */
 function ListRowStatus({ card }: { card: ListCard }) {
+  const stopped = errorActivityLabel(card);
   return (
     <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
       <ActivityPill activity={card.activity} />
+      {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
       {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
       {card.integrationPending ? (
         <IntegrationPendingChip
@@ -146,6 +150,10 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
 }
 
 function rowTone(card: ListCard): string {
+  // An error outranks everything, including an owed integration: a stopped
+  // card and a card with work to integrate are different urgencies, and only
+  // one of them is broken.
+  if (card.activity === "error") return "mt-1 size-2 shrink-0 rounded-full bg-destructive";
   // An owed integration is a reason to look at this row, so it takes the
   // attention tone over a completed card's calm emerald.
   if (card.integrationPending) return "mt-1 size-2 shrink-0 rounded-full bg-amber-500";

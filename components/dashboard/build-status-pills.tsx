@@ -184,6 +184,27 @@ export function AttentionChip({ label }: { label: string }) {
 }
 
 /**
+ * A card that has stopped.
+ *
+ * Red, and it does not pulse: the card's own border already pulses to say
+ * something is wrong, and a pulsing chip on a pulsing card reads as one
+ * alarm rather than two. This is the label the border could not carry —
+ * `card_e3u00eb4` was outlined in amber like a card waiting for an answer,
+ * and nothing on the card said otherwise.
+ */
+export function ErrorChip({ label, detail }: { label: string; detail: string }) {
+  return (
+    <span
+      title={detail}
+      className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive"
+    >
+      <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/**
  * What a finished card still owes its repository.
  *
  * Amber is the same tone as AttentionChip on purpose: both mean "this card
