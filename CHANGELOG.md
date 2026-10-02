@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.62.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.2...v0.62.0) (2026-10-02)
+
+
+### Features
+
+* a finished card says whether it still owes the repository something ([#239](https://github.com/calionauta/bb-plugin-stelow/issues/239)) ([afbe4e1](https://github.com/calionauta/bb-plugin-stelow/commit/afbe4e13977f2baa3bf189b3c3424ccf1debd4f4))
+* the human loop, from waiting to looking ([#244](https://github.com/calionauta/bb-plugin-stelow/issues/244)) ([d1c94d6](https://github.com/calionauta/bb-plugin-stelow/commit/d1c94d670ee5e01bb6b43de822875683916dc7e3))
+
+
+### Bug Fixes
+
+* remember last project in New issue and contain mobile modal overflow ([#237](https://github.com/calionauta/bb-plugin-stelow/issues/237)) ([bd553bb](https://github.com/calionauta/bb-plugin-stelow/commit/bd553bba7dbf72caf1cea07edeae709afd504384))
+
 ## [0.61.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.61.1...v0.61.2) (2026-10-01)
 
 
