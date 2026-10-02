@@ -52,13 +52,16 @@ export const EMPTY_PRESET_FORM: PresetManagerForm = {
 };
 
 /**
- * The form carries the preset's stored kind verbatim.
+ * The form carries the preset's stored kind verbatim, and `??` normalises only
+ * a missing value.
  *
  * An installed row's kind can genuinely hold a value outside the schema's two
  * options — upgraded installs add the column with `ALTER TABLE` and no CHECK,
- * and the CLI casts its flag blindly. A form that normalised it would hide the
- * very fact the person needs to see, so the value travels as it is and
- * `isKnownEnvironmentKind` decides what the control says about it.
+ * and the CLI casts its flag blindly. A form that normalised THAT would hide
+ * the very fact the person needs to see, so an out-of-enum value travels
+ * untouched and `isKnownEnvironmentKind` decides what the control says about
+ * it. A `null` carries no such fact — there was no value to see — so it takes
+ * the default, which is what an absent kind means everywhere else.
  */
 export function formFromPreset(preset: PresetManagerPreset): PresetManagerForm {
   return {

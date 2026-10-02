@@ -1,32 +1,28 @@
 /**
- * A preset's environment kind: the two options, whether the control may be
- * touched, and the one sentence that explains the current state.
+ * A preset's environment control: whether it may be touched, and the one
+ * sentence that explains the current state.
  *
  * Pure, and a module rather than part of the field component, so each rule has
  * an executor. A source-text pin can only prove a sentence is present; it
  * cannot prove the sentence a person actually reads matches the state the
  * control is in, and that correspondence is the whole point of a help line.
- */
-
-/** The two kinds the preset schema can store. */
-export const ENVIRONMENT_KINDS = ["project-default", "new-worktree"];
-
-/** The kind a non-worktree preset stores, and what a new preset starts on. */
-export const DEFAULT_ENVIRONMENT_KIND = "project-default";
-
-/** The kind that means "open a worktree of its own". */
-export const WORKTREE_ENVIRONMENT_KIND = "new-worktree";
-
-/**
- * Whether a value is one the schema can store.
  *
- * An installed row's kind arrives as a plain string and a value outside these
- * two is genuinely reachable: upgraded installs add the column with
- * `ALTER TABLE` and no CHECK, and the CLI casts its flag blindly.
+ * The vocabulary itself is re-exported from `lib/preset-environment-seed.mjs`,
+ * where the mapper and the card-override writer both read it. This module owns
+ * only what the control does.
  */
-export function isKnownEnvironmentKind(value) {
-  return ENVIRONMENT_KINDS.includes(value);
-}
+
+export {
+  DEFAULT_ENVIRONMENT_KIND,
+  ENVIRONMENT_KINDS,
+  isKnownEnvironmentKind,
+  WORKTREE_ENVIRONMENT_KIND,
+} from "../../lib/preset-environment-seed.mjs";
+
+import {
+  isKnownEnvironmentKind as isKnownKind,
+  WORKTREE_ENVIRONMENT_KIND,
+} from "../../lib/preset-environment-seed.mjs";
 
 /**
  * Editing a built-in keeps its own environment. Flipping the built-in default's
@@ -56,7 +52,7 @@ export function environmentKindExplanation({ kind, builtIn }) {
   if (builtIn) {
     return "Built-in presets keep their own environment. Duplicate it to change this.";
   }
-  if (!isKnownEnvironmentKind(kind)) {
+  if (!isKnownKind(kind)) {
     return `This preset stores an unrecognised environment ("${kind}"), so it is treated as BB's default. Saving rewrites it as the default environment.`;
   }
   if (kind === WORKTREE_ENVIRONMENT_KIND) {

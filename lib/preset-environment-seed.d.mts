@@ -1,5 +1,23 @@
 import type { NewThreadComposerProps } from "@get-bb/plugin-sdk/app";
 
+/** The two kinds the preset schema can store. */
+export declare const ENVIRONMENT_KINDS: readonly ["project-default", "new-worktree"];
+
+/** The kind a non-worktree preset stores, and what a new preset starts on. */
+export declare const DEFAULT_ENVIRONMENT_KIND: string;
+
+/** The kind that means "open a worktree of its own". */
+export declare const WORKTREE_ENVIRONMENT_KIND: string;
+
+/** Whether a stored kind is one the schema can hold. */
+export declare function isKnownEnvironmentKind(value: unknown): boolean;
+
+/**
+ * The kind a path with no form to refuse in should write: the preset's own
+ * when the schema could hold it, and the default otherwise.
+ */
+export declare function storableEnvironmentKind(value: unknown): string;
+
 /**
  * The composer's environment seed. Indexed rather than named because
  * `CreateThreadEnvironmentArgs` is a local alias over an unexported zod schema
