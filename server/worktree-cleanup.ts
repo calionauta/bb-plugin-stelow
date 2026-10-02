@@ -1,4 +1,4 @@
-import { cleanupConfirm, cleanupEligibility, cleanupTrail } from "../lib/discard-policy.mjs";
+import { cleanupConfirm, cleanupEligibility, cleanupIntegrationGate, cleanupTrail } from "../lib/discard-policy.mjs";
 
 type Card = {
   id: string;
@@ -57,6 +57,17 @@ async function preview(deps: CleanupDeps, cardId: string): Promise<PreviewResult
       branch: evidence.branch,
     };
   }
+  // The worktree exists and could go; the question is whether the work in it
+  // is safe to lose. A card at Done routinely is not — that is the case this
+  // exists for. `card_cbnihg4c` sat at its last stage with 963 lines on a
+  // branch nobody merged.
+  const integration = cleanupIntegrationGate(evidence);
+  if (!integration.safe) {
+    return {
+      ...unavailable(integration.blockers.join(" ")),
+      branch: evidence.branch,
+    };
+  }
   const confirm = cleanupConfirm(evidence);
   return {
     eligible: true,
@@ -75,6 +86,12 @@ async function cleanup(deps: CleanupDeps, cardId: string): Promise<CleanupResult
   const before = cleanupEligibility(await deps.evidence(card));
   if (!before.eligible) {
     return { ok: false, summary: null, error: before.reason ?? "Nothing safe to clean up." };
+  }
+  // Re-checked at the moment of removal, not only in the preview: the preview
+  // may be minutes old, and this is the check that has to hold.
+  const integration = cleanupIntegrationGate(await deps.evidence(card));
+  if (!integration.safe) {
+    return { ok: false, summary: null, error: integration.blockers.join(" ") };
   }
   if (card.worker_thread_id) await deps.stopWorker(card.worker_thread_id);
   const evidence = await deps.evidence(card);

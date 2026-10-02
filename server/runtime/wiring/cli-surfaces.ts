@@ -109,7 +109,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     seedWorkflow: (rootPath, workflowId, name, intent) =>
       seedWorkflow(bb, rootPath, workflowId, name, intent),
     cardCheckout: seams.cardCheckout,
-    ...gitReads(core),
+    ...gitReads(core, worktreeRemover(execution), recordedMerge(core.db)),
     spawnDisposable: core.spawnDisposable,
     cardStageSlug: seams.cardStageSlug,
     docDepths: (card) => seams.buildDocDepthsForCard(card),
@@ -169,11 +169,18 @@ function ledgerReads(core: RuntimeCore) {
  * probe. These are the same functions the host-facing surfaces use, so a CLI
  * verdict and an RPC verdict about the same tree come from the same run.
  */
-function gitReads(core: RuntimeCore) {
+function gitReads(
+  core: RuntimeCore,
+  cleanupWorktree: CliRunConfig["cleanupWorktree"],
+  hasRecordedMerge?: CliRunConfig["hasRecordedMerge"],
+) {
   const { git } = core;
   return {
     gitEvidence: git.recoveryGitEvidence,
     runGitIn: git.runGitIn,
+    discardEvidence: git.discardEvidence,
+    cleanupWorktree,
+    hasRecordedMerge,
     workingDiffFor: git.workingDiffFor,
     testCommandForCheckout: git.testCommandForCheckout,
     runHostTests: git.runHostTests,
@@ -261,4 +268,44 @@ function scopeCommand(deps: CliSurfaceDeps): ScopeCommand {
     db: core.db,
   };
   return (argv, context) => runScopeCommand(argv, context, scopeDeps);
+}
+
+/**
+ * The one removal path the CLI reaches for.
+ *
+ * `bb stelow gc` must not hold a second opinion about what is safe to delete:
+ * the gate lives in the cleanup service, and this only adapts its result. A
+ * second rule would be a second thing to keep in step with the first.
+ */
+function worktreeRemover(execution: ExecutionSurfaces): CliRunConfig["cleanupWorktree"] {
+  return async (cardId) => {
+    const result = await execution.worktreeCleanup.cleanup(cardId);
+    return { ok: result.ok, error: result.error };
+  };
+}
+
+/**
+ * Has a merge into the base branch ever been recorded for this card?
+ *
+ * The publication ledger is the only record that survives a squash merge. A
+ * squash puts every line of a branch onto the base as one new commit, so the
+ * branch's own commit ids never appear in the base's history — but the panel
+ * recorded that the merge happened, and that is what "integrated" means.
+ *
+ * Only an explicit merge counts. A local squash, a push, or a pull request
+ * marked ready are all recorded actions that do not put the work on the base.
+ */
+function recordedMerge(db: CliRunConfig["db"]): CliRunConfig["hasRecordedMerge"] {
+  return (cardId) => {
+    try {
+      const row = db
+        .prepare("SELECT COUNT(*) AS n FROM publication_events WHERE card_id = ? AND action = ?")
+        .get(cardId, "pull_request_merge") as { n?: number } | undefined;
+      return Number(row?.n ?? 0) > 0;
+    } catch {
+      // A missing ledger means "not proven merged", which is a reason to keep
+      // the worktree. It is never a reason to delete one.
+      return false;
+    }
+  };
 }
