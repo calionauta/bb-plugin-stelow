@@ -2424,6 +2424,21 @@ one input, one artifact.*
   deps, not defaulted: `() => false` let a caller that forgot it get
   the old counting with no error anywhere, the same failure one
   layer down.
+  The loop has a round budget (`lib/rework-rounds.mjs`,
+  `MAX_REWORK_ROUNDS = 3`): each `gap-scopes` run that creates at least one
+  scope spends one round, recorded as `rework_rounds` on the card's own
+  `stelow.json` entry; idempotent re-runs spend nothing. A fourth escalation
+  with unlinked gaps refuses instead of growing the cycle (`rework-capped`
+  trail event + card comment + `Rework budget reached (3/3 rounds) ...`
+  stderr) naming the three exits that already exist — resolve the escalation
+  inline and re-run the critique to reclassify it as fixed, skip the scope
+  that would carry it (skipped counts as resolved at done), or
+  `bb stelow split` to move it to a new card. Three is a leash, not a quality
+  signal: early rounds do the heavy lifting and late ones churn, so the cap
+  is an honest stop with doors, never a park without one. Every conversion
+  names its round (`rework round N/3`) in the comment, stdout, and trail
+  evidence, so the history shows which pass created which scopes.
+  (`tests/rework-rounds.test.mjs`, `tests/runtime-cli-gap-scopes-cap.test.mjs`).
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card
@@ -2468,7 +2483,10 @@ one input, one artifact.*
   findings has no rate rather than a false zero.
   Done means every gap has
   a disposition and every escalation is executed — documented gaps
-  are accepted debt for next cycle by definition, fixed gaps are
+  are accepted debt by definition (recorded, counted, shown with their
+  disposition, never a rework scope, with no automatic carry-forward;
+  a documented finding a later critique re-finds surfaces in the rework
+  line as detection after the fact), fixed gaps are
   auditable through the Decision section and trail. `verify --tests`
   warns the loop state early (UNSCOPED / OPEN lines) so it never
   ambushes at `done`; advancing audit → execution names the open
