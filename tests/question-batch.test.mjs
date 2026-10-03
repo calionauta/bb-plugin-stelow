@@ -238,4 +238,21 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.deepEqual(inheritAskArtifact([{ label: "A", artifact: { path: "x".repeat(501) } }, { label: "B", artifact: null }]), [null, null], "over-cap paths are never inherited");
 }
 
+// UI wiring: the batch hook seeds its selection state from the resolved
+// preselected answers, so checked rows are checked on first paint — not
+// after an effect, and never from a second source. If the initializer stops
+// reading preselectedAnswers, opt-out confirms silently become opt-in.
+{
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const hook = readFileSync(join(root, "components/conversation/question-batch.tsx"), "utf8");
+  assert.match(
+    hook,
+    /useState<Record<string, string\[\]>>\(\(\) => preselectedAnswers\(questions\)\)/,
+    "batch selection initializes from preselected answers",
+  );
+}
+
 console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation, per-option evidence inheritance");
