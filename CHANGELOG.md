@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.12](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.11...v0.65.12) (2026-10-03)
+
+
+### Bug Fixes
+
+* bound the critique-rework loop at three rounds ([6dc52f1](https://github.com/calionauta/bb-plugin-stelow/commit/6dc52f12683fa0b0379fe8a8f14cdd39821e7356))
+* evidence, oscillation, expiry, and risk for the gap loop ([a09db1a](https://github.com/calionauta/bb-plugin-stelow/commit/a09db1aaf1c47fc38a94e7185b6f2c5863b6a7f9))
+
 ## [0.65.11](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.10...v0.65.11) (2026-10-03)
 
 
