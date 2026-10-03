@@ -8,6 +8,9 @@ import {
   reworkCapRefusal,
   reworkRoundsOf,
 } from "../../../lib/rework-rounds.mjs";
+import { hasGapEvidence } from "../../../lib/gap-registry.mjs";
+import type { GapEvidence } from "../../../lib/gap-registry.mjs";
+import { summarizeRework } from "../../../lib/rework-metrics.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { workflowEntryForOwner } from "../../../lib/workflow-state-identity.mjs";
@@ -34,8 +37,10 @@ import { CARD_WORKSPACE_UNAVAILABLE } from "../../../lib/workspace-refusal.mjs";
  * metrics readout and the card header read it from. */
 type CritiqueGapView = {
   totals: GapTotals;
-  escalated: Array<{ description: string }>;
+  escalated: Array<{ description: string; evidence?: GapEvidence | null }>;
   auditGapScopes: Array<{ gap: string | null }>;
+  /** Present when the card has matched critiques; absent in older harnesses. */
+  critiqueRounds?: Array<Array<{ description: string; resolution: string }>>;
 };
 
 export function createGapScopesCommand(deps: CliDeps): CliCommandFn {
@@ -90,7 +95,7 @@ async function convertEscalated(
   const unlinked = unlinkedEscalated(gapState);
   const rounds = reworkRoundsOf(tracking.entry);
   if (unlinked.length > 0 && reworkCapReached(tracking.entry))
-    return refuseReworkCap(deps, cardId, rounds, unlinked);
+    return refuseReworkCap(deps, cardId, gapState, rounds, unlinked);
   const created = createReworkScopes(tracking.entry, gapState);
   if (created.length > 0)
     tracking.entry.rework_rounds = nextReworkRounds(tracking.entry, created.length);
@@ -185,14 +190,21 @@ function unlinkedEscalated(gapState: CritiqueGapView): string[] {
  * stop is recorded where the card's history can point at it — a trail event,
  * a card comment, and realtime refresh, the same three surfaces a successful
  * conversion writes to. The stderr names the three exits that already exist,
- * so the card never parks without a door. */
+ * so the card never parks without a door. An oscillating finding is named
+ * alongside: re-running the disagreement is not one of the exits. */
 function refuseReworkCap(
   deps: CliDeps,
   cardId: string,
+  gapState: CritiqueGapView,
   rounds: number,
   unlinked: string[],
 ): CliResult {
-  const stderr = reworkCapRefusal(rounds, unlinked);
+  const oscillating = summarizeRework(gapState.critiqueRounds ?? []).oscillatingDescriptions;
+  const lines = [reworkCapRefusal(rounds, unlinked)];
+  if (oscillating.length > 0) {
+    lines.push(`Oscillation: ${oscillating.join("; ")} came back after a fix across 3+ rounds — decides by human, not by another round.`);
+  }
+  const stderr = lines.join("\n");
   try {
     recordTrackableEvent(deps.db, {
       cardId,
@@ -298,9 +310,12 @@ function reportGapScopes(
 }
 
 function gapDecisionComment(gapState: CritiqueGapView, created: string[], rounds: number): string {
+  const evidenced = evidencedCount(gapState);
   return `Gap-to-scope decision (rework round ${rounds}/${MAX_REWORK_ROUNDS}): ${gapState.totals.fixed} fixed inline, ${
     gapState.totals.documented
-  } documented as accepted debt (no carry-forward — see card checks), ${gapState.escalated.length} escalated — ${
+  } documented as accepted debt (no carry-forward — see card checks), ${
+    gapState.escalated.length
+  } escalated (${evidenced} cite measurements) — ${
     created.length
   } new rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nThe card loops back: advance \
 to execution, execute the rework scopes, re-run the critique, then run done again.`;
@@ -309,8 +324,15 @@ to execution, execute the rework scopes, re-run the critique, then run done agai
 function gapDecisionStdout(gapState: CritiqueGapView, created: string[], rounds: number): string {
   return `Decision recorded (rework round ${rounds}/${MAX_REWORK_ROUNDS}): ${gapState.totals.fixed} fixed, ${
     gapState.totals.documented
-  } documented, ${gapState.escalated.length} escalated.\nCreated ${
+  } documented, ${gapState.escalated.length} escalated (${evidencedCount(gapState)} with evidence).\nCreated ${
     created.length
   } rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nLoop back now: bb stelow advance execution \
 — execute the new scopes, re-run the critique, then run done again.`;
+}
+
+/** Escalated gaps whose row cites measurements. Unmeasured escalations are
+ * fail-open (older registries, hosts without tools), so this is a count of
+ * what is evidenced, never a gate. */
+function evidencedCount(gapState: CritiqueGapView): number {
+  return gapState.escalated.filter((gap) => hasGapEvidence(gap.evidence)).length;
 }

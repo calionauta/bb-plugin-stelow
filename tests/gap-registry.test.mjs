@@ -8,6 +8,8 @@ import {
   validateGapRegistry,
   gapsToTriageBatch,
   buildGapTriageState,
+  normalizeGapEvidence,
+  hasGapEvidence,
   GAP_TRIAGE_CRITIQUE_CHARS,
 } from "../lib/gap-registry.mjs";
 import { validateArtifact } from "../lib/artifact-validation.mjs";
@@ -172,5 +174,77 @@ assert.equal(
   `Execution critique:\n${"x".repeat(GAP_TRIAGE_CRITIQUE_CHARS)}`,
   "the critique budget is enforced, so it cannot crowd out the diff",
 );
+
+// --- Evidence: measurements behind the verdict. --------------------------------
+// An `evidence:` block cites host measurements (symbols, files, caller
+// counts, covering tests, reversibility, proving check). Absent reads as
+// unmeasured, never as a failure — registries written before it existed,
+// and workers on hosts without tools, keep passing byte-identically.
+const evHead = (body) => `---\ngaps:\n${body}\n---\n\n# Execution Critique Report\n\n## Summary\n\nWork reviewed.\n`;
+const evRow = (desc, evidence) =>
+  `  - type: missing-tests\n    area: "auth"\n    description: "${desc}"\n    impact: high\n    resolution: escalate${evidence}`;
+
+const measured = evHead(evRow("Login rate limiter", `
+    evidence:
+      symbols: [RateLimiter]
+      files: [auth/rate-limit.ts]
+      callers: 38
+      tests: [TestRateLimit]
+      reversible: unknown
+      check: "npm test -- rate-limit"`));
+const parsedEv = parseGapFrontmatter(measured);
+assert.equal(parsedEv.gaps.length, 1, "the evidenced row parses");
+assert.deepEqual(
+  parsedEv.gaps[0].evidence,
+  {
+    symbols: ["RateLimiter"],
+    files: ["auth/rate-limit.ts"],
+    callers: 38,
+    tests: ["TestRateLimit"],
+    reversible: "unknown",
+    check: "npm test -- rate-limit",
+  },
+  "the block normalises to typed measurements",
+);
+assert.equal(parsedEv.gaps[0].evidenceError ?? null, null, "a clean block carries no error");
+// The keys after the block still belong to the gap: a dedented field ends
+// the evidence, it is not swallowed into it.
+assert.equal(parsedEv.gaps[0].resolution, "escalate", "resolution after evidence: still parses");
+assert.equal(parsedEv.gaps[0].impact, "high", "impact before evidence: untouched");
+
+// Rows without the block parse exactly as before — no new keys.
+const bare = parseGapFrontmatter(clean).gaps[0];
+assert.equal(bare.evidence, undefined, "an unmeasured row gains no evidence key");
+assert.equal(bare.evidenceError ?? null, null, "and no error key either");
+
+// Absent evidence never fails, however strict the row is otherwise.
+assert.deepEqual(validateGapRegistry(measured), [], "cited measurements pass");
+assert.deepEqual(validateGapRegistry(clean), [], "unmeasured registries keep passing");
+
+// Present-but-malformed evidence fails as shape, not silently.
+const badCallers = evHead(evRow("Login rate limiter", "\n    evidence:\n      callers: huge"));
+assert.equal(fail(validateGapRegistry(badCallers), "gap-evidence-shape").length, 1, "a non-integer caller count fails as shape");
+const badReversible = evHead(evRow("Login rate limiter", "\n    evidence:\n      reversible: maybe"));
+assert.equal(fail(validateGapRegistry(badReversible), "gap-evidence-shape").length, 1, "an unknown reversibility fails as shape");
+const scalarEvidence = evHead(evRow("Login rate limiter", "\n    evidence: just trust me"));
+assert.equal(fail(validateGapRegistry(scalarEvidence), "gap-evidence-shape").length, 1, "a scalar evidence fails as shape");
+
+// Normalisation units: flow arrays, singles, empties, and the null spellings.
+assert.deepEqual(
+  normalizeGapEvidence({ symbols: "[A, B]", files: "x.ts", callers: "3", tests: "[]", reversible: "NO", check: "null" }),
+  {
+    evidence: { symbols: ["A", "B"], files: ["x.ts"], callers: 3, tests: [], reversible: "no", check: null },
+    error: null,
+  },
+  "flow lists, singles, and spellings normalise",
+);
+assert.equal(normalizeGapEvidence("scalar").error !== null, true, "a scalar is not a mapping");
+assert.equal(normalizeGapEvidence({ callers: "-1" }).error !== null, true, "negative callers fail");
+
+// Only cited measurements count: an empty block is present-but-vacuous.
+assert.equal(hasGapEvidence({ symbols: ["A"], files: [], callers: null, tests: [], reversible: null, check: null }), true, "one cited field counts");
+assert.equal(hasGapEvidence({ symbols: [], files: [], callers: null, tests: [], reversible: null, check: null }), false, "a vacuous block is unmeasured");
+assert.equal(hasGapEvidence(null), false, "no block is unmeasured");
+assert.equal(hasGapEvidence(undefined), false, "never undefined-throws");
 
 console.log("gap registry test ok: parse, misclassification gate, contract wiring");

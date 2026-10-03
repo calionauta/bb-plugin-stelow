@@ -2,7 +2,8 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { contractForBuildArtifact } from "../../lib/artifact-contracts.mjs";
 import { parseArtifactManifest, resolveArtifactPath } from "../../lib/artifact-manifest.mjs";
-import { escalatedGaps, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import { escalatedGaps, parseGapFrontmatter, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import type { GapEvidence } from "../../lib/gap-registry.mjs";
 import { addGapTotals as addTotals, emptyGapTotals } from "../../lib/metrics-format.mjs";
 import type { GapTotals } from "../../lib/metrics-format.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -14,9 +15,11 @@ export type CritiqueGapState = {
   failures: string[];
   totals: GapTotals;
   /** Every finding the registry named, with its disposition. The card lists
-   * these; `escalated` is the subset the rework loop consumes. */
-  gaps: Array<{ description: string; resolution: string }>;
-  escalated: Array<{ description: string }>;
+   * these; `escalated` is the subset the rework loop consumes. `evidence`
+   * carries the cited measurements when the row has an `evidence:` block,
+   * null when the finding is unmeasured (fail-open, never a failure). */
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null }>;
+  escalated: Array<{ description: string; evidence: GapEvidence | null }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
   /** One entry per registered critique artifact, oldest first. The round
@@ -38,8 +41,8 @@ type CritiqueDeps = {
 type CritiqueAccumulator = {
   failures: string[];
   totals: GapTotals;
-  gaps: Array<{ description: string; resolution: string }>;
-  escalated: Array<{ description: string }>;
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null }>;
+  escalated: Array<{ description: string; evidence: GapEvidence | null }>;
   critiqueTexts: string[];
   /** Kept per round rather than only as text: the joined form cannot say which
    * finding belongs to which pass, and that is the whole of a rework metric. */
@@ -71,10 +74,11 @@ function emptyAccumulator(): CritiqueAccumulator {
 }
 
 function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
+  const evidenceByDescription = evidenceMap(content);
   for (const gap of escalatedGaps(content)) {
     const description = String(gap.description ?? "").trim();
     if (description && !target.escalated.some((entry) => entry.description === description)) {
-      target.escalated.push({ description });
+      target.escalated.push({ description, evidence: evidenceByDescription.get(description) ?? null });
     }
   }
 }
@@ -82,11 +86,28 @@ function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
 // Every finding, deduplicated across the critique rounds a card accumulated.
 // A gap re-audited in a later round is the same finding, not a second one.
 function addRegistryGaps(target: CritiqueAccumulator, content: string) {
+  const evidenceByDescription = evidenceMap(content);
   for (const gap of registryGaps(content)) {
     if (!target.gaps.some((entry) => entry.description === gap.description)) {
-      target.gaps.push({ description: gap.description, resolution: gap.resolution });
+      target.gaps.push({
+        description: gap.description,
+        resolution: gap.resolution,
+        evidence: evidenceByDescription.get(gap.description) ?? null,
+      });
     }
   }
+}
+
+/** Measurements cited per finding, keyed by normalised description. The
+ * registry rows above carry disposition only; this joins the evidence the
+ * same frontmatter parsed, so unmeasured findings read null, never absent. */
+function evidenceMap(content: string): Map<string, GapEvidence | null> {
+  const map = new Map<string, GapEvidence | null>();
+  for (const gap of parseGapFrontmatter(content).gaps) {
+    const description = String(gap.description ?? "").trim();
+    if (description && !map.has(description)) map.set(description, gap.evidence ?? null);
+  }
+  return map;
 }
 
 async function readArtifact(

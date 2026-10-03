@@ -1,5 +1,6 @@
 import type { WorkerCard } from "../workers-types.js";
 import type { CritiqueGapState } from "./critique-gap-state.js";
+import type { GapEvidence } from "../../lib/gap-registry.mjs";
 import { reviewExcerptRecords } from "../../lib/review-verdict.mjs";
 import type { ReviewFile } from "./review-records.js";
 
@@ -11,7 +12,7 @@ type GapSummary = {
   fixed: number;
   documented: number;
   escalated: number;
-  items: Array<{ description: string; resolution: string; scopeStatus: string | null }>;
+  items: Array<{ description: string; resolution: string; scopeStatus: string | null; evidence: GapEvidence | null }>;
   pendingScopes: number;
   unscoped: number;
   leadMs: number | null;
@@ -76,24 +77,13 @@ export function buildGapSummary(
   isSkippedStatus: (status: string) => boolean,
   reviews: GapSummary["reviews"],
 ): GapSummary {
-  // Every finding the registry named, not just the escalated slice. Only an
-  // escalation gets a rework scope, so `scopeStatus` stays null for the rest —
-  // and a fixed or documented gap still appears, carrying the disposition that
-  // closed it. A list that showed only escalations could not account for a
-  // total that counts all of them.
-  const items = state.gaps.map((gap) => {
-    const scope = gap.resolution === "escalate"
-      ? state.auditGapScopes.find((entry) => entry.gap === gap.description)
-      : undefined;
-    return { description: gap.description, resolution: gap.resolution, scopeStatus: scope?.status ?? null };
-  });
   return {
     matched: true,
     total: state.totals.total,
     fixed: state.totals.fixed,
     documented: state.totals.documented,
     escalated: state.totals.escalated,
-    items,
+    items: gapItems(state),
     // Skipped is resolved, not pending (lib/trackables.mjs): a set-aside scope
     // must not inflate the open count the card shows.
     pendingScopes: state.auditGapScopes.filter(
@@ -112,6 +102,25 @@ export function buildGapSummary(
     rounds: state.critiqueRounds,
     reviews,
   };
+}
+
+/** Every finding the registry named, not just the escalated slice. Only an
+ * escalation gets a rework scope, so `scopeStatus` stays null for the rest —
+ * and a fixed or documented gap still appears, carrying the disposition that
+ * closed it plus the measurements it cited, if any. A list that showed only
+ * escalations could not account for a total that counts all of them. */
+function gapItems(state: CritiqueGapState): GapSummary["items"] {
+  return state.gaps.map((gap) => {
+    const scope = gap.resolution === "escalate"
+      ? state.auditGapScopes.find((entry) => entry.gap === gap.description)
+      : undefined;
+    return {
+      description: gap.description,
+      resolution: gap.resolution,
+      scopeStatus: scope?.status ?? null,
+      evidence: gap.evidence ?? null,
+    };
+  });
 }
 
 export function createGapSummary(deps: GapSummaryDeps) {

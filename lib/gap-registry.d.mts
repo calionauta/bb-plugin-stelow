@@ -1,3 +1,12 @@
+export interface GapEvidence {
+  symbols: string[];
+  files: string[];
+  callers: number | null;
+  tests: string[];
+  reversible: string | null;
+  check: string | null;
+}
+
 export interface GapEntry {
   index: number;
   type: string | null;
@@ -6,6 +15,10 @@ export interface GapEntry {
   impact: string | null;
   effort: string | null;
   resolution: string | null;
+  /** Present only when the row carries an `evidence:` block. */
+  evidence?: GapEvidence | null;
+  /** Present only when that block does not parse. */
+  evidenceError?: string | null;
 }
 
 export interface GapSummary {
@@ -34,6 +47,10 @@ export function registryGaps(text: unknown): Array<{ description: string; resolu
 export function summarizeGaps(text: unknown): GapSummary;
 
 export function validateGapRegistry(text: unknown): GapFailure[];
+
+export function normalizeGapEvidence(raw: unknown): { evidence: GapEvidence | null; error: string | null };
+
+export function hasGapEvidence(evidence: unknown): boolean;
 
 export interface GapTriageItem {
   id: string;

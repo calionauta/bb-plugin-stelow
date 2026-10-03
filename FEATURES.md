@@ -2439,6 +2439,23 @@ one input, one artifact.*
   names its round (`rework round N/3`) in the comment, stdout, and trail
   evidence, so the history shows which pass created which scopes.
   (`tests/rework-rounds.test.mjs`, `tests/runtime-cli-gap-scopes-cap.test.mjs`).
+  Escalated gaps can cite the measurements behind the verdict: an optional
+  `evidence:` block per row (symbols, files, cymbal caller counts, sem
+  covering tests, reversibility, proving check — `lib/gap-registry.mjs`,
+  `normalizeGapEvidence`). Absent reads as unmeasured, never as a failure;
+  malformed fails as `gap-evidence-shape`, so the format is taught rather
+  than guessed. The conversion names how many escalations cite measurements,
+  and rework orders by evidence (irreversible + wide blast radius + no
+  proving check goes to a human first), not by registry order. The
+  methodology text lives upstream (`workflow-audit.md`, criteria 7/9) and
+  arrives here on release sync — code reads the block, never the prose.
+  Oscillation is rework that will not converge (`lib/rework-metrics.mjs`):
+  a finding closed and re-opened across 3+ rounds means the bar and the
+  artifact disagree. A never-closed escalation repeated across rounds is
+  persistence (it waits on rework, correctly), not oscillation. The rework
+  line names oscillating findings on every surface that prints it, and the
+  round-budget refusal names them too — the exit is a human decision,
+  never another round.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card

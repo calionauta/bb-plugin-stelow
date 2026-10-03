@@ -16,6 +16,9 @@ export interface ReworkSummary {
   rate: number | null;
   /** Named so a rate can be traced back to the finding that caused it. */
   reworkedDescriptions: string[];
+  /** The reworked subset seen across 3+ rounds: oscillation, which needs a
+   * human rather than another unsupervised round. */
+  oscillatingDescriptions: string[];
 }
 
 export declare function summarizeRework(rounds: RoundGaps[] | null | undefined): ReworkSummary;
