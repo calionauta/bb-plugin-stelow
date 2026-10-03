@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.10](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.9...v0.65.10) (2026-10-03)
+
+
+### Bug Fixes
+
+* a dead database handle ends the pass, never the process ([#290](https://github.com/calionauta/bb-plugin-stelow/issues/290)) ([20df89f](https://github.com/calionauta/bb-plugin-stelow/commit/20df89f204631cade8a20586d2816bbb4a4f112e))
+* completion binds to the checkout holding the card's state ([#291](https://github.com/calionauta/bb-plugin-stelow/issues/291)) ([d79f433](https://github.com/calionauta/bb-plugin-stelow/commit/d79f4330d6c5710c062d3481ae2d66c0617008a4))
+
 ## [0.65.9](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.8...v0.65.9) (2026-10-03)
 
 
