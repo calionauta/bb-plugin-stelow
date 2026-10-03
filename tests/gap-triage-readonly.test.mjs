@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gapsToTriageBatch, validateGapRegistry } from "../lib/gap-registry.mjs";
+import { validateGapRegistry } from "../lib/gap-registry.mjs";
+import { gapsToTriageBatch } from "../lib/gap-triage.mjs";
 
 // Gap-triage genuineness: read-only second opinion over the worker's own
 // classification. validateGapRegistry routing (gap-misclassified,

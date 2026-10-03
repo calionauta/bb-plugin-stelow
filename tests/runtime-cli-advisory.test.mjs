@@ -87,6 +87,54 @@ test("verify does not warn that a skipped rework scope is open", async () => {
   );
 });
 
+test("verify warns that documented debt past its expires date will block done", async () => {
+  const { invoke } = cliHarness({
+    testCommand: { command: "npm", args: ["test"], display: "npm test" },
+    hostTests: { exitCode: 0, output: "3 passing" },
+    gapState: {
+      matched: true,
+      failures: [],
+      totals: { total: 1, fixed: 0, documented: 1, escalated: 0 },
+      gaps: [
+        { description: "Rename helper", resolution: "documented", evidence: null, expires: "2023-01-01", owner: "ana" },
+      ],
+      escalated: [],
+      auditGapScopes: [],
+    },
+  });
+  const result = await invoke(["verify", "--tests"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(
+    `${result.stdout}${result.stderr}`,
+    /EXPIRED Rename helper \(past 2023-01-01\) — re-scope, re-date with an owner, or fix inline/,
+    "expired debt warns with its exits before done refuses",
+  );
+});
+
+test("verify stays silent for documented debt dated in the future", async () => {
+  const { invoke } = cliHarness({
+    testCommand: { command: "npm", args: ["test"], display: "npm test" },
+    hostTests: { exitCode: 0, output: "3 passing" },
+    gapState: {
+      matched: true,
+      failures: [],
+      totals: { total: 1, fixed: 0, documented: 1, escalated: 0 },
+      gaps: [
+        { description: "Rename helper", resolution: "documented", evidence: null, expires: "2099-01-01", owner: "ana" },
+      ],
+      escalated: [],
+      auditGapScopes: [],
+    },
+  });
+  const result = await invoke(["verify", "--tests"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.doesNotMatch(
+    `${result.stdout}${result.stderr}`,
+    /rework loop open/,
+    "settled debt warns nothing",
+  );
+});
+
 test("verify --tests refuses a checkout with no conventional test command", async () => {
   const { invoke, calls } = cliHarness({ testCommand: null });
   const result = await invoke(["verify", "--tests"]);

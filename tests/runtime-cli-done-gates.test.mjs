@@ -57,6 +57,58 @@ test("a build done with an escalated gap that has no rework scope refuses and na
   );
 });
 
+test("a build done with documented debt past its expires date refuses and names the three exits", async () => {
+  const { invoke, calls } = cliHarness({
+    files: { "/w/.stelow/state/state.md": "current_stage: audit\n" },
+    gapState: {
+      ...NO_GAPS,
+      matched: true,
+      totals: { total: 1, fixed: 0, documented: 1, escalated: 0 },
+      gaps: [
+        { description: "Rename helper", resolution: "documented", evidence: null, expires: "2023-01-01", owner: "ana" },
+      ],
+      escalated: [],
+      auditGapScopes: [],
+    },
+  });
+  const result = await invoke(["done"]);
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /past their expires date/);
+  assert.match(result.stderr, /Rename helper \(past 2023-01-01, owner ana\)/);
+  assert.match(result.stderr, /fixed/);
+  assert.match(result.stderr, /gap-scopes/);
+  assert.match(result.stderr, /re-date/);
+  assert.deepEqual(
+    callsNamed(calls, "updateCard"),
+    [],
+    "expired debt never completes the card",
+  );
+});
+
+test("documented debt dated in the future does not block done on expiry", async () => {
+  const { invoke, calls } = cliHarness(
+    auditableBuildDone({
+      gapState: {
+        ...NO_GAPS,
+        matched: true,
+        totals: { total: 1, fixed: 0, documented: 1, escalated: 0 },
+        gaps: [
+          { description: "Rename helper", resolution: "documented", evidence: null, expires: "2099-01-01", owner: "ana" },
+        ],
+        escalated: [],
+        auditGapScopes: [],
+      },
+    }),
+  );
+  const result = await invoke(["done"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(
+    callsNamed(calls, "updateCard").map(([, , fields]) => fields.status),
+    ["completed"],
+    "settled debt completes",
+  );
+});
+
 test("a build done with an audit-gap rework scope still open refuses before completing", async () => {
   const { invoke, calls } = cliHarness({
     files: { "/w/.stelow/state/state.md": "current_stage: audit\n" },

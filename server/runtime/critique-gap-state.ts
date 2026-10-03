@@ -17,8 +17,10 @@ export type CritiqueGapState = {
   /** Every finding the registry named, with its disposition. The card lists
    * these; `escalated` is the subset the rework loop consumes. `evidence`
    * carries the cited measurements when the row has an `evidence:` block,
-   * null when the finding is unmeasured (fail-open, never a failure). */
-  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null }>;
+   * null when the finding is unmeasured (fail-open, never a failure).
+   * `expires`/`owner` ride documented debt rows; gates decide what a past
+   * date means, this state only carries it. */
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
   escalated: Array<{ description: string; evidence: GapEvidence | null }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
@@ -41,7 +43,7 @@ type CritiqueDeps = {
 type CritiqueAccumulator = {
   failures: string[];
   totals: GapTotals;
-  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null }>;
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
   escalated: Array<{ description: string; evidence: GapEvidence | null }>;
   critiqueTexts: string[];
   /** Kept per round rather than only as text: the joined form cannot say which
@@ -87,12 +89,15 @@ function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
 // A gap re-audited in a later round is the same finding, not a second one.
 function addRegistryGaps(target: CritiqueAccumulator, content: string) {
   const evidenceByDescription = evidenceMap(content);
+  const debtByDescription = debtMap(content);
   for (const gap of registryGaps(content)) {
     if (!target.gaps.some((entry) => entry.description === gap.description)) {
       target.gaps.push({
         description: gap.description,
         resolution: gap.resolution,
         evidence: evidenceByDescription.get(gap.description) ?? null,
+        expires: debtByDescription.get(gap.description)?.expires ?? null,
+        owner: debtByDescription.get(gap.description)?.owner ?? null,
       });
     }
   }
@@ -106,6 +111,22 @@ function evidenceMap(content: string): Map<string, GapEvidence | null> {
   for (const gap of parseGapFrontmatter(content).gaps) {
     const description = String(gap.description ?? "").trim();
     if (description && !map.has(description)) map.set(description, gap.evidence ?? null);
+  }
+  return map;
+}
+
+/** Debt metadata per finding, keyed the same way. Raw strings, validated
+ * downstream: a malformed date is a registry failure, not a silent null. */
+function debtMap(content: string): Map<string, { expires: string | null; owner: string | null }> {
+  const map = new Map<string, { expires: string | null; owner: string | null }>();
+  for (const gap of parseGapFrontmatter(content).gaps) {
+    const description = String(gap.description ?? "").trim();
+    if (description && !map.has(description)) {
+      map.set(description, {
+        expires: typeof gap.expires === "string" && gap.expires.trim() !== "" ? gap.expires.trim() : null,
+        owner: typeof gap.owner === "string" && gap.owner.trim() !== "" ? gap.owner.trim() : null,
+      });
+    }
   }
   return map;
 }

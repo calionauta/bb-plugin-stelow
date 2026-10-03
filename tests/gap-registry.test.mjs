@@ -6,12 +6,17 @@ import {
   registryGaps,
   summarizeGaps,
   validateGapRegistry,
-  gapsToTriageBatch,
-  buildGapTriageState,
   normalizeGapEvidence,
   hasGapEvidence,
-  GAP_TRIAGE_CRITIQUE_CHARS,
+  parseGapDate,
+  isDebtExpired,
+  expiredDebts,
 } from "../lib/gap-registry.mjs";
+import {
+  gapsToTriageBatch,
+  buildGapTriageState,
+  GAP_TRIAGE_CRITIQUE_CHARS,
+} from "../lib/gap-triage.mjs";
 import { validateArtifact } from "../lib/artifact-validation.mjs";
 import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 
@@ -246,5 +251,66 @@ assert.equal(hasGapEvidence({ symbols: ["A"], files: [], callers: null, tests: [
 assert.equal(hasGapEvidence({ symbols: [], files: [], callers: null, tests: [], reversible: null, check: null }), false, "a vacuous block is unmeasured");
 assert.equal(hasGapEvidence(null), false, "no block is unmeasured");
 assert.equal(hasGapEvidence(undefined), false, "never undefined-throws");
+
+// --- Debt expiry: documented debt with a date. ----------------------------------
+// A documented gap may ride `expires: YYYY-MM-DD` with an `owner:` — the
+// waiver pattern: settled until the date, open after it. Malformed dates
+// fail the row; the expiry verdict itself never throws and never smuggles
+// a format failure into a false overdue.
+const NOW = Date.parse("2024-06-15T12:00:00Z");
+assert.deepEqual(parseGapDate("2024-07-01"), { date: "2024-07-01", error: null }, "a well-formed date parses");
+assert.equal(parseGapDate("2024-13-01").error !== null, true, "month 13 is not a date");
+assert.equal(parseGapDate("2023-02-30").error !== null, true, "February 30 is not a date");
+assert.equal(parseGapDate("2024-02-29").error, null, "leap days exist");
+assert.equal(parseGapDate("next friday").error !== null, true, "prose is not a date");
+assert.equal(parseGapDate("").error !== null, true, "absent is not a date either");
+
+assert.equal(isDebtExpired("2024-06-14", NOW), true, "yesterday is overdue");
+assert.equal(isDebtExpired("2024-06-15", NOW), false, "due today is due, not overdue");
+assert.equal(isDebtExpired("2024-06-16", NOW), false, "tomorrow is settled");
+assert.equal(isDebtExpired("next friday", NOW), false, "malformed never reads overdue");
+assert.equal(isDebtExpired(null, NOW), false, "absent never reads overdue");
+
+const debtRows = [
+  { description: "Old rename", resolution: "documented", expires: "2024-01-01", owner: "ana" },
+  { description: "Fresh rename", resolution: "documented", expires: "2025-01-01", owner: "ana" },
+  { description: "Undated rename", resolution: "documented" },
+  { description: "Open rework", resolution: "escalate", expires: "2024-01-01" },
+  { description: "Inline fix", resolution: "fixed", expires: "2024-01-01" },
+];
+assert.deepEqual(
+  expiredDebts(debtRows, NOW),
+  [{ description: "Old rename", expires: "2024-01-01", owner: "ana" }],
+  "only past-dated documented rows expire, carrying their owner",
+);
+assert.deepEqual(expiredDebts(null, NOW), [], "junk reads empty");
+assert.deepEqual(expiredDebts([{ description: "  ", resolution: "documented", expires: "2024-01-01" }], NOW), [], "a row without a name is not a verdict");
+
+// The format gate: a malformed expires fails the row where it is written,
+// on any resolution — downstream compares strings, so garbage would read
+// as always- or never-expired depending on collation.
+const debtHead = (expires) => [
+  "---",
+  "gaps:",
+  "  - type: debt",
+  '    area: "auth"',
+  '    description: "Rename helper"',
+  "    impact: medium",
+  "    resolution: documented",
+  `    expires: ${expires}`,
+  "---",
+  "",
+].join("\n");
+assert.deepEqual(validateGapRegistry(debtHead("2025-01-01")), [], "a well-formed expiry passes");
+assert.equal(
+  fail(validateGapRegistry(debtHead("someday")), "gap-incomplete-row").length,
+  1,
+  "a malformed expiry fails the row",
+);
+assert.equal(
+  fail(validateGapRegistry(debtHead("2025-01-01")), "gap-evidence-shape").length,
+  0,
+  "expiry alone is not evidence, and needs none",
+);
 
 console.log("gap registry test ok: parse, misclassification gate, contract wiring");

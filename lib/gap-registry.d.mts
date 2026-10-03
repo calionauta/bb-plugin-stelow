@@ -19,6 +19,9 @@ export interface GapEntry {
   evidence?: GapEvidence | null;
   /** Present only when that block does not parse. */
   evidenceError?: string | null;
+  /** Debt metadata scalars ride the row when present; validated separately. */
+  expires?: string | null;
+  owner?: string | null;
 }
 
 export interface GapSummary {
@@ -52,22 +55,12 @@ export function normalizeGapEvidence(raw: unknown): { evidence: GapEvidence | nu
 
 export function hasGapEvidence(evidence: unknown): boolean;
 
-export interface GapTriageItem {
-  id: string;
-  name: string;
-  text: string;
-}
+export function parseGapDate(value: unknown): { date: string | null; error: string | null };
 
-export function gapsToTriageBatch(
-  gaps?: Array<{ id?: string; description?: string } | null> | null,
-): {
-  items: GapTriageItem[];
-  questions: Record<string, { type: string; instructions: string; criteria: string[] }>;
-};
+export function isDebtExpired(expires: unknown, nowMs: number): boolean;
 
-export declare const GAP_TRIAGE_CRITIQUE_CHARS: number;
+export function expiredDebts(
+  rows: unknown,
+  nowMs: number,
+): Array<{ description: string; expires: string; owner: string | null }>;
 
-export function buildGapTriageState(options?: {
-  critiqueText?: string | null;
-  diff?: string | null;
-}): string;
