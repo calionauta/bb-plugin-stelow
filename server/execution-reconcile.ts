@@ -3,6 +3,7 @@ import { createBoundaryReconciler } from "./execution-reconcile-boundary.js";
 import type { CardNotifier, ReconcileDeps } from "./execution-reconcile-deps.js";
 import { createReconcileSweep } from "./execution-reconcile-sweep.js";
 import { createRunReconciler } from "./execution-reconcile-run.js";
+import { isDatabaseClosedError } from "../lib/sqlite-errors.mjs";
 import type { WorkerCard } from "./workers-types.js";
 
 /**
@@ -15,7 +16,7 @@ import type { WorkerCard } from "./workers-types.js";
  */
 export function createExecutionReconcile(deps: ReconcileDeps) {
   let inFlight = false;
-  const { run, sweep } = wireReconcileRules(deps);
+  let { run, sweep } = wireReconcileRules(deps);
 
   async function reconcile(): Promise<void> {
     if (inFlight) return;
@@ -26,14 +27,34 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
       // Last, optional, and unable to fail the pass: ask the forge whether a
       // card whose ledger still says "owed" has in fact already landed.
       await deps.reconcilePublications?.().catch(() => undefined);
+    } catch (error) {
+      if (!isDatabaseClosedError(error)) throw error;
+      // The captured handle died — on a reload the new load owns a new
+      // handle, but this pass (or a surviving timer) still holds the old one.
+      // Rebuild against a live handle so the next pass proceeds; this pass
+      // resolves because a dead handle could conclude nothing truthful.
+      rewireRules();
     } finally {
       inFlight = false;
     }
   }
 
+  /** Rebuild the rules against the current handle. Fail-soft: resolving can
+   * itself fail mid-shutdown, and the next tick retries either way. */
+  function rewireRules(): void {
+    try {
+      ({ run, sweep } = wireReconcileRules({
+        ...deps,
+        db: deps.bb.storage.database(),
+      }));
+    } catch {
+      /* the next scheduled pass retries */
+    }
+  }
+
   return {
     reconcile,
-    reconcileOne: run.reconcileOne,
+    reconcileOne: (runId: string) => run.reconcileOne(runId),
     handlers: {
       executionRunStatus: async ({ runId }: { runId: string }) => run.reconcileOne(runId),
     },
