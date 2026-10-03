@@ -189,6 +189,7 @@ function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
         ? core.workflowStateDir(bb, sourcePath, card.id, card.dir_hash)
         : Promise.resolve(null),
     scopeXray: execution.scopeMaps.scopeXray,
+    scopeDraft: execution.scopeMaps.scopeDraft,
     fileTimestamp,
     auditReceiptNote,
     cardNotFound: core.ERRORS.cardNotFound,

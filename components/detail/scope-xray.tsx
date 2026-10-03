@@ -6,6 +6,7 @@ import { TEXT_META, TEXT_SECTION } from "../../lib/design-tokens";
 export type ScopeXrayView = {
   source: "server-projection";
   mutable: false;
+  draft?: boolean;
   mapId: string;
   mapVersion: string;
   freshness: "current" | "stale" | "unknown";
@@ -48,16 +49,25 @@ const QUIET = "bg-muted text-muted-foreground";
 export function ScopeXray({ xray }: { xray: ScopeXrayView }) {
   const view = scopeXrayPresentation(xray);
   if (!view) return null;
+  const draft = xray.draft === true;
   return (
-    <section className="space-y-2" aria-label="Scope map">
+    <section className="space-y-2" aria-label={draft ? "Scope draft preview" : "Scope map"}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className={TEXT_SECTION}>Scope map</h3>
-        <Pill tone={view.freshness.tone === "warn" ? WARN : QUIET}>{view.freshness.label}</Pill>
+        <h3 className={TEXT_SECTION}>{draft ? "Scope draft" : "Scope map"}</h3>
+        {draft ? (
+          <Pill tone={QUIET}>Draft preview</Pill>
+        ) : (
+          <Pill tone={view.freshness.tone === "warn" ? WARN : QUIET}>{view.freshness.label}</Pill>
+        )}
         <span className={TEXT_META}>
-          {view.scopeCount} scope{view.scopeCount === 1 ? "" : "s"} · approved
+          {view.scopeCount} scope{view.scopeCount === 1 ? "" : "s"} · {draft ? "not approved" : "approved"}
         </span>
       </div>
-      <p className={TEXT_META}>{view.freshness.note}</p>
+      <p className={TEXT_META}>
+        {draft
+          ? "Preview for the gate review — the scope stage still has to approve it. Nobody edits this here."
+          : view.freshness.note}
+      </p>
       <ul className="space-y-1.5">
         {view.nodes.map((node) => (
           <li key={node.id} className="space-y-0.5">

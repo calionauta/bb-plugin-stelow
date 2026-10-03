@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   parseAskGroups,
+  cleanOptions,
+  preselectedAnswers,
   normalizeAskArtifactPath,
   inheritAskArtifact,
   isBatchPayload,
@@ -151,6 +153,49 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
     { label: "A", description: "", preview: null, artifact: null },
     { label: "B", description: "d", preview: "p", artifact: { path: "f.md", display: "f.md" } },
   ]);
+}
+
+// Preselected options: --selected marks the most recent --option; the flag
+// survives parsing only on multi-select groups and reads as unchecked
+// everywhere else, so a stray flag can never silently confirm work.
+{
+  const picked = parseAskGroups(["--question", "Keep?", "--multiple", "--option", "A", "--selected", "--option", "B", "--selected", "--option", "C"]);
+  assert.equal(picked.error, undefined);
+  assert.deepEqual(picked.groups[0].options.map((o) => o.selected === true), [true, true, false]);
+}
+{
+  const single = parseAskGroups(["--question", "Pick?", "--option", "A", "--selected", "--option", "B"]);
+  assert.match(single.error, /--multiple/);
+}
+{
+  const stray = parseAskGroups(["--question", "Q?", "--multiple", "--selected", "--option", "A", "--option", "B"]);
+  assert.match(stray.error, /must follow a --option/);
+}
+
+// cleanOptions keeps an explicit true and flattens everything else to
+// unchecked: a malformed flag degrades to unchecked, never to confirmed.
+{
+  const cleaned = cleanOptions([
+    { label: "A", selected: true },
+    { label: "B", selected: "yes" },
+    { label: "C" },
+  ]);
+  assert.deepEqual(
+    cleaned.map((o) => o.selected === true),
+    [true, false, false],
+    "only explicit true survives cleaning",
+  );
+  assert.ok(!("selected" in cleaned[1]), "unchecked options travel sparse");
+  assert.deepEqual(
+    preselectedAnswers([
+      { id: "q1", multiple: true, options: [{ label: "A", selected: true }, { label: "B" }] },
+      { id: "q2", multiple: true, options: [{ label: "C" }] },
+      { id: "q3", multiple: false, options: [{ label: "D", selected: true }] },
+    ]),
+    { q1: ["A"] },
+    "preselected answers resolve per multiple-choice question only",
+  );
+  assert.deepEqual(preselectedAnswers([]), {}, "empty batch resolves empty");
 }
 
 // Artifact path normalization: one shared verdict on validity.

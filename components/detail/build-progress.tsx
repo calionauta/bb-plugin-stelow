@@ -214,6 +214,10 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
           <ProgressRegion title="Approved scope map" hint="what the card agreed to do">
             <ScopeXray xray={detail.scopeXray} />
           </ProgressRegion>
+        ) : detail.scopeDraft ? (
+          <ProgressRegion title="Scope draft" hint="preview for the gate review — not approved">
+            <ScopeXray xray={detail.scopeDraft} />
+          </ProgressRegion>
         ) : null}
         {detail.scopes.length > 0 ? (
           <ProgressRegion title="Scopes" hint="each unit of work, in dependency order">
