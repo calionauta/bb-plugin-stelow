@@ -51,6 +51,16 @@ assert.deepEqual(
   ["served", "friction"],
   "coverage effects are closed to served/friction",
 );
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.required,
+  ["scopeId", "effect"],
+  "scope coverage names scope and effect per entry",
+);
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.properties.effect.enum,
+  ["served", "friction"],
+  "coverage effects are closed to served/friction",
+);
 
 // The drift that actually happened, pinned as a regression: a receipt shaped
 // like the loose schema used to validate cleanly at the schema layer and fail

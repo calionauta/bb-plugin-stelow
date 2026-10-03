@@ -25,6 +25,9 @@ export type BatchOption = {
   artifact: AskArtifact | null;
   // True when the document came from a sibling rather than this option.
   artifactInherited?: boolean;
+  // Preselected by the asker (opt-out confirms). Starts checked; unchecking
+  // removes. Absent or false reads as unchecked.
+  selected?: boolean;
 };
 
 // A boundary question's framing, decided server-side from the boundary's

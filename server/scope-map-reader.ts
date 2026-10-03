@@ -14,13 +14,17 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { validateScopeMap, type ScopeMap } from "../lib/scope-map.mjs";
-import { buildScopeXray, parseCurrentShapeVersion } from "../lib/scope-xray.mjs";
+import { buildScopeDraft, buildScopeXray, parseCurrentShapeVersion } from "../lib/scope-xray.mjs";
 
 const SCOPE_MAP_FILE = "scope-map.json";
+const SCOPE_DRAFT_FILE = "scope-map-draft.json";
 const STATE_FILE = "state.md";
 
 /** The X-ray the card draws: the approved map, plus how fresh it is. */
 export type ScopeXray = ReturnType<typeof buildScopeXray>;
+
+/** The draft preview for the gate review: same graph, explicitly not approved. */
+export type ScopeDraft = ReturnType<typeof buildScopeDraft>;
 
 /** The parsed map, or null when it is missing, unparseable, or off-contract. */
 export function parseScopeMapFile(content: string): ScopeMap | null {
@@ -44,6 +48,8 @@ export type ScopeMapReader = {
   scopeMapApproved: (stateDir: string | null) => Promise<boolean>;
   /** The approved map drawn as a graph; null when there is none to draw. */
   scopeXray: (stateDir: string | null) => Promise<ScopeXray | null>;
+  /** The draft preview drawn as a graph; null when absent or superseded by an approved map. */
+  scopeDraft: (stateDir: string | null) => Promise<ScopeDraft | null>;
 };
 
 export function createScopeMapReader(bb: Pick<BbPluginApi, "sdk">): ScopeMapReader {
@@ -63,9 +69,28 @@ export function createScopeMapReader(bb: Pick<BbPluginApi, "sdk">): ScopeMapRead
       .catch(() => null);
     return buildScopeXray(map, { currentShapeVersion: parseCurrentShapeVersion(state) });
   }
+  async function scopeDraft(stateDir: string | null): Promise<ScopeDraft | null> {
+    if (!stateDir) return null;
+    // A draft never competes with an approved map: when the real map
+    // exists, the preview has nothing to add and stays hidden.
+    if (isApprovedScopeMap(await readScopeMap(stateDir))) return null;
+    const file = await bb.sdk.files.read({ path: join(stateDir, SCOPE_DRAFT_FILE) })
+      .catch(() => null);
+    const map = file ? parseScopeMapFile(file.content) : null;
+    if (!map || map.status === "approved") return null;
+    const state = await bb.sdk.files.read({ path: join(stateDir, STATE_FILE) })
+      .then((file) => file.content)
+      .catch(() => null);
+    try {
+      return buildScopeDraft(map, { currentShapeVersion: parseCurrentShapeVersion(state) });
+    } catch {
+      return null;
+    }
+  }
   return {
     readScopeMap,
     scopeMapApproved: async (stateDir) => isApprovedScopeMap(await readScopeMap(stateDir)),
     scopeXray,
+    scopeDraft,
   };
 }

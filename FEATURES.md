@@ -911,6 +911,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave
   exactly as before.
+  **Opt-out confirms preselect**: `--selected` after an `--option` starts it
+  checked (multi-select groups only — single-select refuses it, and stray
+  flags read as unchecked, so nothing confirms silently). The card renders
+  preselected rows checked; unchecking removes, and the submit carries what
+  remains. Scope and IN/OUT confirms use this form: every mapped scope (or
+  IN item) starts checked with its outcome as preview, unchecking removes.
   **Asking whether something is pending needs no question.** A worker on
   card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
   because no read-only verb reported the answer. `bb stelow status` now
@@ -1012,9 +1018,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   section, never pretending to be the same thing: progress is where this card
   is, the stage section is which stage it is on and what that stage produces.
   Its regions — checks, file claims, the approved scope map, scopes, and the
-  files named in the request — each carry their own heading
+  files named in your request — each carry their own heading
   (`ProgressRegion`), because one label over six unrelated things described
-  none of them. Regions are named, not boxed: `SECTION_SURFACE` is reserved for
+  none of them. A **scope draft preview** renders in the same place while no
+  approved map exists: same graph, draft tone, "not approved" said out loud,
+  never competing with the real map once it lands. Regions are named, not boxed: `SECTION_SURFACE` is reserved for
   card-level sections, and a nested surface is the "eight different shapes"
   defect one level down.
   Before scopes exist the live checkpoint pill rides the subtitle line
