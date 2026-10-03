@@ -114,7 +114,7 @@ assert.match(
 );
 assert.match(
   cliDone,
-  /auditTrailGate\(\{\s*build: trail,\s*check: trailCheck,\s*verifiedGit: git,?\s*\}\)/,
+  /auditTrailGate\(\{\s*build: trail,\s*check: trailCheck,\s*verifiedGit: git,\s*snapshotCommonDir,\s*\}\)/,
   "the trail is bound to the Git identity the audit receipt was verified at",
 );
 assert.match(
