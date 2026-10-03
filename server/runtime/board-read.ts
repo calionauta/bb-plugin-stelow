@@ -22,6 +22,7 @@ import {
   isPublishableArtifactContent,
 } from "../../lib/artifact-manifest.mjs";
 import { normalizeReviewGates } from "../../lib/review-gates.mjs";
+import { resolveKnobInput } from "../../lib/workflow-config.mjs";
 import { workflowSchema } from "../contracts.js";
 import { normalizeStatus, workflowScopes } from "../scopes.js";
 import { gateReceiptFor } from "./gate-vocabulary.js";
@@ -239,6 +240,17 @@ async function stageFromState(
   return text(stateBlob?.content.match(/current_stage:\s*(\S+)/)?.[1]);
 }
 
+/** Run knobs for one board row: explicit knobs win, legacy appetite maps once. */
+function boardWorkflowKnobs(config: LooseRecord) {
+  return resolveKnobInput({
+    quality: typeof config.quality === "string" ? config.quality : undefined,
+    supervisor: typeof config.supervisor === "string" ? config.supervisor : undefined,
+    explorationCount: config.exploration_count,
+    explorationHybrid: config.exploration_hybrid,
+    appetite: typeof config.appetite === "string" ? config.appetite : undefined,
+  });
+}
+
 /** One board row: tracking metadata, the real stage, and its documents. */
 async function boardWorkflow(
   bb: BbPluginApi,
@@ -255,6 +267,7 @@ async function boardWorkflow(
         (entry): entry is string => typeof entry === "string",
       )
     : config.review_mode;
+  const knobs = boardWorkflowKnobs(config);
   return {
     id: text(raw.dirHash, text(raw.name, `workflow-${index + 1}`)),
     name: text(raw.name, `Workflow ${index + 1}`),
@@ -267,7 +280,11 @@ async function boardWorkflow(
         phases.find((phase) => phase.status === "in-progress")?.name ??
           "Not started",
       ),
-    appetite: text(config.appetite, "Core"),
+    quality: knobs.quality,
+    supervisor: knobs.supervisor,
+    explorationCount: knobs.explorationCount,
+    explorationHybrid: knobs.explorationHybrid,
+    appetite: text(config.appetite, ""),
     reviewMode: text(config.review_mode, "Auto"),
     reviewGates: normalizeReviewGates(
       Array.isArray(reviewGates)

@@ -83,9 +83,9 @@ function BuildDialogs(props: DialogsProps) {
       projectId={props.projectId}
       data={props.state.data}
       analysisWorkerPreset={analysisPreset(props.state.data)}
-      appetite={props.state.appetite}
+      prefs={props.state.prefs}
       reviewGates={props.state.reviewGates}
-      onAppetiteChange={props.state.setAppetite}
+      onPrefsChange={props.state.updatePrefs}
       onReviewGatesChange={props.state.setReviewGates}
       bucketGallery={props.bucketGallery}
       rpc={props.rpc}

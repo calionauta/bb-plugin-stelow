@@ -14,26 +14,72 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AgentConfigBox, CreateCardAlert, WorkflowSettings, type Appetite, type ReviewGates } from "./creation-settings";
+import { AgentConfigBox, CreateCardAlert, WorkflowSettings, type KnobPrefs, type ReviewGates } from "./creation-settings";
 import { useProjectSeed } from "./use-project-seed";
 import { composerExecutionOf } from "./composer-execution";
 import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 import { GithubCreateRow } from "../github/github-create-row";
 
-// Build creation dialog: composer plus planning depth, review gates,
+// Build creation dialog: composer plus run knobs, review gates,
 // agent config, and deferred start. Owns its draft, intent, error, and
-// start choice; planning depth and review gates stay board defaults
+// start choice; run knobs and review gates stay board defaults
 // owned by the panel. Every open resets to started with a clean error.
 
 // Build submit: parse the composer request, create the card through the
 // createCard RPC, then open its detail. Owns the draft, intent, error,
-// and start choice; planning depth and review gates arrive as board
+// and start choice; run knobs and review gates arrive as board
 // defaults. Throws after recording the error so the composer draft
 // survives for an in-place retry.
-function useCreateBuildSubmit({ activeProjectId, appetite, reviewGates, githubRepos, onClose }: {
+// createCard payload: run knobs travel as typed fields (count as a
+// number — the dialog holds it as a radio string), review checkpoints as
+// the reviewMode ladder-or-set input.
+type CardAttachment = { type: "localFile" | "localImage"; path: string };
+
+function createCardPayload(
+  targetProjectId: string,
+  request: NewThreadRequest,
+  submission: string,
+  attachments: CardAttachment[],
+  prefs: KnobPrefs,
+  reviewGates: ReviewGates,
+  startImmediately: boolean,
+) {
+  return {
+    projectId: targetProjectId,
+    environment: request.environment,
+    prompt: submission,
+    attachments,
+    intent: "unknown" as const,
+    quality: prefs.quality,
+    supervisor: prefs.supervisor,
+    explorationCount: Number(prefs.explorationCount),
+    reviewMode: reviewGates,
+    start: startImmediately,
+    execution: composerExecutionOf(request),
+  };
+}
+
+// Composer request split: the text is the submission, local files and
+// images are attachments. A path printed in a prompt is not an attachment,
+// so BB cannot render or open it in the worker thread.
+function submissionOf(request: NewThreadRequest) {
+  const textPart = request.input.find((part) => part.type === "text");
+  const submission = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
+  type AttachmentPart = { type: "localFile" | "localImage"; path: string };
+  const isAttachment = (part: unknown): part is AttachmentPart =>
+    (part as AttachmentPart).type === "localFile" || (part as AttachmentPart).type === "localImage";
+  const hasPath = (part: AttachmentPart): boolean =>
+    "path" in part && typeof part.path === "string" && part.path.length > 0;
+  const attachments = request.input
+    .filter((part): part is AttachmentPart => isAttachment(part) && hasPath(part))
+    .map((part) => ({ type: part.type, path: part.path }));
+  return { submission, attachments };
+}
+
+function useCreateBuildSubmit({ activeProjectId, prefs, reviewGates, githubRepos, onClose }: {
   activeProjectId: string | null;
-  appetite: Appetite;
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
   githubRepos: string[];
   onClose: () => void;
@@ -41,7 +87,6 @@ function useCreateBuildSubmit({ activeProjectId, appetite, reviewGates, githubRe
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [prompt, setPrompt] = useState("");
-  const intent = "unknown" as const;
   const [error, setError] = useState<string | null>(null);
   // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
@@ -52,19 +97,12 @@ function useCreateBuildSubmit({ activeProjectId, appetite, reviewGates, githubRe
   async function start(request: NewThreadRequest) {
     const targetProjectId = request.projectId || activeProjectId;
     if (!targetProjectId) return;
-    // Keep files structured: a path printed in a prompt is not an attachment,
-    // so BB cannot render or open it in the worker thread.
-    const textPart = request.input.find((part) => part.type === "text");
-    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-    const attachments = request.input
-      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
-      .map((part) => ({ type: part.type, path: part.path }));
-    const submission = text;
+    const { submission, attachments } = submissionOf(request);
     if (!submission.trim() || submitBusyRef.current) return;
     submitBusyRef.current = true;
     setError(null);
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt: submission, attachments, intent, appetite, reviewMode: reviewGates, start: startImmediately, execution: composerExecutionOf(request) });
+      const result = await rpc.call("createCard", createCardPayload(targetProjectId, request, submission, attachments, prefs, reviewGates, startImmediately));
       setPrompt("");
       if (createGithubIssue) {
         try {
@@ -98,21 +136,24 @@ function useCreateBuildSubmit({ activeProjectId, appetite, reviewGates, githubRe
 }
 
 // Settings under the composer: agent config, deferred start with the
-// Bucket gallery link, and planning depth plus review gates.
-function CreateBuildSettings({ analysisName, startImmediately, onStartImmediately, bucketGallery, onOpenPresets, appetite, reviewGates, githubRepos, createGithubIssue, setCreateGithubIssue, createGithubRepo, setCreateGithubRepo, onAppetiteChange, onReviewGatesChange }: {
+// Bucket gallery link, and run knobs plus review gates.
+function CreateBuildSettings({
+  analysisName, startImmediately, onStartImmediately, bucketGallery, onOpenPresets, prefs, reviewGates, githubRepos,
+  createGithubIssue, setCreateGithubIssue, createGithubRepo, setCreateGithubRepo, onPrefsChange, onReviewGatesChange,
+}: {
   analysisName: string;
   startImmediately: boolean;
   onStartImmediately: (value: boolean) => void;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: React.ReactNode };
   onOpenPresets: () => void;
-  appetite: Appetite;
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
   githubRepos: string[];
   createGithubIssue: boolean;
   setCreateGithubIssue: (value: boolean) => void;
   createGithubRepo: string | null;
   setCreateGithubRepo: (value: string | null) => void;
-  onAppetiteChange: (value: Appetite) => void;
+  onPrefsChange: (patch: Partial<KnobPrefs>) => void;
   onReviewGatesChange: (value: ReviewGates) => void;
 }) {
   return (
@@ -124,7 +165,13 @@ function CreateBuildSettings({ analysisName, startImmediately, onStartImmediatel
       <StartImmediatelyCheck checked={startImmediately} onChange={onStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
       <GithubCreateRow repos={githubRepos} checked={createGithubIssue} onCheckedChange={setCreateGithubIssue} repo={createGithubRepo} onRepoChange={setCreateGithubRepo} />
       {bucketGallery.bucketGallery}
-      <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={onAppetiteChange} onReviewGatesChange={onReviewGatesChange} groupNamePrefix="create" />
+      <WorkflowSettings
+        prefs={prefs}
+        reviewGates={reviewGates}
+        onPrefsChange={onPrefsChange}
+        onReviewGatesChange={onReviewGatesChange}
+        groupNamePrefix="create"
+      />
     </div>
   );
 }
@@ -135,10 +182,10 @@ export type CreateBuildDialogProps = {
   activeProjectId: string | null;
 validProjectIds?: string[];
   analysisPreset: { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; name: string } | null;
-  appetite: Appetite;
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
   githubRepos: string[];
-  onAppetiteChange: (value: Appetite) => void;
+  onPrefsChange: (patch: Partial<KnobPrefs>) => void;
   onReviewGatesChange: (value: ReviewGates) => void;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: React.ReactNode };
   onOpenPresets: () => void;
@@ -173,11 +220,11 @@ function CreateBuildComposer({ seedProjectId, analysisPreset, seededEnvironment,
 
 export function CreateBuildDialog({
   open, onOpenChange, activeProjectId, validProjectIds,
-  analysisPreset, appetite, reviewGates, githubRepos,
-  onAppetiteChange, onReviewGatesChange, bucketGallery, onOpenPresets,
+  analysisPreset, prefs, reviewGates, githubRepos,
+  onPrefsChange, onReviewGatesChange, bucketGallery, onOpenPresets,
 }: CreateBuildDialogProps) {
   const { seedProjectId, openChange, submitWithMemory } = useProjectSeed({ activeProjectId, validProjectIds });
-  const submit = useCreateBuildSubmit({ activeProjectId: seedProjectId, appetite, reviewGates, githubRepos, onClose: () => onOpenChange(false) });
+  const submit = useCreateBuildSubmit({ activeProjectId: seedProjectId, prefs, reviewGates, githubRepos, onClose: () => onOpenChange(false) });
   const seededEnvironment = useSeededComposerEnvironment(analysisPreset?.environmentKind, open);
 
   return (
@@ -185,7 +232,7 @@ export function CreateBuildDialog({
       <DialogContent fullscreenOnMobile className="overflow-y-auto overflow-x-hidden sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Start new issue</DialogTitle>
-          <DialogDescription>Describe the outcome, problem, or change. Planning depth and review checkpoints below start from the board defaults — keep them or adjust, then submit.</DialogDescription>
+          <DialogDescription>Describe the outcome, problem, or change. Run knobs and review checkpoints below start from the board defaults.</DialogDescription>
         </DialogHeader>
         {submit.error ? <CreateCardAlert message={submit.error} /> : null}
         <CreateBuildComposer
@@ -201,14 +248,14 @@ export function CreateBuildDialog({
           onStartImmediately={submit.setStartImmediately}
           bucketGallery={bucketGallery}
           onOpenPresets={onOpenPresets}
-          appetite={appetite}
+          prefs={prefs}
           reviewGates={reviewGates}
           githubRepos={submit.githubRepos}
           createGithubIssue={submit.createGithubIssue}
           setCreateGithubIssue={submit.setCreateGithubIssue}
           createGithubRepo={submit.createGithubRepo}
           setCreateGithubRepo={submit.setCreateGithubRepo}
-          onAppetiteChange={onAppetiteChange}
+          onPrefsChange={onPrefsChange}
           onReviewGatesChange={onReviewGatesChange}
         />
       </DialogContent>

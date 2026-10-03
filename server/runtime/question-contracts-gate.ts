@@ -32,15 +32,15 @@ function requiredContracts(state: string): {
   contracts: Contract[];
 } | null {
   const stage = state.match(/^current_stage:\s*(\S+)/m)?.[1]?.trim() ?? "";
-  const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, {
+  const { quality, explorationCount, reviewMode, reviewGates } = parseWorkflowConfig(state, {
     strict: true,
   });
-  if (!stage || !appetite || (!reviewMode && !reviewGates)) return null;
+  if (!stage || !quality || (!reviewMode && !reviewGates)) return null;
   let contracts: Contract[];
   try {
     contracts = requiredForStage({
       stage,
-      appetite,
+      explorationCount: explorationCount ?? undefined,
       reviewMode: reviewGates ?? reviewMode ?? [],
     }).filter((entry) => entry.kind !== "skip");
   } catch {

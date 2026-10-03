@@ -81,7 +81,7 @@ const NPX_TOOLS = [
   {
     name: "thermo-nuclear",
     repo: "https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review",
-    plain: "Optional ultra-strict final code review, gated by appetite and risk.",
+    plain: "Optional ultra-strict final code review, gated by quality and risk.",
     tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent.",
   },
 ];

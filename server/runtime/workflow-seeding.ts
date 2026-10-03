@@ -125,13 +125,20 @@ async function existingSeed(
  * sets have no rung, so they read back as Auto there — the worker prompt
  * names `review_gates` first.
  */
+export type RunKnobs = {
+  quality: string;
+  supervisor: string;
+  explorationCount: number;
+  explorationHybrid: boolean;
+};
+
 async function writeStateFile(
   bb: BbPluginApi,
   statePath: string,
   workflowId: string,
   name: string,
   intent: string,
-  appetite: string,
+  knobs: RunKnobs,
   reviewMode: string | string[],
 ): Promise<void> {
   const stateBlob = await bb.sdk.files
@@ -152,7 +159,10 @@ async function writeStateFile(
   writeFileSync(
     statePath,
     body
-      .replace("appetite: Core", `appetite: ${appetite}`)
+      .replace("quality: production", `quality: ${knobs.quality}`)
+      .replace("supervisor: high", `supervisor: ${knobs.supervisor}`)
+      .replace("exploration_count: 3", `exploration_count: ${knobs.explorationCount}`)
+      .replace("exploration_hybrid: true", `exploration_hybrid: ${knobs.explorationHybrid}`)
       .replace(
         "review_mode: Auto",
         `review_gates: ${formatReviewGates(gates)}\n  review_mode: ${rung}`,
@@ -175,7 +185,7 @@ function trackSeededWorkflow(
   name: string,
   dirHash: string,
   created: string,
-  appetite: string,
+  knobs: RunKnobs,
   reviewMode: string | string[],
 ): void {
   const at = new Date().toISOString();
@@ -199,7 +209,10 @@ function trackSeededWorkflow(
       },
       phases: [],
       config: {
-        appetite,
+        quality: knobs.quality,
+        supervisor: knobs.supervisor,
+        exploration_count: knobs.explorationCount,
+        exploration_hybrid: knobs.explorationHybrid,
         review_mode: legacyLabelForGates(gates) ?? "Auto",
         review_gates: gates,
       },
@@ -213,7 +226,7 @@ export async function seedWorkflow(
   workflowId: string,
   name: string,
   intent: string,
-  appetite = "Core",
+  knobs: RunKnobs = { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
   reviewMode: string | string[] = "Auto",
   fresh = false,
 ): Promise<SeedResult> {
@@ -253,7 +266,7 @@ export async function seedWorkflow(
       workflowId,
       name,
       intent,
-      appetite,
+      knobs,
       reviewMode,
     );
     installTransitions(transitionsPath);
@@ -264,7 +277,7 @@ export async function seedWorkflow(
       name,
       dirHash,
       created,
-      appetite,
+      knobs,
       reviewMode,
     );
     writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");

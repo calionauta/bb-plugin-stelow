@@ -1,4 +1,11 @@
+export declare const DEFAULT_QUALITY: string;
+export declare const DEFAULT_SUPERVISOR: string;
+export declare const DEFAULT_EXPLORATION_COUNT: number;
+export declare const DEFAULT_EXPLORATION_HYBRID: boolean;
+/** @deprecated Alias only. New code uses the knob defaults above. */
 export declare const DEFAULT_APPETITE: string;
 export declare const DEFAULT_REVIEW_MODE: string;
-export declare function parseWorkflowConfig(blob: unknown, opts?: { strict?: false }): { appetite: string; reviewMode: string; reviewGates: string[] };
-export declare function parseWorkflowConfig(blob: unknown, opts: { strict: true }): { appetite: string | null; reviewMode: string | null; reviewGates: string[] | null };
+export declare const LEGACY_APPETITE_MAP: Record<string, { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean }>;
+export declare function resolveKnobInput(input: unknown): { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
+export declare function parseWorkflowConfig(blob: unknown, opts?: { strict?: false }): { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean; appetite: string; reviewMode: string; reviewGates: string[] };
+export declare function parseWorkflowConfig(blob: unknown, opts: { strict: true }): { quality: string | null; supervisor: string | null; explorationCount: number | null; explorationHybrid: boolean | null; appetite: string | null; reviewMode: string | null; reviewGates: string[] | null };

@@ -275,14 +275,14 @@ function buildReseedCard(core: RuntimeCore) {
       core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
     readStateConfig: async (rootPath, card) =>
       core.trackProjection.readReseedConfig(card, rootPath),
-    seedWorkflow: ({ rootPath, card, intent, appetite, reviewGates }) =>
+    seedWorkflow: ({ rootPath, card, intent, knobs, reviewGates }) =>
       seedWorkflow(
         bb,
         rootPath,
         card.id,
         card.name,
         intent,
-        appetite,
+        knobs,
         reviewGates,
         true,
       ),

@@ -100,7 +100,11 @@ export const scopeSummarySchema = z.object({
   elapsedMs: z.number().nullable(),
 });
 
+/** @deprecated Alias only. Run knobs replaced the appetite ladder. */
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
+export const qualitySchema = z.enum(["production", "experimental"]);
+export const supervisorSchema = z.enum(["low", "med", "high"]);
+export const explorationCountSchema = z.number().int().min(1).max(5);
 export const reviewModeSchema = z.enum([
   "Auto",
   "Product Spec Gate",
@@ -114,8 +118,23 @@ export const reviewModeSchema = z.enum([
 export const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
 export const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
 export const boardWorkflowDefaultsSchema = z
-  .object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) })
+  .object({
+    quality: qualitySchema,
+    supervisor: supervisorSchema,
+    explorationCount: explorationCountSchema,
+    reviewMode: z.string(),
+    reviewGates: z.array(reviewGateAtomSchema).default([]),
+    /** Deprecated alias for stored values written before knobs; migrated on read. */
+    appetite: appetiteSchema.optional(),
+  })
   .strict();
+
+/** Legacy appetite → knobs. Rigor always strongest; breadth keeps old intent. */
+export const LEGACY_APPETITE_DEFAULTS = {
+  Lean: { quality: "production", supervisor: "high", explorationCount: 2 },
+  Core: { quality: "production", supervisor: "high", explorationCount: 3 },
+  Complete: { quality: "production", supervisor: "high", explorationCount: 5 },
+} as const;
 
 export const taskSchema = z.object({
   id: z.string(),
@@ -204,7 +223,12 @@ export const workflowSchema = z.object({
   description: z.string(),
   status: trackableStatusSchema,
   stage: z.string(),
-  appetite: z.string(),
+  quality: z.string(),
+  supervisor: z.string(),
+  explorationCount: z.number(),
+  explorationHybrid: z.boolean(),
+  /** Deprecated alias passthrough for old tracking entries. */
+  appetite: z.string().optional(),
   reviewMode: z.string(),
   reviewGates: z.array(reviewGateAtomSchema),
   dirHash: z.string().optional(),

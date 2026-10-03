@@ -70,7 +70,10 @@ export type DetailParts = {
   workerHistory: unknown[];
   questionStaleness: Map<string, Staleness>;
   stageSkips: {
-    appetite: string;
+    quality: string;
+    supervisor: string;
+    explorationCount: number;
+    explorationHybrid: boolean;
     reviewMode: string;
     reviewGates: string[];
   };

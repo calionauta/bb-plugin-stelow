@@ -10,6 +10,7 @@
  * reads as a table of names.
  */
 import { boardWorkflowDefaultsSchema } from "../../contracts.js";
+import { resolveKnobInput } from "../../../lib/workflow-config.mjs";
 import { rpcContract } from "../../rpc-contract.js";
 import { registerRpcHandlers } from "../composition.js";
 import { workflowIdForName } from "../../../lib/workflow-state-identity.mjs";
@@ -147,11 +148,12 @@ function listProjects(bb: BbPluginApi) {
 }
 
 /**
- * The board's default appetite and review ladder.
+ * The board's default run knobs and review ladder.
  *
  * An explicit migration, never a silent safeParse fallback: a stored ladder
  * string maps to its set, so a saved "Tech Review" default survives instead of
- * degrading to Auto.
+ * degrading to Auto; a stored legacy appetite maps once to knobs (rigor
+ * always strongest), so a saved "Core" default survives as breadth 3.
  */
 type BoardWorkflowDefaults = z.infer<typeof boardWorkflowDefaultsSchema>;
 
@@ -166,15 +168,25 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
   const reviewGates = normalizeReviewGates(
     record.reviewGates ?? record.reviewMode ?? [],
   ) as BoardWorkflowDefaults["reviewGates"];
-  return {
+  const knobs = resolveKnobInput({
+    quality: parsed.data.quality,
+    supervisor: parsed.data.supervisor,
+    explorationCount: parsed.data.explorationCount,
     appetite: parsed.data.appetite,
+  });
+  return {
+    quality: knobs.quality as BoardWorkflowDefaults["quality"],
+    supervisor: knobs.supervisor as BoardWorkflowDefaults["supervisor"],
+    explorationCount: knobs.explorationCount as BoardWorkflowDefaults["explorationCount"],
     reviewMode: legacyLabelForGates(reviewGates) ?? "Auto",
     reviewGates,
   };
 }
 
 const DEFAULT_BOARD_WORKFLOW_DEFAULTS: BoardWorkflowDefaults = {
-  appetite: "Lean",
+  quality: "production",
+  supervisor: "high",
+  explorationCount: 3,
   reviewMode: "Auto",
   reviewGates: [],
 };

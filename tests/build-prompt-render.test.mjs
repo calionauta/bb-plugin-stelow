@@ -12,7 +12,7 @@ const context = {
   stateDir: "/repo/.stelow/2026-09-26/sw-card_probe",
   intent: "feature",
   managedWorktree: true,
-  appetite: "Core",
+  knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
   reviewGates: "Product Spec, Interface, Scopes",
   reviewRung: "Product Spec + Interface + Scopes",
   instructions: "Preset instructions:\nstay narrow\n",
@@ -44,7 +44,9 @@ assert.ok(
 // Card identity and gates are stated, not implied.
 assert.ok(prompt.includes(context.stateDir), "the owned state dir is named");
 assert.ok(prompt.includes("intent=`feature`"), "the seeded intent is stated");
-assert.ok(prompt.includes("Appetite=`Core`"), "the recorded appetite is stated");
+assert.ok(prompt.includes("quality=`production`"), "the recorded quality is stated");
+assert.ok(prompt.includes("supervisor=`high`"), "the recorded supervisor is stated");
+assert.ok(prompt.includes("exploration=`count=3 hybrid=true`"), "the recorded exploration is stated");
 assert.ok(prompt.includes("Product Spec, Interface, Scopes"), "the recorded review gates are stated");
 assert.ok(prompt.includes("stay narrow"), "preset instructions are forwarded");
 assert.ok(
@@ -67,4 +69,4 @@ const plain = buildBuildPrompt({ ...context, managedWorktree: false }, rules);
 assert.ok(plain.includes(context.prompt), "the request survives without a managed worktree");
 assert.ok(!plain.includes("BB provisioned the managed worktree"), "no worktree, no worktree note");
 
-console.log("build prompt render test ok: request, state dir, intent, appetite, gates, instructions and every protocol clause reach the worker");
+console.log("build prompt render test ok: request, state dir, intent, knobs, gates, instructions and every protocol clause reach the worker");

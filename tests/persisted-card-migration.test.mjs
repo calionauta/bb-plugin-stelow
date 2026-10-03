@@ -133,8 +133,8 @@ const stateOwner = (state) => stateWorkflowId(state);
     );
     for (const stage of ["selection", "plan-gate", "diff-gate"]) {
       assert.deepEqual(
-        requiredForStage({ stage, appetite: "Core", reviewMode: mode.label }),
-        requiredForStage({ stage, appetite: "Core", reviewMode: mode.gates }),
+        requiredForStage({ stage, explorationCount: 3, reviewMode: mode.label }),
+        requiredForStage({ stage, explorationCount: 3, reviewMode: mode.gates }),
         `${mode.label} keeps the same ${stage} contracts after upgrade`,
       );
     }
@@ -325,7 +325,7 @@ const stateOwner = (state) => stateWorkflowId(state);
   assert.deepEqual(
     requiredForStage({
       stage: unknown.card.stage,
-      appetite: "Core",
+      explorationCount: 3,
       reviewMode: "Auto",
     }),
     [],

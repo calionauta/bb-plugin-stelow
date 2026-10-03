@@ -9,10 +9,11 @@ const hasCode = (result, code) => result.failures.some((failure) => failure.code
 assert.deepEqual(
   EXPLORE_CONTRACTS.map((entry) => entry.id).sort(),
   [
+    "architecture-alternatives", "architecture-contrast",
     "codebase-critique", "execution-critique", "interface-alternatives", "interface-contrast",
     "plan-critique", "shape-up", "tech-planning", "testing-ai-code", "ux-critique",
   ].sort(),
-  "nine explore contracts",
+  "eleven explore contracts",
 );
 assert.equal(contractForExplore("nope"), null, "unknown stage is unmigrated");
 
@@ -20,7 +21,7 @@ assert.equal(contractForExplore("nope"), null, "unknown stage is unmigrated");
 const shapePass = `---
 name: demo
 product_type: software
-appetite: Core
+quality: production
 ---
 ## Unanswered questions
 Questions ${pad(40)}
@@ -174,10 +175,49 @@ assert.equal(validateExplore("execution-critique", execPass).pass, true, "execut
 assert.equal(validateExplore("execution-critique", `## Notes\n${pad(900)}`).pass, false, "execution critique without registry fails");
 assert.equal(validateExplore("unknown-stage", "anything").pass, true, "unknown stage passes");
 
+// Architecture alternatives: pattern + flow + trade-off + compatibility table.
+const archPass = `## Construction Pattern Declaration
+Pattern ${pad(40)}
+## Philosophy and Construction Guidelines
+Guidelines ${pad(40)}
+## Components and Construction Flow
+Flow ${pad(40)}
+## Main Structure Sketch (ASCII)
+Sketch ${pad(40)}
+## Construction Flow (ASCII)
+Flow ${pad(40)}
+## Trade-Off Analysis
+Trade-offs ${pad(40)}
+## Risk and Unknowns Audit
+Risks ${pad(40)}
+## Scope Compatibility Table
+| Scope | Served by | Notes |
+|---|---|---|
+| Auth | API | none |
+| Login | UI | none |
+${pad(300)}`;
+assert.equal(validateExplore("architecture-alternatives", archPass).pass, true, "architecture directions pass");
+assert.ok(hasCode(validateExplore("architecture-alternatives", `## Notes\n${pad(700)}`), "missing-section"), "architecture without sections fails");
+
+// Architecture contrast: fixed constraints + evidence + next action + options.
+const archContrastPass = `## Fixed constraints
+Constraints ${pad(60)}
+## Evidence
+Evidence ${pad(60)}
+## Next action
+Next ${pad(60)}
+## Option A — Event-driven
+Details ${pad(60)}
+## Option B — Modular monolith
+Details ${pad(60)}
+${pad(100)}`;
+assert.equal(validateExplore("architecture-contrast", archContrastPass).pass, true, "architecture contrast passes");
+
 // Build matching: filename rules first, title fallback, exclusions never match.
 assert.equal(contractForBuildArtifact("plans/spec-product_v1.md")?.id, "shape-up", "spec-product matches");
 assert.equal(contractForBuildArtifact("plans/spec-tech_v2.md")?.id, "tech-planning", "spec-tech matches");
 assert.equal(contractForBuildArtifact("interfaces/selected-interface.md")?.id, "interface-alternatives", "selected interface matches");
+assert.equal(contractForBuildArtifact("architecture/selected-architecture.md")?.id, "architecture-alternatives", "selected architecture matches");
 assert.equal(contractForBuildArtifact("plans/testing-strategy.md")?.id, "testing-ai-code", "testing strategy matches");
 assert.equal(contractForBuildArtifact("critiques/critique-report.md")?.id, "plan-critique", "plan critique report matches");
 assert.equal(contractForBuildArtifact(".stelow-codebase-critique/critique-report.md")?.id, "codebase-critique", "codebase path wins");
@@ -227,4 +267,4 @@ assert.equal(failText.exitCode, 1, "depth failure exits 1");
 assert.match(failText.stderr, /needs depth/, "depth failure states the reason");
 assert.match(failText.stderr, /explore-shape-up\.md/, "depth failure names the file");
 
-console.log("explore build contracts test ok: eight stages, build matching, verify wiring");
+console.log("explore build contracts test ok: ten stages, build matching, verify wiring");

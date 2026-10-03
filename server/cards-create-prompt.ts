@@ -15,7 +15,7 @@ export type BuildPromptContext = {
   stateDir: string;
   intent: string;
   managedWorktree: boolean;
-  appetite: string;
+  knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
   reviewGates: string;
   reviewRung: string;
   instructions: string | null;
@@ -32,7 +32,9 @@ Step 1 — verify intent first: this card starts as intent=\`%INTENT%\` in state
 \`unknown\`). Read the request, confirm or pick the fitting intent\
 (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise\
 question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled.\
-Appetite=\`%APPETITE%\` and review gates=\`%REVIEW_GATES%\` (%REVIEW_RUNG%) are already recorded in state.md — use them, never re-ask.
+Run knobs (quality=\`%QUALITY%\`, supervisor=\`%SUPERVISOR%\`,
+exploration=\`%EXPLORATION%\`) and review gates=\`%REVIEW_GATES%\`
+(%REVIEW_RUNG%) are already recorded in state.md — use them, never re-ask.
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If\
 a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error\
@@ -86,7 +88,9 @@ export function buildBuildPrompt(
     CARD_OWNER_RULES: rules.cardOwnerRules,
     MANAGED_WORKTREE: context.managedWorktree ? MANAGED_WORKTREE_NOTE : "",
     INTENT: context.intent,
-    APPETITE: context.appetite,
+    QUALITY: context.knobs.quality,
+    SUPERVISOR: context.knobs.supervisor,
+    EXPLORATION: `count=${context.knobs.explorationCount} hybrid=${context.knobs.explorationHybrid}`,
     REVIEW_GATES: context.reviewGates,
     REVIEW_RUNG: context.reviewRung,
     NEVER_SEED: rules.neverSeed,

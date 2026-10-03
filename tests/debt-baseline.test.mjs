@@ -38,7 +38,7 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // already carried; "recorded N" is debt the ledger holds.
 const inheritedBaseline = [
   "components/conversation/question-batch.tsx:useBatchSelection#1: 53 lines (baseline 53)",
-  "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 65 lines (baseline 65)",
+  "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 57 lines (baseline 65)",
   "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   // The unlinked-create branch and the mirrored-comment row moved into their
   // own components, so this shrank from 116 to 115. One function, two
@@ -80,7 +80,6 @@ const inheritedBaseline = [
   "lib/scope-retry.mjs:claimScopeRetry#1: 61 lines (recorded 61)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
   "lib/workflow-skills-sync.mjs:syncWorkflowSkills#1: 112 lines (baseline 112)",
-  "server/bb-workflow-bridge.ts:renderInlineWorkflowScript#1: 54 lines (baseline 57)",
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
   // Paid: `deliverableSubject` was 69 lines because the research branch was
   // written inline. Splitting the research deliverable into `researchSubject`

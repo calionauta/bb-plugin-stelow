@@ -48,7 +48,7 @@ existing ask/gate tests untouched and green.
 - `--contract <id>` on `bb stelow ask` is parsed in
   `lib/question-batch.mjs` per group (alongside `--question`/`--option`).
 - Validation at ask time against `requiredForStage` for the card's
-  stage/mode/appetite: unknown id with a readable checklist refuses,
+  stage/mode/breadth: unknown id with a readable checklist refuses,
   naming the valid ids; without a readable checklist it allows and
   records raw (fail-open). Unknown modes fail open as today.
 - Storage: new `ask_contracts(interaction_id TEXT PRIMARY KEY, card_id,
@@ -83,5 +83,5 @@ warnings) + `git diff --check`; English copy; commits separated
 
 - No enforcement without a readable checklist (fail-open preserved).
 - No UI widgets; no changes to answer RPC shapes.
-- Unknown review modes/appetites fail open throughout.
+- Unknown review modes/breadths fail open throughout.
 - The dispatcher must not absorb split persistence or provider reads.
