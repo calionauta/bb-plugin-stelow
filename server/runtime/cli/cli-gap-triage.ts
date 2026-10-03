@@ -1,4 +1,4 @@
-import { buildGapTriageState, gapsToTriageBatch } from "../../../lib/gap-registry.mjs";
+import { buildGapTriageState, gapsToTriageBatch } from "../../../lib/gap-triage.mjs";
 import { TASK_EVIDENCE_DIFF_CHARS } from "../../../lib/task-evidence.mjs";
 import {
   ERR_WORKSPACE_UNAVAILABLE,

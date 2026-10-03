@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
+import { expiredDebts } from "../../../lib/gap-debt.mjs";
 import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";
@@ -267,8 +268,9 @@ async function documentRefusal(
 
 /** Gap-registry loop: a matched execution critique with escalate rows must
  * link every row to an audit-gap scope, and every linked scope must be done —
- * otherwise done would certify known rework as complete. No matched critique
- * means no enforcement. */
+ * otherwise done would certify known rework as complete. Documented debt past
+ * its date rejoins the loop the same way: settled until the date, open after
+ * it. No matched critique means no enforcement. */
 async function reworkLoopRefusal(
   deps: CliDeps,
   card: WorkerCard,
@@ -276,6 +278,16 @@ async function reworkLoopRefusal(
   const gapState = await deps.gapState(card).catch(() => null);
   if (!gapState?.matched) return null;
   if (gapState.failures.length > 0) return gapState.failures.join("\n");
+  const expired = expiredDebts(gapState.gaps, deps.now());
+  if (expired.length > 0) {
+    return [
+      `Build completion is blocked: ${expired.length} documented debt(s) past their expires date — settled debt is not open debt:`,
+      ...expired.map((debt) => `- ${debt.description} (past ${debt.expires}${debt.owner ? `, owner ${debt.owner}` : ""})`),
+      "Pick one: fix it inline and re-run the critique to reclassify it as fixed;",
+      "change its resolution to escalate and run `bb stelow gap-scopes` to re-scope it;",
+      "or re-date the expires with an owner and re-verify.",
+    ].join("\n");
+  }
   const linked = new Set(
     gapState.auditGapScopes
       .map((scope) => scope.gap)

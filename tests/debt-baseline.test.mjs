@@ -69,10 +69,10 @@ const inheritedBaseline = [
   // waived, and `source-debt.json` no longer carries it either.
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
-  // Same rule, the other way: lib/gap-registry.mjs was untouched until the gap
-  // list started reading the whole registry, and that edit brought its 53-line
-  // validateGapRegistry into the report. Unchanged debt, newly visible.
-  "lib/gap-registry.mjs:validateGapRegistry#1: 53 lines (baseline 53)",
+  // Paid in the evidence/expiry slice: the per-row checks moved to
+  // validateGapRow plus dimension validators, so validateGapRegistry is a
+  // loop again and the gate requires the entry dropped rather than left as
+  // a stale waiver. Recorded here as the reason it is absent.
   "lib/scope-batch-cancel.mjs:cancelBatch#1: 76 lines (recorded 76)",
   "lib/scope-batch-cleanup.mjs:finishScope#1: 51 lines (recorded 51)",
   "lib/scope-map.mjs:validateScopeMap#1: 54 lines (recorded 54)",

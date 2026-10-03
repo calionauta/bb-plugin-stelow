@@ -1,3 +1,5 @@
+import type { GapEvidence } from "./gap-evidence.mjs";
+
 export interface GapEntry {
   index: number;
   type: string | null;
@@ -6,6 +8,13 @@ export interface GapEntry {
   impact: string | null;
   effort: string | null;
   resolution: string | null;
+  /** Present only when the row carries an `evidence:` block. */
+  evidence?: GapEvidence | null;
+  /** Present only when that block does not parse. */
+  evidenceError?: string | null;
+  /** Debt metadata scalars ride the row when present; validated separately. */
+  expires?: string | null;
+  owner?: string | null;
 }
 
 export interface GapSummary {
@@ -35,22 +44,5 @@ export function summarizeGaps(text: unknown): GapSummary;
 
 export function validateGapRegistry(text: unknown): GapFailure[];
 
-export interface GapTriageItem {
-  id: string;
-  name: string;
-  text: string;
-}
+export function gapResolution(value: unknown): string;
 
-export function gapsToTriageBatch(
-  gaps?: Array<{ id?: string; description?: string } | null> | null,
-): {
-  items: GapTriageItem[];
-  questions: Record<string, { type: string; instructions: string; criteria: string[] }>;
-};
-
-export declare const GAP_TRIAGE_CRITIQUE_CHARS: number;
-
-export function buildGapTriageState(options?: {
-  critiqueText?: string | null;
-  diff?: string | null;
-}): string;

@@ -2439,6 +2439,44 @@ one input, one artifact.*
   names its round (`rework round N/3`) in the comment, stdout, and trail
   evidence, so the history shows which pass created which scopes.
   (`tests/rework-rounds.test.mjs`, `tests/runtime-cli-gap-scopes-cap.test.mjs`).
+  Escalated gaps can cite the measurements behind the verdict: an optional
+  `evidence:` block per row (symbols, files, cymbal caller counts, sem
+  covering tests, reversibility, proving check — `lib/gap-registry.mjs`,
+  `normalizeGapEvidence`). Absent reads as unmeasured, never as a failure;
+  malformed fails as `gap-evidence-shape`, so the format is taught rather
+  than guessed. The conversion names how many escalations cite measurements,
+  and rework orders by evidence (irreversible + wide blast radius + no
+  proving check goes to a human first), not by registry order. The
+  methodology text lives upstream (`workflow-audit.md`, criteria 7/9) and
+  arrives here on release sync — code reads the block, never the prose.
+  Risk is read off those axes, never labelled separately: impact (severity
+  if the gap ships — `impact` is the severity label, kept under its
+  registry name so every written registry keeps parsing) times blast
+  radius times irreversibility, discounted by verifiability. One source
+  per axis, no fourth field to drift against the other three. The shared
+  reader is `lib/risk-reading.mjs`, and it works anywhere the vocabulary
+  travels: gaps cite it, rework scopes inherit it at conversion (severity,
+  evidence, and reading ride the created `audit-gap` scope, because the
+  scope keeps only a description string otherwise and the measurements
+  would die at the seam), and plan scopes or tasks may carry the same
+  fields by convention — `WorkflowScope` tolerates them today, no gate
+  reads them yet.
+  Oscillation is rework that will not converge (`lib/rework-metrics.mjs`):
+  a finding closed and re-opened across 3+ rounds means the bar and the
+  artifact disagree. A never-closed escalation repeated across rounds is
+  persistence (it waits on rework, correctly), not oscillation. The rework
+  line names oscillating findings on every surface that prints it, and the
+  round-budget refusal names them too — the exit is a human decision,
+  never another round.
+  Documented debt rides a date (`expires: YYYY-MM-DD` + `owner:` on the
+  row — `parseGapDate`, `isDebtExpired`, `expiredDebts` in
+  `lib/gap-registry.mjs`): settled until the date, open after it. Past-date
+  debt rejoins the loop — `verify` warns (`EXPIRED …`), `done` refuses —
+  with three exits: fix inline, re-scope as escalated, or re-date with an
+  owner. A malformed date fails the row where it is written; expiry on any
+  other resolution is ignored, because only documented rows age.
+  (`tests/gap-registry.test.mjs`, `tests/runtime-cli-done-gates.test.mjs`,
+  `tests/runtime-cli-advisory.test.mjs`).
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
   gap counts and escalated rate, read-only — without `--card` it
   aggregates the whole Build fleet (avg lead/cycle, totals, per-card

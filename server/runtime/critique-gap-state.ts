@@ -2,7 +2,10 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { contractForBuildArtifact } from "../../lib/artifact-contracts.mjs";
 import { parseArtifactManifest, resolveArtifactPath } from "../../lib/artifact-manifest.mjs";
-import { escalatedGaps, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import { escalatedGaps, parseGapFrontmatter, registryGaps, summarizeGaps, validateGapRegistry } from "../../lib/gap-registry.mjs";
+import type { GapEntry } from "../../lib/gap-registry.mjs";
+import { isAbsentValue } from "../../lib/gap-debt.mjs";
+import type { GapEvidence } from "../../lib/gap-evidence.mjs";
 import { addGapTotals as addTotals, emptyGapTotals } from "../../lib/metrics-format.mjs";
 import type { GapTotals } from "../../lib/metrics-format.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -14,9 +17,13 @@ export type CritiqueGapState = {
   failures: string[];
   totals: GapTotals;
   /** Every finding the registry named, with its disposition. The card lists
-   * these; `escalated` is the subset the rework loop consumes. */
-  gaps: Array<{ description: string; resolution: string }>;
-  escalated: Array<{ description: string }>;
+   * these; `escalated` is the subset the rework loop consumes. `evidence`
+   * carries the cited measurements when the row has an `evidence:` block,
+   * null when the finding is unmeasured (fail-open, never a failure).
+   * `expires`/`owner` ride documented debt rows; gates decide what a past
+   * date means, this state only carries it. */
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
+  escalated: Array<{ description: string; evidence: GapEvidence | null; impact: string | null }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
   /** One entry per registered critique artifact, oldest first. The round
@@ -38,8 +45,8 @@ type CritiqueDeps = {
 type CritiqueAccumulator = {
   failures: string[];
   totals: GapTotals;
-  gaps: Array<{ description: string; resolution: string }>;
-  escalated: Array<{ description: string }>;
+  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
+  escalated: Array<{ description: string; evidence: GapEvidence | null; impact: string | null }>;
   critiqueTexts: string[];
   /** Kept per round rather than only as text: the joined form cannot say which
    * finding belongs to which pass, and that is the whole of a rework metric. */
@@ -71,10 +78,16 @@ function emptyAccumulator(): CritiqueAccumulator {
 }
 
 function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
+  const evidenceByDescription = evidenceMap(content);
+  const severityByDescription = severityMap(content);
   for (const gap of escalatedGaps(content)) {
     const description = String(gap.description ?? "").trim();
     if (description && !target.escalated.some((entry) => entry.description === description)) {
-      target.escalated.push({ description });
+      target.escalated.push({
+        description,
+        evidence: evidenceByDescription.get(description) ?? null,
+        impact: severityByDescription.get(description) ?? null,
+      });
     }
   }
 }
@@ -82,11 +95,59 @@ function addEscalatedGaps(target: CritiqueAccumulator, content: string) {
 // Every finding, deduplicated across the critique rounds a card accumulated.
 // A gap re-audited in a later round is the same finding, not a second one.
 function addRegistryGaps(target: CritiqueAccumulator, content: string) {
+  const evidenceByDescription = evidenceMap(content);
+  const debtByDescription = debtMap(content);
   for (const gap of registryGaps(content)) {
     if (!target.gaps.some((entry) => entry.description === gap.description)) {
-      target.gaps.push({ description: gap.description, resolution: gap.resolution });
+      target.gaps.push({
+        description: gap.description,
+        resolution: gap.resolution,
+        evidence: evidenceByDescription.get(gap.description) ?? null,
+        expires: debtByDescription.get(gap.description)?.expires ?? null,
+        owner: debtByDescription.get(gap.description)?.owner ?? null,
+      });
     }
   }
+}
+
+/** One join for every per-finding field the disposition list does not carry:
+ * evidence, severity, debt metadata — all keyed by normalised description
+ * off the same frontmatter parse, so unmeasured findings read null, never
+ * absent. Three callers sharing one loop is the abstraction; three loops
+ * sharing one shape would be the duplication. */
+function gapFieldMap<T>(content: string, pick: (gap: GapEntry) => T): Map<string, T> {
+  const map = new Map<string, T>();
+  for (const gap of parseGapFrontmatter(content).gaps) {
+    const description = String(gap.description ?? "").trim();
+    if (description && !map.has(description)) map.set(description, pick(gap));
+  }
+  return map;
+}
+
+/** Measurements cited per finding, keyed by normalised description. The
+ * registry rows above carry disposition only; this joins the evidence the
+ * same frontmatter parsed, so unmeasured findings read null, never absent. */
+function evidenceMap(content: string): Map<string, GapEvidence | null> {
+  return gapFieldMap(content, (gap) => gap.evidence ?? null);
+}
+
+/** Severity per finding, keyed the same way. The risk reading needs the
+ * escalation's impact at conversion time; the disposition list above does
+ * not carry it. */
+function severityMap(content: string): Map<string, string | null> {
+  return gapFieldMap(content, (gap) => (
+    typeof gap.impact === "string" && gap.impact.trim() !== "" ? gap.impact.trim() : null
+  ));
+}
+
+/** Debt metadata per finding, keyed the same way. Raw strings, validated
+ * downstream: a malformed date is a registry failure, not a silent null.
+ * YAML null spellings (`null`, `~`) read as absent, matching validation. */
+function debtMap(content: string): Map<string, { expires: string | null; owner: string | null }> {
+  return gapFieldMap(content, (gap) => ({
+    expires: !isAbsentValue(gap.expires) ? String(gap.expires).trim() : null,
+    owner: !isAbsentValue(gap.owner) ? String(gap.owner).trim() : null,
+  }));
 }
 
 async function readArtifact(

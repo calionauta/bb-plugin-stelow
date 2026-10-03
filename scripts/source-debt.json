@@ -26,7 +26,6 @@
     "components/worktree-cleanup-suggestion.tsx:WorktreeCleanupSuggestion": 58,
     "lib/card-claims.mjs:acquireScopeClaims": 68,
     "lib/execution-route.mjs:evaluateScopeBatchPilot": 75,
-    "lib/gap-registry.mjs:validateGapRegistry": 53,
     "lib/question-batch.mjs:parseAskGroups": 80,
     "lib/scope-batch-cancel.mjs:cancelBatch": 76,
     "lib/scope-batch-cleanup.mjs:finishScope": 51,

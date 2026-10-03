@@ -6,10 +6,22 @@ import {
   registryGaps,
   summarizeGaps,
   validateGapRegistry,
+} from "../lib/gap-registry.mjs";
+import {
+  normalizeGapEvidence,
+  hasGapEvidence,
+} from "../lib/gap-evidence.mjs";
+import {
+  parseGapDate,
+  isAbsentValue,
+  isDebtExpired,
+  expiredDebts,
+} from "../lib/gap-debt.mjs";
+import {
   gapsToTriageBatch,
   buildGapTriageState,
   GAP_TRIAGE_CRITIQUE_CHARS,
-} from "../lib/gap-registry.mjs";
+} from "../lib/gap-triage.mjs";
 import { validateArtifact } from "../lib/artifact-validation.mjs";
 import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 
@@ -171,6 +183,163 @@ assert.equal(
   buildGapTriageState({ critiqueText: "x".repeat(GAP_TRIAGE_CRITIQUE_CHARS + 500) }),
   `Execution critique:\n${"x".repeat(GAP_TRIAGE_CRITIQUE_CHARS)}`,
   "the critique budget is enforced, so it cannot crowd out the diff",
+);
+
+// --- Evidence: measurements behind the verdict. --------------------------------
+// An `evidence:` block cites host measurements (symbols, files, caller
+// counts, covering tests, reversibility, proving check). Absent reads as
+// unmeasured, never as a failure — registries written before it existed,
+// and workers on hosts without tools, keep passing byte-identically.
+const evHead = (body) => `---\ngaps:\n${body}\n---\n\n# Execution Critique Report\n\n## Summary\n\nWork reviewed.\n`;
+const evRow = (desc, evidence) =>
+  `  - type: missing-tests\n    area: "auth"\n    description: "${desc}"\n    impact: high\n    resolution: escalate${evidence}`;
+
+const measured = evHead(evRow("Login rate limiter", `
+    evidence:
+      symbols: [RateLimiter]
+      files: [auth/rate-limit.ts]
+      callers: 38
+      tests: [TestRateLimit]
+      reversible: unknown
+      check: "npm test -- rate-limit"`));
+const parsedEv = parseGapFrontmatter(measured);
+assert.equal(parsedEv.gaps.length, 1, "the evidenced row parses");
+assert.deepEqual(
+  parsedEv.gaps[0].evidence,
+  {
+    symbols: ["RateLimiter"],
+    files: ["auth/rate-limit.ts"],
+    callers: 38,
+    tests: ["TestRateLimit"],
+    reversible: "unknown",
+    check: "npm test -- rate-limit",
+  },
+  "the block normalises to typed measurements",
+);
+assert.equal(parsedEv.gaps[0].evidenceError ?? null, null, "a clean block carries no error");
+// The keys after the block still belong to the gap: a dedented field ends
+// the evidence, it is not swallowed into it.
+assert.equal(parsedEv.gaps[0].resolution, "escalate", "resolution after evidence: still parses");
+assert.equal(parsedEv.gaps[0].impact, "high", "impact before evidence: untouched");
+
+// Rows without the block parse exactly as before — no new keys.
+const bare = parseGapFrontmatter(clean).gaps[0];
+assert.equal(bare.evidence, undefined, "an unmeasured row gains no evidence key");
+assert.equal(bare.evidenceError ?? null, null, "and no error key either");
+
+// Absent evidence never fails, however strict the row is otherwise.
+assert.deepEqual(validateGapRegistry(measured), [], "cited measurements pass");
+assert.deepEqual(validateGapRegistry(clean), [], "unmeasured registries keep passing");
+
+// Present-but-malformed evidence fails as shape, not silently.
+const badCallers = evHead(evRow("Login rate limiter", "\n    evidence:\n      callers: huge"));
+assert.equal(fail(validateGapRegistry(badCallers), "gap-evidence-shape").length, 1, "a non-integer caller count fails as shape");
+const badReversible = evHead(evRow("Login rate limiter", "\n    evidence:\n      reversible: maybe"));
+assert.equal(fail(validateGapRegistry(badReversible), "gap-evidence-shape").length, 1, "an unknown reversibility fails as shape");
+const scalarEvidence = evHead(evRow("Login rate limiter", "\n    evidence: just trust me"));
+assert.equal(fail(validateGapRegistry(scalarEvidence), "gap-evidence-shape").length, 1, "a scalar evidence fails as shape");
+
+// Normalisation units: flow arrays, singles, empties, and the null spellings.
+assert.deepEqual(
+  normalizeGapEvidence({ symbols: "[A, B]", files: "x.ts", callers: "3", tests: "[]", reversible: "NO", check: "null" }),
+  {
+    evidence: { symbols: ["A", "B"], files: ["x.ts"], callers: 3, tests: [], reversible: "no", check: null },
+    error: null,
+  },
+  "flow lists, singles, and spellings normalise",
+);
+assert.equal(normalizeGapEvidence("scalar").error !== null, true, "a scalar is not a mapping");
+assert.equal(normalizeGapEvidence({ callers: "-1" }).error !== null, true, "negative callers fail");
+
+// Only cited measurements count: an empty block is present-but-vacuous.
+assert.equal(hasGapEvidence({ symbols: ["A"], files: [], callers: null, tests: [], reversible: null, check: null }), true, "one cited field counts");
+assert.equal(hasGapEvidence({ symbols: [], files: [], callers: null, tests: [], reversible: null, check: null }), false, "a vacuous block is unmeasured");
+assert.equal(hasGapEvidence(null), false, "no block is unmeasured");
+assert.equal(hasGapEvidence(undefined), false, "never undefined-throws");
+
+// --- Debt expiry: documented debt with a date. ----------------------------------
+// A documented gap may ride `expires: YYYY-MM-DD` with an `owner:` — the
+// waiver pattern: settled until the date, open after it. Malformed dates
+// fail the row; the expiry verdict itself never throws and never smuggles
+// a format failure into a false overdue.
+const NOW = Date.parse("2024-06-15T12:00:00Z");
+assert.deepEqual(parseGapDate("2024-07-01"), { date: "2024-07-01", error: null }, "a well-formed date parses");
+assert.equal(parseGapDate("2024-13-01").error !== null, true, "month 13 is not a date");
+assert.equal(parseGapDate("2023-02-30").error !== null, true, "February 30 is not a date");
+assert.equal(parseGapDate("2024-02-29").error, null, "leap days exist");
+assert.equal(parseGapDate("next friday").error !== null, true, "prose is not a date");
+assert.equal(parseGapDate("").error !== null, true, "absent is not a date either");
+
+assert.equal(isDebtExpired("2024-06-14", NOW), true, "yesterday is overdue");
+assert.equal(isDebtExpired("2024-06-15", NOW), false, "due today is due, not overdue");
+assert.equal(isDebtExpired("2024-06-16", NOW), false, "tomorrow is settled");
+assert.equal(isDebtExpired("next friday", NOW), false, "malformed never reads overdue");
+assert.equal(isDebtExpired(null, NOW), false, "absent never reads overdue");
+
+const debtRows = [
+  { description: "Old rename", resolution: "documented", expires: "2024-01-01", owner: "ana" },
+  { description: "Fresh rename", resolution: "documented", expires: "2025-01-01", owner: "ana" },
+  { description: "Undated rename", resolution: "documented" },
+  { description: "Open rework", resolution: "escalate", expires: "2024-01-01" },
+  { description: "Inline fix", resolution: "fixed", expires: "2024-01-01" },
+];
+assert.deepEqual(
+  expiredDebts(debtRows, NOW),
+  [{ description: "Old rename", expires: "2024-01-01", owner: "ana" }],
+  "only past-dated documented rows expire, carrying their owner",
+);
+assert.deepEqual(expiredDebts(null, NOW), [], "junk reads empty");
+assert.deepEqual(expiredDebts([{ description: "  ", resolution: "documented", expires: "2024-01-01" }], NOW), [], "a row without a name is not a verdict");
+
+// YAML null spellings read as absent: the skill template writes
+// `expires: null` for undated debt, so the literal the template teaches
+// must parse as absent, not fail the row.
+assert.equal(isAbsentValue(null), true, "null reads absent");
+assert.equal(isAbsentValue("null"), true, "the template's literal reads absent");
+assert.equal(isAbsentValue("~"), true, "tilde reads absent");
+assert.equal(isAbsentValue("NONE"), true, "case never matters");
+assert.equal(isAbsentValue("2025-01-01"), false, "a real date is present");
+const nullishDebt = [
+  "---",
+  "gaps:",
+  "  - type: debt",
+  '    area: "auth"',
+  '    description: "Rename helper"',
+  "    impact: medium",
+  "    resolution: documented",
+  "    expires: null",
+  "    owner: null",
+  "---",
+  "",
+].join("\n");
+assert.deepEqual(validateGapRegistry(nullishDebt), [], "template defaults pass");
+assert.deepEqual(expiredDebts(parseGapFrontmatter(nullishDebt).gaps, NOW), [], "template defaults never expire");
+
+// The format gate: a malformed expires fails the row where it is written,
+// on any resolution — downstream compares strings, so garbage would read
+// as always- or never-expired depending on collation.
+const debtHead = (expires) => [
+  "---",
+  "gaps:",
+  "  - type: debt",
+  '    area: "auth"',
+  '    description: "Rename helper"',
+  "    impact: medium",
+  "    resolution: documented",
+  `    expires: ${expires}`,
+  "---",
+  "",
+].join("\n");
+assert.deepEqual(validateGapRegistry(debtHead("2025-01-01")), [], "a well-formed expiry passes");
+assert.equal(
+  fail(validateGapRegistry(debtHead("someday")), "gap-incomplete-row").length,
+  1,
+  "a malformed expiry fails the row",
+);
+assert.equal(
+  fail(validateGapRegistry(debtHead("2025-01-01")), "gap-evidence-shape").length,
+  0,
+  "expiry alone is not evidence, and needs none",
 );
 
 console.log("gap registry test ok: parse, misclassification gate, contract wiring");

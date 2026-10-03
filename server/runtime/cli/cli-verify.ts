@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { expiredDebts } from "../../../lib/gap-debt.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import {
   exploreVerifyReport,
@@ -24,6 +25,7 @@ const USAGE = "Usage: bb stelow verify [--card <card_id>] [--tests] [--json]";
 type GapLoop = {
   unscoped: string[];
   openRework: string[];
+  expired: string[];
 };
 
 /** Deterministic worker self-check: the same predicates the sync gate
@@ -220,6 +222,11 @@ async function reworkLoopWarning(
     openRework: (gapState?.auditGapScopes ?? [])
       .filter((scope) => !isDoneStatus(scope.status) && !isSkippedStatus(scope.status))
       .map((scope) => `${scope.id} (${scope.status})`),
+    // Documented debt past its date stops being settled: same rule done
+    // enforces, warned here instead of ambushing there.
+    expired: expiredDebts(gapState?.matched ? gapState.gaps : [], deps.now()).map(
+      (debt) => `${debt.description} (past ${debt.expires})`,
+    ),
   };
 }
 
@@ -231,7 +238,7 @@ function docWarning(docDepths: DocDepth[]): string {
 }
 
 function gapWarning(gapLoop: GapLoop): string {
-  if (gapLoop.unscoped.length === 0 && gapLoop.openRework.length === 0) return "";
+  if (gapLoop.unscoped.length === 0 && gapLoop.openRework.length === 0 && gapLoop.expired.length === 0) return "";
   return `\nWARNING: rework loop open (done will refuse):\n${
     [
       ...gapLoop.unscoped.map(
@@ -240,6 +247,9 @@ function gapWarning(gapLoop: GapLoop): string {
       ...gapLoop.openRework.map(
         (scope) =>
           `OPEN ${scope} — finish it, then re-run the critique`,
+      ),
+      ...gapLoop.expired.map(
+        (debt) => `EXPIRED ${debt} — re-scope, re-date with an owner, or fix inline`,
       ),
     ].join("\n")
   }`;

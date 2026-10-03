@@ -66,7 +66,8 @@ Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md 
 and, if it dismisses any escalated gap, say so honestly in audit.md (advisory only; the routing below never changes). If the execution critique \
 escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in \
 execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps \
-lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. \
+lack scopes or rework scopes stay open. Documented debt past its `expires` date rejoins that loop — re-scope it, re-date it with an owner, or fix \
+it inline. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. \
 It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or \
 explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm \
 it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match \

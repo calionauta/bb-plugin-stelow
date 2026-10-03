@@ -163,4 +163,46 @@ assert.equal(empty.rate, null, "and it is an absent rate, not a zero rate");
   assert.equal(summary.reworked, 0, "and finding nothing is the loop converging");
 }
 
+// --- Oscillation: rework that will not converge. ------------------------------
+// A finding closed and re-opened across 3+ rounds means the bar and the
+// artifact disagree — another unsupervised round re-runs the disagreement,
+// so the signal names a human, not a round budget.
+{
+  const summary = summarizeRework([
+    gaps(["Flaky window", "fixed"]),
+    gaps(["Flaky window", "escalate"]),
+    gaps(["Flaky window", "fixed"]),
+    gaps(["Flaky window", "escalate"]),
+  ]);
+  assert.deepEqual(summary.oscillatingDescriptions, ["Flaky window"], "closed and re-opened across 3+ rounds is oscillation");
+  const line = reworkMetricLine(summary);
+  assert.match(line, /Oscillation: /, "the line carries the oscillation sentence");
+  assert.match(line, /Flaky window/, "naming the finding, so a reader can go look");
+  assert.match(line, /needs a human/, "and naming the exit, which is not another round");
+}
+
+// --- Persistence is not oscillation. ------------------------------------------
+// A never-closed escalation repeated across rounds waits on rework —
+// correctly. Only reworked keys qualify.
+{
+  const summary = summarizeRework([
+    gaps(["Waiting on infra ticket", "escalate"]),
+    gaps(["Waiting on infra ticket", "escalate"]),
+    gaps(["Waiting on infra ticket", "escalate"]),
+  ]);
+  assert.equal(summary.reworked, 0, "never closed, never rework");
+  assert.deepEqual(summary.oscillatingDescriptions, [], "and never oscillation either");
+  assert.doesNotMatch(reworkMetricLine(summary), /Oscillation/, "a waiting loop says nothing about oscillation");
+}
+
+// --- Two rounds cannot oscillate. ----------------------------------------------
+{
+  const summary = summarizeRework([
+    gaps(["A", "fixed"]),
+    gaps(["A", "escalate"]),
+  ]);
+  assert.equal(summary.reworked, 1, "one return is rework");
+  assert.deepEqual(summary.oscillatingDescriptions, [], "but oscillation needs a third sighting");
+}
+
 console.log("rework metric ok: a fix that held is not rework, a fix that came back is");
