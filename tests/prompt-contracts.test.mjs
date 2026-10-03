@@ -25,6 +25,10 @@ const cliPreset = readFileSync(
 const cliDone = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-build.ts"), "utf8"),
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-audit-trail.ts"),
+    "utf8",
+  ),
 ].join("\n");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),

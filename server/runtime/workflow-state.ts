@@ -10,7 +10,7 @@
  * host validates can never come from two different files.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, sep } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import {
@@ -105,6 +105,20 @@ export async function workflowStateDir(
 ): Promise<string | null> {
   const resolution = await resolveWorkflowStateDir(bb, rootPath, workflowId, dirHash);
   return resolution.kind === "resolved" ? resolution.path : null;
+}
+
+/**
+ * The checkout containing a state directory.
+ *
+ * `.stelow/<date>/sw-<card>` is a fixed shape, so the parent of its `.stelow`
+ * names the root the helper must use. A linked worktree and the project are
+ * different directories, so the helper cannot assume either fixed checkout.
+ */
+export function stateRootOf(stateDir: string | null): string | null {
+  if (!stateDir) return null;
+  const marker = `${sep}.stelow${sep}`;
+  const at = stateDir.lastIndexOf(marker);
+  return at > 0 ? stateDir.slice(0, at) : null;
 }
 
 /**
