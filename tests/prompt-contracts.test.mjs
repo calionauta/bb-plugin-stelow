@@ -235,6 +235,7 @@ const auditCheckPattern = new RegExp([
 const auditEvidencePattern = new RegExp([
   String.raw`auditTrailGate\(\{[\s\S]*?build: trail,`,
   String.raw`[\s\S]*?check: trailCheck,[\s\S]*?verifiedGit: git,`,
+  String.raw`\s*snapshotCommonDir,\s*\}\)`,
 ].join(""));
 assert.match(
   cliDone,
