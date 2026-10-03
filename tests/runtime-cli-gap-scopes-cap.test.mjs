@@ -118,6 +118,37 @@ test("a capped card with an oscillating finding names the human exit", async () 
   }
 });
 
+test("a conversion preserves the gap's evidence and risk on the scope", async () => {
+  const dir = seedWorkspace({ workflowId: "card_1", scopes: [], rework_rounds: 0 });
+  try {
+    const evidence = { symbols: ["RateLimiter"], files: [], callers: 38, tests: [], reversible: "no", check: null };
+    const { invoke } = cliHarness({
+      workspacePath: dir,
+      gapState: {
+        ...NO_GAPS,
+        matched: true,
+        totals: { total: 1, fixed: 0, documented: 0, escalated: 1 },
+        escalated: [{ description: "rate limiter missing", impact: "high", evidence }],
+        auditGapScopes: [],
+      },
+    });
+    const result = await invoke(["gap-scopes"]);
+    assert.equal(result.exitCode, 0, result.stderr);
+    const data = JSON.parse(readFileSync(join(dir, "stelow.json"), "utf8"));
+    const scope = data.workflows[0].scopes[0];
+    assert.equal(scope.source, "audit-gap");
+    assert.equal(scope.impact, "high", "severity travels with the scope");
+    assert.deepEqual(scope.evidence, evidence, "measurements survive the conversion");
+    assert.deepEqual(
+      scope.risk,
+      { level: "high", reasons: ["38 caller(s)", "irreversible", "no proving check"] },
+      "the shared reading is stored, not recomputed downstream",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a conversion counts how many escalations cite measurements", async () => {
   const dir = seedWorkspace({ workflowId: "card_1", scopes: [], rework_rounds: 0 });
   try {

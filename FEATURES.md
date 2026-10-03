@@ -2453,7 +2453,14 @@ one input, one artifact.*
   if the gap ships — `impact` is the severity label, kept under its
   registry name so every written registry keeps parsing) times blast
   radius times irreversibility, discounted by verifiability. One source
-  per axis, no fourth field to drift against the other three.
+  per axis, no fourth field to drift against the other three. The shared
+  reader is `lib/risk-reading.mjs`, and it works anywhere the vocabulary
+  travels: gaps cite it, rework scopes inherit it at conversion (severity,
+  evidence, and reading ride the created `audit-gap` scope, because the
+  scope keeps only a description string otherwise and the measurements
+  would die at the seam), and plan scopes or tasks may carry the same
+  fields by convention — `WorkflowScope` tolerates them today, no gate
+  reads them yet.
   Oscillation is rework that will not converge (`lib/rework-metrics.mjs`):
   a finding closed and re-opened across 3+ rounds means the bar and the
   artifact disagree. A never-closed escalation repeated across rounds is

@@ -6,12 +6,17 @@ import {
   registryGaps,
   summarizeGaps,
   validateGapRegistry,
+} from "../lib/gap-registry.mjs";
+import {
   normalizeGapEvidence,
   hasGapEvidence,
+} from "../lib/gap-evidence.mjs";
+import {
   parseGapDate,
+  isAbsentValue,
   isDebtExpired,
   expiredDebts,
-} from "../lib/gap-registry.mjs";
+} from "../lib/gap-debt.mjs";
 import {
   gapsToTriageBatch,
   buildGapTriageState,
@@ -285,6 +290,30 @@ assert.deepEqual(
 );
 assert.deepEqual(expiredDebts(null, NOW), [], "junk reads empty");
 assert.deepEqual(expiredDebts([{ description: "  ", resolution: "documented", expires: "2024-01-01" }], NOW), [], "a row without a name is not a verdict");
+
+// YAML null spellings read as absent: the skill template writes
+// `expires: null` for undated debt, so the literal the template teaches
+// must parse as absent, not fail the row.
+assert.equal(isAbsentValue(null), true, "null reads absent");
+assert.equal(isAbsentValue("null"), true, "the template's literal reads absent");
+assert.equal(isAbsentValue("~"), true, "tilde reads absent");
+assert.equal(isAbsentValue("NONE"), true, "case never matters");
+assert.equal(isAbsentValue("2025-01-01"), false, "a real date is present");
+const nullishDebt = [
+  "---",
+  "gaps:",
+  "  - type: debt",
+  '    area: "auth"',
+  '    description: "Rename helper"',
+  "    impact: medium",
+  "    resolution: documented",
+  "    expires: null",
+  "    owner: null",
+  "---",
+  "",
+].join("\n");
+assert.deepEqual(validateGapRegistry(nullishDebt), [], "template defaults pass");
+assert.deepEqual(expiredDebts(parseGapFrontmatter(nullishDebt).gaps, NOW), [], "template defaults never expire");
 
 // The format gate: a malformed expires fails the row where it is written,
 // on any resolution — downstream compares strings, so garbage would read

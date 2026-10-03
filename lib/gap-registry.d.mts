@@ -1,11 +1,4 @@
-export interface GapEvidence {
-  symbols: string[];
-  files: string[];
-  callers: number | null;
-  tests: string[];
-  reversible: string | null;
-  check: string | null;
-}
+import type { GapEvidence } from "./gap-evidence.mjs";
 
 export interface GapEntry {
   index: number;
@@ -51,16 +44,5 @@ export function summarizeGaps(text: unknown): GapSummary;
 
 export function validateGapRegistry(text: unknown): GapFailure[];
 
-export function normalizeGapEvidence(raw: unknown): { evidence: GapEvidence | null; error: string | null };
-
-export function hasGapEvidence(evidence: unknown): boolean;
-
-export function parseGapDate(value: unknown): { date: string | null; error: string | null };
-
-export function isDebtExpired(expires: unknown, nowMs: number): boolean;
-
-export function expiredDebts(
-  rows: unknown,
-  nowMs: number,
-): Array<{ description: string; expires: string; owner: string | null }>;
+export function gapResolution(value: unknown): string;
 

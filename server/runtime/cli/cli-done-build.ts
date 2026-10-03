@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
-import { expiredDebts } from "../../../lib/gap-registry.mjs";
+import { expiredDebts } from "../../../lib/gap-debt.mjs";
 import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { expiredDebts } from "../../../lib/gap-registry.mjs";
+import { expiredDebts } from "../../../lib/gap-debt.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import {
   exploreVerifyReport,

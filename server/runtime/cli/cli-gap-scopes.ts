@@ -8,8 +8,9 @@ import {
   reworkCapRefusal,
   reworkRoundsOf,
 } from "../../../lib/rework-rounds.mjs";
-import { hasGapEvidence } from "../../../lib/gap-registry.mjs";
-import type { GapEvidence } from "../../../lib/gap-registry.mjs";
+import { hasGapEvidence } from "../../../lib/gap-evidence.mjs";
+import type { GapEvidence } from "../../../lib/gap-evidence.mjs";
+import { riskReading } from "../../../lib/risk-reading.mjs";
 import { summarizeRework } from "../../../lib/rework-metrics.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
@@ -37,7 +38,7 @@ import { CARD_WORKSPACE_UNAVAILABLE } from "../../../lib/workspace-refusal.mjs";
  * metrics readout and the card header read it from. */
 type CritiqueGapView = {
   totals: GapTotals;
-  escalated: Array<{ description: string; evidence?: GapEvidence | null }>;
+  escalated: Array<{ description: string; evidence?: GapEvidence | null; impact?: string | null }>;
   auditGapScopes: Array<{ gap: string | null }>;
   /** Present when the card has matched critiques; absent in older harnesses. */
   critiqueRounds?: Array<Array<{ description: string; resolution: string }>>;
@@ -225,7 +226,11 @@ function refuseReworkCap(
 
 /** Appends one rework scope per unlinked escalated gap, numbering after the
  * highest existing `scope-N`. Returns the created `scope-N: description`
- * lines. */
+ * lines. The gap's evidence travels with the scope: the scope keeps only a
+ * description string otherwise, so cited measurements would die at the
+ * conversion — the worker executing the rework needs the callers, tests,
+ * and check the critique cited. Same vocabulary scopes and tasks may carry
+ * by convention; the risk reading is the shared function that reads it. */
 function createReworkScopes(
   entry: WorkflowEntry,
   gapState: CritiqueGapView,
@@ -248,6 +253,7 @@ function createReworkScopes(
   for (const gap of gapState.escalated) {
     if (linked.has(gap.description)) continue;
     maxId++;
+    const evidence = gap.evidence ?? null;
     scopes.push({
       id: `scope-${maxId}`,
       name: gap.description.slice(0, 80),
@@ -255,6 +261,14 @@ function createReworkScopes(
       status: "pending",
       source: "audit-gap",
       gap: gap.description,
+      impact: typeof gap.impact === "string" ? gap.impact : null,
+      evidence,
+      risk: riskReading({
+        impact: gap.impact ?? null,
+        callers: evidence?.callers ?? null,
+        reversible: evidence?.reversible ?? null,
+        check: evidence?.check ?? null,
+      }),
       tasks: [],
     });
     created.push(`scope-${maxId}: ${gap.description.slice(0, 80)}`);

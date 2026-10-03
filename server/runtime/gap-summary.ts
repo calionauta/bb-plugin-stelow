@@ -1,6 +1,6 @@
 import type { WorkerCard } from "../workers-types.js";
 import type { CritiqueGapState } from "./critique-gap-state.js";
-import type { GapEvidence } from "../../lib/gap-registry.mjs";
+import type { GapEvidence } from "../../lib/gap-evidence.mjs";
 import { reviewExcerptRecords } from "../../lib/review-verdict.mjs";
 import type { ReviewFile } from "./review-records.js";
 
