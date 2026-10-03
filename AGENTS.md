@@ -232,7 +232,7 @@ document: a `DESIGN.md` was written here, found to be ~80% duplicated of those
 docstrings, and deleted.
 
 **Known debt, so it is not rediscovered as a surprise:** `text-[11px]` still
-appears in 107 places (tsx/ts/mjs) doing the same job the scale already names — the size is
+appears in 101 places doing the same job the scale already names — the size is
 allowed, the test blocks growth, and the migration is owed but not urgent. The
 `min-h-11` rule above is the one this section is least able to keep: it is
 stated, not tested, and 83 raw buttons are the standing evidence.
