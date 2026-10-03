@@ -6,7 +6,6 @@
   "functions": {
     "app.tsx:callback": 56,
     "components/conversation/question-batch.tsx:useBatchSelection": 53,
-    "components/creation/create-build-dialog.tsx:useCreateBuildSubmit": 65,
     "components/detail/build-diff.tsx:DiffFile": 54,
     "components/github/github-completion-dialog.tsx:GithubCompletionDialog": 60,
     "components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog": 89,
@@ -34,11 +33,11 @@
     "lib/scope-retry.mjs:claimScopeRetry": 61,
     "lib/trackable-evidence.mjs:evidenceConditions": 74,
     "lib/workflow-skills-sync.mjs:syncWorkflowSkills": 112,
-    "server/bb-workflow-bridge.ts:renderInlineWorkflowScript": 54,
     "server/runtime/cli/cli-bundle-writer.ts:writeBundle": 68,
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
     "server/runtime/workflow-seeding.ts:seedWorkflow": 72,
     "server/scopes.ts:runScopeCommand": 87,
-    "tests/server-drafting.test.mjs:harness": 83
+    "tests/server-drafting.test.mjs:harness": 83,
+    "components/creation/create-build-dialog.tsx:useCreateBuildSubmit": 57
   }
 }

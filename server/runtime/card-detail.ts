@@ -339,7 +339,7 @@ async function readStageSkips(
   card: WorkerCard,
   sourcePath: string | null,
 ) {
-  const fallback = { appetite: "Lean", reviewMode: "Auto", reviewGates: [] as string[] };
+  const fallback = { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true, reviewMode: "Auto", reviewGates: [] as string[] };
   try {
     if (!sourcePath || !card.dir_hash) return fallback;
     const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);

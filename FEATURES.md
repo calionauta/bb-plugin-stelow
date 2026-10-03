@@ -8,12 +8,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
 - **New card composer** (CreateBuildDialog, `createCard`). Prompt + file/image
-  attachments, intent, planning depth, your review gates, agent preset from
-  the analysis band. Planning depth and review gates render as compact
+  attachments, intent, run knobs (quality, supervision, exploration count),
+  your review gates, agent preset from
+  the analysis band. Knobs and review gates render as compact
   rows under the composer — title plus current value always visible, so
   consequential choices stay discoverable without a wall of option cards
   pushing content below the fold. One tap expands a row into the
   full controls (real inputs, min-h-11 targets) — no hidden select.
+  Quality defaults to production, supervision to high, exploration to 3 +
+  hybrid; a legacy appetite default maps once (rigor always strongest).
   Review gates are a pure multi-select (product spec, interface
   direction, build scopes, technical plan, code diff) with Select all /
   Clear and one-click preset templates; nothing picked means Auto and the
@@ -469,7 +472,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **First-visit setup, not tours** (`components/settings/preset-onboarding.tsx`). No stepper onboarding: Build, Research,
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
-  second step for Planning depth + your review gates as board defaults.
+  second step for run knobs + your review gates as board defaults.
   Every track ends on a Stay in touch step: report a bug or idea through
   the plugin repo, optionally follow along on X and LinkedIn.
   Preset setup counts across tracks: configuring on one tab silences the
@@ -478,7 +481,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Each track owns its preset band (build phases, research, explore),
   so changing one default never leaks into another. Manage agent
   presets groups bands by track (Research, Explore, Build) instead of a
-  flat phase list. Planning depth + your review gates stay where they
+  flat phase list. Run knobs + your review gates stay where they
   belong (per card in New issue → Settings, mirrored in the Build setup
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
@@ -1416,7 +1419,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Restart fresh** (`reseedCard`). New worker from triage; scopes and
   comments kept. Resolves the reliable-tier preset like any fresh start
   (card pin, reliable override, band, default). A reseed restarts the
-  workflow, not the human's review choices: the card's current appetite
+  workflow, not the human's review choices: the card's current run knobs
   and gate set carry over. It is also what an unverified-ownership card is
   told to use, and a refused `done` now leaves the gate's own stderr as a
   card comment for a reader deciding between this and a retry.
@@ -1721,9 +1724,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   drafts): card pins still win, a set override replaces the band preset,
   empty means the band preset. Same singleton discipline as the generation
   and reviewer designations; the draft-burst band fallback stays pure band.
-- **Board defaults** (`boardWorkflowDefaults`). Planning depth and
+- **Board defaults** (`boardWorkflowDefaults`). Run knobs (quality, supervision,
+  exploration count) and
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
+  Legacy appetite defaults map once to knobs (production/high, breadth 2/3/5).
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
   `testDecisionApi`, `decision_api_config` table). One decision endpoint
   for every decision router, configured once in Manage agent presets.
@@ -2151,7 +2156,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   never local stage rules. Standard questions at the split point carry a
   host-appended consequence disclosure (scope-only, creates no cards,
   Propose split stays available), so a scope pick never reads like a
-  split decision. Children inherit the parent's appetite and review mode
+  split decision. Children inherit the parent's run knobs and review mode
   (parsed whole from the indented state.md config block — never
   truncated). An archived card's thread keeps its way back: the thread
   header still links to its card. Refactor/bugfix cards skip

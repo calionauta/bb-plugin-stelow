@@ -13,10 +13,10 @@ const transitions = readFileSync(
   "utf8",
 );
 const headers = [...transitions.matchAll(/^### (\S+)\s*$/gm)].map((m) => m[1]);
-assert.equal(headers.length, 17, "transitions contract covers 17 stages");
+assert.equal(headers.length, 18, "transitions contract covers 18 stages");
 
 const template = templateStages();
-assert.equal(template.length, 17, "template covers 17 stages");
+assert.equal(template.length, 18, "template covers 18 stages");
 for (const stage of template) {
   assert.ok(headers.includes(stage), `template stage ${stage} exists in transitions.md`);
 }
@@ -80,4 +80,4 @@ assert.equal(stageSkill("nope"), null, "unknown stage has no skill");
 assert.equal(stageSkillUrl("nope"), null, "unknown stage has no skill URL");
 assert.equal(stageInfoUrl("nope"), null, "unknown stage has no info URL");
 
-console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, skill links, and transitions agree on 17 stages");
+console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, skill links, and transitions agree on 18 stages");

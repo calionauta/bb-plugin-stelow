@@ -192,6 +192,25 @@ function toWorkflowTask(task: CatalogTask) {
   };
 }
 
+/** Embedded run-condition evaluator, shared by every rendered script.
+ * Both fanout gates resolve one rule: an explicit exploration count wins
+ * (hybrid whenever count >= 2); a legacy appetite maps Core/Complete to go.
+ * Kept as a source string (not a closure) because the rendered script must
+ * be self-contained — plugin-bundled paths are not origin-workspace paths. */
+const CONDITION_FN_SOURCE = `const fanoutOk = (ctx) => {
+  const count = Number(ctx?.explorationCount ?? 3);
+  if (Number.isInteger(count)) return count >= 2;
+  return ["Core", "Complete"].includes(ctx?.appetite);
+};
+const condition = (task) => {
+  if (task.when === "always") return true;
+  if (task.when === "appetite_supports_fanout" || task.when === "exploration_supports_fanout") return fanoutOk(input.context);
+  if (task.when === "partition_is_safe") return input.context?.partitionSafe === true;
+  if (task.when === "findings_exist") return Object.values(outputs).some((value) => Array.isArray(value?.findings) && value.findings.length > 0);
+  if (task.when === "ui_scope_present") return input.context?.uiScopePresent === true;
+  throw new Error("Unknown recipe condition: " + task.when);
+};`;
+
 /** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
 export function renderInlineWorkflowScript(
   recipe: { id: string; tasks?: CatalogTask[] },
@@ -209,14 +228,7 @@ const DEFAULT_QUESTION = "The workflow needs a human decision.";
 const BOUNDARY_FIELDS = ["questionId", "contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
 const boundaryContract = (n) => ({ question: n.question ?? n.prompt ?? DEFAULT_QUESTION,
   ...Object.fromEntries(BOUNDARY_FIELDS.map((f) => [f, n[f] ?? null])) });
-const condition = (task) => {
-  if (task.when === "always") return true;
-  if (task.when === "appetite_supports_fanout") return ["Core", "Complete"].includes(input.context?.appetite);
-  if (task.when === "partition_is_safe") return input.context?.partitionSafe === true;
-  if (task.when === "findings_exist") return Object.values(outputs).some((value) => Array.isArray(value?.findings) && value.findings.length > 0);
-  if (task.when === "ui_scope_present") return input.context?.uiScopePresent === true;
-  throw new Error("Unknown recipe condition: " + task.when);
-};
+${CONDITION_FN_SOURCE}
 const executeTask = async (task) => {
   if (!condition(task)) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "condition-false" }; return; }
   if (task.dependsOn.some((id) => skipped.has(id))) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "dependency-skipped" }; return; }

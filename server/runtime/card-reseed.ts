@@ -41,14 +41,17 @@ type ReseedDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   workflowStateDir: (rootPath: string, card: WorkerCard) => Promise<string | null>;
   readStateConfig: (rootPath: string, card: WorkerCard) => Promise<{
-    appetite?: string | null;
+    quality?: string | null;
+    supervisor?: string | null;
+    explorationCount?: number | null;
+    explorationHybrid?: boolean | null;
     reviewGates?: string[] | null;
   } | null>;
   seedWorkflow: (args: {
     rootPath: string;
     card: WorkerCard;
     intent: string;
-    appetite: string;
+    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
     reviewGates: string[];
   }) => Promise<SeedResult>;
   getPresetById: (presetId: string) => PresetRow | null;
@@ -140,7 +143,12 @@ async function reseedCard(
     rootPath: source.path,
     card,
     intent: decision.intent,
-    appetite: config?.appetite ?? "Core",
+    knobs: {
+      quality: config?.quality ?? "production",
+      supervisor: config?.supervisor ?? "high",
+      explorationCount: config?.explorationCount ?? 3,
+      explorationHybrid: config?.explorationHybrid ?? (config?.explorationCount ?? 3) >= 2,
+    },
     reviewGates: config?.reviewGates ?? [],
   });
   if (seed.error) return reseedFailure(seed.error);

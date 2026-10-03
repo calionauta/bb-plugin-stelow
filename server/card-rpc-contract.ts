@@ -4,9 +4,12 @@ import {
   appetiteSchema,
   boardWorkflowDefaultsSchema,
   composerExecutionSchema,
+  explorationCountSchema,
+  qualitySchema,
   reviewModeInputSchema,
   cardStatusSchema,
   scopeSummarySchema,
+  supervisorSchema,
   workflowSchema,
 } from "./contracts.js";
 
@@ -249,7 +252,7 @@ export const cardRpcContract = {
     }),
   },
   boardWorkflowDefaults: {
-    experimental_description: "Board defaults: planning depth and review gates for new cards",
+    experimental_description: "Board defaults: run knobs and review gates for new cards",
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
   },
@@ -270,7 +273,11 @@ export const cardRpcContract = {
         prompt: z.string().min(1).max(20_000),
         attachments: z.array(attachmentSchema).max(20).default([]),
         intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"),
-        appetite: appetiteSchema.default("Lean"),
+        quality: qualitySchema.default("production"),
+        supervisor: supervisorSchema.default("high"),
+        explorationCount: explorationCountSchema.default(3),
+        /** Deprecated alias; when present without knobs it maps once to knobs. */
+        appetite: appetiteSchema.optional(),
         reviewMode: reviewModeInputSchema,
         presetId: z.string().nullable().optional(),
         start: z.boolean().default(true),

@@ -15,8 +15,8 @@ const catalog = readJson("data/stelow-recipe-catalog.json");
 const recipes = catalog.recipes ?? [];
 const rows = new Map(manifest.recipes.map((row) => [row.id, row]));
 const knownCapabilities = new Set(EXECUTION_CAPABILITIES);
-const supportedConditions = new Set(["always", "appetite_supports_fanout", "partition_is_safe", "ui_scope_present"]);
-const artifactContext = { appetite: "Complete", partitionSafe: true, uiScopePresent: true };
+const supportedConditions = new Set(["always", "appetite_supports_fanout", "exploration_supports_fanout", "partition_is_safe", "ui_scope_present"]);
+const artifactContext = { appetite: "Complete", explorationCount: 5, partitionSafe: true, uiScopePresent: true };
 
 function readJson(path) {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -130,7 +130,10 @@ function validContents(recipe) {
   return Object.fromEntries(recipe.tasks.map((task) => [
     task.output,
     task.output === "scope-map.json" ? JSON.stringify(scopeMap)
-      : ["interfaces/contrast.json", "interfaces/selection-receipt.json"].includes(task.output) ? JSON.stringify(contrast)
+      : ["interfaces/contrast.json", "interfaces/selection-receipt.json", "architecture/contrast.json"].includes(task.output)
+        ? JSON.stringify(task.output.startsWith("architecture/")
+          ? { ...contrast, route: "architecture-refinement", decisionQuestion: "Which pilot architecture should be selected?" }
+          : contrast)
         : task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
   ]));
 }

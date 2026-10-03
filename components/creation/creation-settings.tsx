@@ -2,37 +2,62 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron } from "../disclosure";
 
-// Shared creation-form controls: planning depth + review gates (every
+// Shared creation-form controls: run knobs + review gates (every
 // creation flow), the strategy/technique picker (research, explore,
 // follow-up rounds), the agent-config block, the project select, and the
 // persistent submit-failure alert. Third use before abstracting is met —
 // build, research, and explore creation read the same controls, so they
 // live in one home instead of three pasted copies.
 
-// Canonical Stelow terms next to the board labels, and appetite framed as
-// the scope budget it is — never an estimate.
+// Canonical Stelow terms next to the board labels: run knobs bound breadth
+// and rigor — never time — and review checkpoints are where the run stops
+// and waits for a decision. These are the board defaults — kept for every
+// new card until you change them.
 const WORKFLOW_PREFS_DESCRIPTION =
-  "Appetite (Planning depth) caps the scope budget the agent prepares — " +
-  "the scope is cut to fit, the budget never grows. " +
-  "Review Mode (review checkpoints) is where it stops and waits for " +
+  "Quality caps verification rigor, supervision sets checkpoint cadence, " +
+  "and exploration sets how many directions get compared (with a hybrid " +
+  "synthesis whenever more than one exists). " +
+  "Review checkpoints are where the run stops and waits for " +
   "your decision. These are the board defaults — kept for every new " +
   "card until you change them.";
 
-const APPETITE_HINT =
-  "Bigger appetite means more scope prepared before building " +
-  "(Lean 1–2 scopes, Core 3–5, Complete ~10) — a budget to fit, " +
-  "never an estimate.";
+const QUALITY_HINT =
+  "Production verifies everything the same way every time. " +
+  "Experimental runs lighter and only for probes — never ship as-is.";
+
+const SUPERVISOR_HINT =
+  "How closely the supervisor watches execution. " +
+  "High catches drift early; low only for trivial, reversible work.";
+
+const EXPLORATION_HINT =
+  "How many directions divergence compares, for interaction and for " +
+  "architecture. A hybrid synthesis is produced whenever more than one " +
+  "exists. Single (1) means one direct direction with no hybrid — " +
+  "trivial changes only, by explicit choice.";
+
+const QUALITY_OPTIONS = [
+  { value: "production", label: "Production", description: "Full paths, edge cases, parallel reviewers, full test layers." },
+  { value: "experimental", label: "Experimental", description: "Reduced checks for probes. Never ship as-is." },
+] as const;
+
+const SUPERVISOR_OPTIONS = [
+  { value: "high", label: "High", description: "Tight checkpoints, frequent progress checks." },
+  { value: "med", label: "Medium", description: "Standard checkpoints during execution." },
+  { value: "low", label: "Low", description: "Minimal checkpoints. Trivial, reversible work only." },
+] as const;
+
+const EXPLORATION_OPTIONS = [
+  { value: "2", label: "2 + hybrid", description: "Two most-differentiated directions plus a hybrid." },
+  { value: "3", label: "3 + hybrid", description: "Three directions plus a hybrid. Standard comparison." },
+  { value: "4", label: "4 + hybrid", description: "Four directions plus a hybrid." },
+  { value: "5", label: "5 + hybrid", description: "Five directions plus a hybrid. Heaviest preparation." },
+  { value: "1", label: "1 single", description: "One direct direction, no hybrid. Trivial changes only." },
+] as const;
 
 const REVIEW_HINT =
   "The agent stops at each checkpoint you pick and waits — nothing " +
   "advances until you answer. Nothing picked means Auto: the agent " +
   "decides everything itself.";
-
-const APPETITE_OPTIONS = [
-  { value: "Lean", label: "Lean", description: "Smallest useful cycle: 1–2 scopes and one direct direction." },
-  { value: "Core", label: "Core", description: "Standard cycle: main job, obvious edge cases, and 3–5 scopes." },
-  { value: "Complete", label: "Complete", description: "Broad exploration and deeper validation across the whole request." },
-] as const;
 
 const REVIEW_GATE_OPTIONS = [
   { value: "spec", label: "Product spec", description: "Review the shaped product specification and assumptions." },
@@ -58,7 +83,11 @@ const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }>
   { label: "Spec + tech plan", gates: ["spec", "tech"] },
 ];
 
-export type Appetite = (typeof APPETITE_OPTIONS)[number]["value"];
+export type Quality = (typeof QUALITY_OPTIONS)[number]["value"];
+export type Supervisor = (typeof SUPERVISOR_OPTIONS)[number]["value"];
+export type ExplorationCount = (typeof EXPLORATION_OPTIONS)[number]["value"];
+/** @deprecated Alias only. Run knobs replaced the appetite ladder. */
+export type Appetite = "Lean" | "Core" | "Complete";
 export type ReviewGate = (typeof REVIEW_GATE_OPTIONS)[number]["value"];
 export type ReviewGates = ReviewGate[];
 
@@ -92,7 +121,7 @@ export function CreateCardAlert({ message }: { message: string }) {
   );
 }
 
-// Choice cards for planning depth + human review gates: every option visible
+// Choice cards for run knobs + human review gates: every option visible
 // with its description, real radio inputs (keyboard + screen-reader native),
 // min-h-11 touch targets. Replaces a cramped native select whose gray micro
 // copy failed lay users and low vision — same option values, new surface.
@@ -171,33 +200,40 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
   );
 }
 
-export function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onReviewGatesChange, groupNamePrefix }: {
-  appetite: Appetite;
+export type KnobPrefs = {
+  quality: Quality;
+  supervisor: Supervisor;
+  explorationCount: ExplorationCount;
+};
+
+/** Keep a prefs patch inside the option vocabularies; unknown values keep the current pick. */
+export function sanitizeKnobPrefs(value: unknown, current: KnobPrefs): KnobPrefs {
+  const record = (value && typeof value === "object" ? value : {}) as Partial<Record<keyof KnobPrefs, unknown>>;
+  const quality = QUALITY_OPTIONS.some((option) => option.value === record.quality) ? (record.quality as Quality) : current.quality;
+  const supervisor = SUPERVISOR_OPTIONS.some((option) => option.value === record.supervisor) ? (record.supervisor as Supervisor) : current.supervisor;
+  const explorationCount = EXPLORATION_OPTIONS.some((option) => option.value === record.explorationCount)
+    ? (record.explorationCount as ExplorationCount)
+    : current.explorationCount;
+  return { quality, supervisor, explorationCount };
+}
+
+export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGatesChange, groupNamePrefix }: {
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
-  onAppetiteChange: (value: Appetite) => void;
+  onPrefsChange: (patch: Partial<KnobPrefs>) => void;
   onReviewGatesChange: (value: ReviewGates) => void;
   groupNamePrefix: string;
 }) {
   return (
-    <SettingsSection
-      title="Workflow preferences"
-      description={WORKFLOW_PREFS_DESCRIPTION}
-    >
-      <CollapsibleChoiceCards
-        label="Planning depth"
-        hint={APPETITE_HINT}
-        value={appetite}
-        options={APPETITE_OPTIONS}
-        onChange={onAppetiteChange}
-        groupName={`${groupNamePrefix}-appetite`}
-      />
-      <ReviewGatePicker
-        label="Pause for my review"
-        hint={REVIEW_HINT}
-        value={reviewGates}
-        onChange={onReviewGatesChange}
-        groupName={`${groupNamePrefix}-review`}
-      />
+    <SettingsSection title="Workflow preferences" description={WORKFLOW_PREFS_DESCRIPTION}>
+      <CollapsibleChoiceCards label="Quality" hint={QUALITY_HINT} value={prefs.quality} options={QUALITY_OPTIONS}
+        onChange={(quality) => onPrefsChange({ quality })} groupName={`${groupNamePrefix}-quality`} />
+      <CollapsibleChoiceCards label="Supervision" hint={SUPERVISOR_HINT} value={prefs.supervisor} options={SUPERVISOR_OPTIONS}
+        onChange={(supervisor) => onPrefsChange({ supervisor })} groupName={`${groupNamePrefix}-supervisor`} />
+      <CollapsibleChoiceCards label="Exploration" hint={EXPLORATION_HINT} value={prefs.explorationCount} options={EXPLORATION_OPTIONS}
+        onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`} />
+      <ReviewGatePicker label="Pause for my review" hint={REVIEW_HINT} value={reviewGates}
+        onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
   );
 }

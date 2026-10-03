@@ -17,7 +17,14 @@ a plan-gate with zero answered gaps, advances today.
 
 ## 2. Governing insight: two orthogonal axes
 
-- **Appetite** scales *depth*: how many (1/3/5 interfaces, top-3 vs top-5
+> **Update (knobs refactor):** the breadth axis is now three explicit knobs —
+> quality (verification rigor), supervisor (checkpoint cadence), exploration
+> breadth (direction counts + hybrid) — instead of the Lean/Core/Complete
+> appetite ladder. Legacy appetite lines map once to knobs. The decider axis
+> (review mode) is unchanged.
+
+- **Exploration breadth** scales *depth*: how many (1–5 interaction directions,
+  2–5 construction directions, top-3 vs top-5
   assumptions). Never who decides.
 - **Review mode** scales *decider*: human (structured ask, parks) vs agent.
 - **`Auto` ≠ "no question".** It means *agent-resolved with receipt*:
@@ -43,7 +50,7 @@ stages:
       - id: interface-pick
         kind: human-ask            # human-ask | agent-receipt | skip
         modes: ["Product Spec + Interface Gates", "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review", "Product Spec + Interface + Tech Review + Code Diff"]
-        appetite: [Core, Complete] # Lean decides inline (single proposal)
+        exploration_min_count: 2  # count 1 decides inline (single proposal)
         evidence: per-option       # every option carries preview+artifact
         receipt: interfaces/selected-interface.md
       - id: interface-pick-auto
@@ -87,8 +94,9 @@ enforcement would invent methodology and can falsely park live workflows.
 New lib `lib/question-contracts.mjs` (pure, node-tested):
 - `loadQuestionContracts()` reads the vendored
   `skills/stelow-workflow-orchestrator/stages.yaml` (`questions:` blocks).
-- `requiredForStage({ stage, reviewMode, appetite, kind })` returns
-  `[{ id, kind, receipt }]` — the checklist for this transition.
+- `requiredForStage({ stage, reviewMode, explorationCount, kind })` returns
+  `[{ id, kind, receipt }]` — the checklist for this transition (a legacy
+  `appetite` string still maps once to its breadth).
 - Pin test: vendored contract ↔ lib expectations (same shape as
   `tests/stage-skips.test.mjs` stub routes + gate table).
 

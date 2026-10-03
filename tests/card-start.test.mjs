@@ -118,7 +118,8 @@ assert.match(startCheck, /BUILD_BOARD_COLUMN_LABELS\[BUILD_BOARD_INBOX\]/, "the 
 assert.doesNotMatch(startCheck, /park in Inbox/, "no pasted Inbox survives in the checkbox copy");
 assert.equal(((buildDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "build, research, and explore checkboxes link to their galleries");
 assert.equal(((githubImport.match(/onViewBucket/g) ?? []).length + (githubAuto.match(/onViewBucket/g) ?? []).length), 0, "import and automation checkboxes render the plain word");
-assert.match(buildDialog, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
+assert.match(buildDialog, /rpc\.call\("createCard", createCardPayload\(/, "build submit passes the built payload");
+assert.match(buildDialog, /start: startImmediately,/, "the payload carries the deferred-start choice");
 // Build creation: one dialog component owns draft, intent, error, and
 // start — the panel keeps the open flag plus board defaults.
 assert.match(

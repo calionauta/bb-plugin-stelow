@@ -1,4 +1,5 @@
 import { describeCardEnvironment } from "../lib/tracks.mjs";
+import { resolveKnobInput } from "../lib/workflow-config.mjs";
 import { assertCardStatus } from "../lib/card-status.mjs";
 import { environmentFallbackNotice } from "../lib/card-environment.mjs";
 import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create.js";
@@ -100,8 +101,11 @@ export async function finishCard(
     if (track.seed.dirHash) void deps.lineage(workspace.rootPath, track.seed.dirHash, thread.id, preset.id, "initial");
   }
   if (!track.research && !track.explore) {
+    const knobs = resolveKnobInput(input);
     await deps.bb.storage.kv.set("board-workflow-defaults", {
-      appetite: input.appetite,
+      quality: knobs.quality,
+      supervisor: knobs.supervisor,
+      explorationCount: knobs.explorationCount,
       reviewMode: track.reviewRung,
       reviewGates: track.reviewGates,
     });

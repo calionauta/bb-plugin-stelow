@@ -1224,6 +1224,12 @@ rather than about the symptom.
 
 ### The premise that did not hold: planning depth has no `auto`
 
+> **Historical note (knobs refactor):** this audit describes the Lean/Core/Complete
+> appetite ladder as it existed at audit time. The ladder has since been replaced
+> by explicit run knobs (quality, supervisor, exploration count + hybrid); legacy
+> appetite values map once to knobs. The audit's reasoning below is preserved as
+> written — only the vocabulary moved.
+
 "Planning depth" is the `appetite` field, and its whole domain is three values:
 `appetiteSchema = z.enum(["Lean", "Core", "Complete"])` (`server/contracts.ts:18`),
 surfaced as the dialog's `APPETITE_OPTIONS` (`components/creation/creation-settings.tsx:12-16`).

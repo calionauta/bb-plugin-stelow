@@ -266,15 +266,15 @@ async function checklistFor(
     .catch(() => null);
   const state = typeof stateFile?.content === "string" ? stateFile.content : null;
   if (!state) return null;
-  const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, {
+  const { quality, explorationCount, reviewMode, reviewGates } = parseWorkflowConfig(state, {
     strict: true,
   });
-  if (!appetite || (!reviewMode && !reviewGates)) return null;
+  if (!quality || (!reviewMode && !reviewGates)) return null;
   const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
   if (!stage) return null;
   return requiredForStage({
     stage,
-    appetite,
+    explorationCount: explorationCount ?? undefined,
     reviewMode: reviewGates ?? reviewMode ?? [],
   });
 }

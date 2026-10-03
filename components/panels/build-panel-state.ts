@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import type { GithubStatus } from "../github/github-dialog-state";
 import {
+  sanitizeKnobPrefs,
   sanitizeReviewGates,
-  type Appetite,
+  type KnobPrefs,
   type ReviewGates,
 } from "../creation/creation-settings";
 import {
@@ -74,14 +75,19 @@ function readStoredReviewGates(): StoredReviewGates {
 }
 
 function useBuildWorkflowPreferences(rpc: BuildRpc) {
-  const [appetite, setAppetite] = useState<Appetite>("Lean");
+  const [prefs, setPrefs] = useState<KnobPrefs>({ quality: "production", supervisor: "high", explorationCount: "3" });
+  const updatePrefs = useCallback((patch: Partial<KnobPrefs>) => setPrefs((current) => ({ ...current, ...patch })), []);
   const [initialReviewGates] = useState(() => readStoredReviewGates());
   const [reviewGates, setReviewGates] = useState<ReviewGates>(
     initialReviewGates.value,
   );
   useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then((defaults) => {
-      setAppetite(defaults.appetite);
+      setPrefs((current) => sanitizeKnobPrefs({
+        quality: defaults.quality,
+        supervisor: defaults.supervisor,
+        explorationCount: String(defaults.explorationCount),
+      }, current));
       setReviewGates((current) => reviewGatesAfterDefaults(
         current,
         sanitizeReviewGates(defaults.reviewGates),
@@ -96,7 +102,7 @@ function useBuildWorkflowPreferences(rpc: BuildRpc) {
       // Persistence is a convenience; inaccessible storage keeps the defaults.
     }
   }, [reviewGates]);
-  return { appetite, reviewGates, setAppetite, setReviewGates };
+  return { prefs, reviewGates, updatePrefs, setReviewGates };
 }
 
 function resetFilters(clear: {

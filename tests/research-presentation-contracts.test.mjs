@@ -151,7 +151,7 @@ assert.match(
 assert.doesNotMatch(
   app,
   /createOptionsOpen/,
-  "new-card Settings is never collapsed, so planning depth and review gates are always discoverable",
+  "new-card Settings is never collapsed, so run knobs and review gates are always discoverable",
 );
 assert.doesNotMatch(
   app,

@@ -7,6 +7,7 @@ import { heuristicDisplayName } from "../lib/draft-burst.mjs";
 import { bandForKind } from "../lib/tracks.mjs";
 import { normalizeBuildSeedIntent } from "../lib/workflow-intent-policy.mjs";
 import { formatReviewGates, legacyLabelForGates, normalizeReviewGates } from "../lib/review-gates.mjs";
+import { resolveKnobInput } from "../lib/workflow-config.mjs";
 import type { CardPromptRules } from "./cards-create-prompt.js";
 import { buildBuildPrompt } from "./cards-create-prompt.js";
 import type { CardPresetOverride } from "./preset-contracts.js";
@@ -19,7 +20,12 @@ export type CardCreateInput = {
   prompt: string;
   attachments: Array<{ path: string; type: "localFile" | "localImage" }>;
   intent: string;
-  appetite: string;
+  quality?: string;
+  supervisor?: string;
+  explorationCount?: number;
+  explorationHybrid?: boolean;
+  /** Deprecated alias; maps once when knobs are absent. */
+  appetite?: string;
   reviewMode: string | string[];
   presetId?: string | null;
   kind?: "build" | "research" | "explore";
@@ -90,7 +96,15 @@ export type CardsCreateDeps = {
   randomId: (prefix: string) => string;
   roundTimestamp: () => string;
   seedBuildIntent: (prompt: string, projectId: string | null) => Promise<string>;
-  seedWorkflow: (bb: BbPluginApi, rootPath: string, cardId: string, slug: string, intent: string, appetite: string, reviewGates: string[]) => Promise<Seed>;
+  seedWorkflow: (
+    bb: BbPluginApi,
+    rootPath: string,
+    cardId: string,
+    slug: string,
+    intent: string,
+    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean },
+    reviewGates: string[],
+  ) => Promise<Seed>;
   researchStrategy: (id: string) => ReturnType<typeof import("../lib/research-strategies.mjs").researchStrategyById>;
   exploreStage: (id: string) => ExploreStage;
   researchIds: () => string[];
@@ -203,13 +217,14 @@ async function resolveTrack(
   const reviewGates = normalizeReviewGates(input.reviewMode);
   const reviewRung = legacyLabelForGates(reviewGates)
     ?? (reviewGates.length === 0 ? "Auto" : `Custom ${formatReviewGates(reviewGates)}`);
+  const knobs = resolveKnobInput(input);
   const seed = await deps.seedWorkflow(
     deps.bb,
     workspace.rootPath,
     cardId,
     slug,
     intent,
-    input.appetite,
+    knobs,
     reviewGates,
   );
   if (seed.error) throw new Error(seed.error);
@@ -310,7 +325,7 @@ async function promptForTrack(
     stateDir: textValue(track.seed.stateDir),
     intent: track.intent,
     managedWorktree: deps.describeManagedWorktree(environment),
-    appetite: input.appetite,
+    knobs: resolveKnobInput(input),
     reviewGates: formatReviewGates(track.reviewGates),
     reviewRung: track.reviewRung,
     instructions,

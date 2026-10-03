@@ -49,7 +49,7 @@ would remove whole bug classes instead of guarding them.
    never reaches `audit` has no way to say "finished". The idle/complete
    ambiguity is the same confusion that produced the original incident.
 3. **State is markdown parsed by regex** (`current_stage`, `intent`,
-   `appetite` read via regex in `syncThreadState`, board listing).
+   run knobs read via regex in `syncThreadState`, board listing).
    A worker that reformats state.md breaks the board silently; nothing
    validates the file on write.
 4. **Three sources of truth.** `state.md` (worker) + `stelow.json` index
