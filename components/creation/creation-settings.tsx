@@ -160,8 +160,8 @@ export function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onRe
   groupNamePrefix: string;
 }) {
   return (
-    <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
-      <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
+    <SettingsSection title="Workflow preferences" description="Appetite (Planning depth) caps the scope budget the agent prepares — the scope is cut to fit, the budget never grows. Review Mode (review checkpoints) is where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
+      <CollapsibleChoiceCards label="Planning depth" hint="Bigger appetite means more scope prepared before building (Lean 1–2 scopes, Core 3–5, Complete ~10) — a budget to fit, never an estimate." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
       <ReviewGatePicker label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer. Nothing picked means Auto: the agent decides everything itself." value={reviewGates} onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
   );
