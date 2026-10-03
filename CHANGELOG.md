@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.67.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.1...v0.67.0) (2026-10-03)
+
+
+### Features
+
+* preselected opt-out asks and draft scope preview ([#311](https://github.com/calionauta/bb-plugin-stelow/issues/311)) ([7f16394](https://github.com/calionauta/bb-plugin-stelow/commit/7f163948199e6c3d8592a7408069dd2a09f2bc1c))
+* preselected opt-out asks and draft scope preview ([#312](https://github.com/calionauta/bb-plugin-stelow/issues/312)) ([c7a5216](https://github.com/calionauta/bb-plugin-stelow/commit/c7a521604c9f2e77def35f21479a098824ceae08))
+* validate interface contrast scope coverage end to end ([#309](https://github.com/calionauta/bb-plugin-stelow/issues/309)) ([72b00c1](https://github.com/calionauta/bb-plugin-stelow/commit/72b00c136ccf0fd7b33178b1553a759667165fca))
+
 ## [0.66.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.0...v0.66.1) (2026-10-03)
 
 
