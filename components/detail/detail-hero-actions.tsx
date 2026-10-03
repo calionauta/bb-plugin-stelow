@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { OpenGraphButton, GraphNudge } from "../graph/agent-graph-action";
 import { OpenThreadButton } from "../worker-history/worker-history";
 import { HeroErrorNote, type HeroKind } from "./detail-hero";
 
@@ -41,6 +42,7 @@ function DecisionActions({ card, heroKind, pending, preset, state, onRetry }: { 
         <Button size="sm" variant="outline" disabled={state.retrying} onClick={() => void onRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{state.retrying ? "Retrying…" : "Retry worker"}</Button>
       ) : null}
       {card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
+      {card.workerThreadId ? <OpenGraphButton threadId={card.workerThreadId} /> : null}
     </>
   );
 }
@@ -55,6 +57,7 @@ function RecoveryButton({ card, label, retryTitle, state, preset, continuation, 
         <Button size="sm" disabled={state.retrying} onClick={() => void onRetry()} title={retryTitle}>{state.retrying ? "Retrying…" : label}</Button>
       )}
       {card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
+      {card.workerThreadId ? <OpenGraphButton threadId={card.workerThreadId} /> : null}
     </>
   );
 }
@@ -81,6 +84,8 @@ export function DetailHeroActions({ card, heroKind, pending, preset, state, cont
       <RecoveryActions card={card} heroKind={heroKind} preset={preset} state={state} continuation={continuation} retryTail={retryTail} onRetry={onRetry} onRestart={onRestart} />
       {extra}
       {passiveThread ? <OpenThreadButton threadId={card.workerThreadId!} /> : null}
+      {passiveThread ? <OpenGraphButton threadId={card.workerThreadId!} /> : null}
+      {card.workerThreadId ? <GraphNudge threadId={card.workerThreadId} /> : null}
     </div>
   );
 }

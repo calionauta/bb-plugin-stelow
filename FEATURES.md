@@ -523,6 +523,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   structured outputs, and safe fan-out; explicit install or enable actions
   are shown only when the host needs them, while the sequential fallback stays
   visible.
+- **Live agent graph capability.** The About tab reports Agent Graph as
+  running, starting, installed but disabled, or not installed, decided by one
+  `bb plugin list --json` probe (`agentGraphStatus`, read-only: the panel
+  detects and points to BB Extensions but never installs or enables anything).
+  While it runs, each card hero shows a benefit-worded "See live graph" action
+  beside "Open thread" that opens the card's own worker thread, where the
+  thread header holds the live graph — there is no cross-plugin thread-panel
+  seam (`openThreadPanel` is same-plugin-only) and no thread-addressed graph
+  route, so a deep link does not exist and the card never jumps to the generic
+  graph page. While it is absent, the card shows a one-line dismissable mention
+  pointing at About instead of a permanent badge.
 - **Open on an execution run lands where you can see it.** Each run's **Open**
   deep-links into the card at that run, and the link now has an observable
   outcome. It used to have none: the scroll asked for the nearest block, which
