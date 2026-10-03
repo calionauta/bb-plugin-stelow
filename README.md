@@ -94,7 +94,7 @@ The singleton bb personal project has no workspace source, so the board asks you
 
 ## Install
 
-> Pending marketplace approval — install a released version from this repository:
+> Marketplace is live: `bb plugin install stelow` — or pin a released version from this repository:
 
 ```bash
 bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@v0.66.0" --yes
