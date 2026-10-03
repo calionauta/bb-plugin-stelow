@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.65.11](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.10...v0.65.11) (2026-10-03)
+
+
+### Bug Fixes
+
+* name the reconcile recovery in the log instead of resolving silently ([#294](https://github.com/calionauta/bb-plugin-stelow/issues/294)) ([9b86e82](https://github.com/calionauta/bb-plugin-stelow/commit/9b86e827189d4be64722f449ccc107438bf31473))
+
 ## [0.65.10](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.9...v0.65.10) (2026-10-03)
 
 
