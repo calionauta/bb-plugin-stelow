@@ -1,6 +1,13 @@
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
+import {
+  MAX_REWORK_ROUNDS,
+  nextReworkRounds,
+  reworkCapReached,
+  reworkCapRefusal,
+  reworkRoundsOf,
+} from "../../../lib/rework-rounds.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { workflowEntryForOwner } from "../../../lib/workflow-state-identity.mjs";
@@ -67,9 +74,26 @@ async function runGapScopes(
     return { exitCode: 1, stderr: gapState.failures.join("\n") };
   if (gapState.escalated.length === 0)
     return { exitCode: 0, stdout: "No escalated gaps — nothing to convert." };
+  return convertEscalated(deps, card, cardId, gapState);
+}
+
+/** Tracking I/O plus the round budget: capped cards refuse with three exits,
+ * creating cards spend one round, idempotent re-runs spend nothing. */
+async function convertEscalated(
+  deps: CliDeps,
+  card: WorkerCard,
+  cardId: string,
+  gapState: CritiqueGapView,
+): Promise<CliResult> {
   const tracking = await gapScopesTracking(deps, card, cardId);
   if ("result" in tracking) return tracking.result;
+  const unlinked = unlinkedEscalated(gapState);
+  const rounds = reworkRoundsOf(tracking.entry);
+  if (unlinked.length > 0 && reworkCapReached(tracking.entry))
+    return refuseReworkCap(deps, cardId, rounds, unlinked);
   const created = createReworkScopes(tracking.entry, gapState);
+  if (created.length > 0)
+    tracking.entry.rework_rounds = nextReworkRounds(tracking.entry, created.length);
   if (created.length === 0)
     return {
       exitCode: 0,
@@ -83,6 +107,7 @@ async function runGapScopes(
     tracking.data,
     gapState,
     created,
+    reworkRoundsOf(tracking.entry),
   );
 }
 
@@ -144,6 +169,48 @@ async function gapScopesTracking(
   return { path, data, entry };
 }
 
+/** Escalated gaps with no audit-gap scope linked yet — the rework loop input. */
+function unlinkedEscalated(gapState: CritiqueGapView): string[] {
+  const linked = new Set(
+    gapState.auditGapScopes
+      .map((scope) => scope.gap)
+      .filter((gap): gap is string => typeof gap === "string"),
+  );
+  return gapState.escalated
+    .map((gap) => gap.description)
+    .filter((description) => !linked.has(description));
+}
+
+/** Honest stop at the round budget: no scopes are created or written, but the
+ * stop is recorded where the card's history can point at it — a trail event,
+ * a card comment, and realtime refresh, the same three surfaces a successful
+ * conversion writes to. The stderr names the three exits that already exist,
+ * so the card never parks without a door. */
+function refuseReworkCap(
+  deps: CliDeps,
+  cardId: string,
+  rounds: number,
+  unlinked: string[],
+): CliResult {
+  const stderr = reworkCapRefusal(rounds, unlinked);
+  try {
+    recordTrackableEvent(deps.db, {
+      cardId,
+      kind: "scope",
+      trackableId: "audit-gap",
+      transition: "rework-capped",
+      actor: "host",
+      evidence: `rework round budget reached (${rounds}/${MAX_REWORK_ROUNDS}); ${unlinked.length} unscoped escalated gap(s)`,
+    });
+  } catch {
+    /* trail never blocks */
+  }
+  deps.bb.realtime.publish("card-state", { cardId });
+  deps.bb.realtime.publish("board-changed", { cardId });
+  deps.logCardComment(cardId, "card", cardId, "agent", `Gap-to-scope decision: ${stderr}`);
+  return { exitCode: 1, stderr };
+}
+
 /** Appends one rework scope per unlinked escalated gap, numbering after the
  * highest existing `scope-N`. Returns the created `scope-N: description`
  * lines. */
@@ -192,6 +259,7 @@ function reportGapScopes(
   trackingData: LooseRecord,
   gapState: CritiqueGapView,
   created: string[],
+  rounds: number,
 ): CliResult {
   try {
     writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
@@ -208,7 +276,7 @@ function reportGapScopes(
       trackableId: "audit-gap",
       transition: "rework-created",
       actor: "host",
-      evidence: `${created.length} rework scope(s): ${created
+      evidence: `rework round ${rounds}/${MAX_REWORK_ROUNDS}: ${created.length} rework scope(s): ${created
         .map((line) => line.split(":")[0])
         .join(", ")}`,
     });
@@ -224,22 +292,22 @@ function reportGapScopes(
     "card",
     cardId,
     "agent",
-    gapDecisionComment(gapState, created),
+    gapDecisionComment(gapState, created, rounds),
   );
-  return { exitCode: 0, stdout: gapDecisionStdout(gapState, created) };
+  return { exitCode: 0, stdout: gapDecisionStdout(gapState, created, rounds) };
 }
 
-function gapDecisionComment(gapState: CritiqueGapView, created: string[]): string {
-  return `Gap-to-scope decision: ${gapState.totals.fixed} fixed inline, ${
+function gapDecisionComment(gapState: CritiqueGapView, created: string[], rounds: number): string {
+  return `Gap-to-scope decision (rework round ${rounds}/${MAX_REWORK_ROUNDS}): ${gapState.totals.fixed} fixed inline, ${
     gapState.totals.documented
-  } documented for next cycle, ${gapState.escalated.length} escalated — ${
+  } documented as accepted debt (no carry-forward — see card checks), ${gapState.escalated.length} escalated — ${
     created.length
   } new rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nThe card loops back: advance \
 to execution, execute the rework scopes, re-run the critique, then run done again.`;
 }
 
-function gapDecisionStdout(gapState: CritiqueGapView, created: string[]): string {
-  return `Decision recorded: ${gapState.totals.fixed} fixed, ${
+function gapDecisionStdout(gapState: CritiqueGapView, created: string[], rounds: number): string {
+  return `Decision recorded (rework round ${rounds}/${MAX_REWORK_ROUNDS}): ${gapState.totals.fixed} fixed, ${
     gapState.totals.documented
   } documented, ${gapState.escalated.length} escalated.\nCreated ${
     created.length
