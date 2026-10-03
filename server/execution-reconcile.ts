@@ -33,22 +33,11 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
       // handle, but this pass (or a surviving timer) still holds the old one.
       // Rebuild against a live handle so the next pass proceeds; this pass
       // resolves because a dead handle could conclude nothing truthful.
-      rewireRules();
+      reportClosedHandle(deps, error);
+      const rewired = rewireRules(deps);
+      if (rewired) ({ run, sweep } = rewired);
     } finally {
       inFlight = false;
-    }
-  }
-
-  /** Rebuild the rules against the current handle. Fail-soft: resolving can
-   * itself fail mid-shutdown, and the next tick retries either way. */
-  function rewireRules(): void {
-    try {
-      ({ run, sweep } = wireReconcileRules({
-        ...deps,
-        db: deps.bb.storage.database(),
-      }));
-    } catch {
-      /* the next scheduled pass retries */
     }
   }
 
@@ -107,6 +96,39 @@ function wireReconcileRules(deps: ReconcileDeps) {
     run,
   });
   return { run, sweep };
+}
+
+/**
+ * Rebuild the rules against the current handle. Null when resolving itself
+ * fails mid-shutdown — the next tick retries either way.
+ */
+function rewireRules(
+  deps: ReconcileDeps,
+): { run: ReturnType<typeof createRunReconciler>; sweep: ReturnType<typeof createReconcileSweep> } | null {
+  try {
+    return wireReconcileRules({
+      ...deps,
+      db: deps.bb.storage.database(),
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Logged, not silent: a quiet resolve here would hide the next occurrence
+ * of the most frequent fatal this server ever had.
+ */
+function reportClosedHandle(deps: ReconcileDeps, error: unknown): void {
+  try {
+    deps.bb.log.warn(
+      `reconcile: database handle was closed (${
+        error instanceof Error ? error.message : String(error)
+      }); rewiring to a live handle`,
+    );
+  } catch {
+    /* logging must never fail the pass it reports on */
+  }
 }
 
 export type ExecutionReconcile = ReturnType<typeof createExecutionReconcile>;

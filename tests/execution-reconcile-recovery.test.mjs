@@ -61,6 +61,7 @@ test("recognizes a dead handle and nothing else", () => {
 test("a pass on a dead handle resolves and the next pass runs live", async () => {
   const live = liveDb();
   let resolutions = 0;
+  const warnings = [];
   const bb = {
     storage: {
       database: () => {
@@ -68,6 +69,7 @@ test("a pass on a dead handle resolves and the next pass runs live", async () =>
         return live;
       },
     },
+    log: { warn: (message) => warnings.push(String(message)) },
     sdk: { threads: { send: async () => {} } },
   };
   const { reconcile } = createExecutionReconcile({
@@ -86,6 +88,10 @@ test("a pass on a dead handle resolves and the next pass runs live", async () =>
 
   await reconcile();
   assert.ok(resolutions > 0, "recovery re-resolved a live handle");
+  assert.ok(
+    warnings.some((message) => message.includes("database handle was closed")),
+    "the recovery names itself in the log instead of resolving silently",
+  );
   await reconcile();
 });
 
