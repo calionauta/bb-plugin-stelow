@@ -9,6 +9,25 @@ import { DisclosureChevron } from "../disclosure";
 // build, research, and explore creation read the same controls, so they
 // live in one home instead of three pasted copies.
 
+// Canonical Stelow terms next to the board labels, and appetite framed as
+// the scope budget it is — never an estimate.
+const WORKFLOW_PREFS_DESCRIPTION =
+  "Appetite (Planning depth) caps the scope budget the agent prepares — " +
+  "the scope is cut to fit, the budget never grows. " +
+  "Review Mode (review checkpoints) is where it stops and waits for " +
+  "your decision. These are the board defaults — kept for every new " +
+  "card until you change them.";
+
+const APPETITE_HINT =
+  "Bigger appetite means more scope prepared before building " +
+  "(Lean 1–2 scopes, Core 3–5, Complete ~10) — a budget to fit, " +
+  "never an estimate.";
+
+const REVIEW_HINT =
+  "The agent stops at each checkpoint you pick and waits — nothing " +
+  "advances until you answer. Nothing picked means Auto: the agent " +
+  "decides everything itself.";
+
 const APPETITE_OPTIONS = [
   { value: "Lean", label: "Lean", description: "Smallest useful cycle: 1–2 scopes and one direct direction." },
   { value: "Core", label: "Core", description: "Standard cycle: main job, obvious edge cases, and 3–5 scopes." },
@@ -160,9 +179,25 @@ export function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onRe
   groupNamePrefix: string;
 }) {
   return (
-    <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
-      <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <ReviewGatePicker label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer. Nothing picked means Auto: the agent decides everything itself." value={reviewGates} onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
+    <SettingsSection
+      title="Workflow preferences"
+      description={WORKFLOW_PREFS_DESCRIPTION}
+    >
+      <CollapsibleChoiceCards
+        label="Planning depth"
+        hint={APPETITE_HINT}
+        value={appetite}
+        options={APPETITE_OPTIONS}
+        onChange={onAppetiteChange}
+        groupName={`${groupNamePrefix}-appetite`}
+      />
+      <ReviewGatePicker
+        label="Pause for my review"
+        hint={REVIEW_HINT}
+        value={reviewGates}
+        onChange={onReviewGatesChange}
+        groupName={`${groupNamePrefix}-review`}
+      />
     </SettingsSection>
   );
 }
