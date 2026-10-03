@@ -30,6 +30,15 @@ const receipt = {
 };
 
 assert.deepEqual(validateInterfaceContrastReceipt(receipt), [], "simulated Interface Contrast receipt is valid");
+
+// Per-scope coverage rides through validation untouched: options grounded
+// in delivery slices must never trip the eligibility trio.
+const covered = structuredClone(receipt);
+covered.options[0].scopeCoverage = [
+  { scopeId: "checkout", effect: "served", note: "split view keeps the flow in one scope" },
+  { scopeId: "offline", effect: "friction", note: "ghost whole needs a cache scope" },
+];
+assert.deepEqual(validateInterfaceContrastReceipt(covered), [], "options with scope coverage stay valid");
 assert.deepEqual(
   validateHumanBoundary({
     contractId: "reaction-queue-1",

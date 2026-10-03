@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-10-03T20:58:05Z",
+  "validated_at": "2026-10-03T22:26:34Z",
   "host": {
     "name": "bb",
     "version": "0.43.3",
@@ -9,11 +9,11 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "2bd1eaf13b0464ea5169d7adadfdc44c1ae908edb2d95f6b611ed0535a256d97"
+      "sha256": "0ded86fc15e2d4c7a76db236d85b458d45bd5992678de92b1a9bf8296317ee74"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "2bd1eaf13b0464ea5169d7adadfdc44c1ae908edb2d95f6b611ed0535a256d97"
+      "sha256": "0ded86fc15e2d4c7a76db236d85b458d45bd5992678de92b1a9bf8296317ee74"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -130,7 +130,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "10a040a0ab3cc5d7637010689a00b8ed1d91544c3f3bcf4d4284553ab2ab5b24",
+      "source_sha256": "4fff640b9f767fad8ff4b0a284647c859095c9f0960d131ae16542c0148193b5",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
