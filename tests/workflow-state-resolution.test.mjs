@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  completionRoot,
   resolveWorkflowStateDir,
   stateRootOf,
   workflowStateDir,
@@ -120,4 +121,39 @@ test("the helper runs in the checkout that holds the state directory", () => {
   assert.equal(stateRootOf(`${ROOT}/.stelow/2026-09-30/sw-card_1`), ROOT);
   assert.equal(stateRootOf(null), null);
   assert.equal(stateRootOf(`${ROOT}/state.md`), null);
+});
+
+test("completion binds to the checkout holding the state, not the spawn point", async () => {
+  const card = { id: "card_1", dir_hash: "sw-card_1" };
+  const deps = {
+    cardWorkspace: async () => ({ path: ROOT, hostId: "host1" }),
+    workflowStateDir: async () => `${ROOT}/.stelow/2026-09-30/sw-card_1`,
+    cardCheckout: async () => ({ path: "/elsewhere/worktree" }),
+  };
+  assert.equal(
+    await completionRoot(deps, card),
+    ROOT,
+    "a project state with a worktree checkout still verifies at the project",
+  );
+
+  const noState = {
+    ...deps,
+    workflowStateDir: async () => null,
+  };
+  assert.equal(
+    await completionRoot(noState, card),
+    "/elsewhere/worktree",
+    "without a resolvable state the managed checkout decides, as before",
+  );
+
+  const neither = {
+    cardWorkspace: async () => null,
+    workflowStateDir: async () => null,
+    cardCheckout: async () => null,
+  };
+  assert.equal(
+    await completionRoot(neither, card),
+    null,
+    "with neither state nor checkout there is no root to bind",
+  );
 });

@@ -20,6 +20,7 @@ import {
 } from "../../lib/workflow-state-identity.mjs";
 import { TRANSITIONS_REF } from "../plugin-paths.js";
 import { array } from "./values.js";
+import type { WorkerCard } from "../workers-types.js";
 import { join, readJson } from "./root-paths.js";
 
 /** The transitions table as installed inside a workspace. */
@@ -105,6 +106,43 @@ export async function workflowStateDir(
 ): Promise<string | null> {
   const resolution = await resolveWorkflowStateDir(bb, rootPath, workflowId, dirHash);
   return resolution.kind === "resolved" ? resolution.path : null;
+}
+
+/**
+ * The checkout completion binds to: the one holding the card's state.
+ *
+ * A card whose worker wrote into a linked worktree keeps its state there, and
+ * one whose worker wrote into the project checkout keeps it there. Sampling
+ * Git evidence or running tests at any other checkout binds the completion to
+ * a tree the card's artifacts were never read from — so the state dir decides,
+ * and the managed checkout is only the fallback when the state cannot be
+ * resolved. A card with neither keeps the previous behaviour: no root, and
+ * the caller refuses exactly as before.
+ */
+export async function completionRoot(
+  deps: {
+    cardWorkspace: (card: WorkerCard) => Promise<{ path: string } | null>;
+    workflowStateDir: (
+      rootPath: string,
+      workflowId: string,
+      dirHash: string,
+    ) => Promise<string | null>;
+    cardCheckout: (card: WorkerCard) => Promise<{ path: string } | null>;
+  },
+  card: WorkerCard,
+): Promise<string | null> {
+  const [workspace, checkout] = await Promise.all([
+    deps.cardWorkspace(card).catch(() => null),
+    deps.cardCheckout(card).catch(() => null),
+  ]);
+  if (workspace?.path && card.dir_hash) {
+    const stateDir = await deps
+      .workflowStateDir(workspace.path, card.id, card.dir_hash)
+      .catch(() => null);
+    const root = stateRootOf(stateDir);
+    if (root) return root;
+  }
+  return checkout?.path ?? null;
 }
 
 /**
