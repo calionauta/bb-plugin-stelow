@@ -6,6 +6,7 @@ import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/expired-question-answers.mjs";
 import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
+import { preselectedAnswers } from "../../lib/question-batch.mjs";
 import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
 import { BoundaryQuestionFrame } from "./boundary-question-frame";
 import type {
@@ -82,6 +83,9 @@ function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) 
   );
 }
 
+// Preselected answers live in lib/question-batch.mjs (pure, node-tested);
+// the hook only reads the resolved initial state once per batch.
+
 // Batch selection state: stepper position, per-question picks, free-text
 // customs, and explicit skips — plus the merged answers each question
 // contributes to the atomic submit. One hook so the dots, the options,
@@ -93,7 +97,7 @@ function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) 
 // for the metric's sake (KISS wins). Revisit if it grows past 70.
 function useBatchSelection(questions: BatchItem[]) {
   const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [selected, setSelected] = useState<Record<string, string[]>>(() => preselectedAnswers(questions));
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   // Nullable: the stepper renders nothing for an empty batch, but hooks

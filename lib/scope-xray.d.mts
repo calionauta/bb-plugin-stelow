@@ -12,3 +12,7 @@ export type ScopeXray = {
 
 export function parseCurrentShapeVersion(stateText: string | null | undefined): string | null;
 export function buildScopeXray(map: ScopeMap, context?: { currentShapeVersion?: string | null }): ScopeXray;
+
+export type ScopeDraft = ScopeXray & { draft: true };
+
+export function buildScopeDraft(map: ScopeMap, context?: { currentShapeVersion?: string | null }): ScopeDraft;

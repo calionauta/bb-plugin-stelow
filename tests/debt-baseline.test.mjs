@@ -69,6 +69,10 @@ const inheritedBaseline = [
   // waived, and `source-debt.json` no longer carries it either.
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
+  // The --selected flag and its validation moved into validateAskGroups,
+  // and per-flag details into applyOptionDetail, so the argv loop stays a
+  // dispatcher — 80 lines at the fork point, 68 now.
+  "lib/question-batch.mjs:parseAskGroups#1: 68 lines (baseline 80)",
   // Paid in the evidence/expiry slice: the per-row checks moved to
   // validateGapRow plus dimension validators, so validateGapRegistry is a
   // loop again and the gate requires the entry dropped rather than left as

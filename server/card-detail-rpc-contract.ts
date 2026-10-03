@@ -10,6 +10,7 @@ import {
   trackableStatusSchema,
 } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
+import { scopeDraftSchema, scopeXraySchema } from "./scope-xray-contract.js";
 
 /**
  * A boundary question's framing. Resolved from the `[Stelow boundary <id>]`
@@ -301,33 +302,10 @@ export const cardDetailRpcContract = {
       // The approved scope map, drawn as a graph. A server projection and
       // nothing the card can write: the X-ray reports the map, the worker owns
       // the map. Null on a card with no approved map to draw.
-      scopeXray: z
-        .object({
-          source: z.literal("server-projection"),
-          mutable: z.literal(false),
-          mapId: z.string(),
-          mapVersion: z.string(),
-          freshness: z.enum(["current", "stale", "unknown"]),
-          nodes: z.array(
-            z.object({
-              id: z.string(),
-              title: z.string(),
-              capabilities: z.array(z.string()),
-              state: z.enum(["current", "stale", "blocked", "unknown"]),
-              provenance: z.array(z.string()),
-            }),
-          ),
-          edges: z.array(
-            z.object({
-              from: z.string(),
-              to: z.string(),
-              kind: z.literal("depends-on"),
-              state: z.enum(["current", "stale", "blocked", "unknown"]),
-              provenance: z.array(z.string()),
-            }),
-          ),
-        })
-        .nullable(),
+      scopeXray: scopeXraySchema.nullable(),
+      // The draft map preview for the gate review. Present only when no
+      // approved map exists, so a draft never competes with the real map.
+      scopeDraft: scopeDraftSchema.nullable(),
       // Which of this card's files another live card holds, derived from the
       // same enriched scopes the card renders. Null when nothing is blocked —
       // the hero reads it to say WHY it is idle instead of the generic

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildScopeXray, parseCurrentShapeVersion } from "../lib/scope-xray.mjs";
+import { buildScopeDraft, buildScopeXray, parseCurrentShapeVersion } from "../lib/scope-xray.mjs";
 
 const map = {
   schemaVersion: 1,
@@ -44,5 +44,14 @@ assert.ok(stale.nodes.every((node) => node.state === "stale"), "stale Shape vers
 assert.ok(stale.edges.every((edge) => edge.state === "stale"), "stale Shape version marks every edge stale");
 
 assert.throws(() => buildScopeXray({ ...map, status: "draft" }), /approved map/, "draft maps cannot enter the approved-map X-ray");
+
+// Draft preview: same graph, opposite gate, unmistakable marker.
+const draft = { ...map, status: "draft" };
+const preview = buildScopeDraft(draft, { currentShapeVersion: "v3" });
+assert.equal(preview.draft, true, "the draft carries its marker");
+assert.equal(preview.nodes.length, 2, "the draft projects every scope");
+assert.deepEqual(preview.edges.map((edge) => [edge.from, edge.to]), [["scope-1", "scope-2"]], "the draft keeps dependencies");
+assert.throws(() => buildScopeDraft(map), /draft map/, "approved maps cannot enter the draft preview");
+assert.throws(() => buildScopeDraft({ ...map, status: "draft", scopes: [] }), /scope draft cannot project/, "off-contract drafts are refused, not drawn");
 
 console.log("scope xray test ok: read-only projection, provenance, freshness, approved-only input");

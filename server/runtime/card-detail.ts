@@ -11,7 +11,7 @@ import { blockedFileWait } from "../../lib/lock-blocked.mjs";
 import { holdSentence } from "../../lib/host-hold.mjs";
 import { liveRun, runSentence } from "../../lib/native-run.mjs";
 import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
-import type { ScopeXray } from "../scope-map-reader.js";
+import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
 import { enrichScopes } from "./card-detail-scopes.js";
@@ -78,6 +78,7 @@ export type CardDetailDeps = {
     card: WorkerCard,
   ) => Promise<string | null>;
   scopeXray: (stateDir: string | null) => Promise<ScopeXray | null>;
+  scopeDraft: (stateDir: string | null) => Promise<ScopeDraft | null>;
   fileTimestamp: (
     file: { modifiedAtMs?: unknown } | null,
     fallback: string,
@@ -140,10 +141,11 @@ async function loadDetailInputs(
   ]);
   const stageSkips = await readStageSkips(deps, card, workspace.path);
   const scopeXray = await readScopeXray(deps, card, workspace.path);
+  const scopeDraft = await readScopeDraft(deps, card, workspace.path);
   return {
     card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
-    workerHistory, questionStaleness, stageSkips, scopeXray, hold,
+    workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft, hold,
     nativeRun: readNativeRun(deps.db, cardId),
     blockingRun: readBlockingRun(deps.db, card),
     // Derived from the SAME enriched scopes the card renders, so the hero's
@@ -368,6 +370,22 @@ async function readScopeXray(
   try {
     const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
     return await deps.scopeXray(stateDir);
+  } catch {
+    return null;
+  }
+}
+
+/** The gate-review preview: the draft map drawn only while no approved map
+ * exists (the reader enforces that), so it can never shadow the real map. */
+async function readScopeDraft(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+) {
+  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
+  try {
+    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
+    return await deps.scopeDraft(stateDir);
   } catch {
     return null;
   }

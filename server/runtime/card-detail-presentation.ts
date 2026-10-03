@@ -23,7 +23,7 @@ import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
 import { latestSpecTech, loadCardScopes } from "../scopes.js";
 import { readCardStatus } from "../../lib/card-status.mjs";
-import type { ScopeXray } from "../scope-map-reader.js";
+import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
   Attachment,
@@ -78,6 +78,7 @@ export type DetailParts = {
     reviewGates: string[];
   };
   scopeXray: ScopeXray | null;
+  scopeDraft: ScopeDraft | null;
   /** The card-level file-claim wait, derived from `scopes`. Null when free. */
   fileLocks: BlockedFileWait | null;
   /** The host's hold on the card's next dispatch, with its derived sentence.
@@ -157,6 +158,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
     fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
+    scopeDraft: parts.scopeDraft,
     nativeRun: parts.nativeRun,
     blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,

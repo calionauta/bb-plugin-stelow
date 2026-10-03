@@ -148,8 +148,27 @@ test("an archived card's own copy wins", () => {
 const component = readFileSync(new URL("../components/detail/scope-xray.tsx", import.meta.url), "utf8");
 const body = component.slice(component.indexOf("export function"));
 assert.match(body, /scopeXrayPresentation\(xray\)/, "the component draws the projection, it does not derive it");
-assert.doesNotMatch(body, /\bxray\./, "the raw view is never read after the projection");
+assert.doesNotMatch(
+  body,
+  /\bxray\.(?!draft\b)/,
+  "the raw view is never read after the projection",
+);
 for (const word of ["current", "stale", "blocked", "unknown"]) {
   const rendered = new RegExp("[{>\"'][^<]*\\b" + word + "\\b", "i");
   assert.ok(!rendered.test(body), `the raw contract word "${word}" is not rendered by the component`);
+}
+
+// Draft tone: the same component draws previews, but every word a draft
+// renders must say draft. A "Scope map · approved" framing on a preview
+// would teach the reader that drafts are decisions.
+{
+  const draftBody = body;
+  assert.match(draftBody, /Scope draft/, "draft heading names itself a draft");
+  assert.match(draftBody, /not approved/, "draft says it is not approved");
+  assert.match(draftBody, /Draft preview/, "draft pill names the preview");
+  assert.match(
+    draftBody,
+    /scope stage still has to approve it/,
+    "draft names who still has to decide",
+  );
 }
