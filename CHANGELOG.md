@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.66.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.0...v0.66.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* frame appetite as scope budget in creation copy, name canonical terms ([#304](https://github.com/calionauta/bb-plugin-stelow/issues/304)) ([4b9dde2](https://github.com/calionauta/bb-plugin-stelow/commit/4b9dde2af53dcb8684daa235aa9c45ae1a17da36))
+
 ## [0.66.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.12...v0.66.0) (2026-10-03)
 
 
