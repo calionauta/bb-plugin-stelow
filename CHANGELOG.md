@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.66.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.12...v0.66.0) (2026-10-03)
+
+
+### Features
+
+* card live-graph action and About capability panel ([#300](https://github.com/calionauta/bb-plugin-stelow/issues/300)) ([c228694](https://github.com/calionauta/bb-plugin-stelow/commit/c2286943d6cdb9f9eeb443e908740125023487fe))
+
 ## [0.65.12](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.11...v0.65.12) (2026-10-03)
 
 
