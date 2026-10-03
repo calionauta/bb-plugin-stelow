@@ -207,7 +207,7 @@ with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 
 `AGENTS.md` has said *"touch targets are `min-h-11`; every clickable gets
 `cursor-pointer`"* for a long time, and 83 raw `<button>` elements sat next to a
-shared `ui/Button` that 50 files import and 19 never touch. A sentence in
+shared `ui/Button` that 61 files import while 26 never touch it. A sentence in
 markdown does not intercept a commit. So UI rules here are enforced, and the
 enforcement is what tells you the rule is real:
 
@@ -235,7 +235,7 @@ docstrings, and deleted.
 appears in 101 places doing the same job the scale already names — the size is
 allowed, the test blocks growth, and the migration is owed but not urgent. The
 `min-h-11` rule above is the one this section is least able to keep: it is
-stated, not tested, and 81 raw buttons are the standing evidence.
+stated, not tested, and 83 raw buttons are the standing evidence.
 
 ## Test value (no bullshit tests)
 
@@ -252,7 +252,7 @@ inverting the behavior before trusting it green.
 - **No circular validation on critical paths:** the agent that wrote the code
   may not be its test's only author — spawn a fresh subagent with the
   requirement alone to write or red-team the test
-  (see `stelow-product-testing-ai-code`, anti-patterns).
+  (see `stelow-workflow-testing-ai-code`, anti-patterns).
 - **Batch triage via subagents:** contract-file cleanup is mechanical
   keep/convert/delete classification — delegate per file, decide on the table.
 

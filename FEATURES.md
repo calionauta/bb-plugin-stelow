@@ -7,7 +7,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 1. Capture
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
-- **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
+- **New card composer** (CreateBuildDialog, `createCard`). Prompt + file/image
   attachments, intent, planning depth, your review gates, agent preset from
   the analysis band. Planning depth and review gates render as compact
   rows under the composer — title plus current value always visible, so
@@ -296,8 +296,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   document set on one card) rather than one spelling: requiring the word
   "Option" failed a faithful contrast that used "Proposal".
 - **One deliverable filename per technique, read by everything.** The Explore
-  deliverable is named once in the catalog (`primaryArtifact`) and resolved by
-  one function, because four surfaces used to disagree about it: the prompt that
+  deliverable is named once in the catalog (`primaryArtifact`) and resolved by one function (`lib/research-artifacts.mjs`), because four surfaces used to disagree about it: the prompt that
   tells the worker what to write honoured the declared name, while the card's
   declared capability, the review CLI's subject and the quality seal all assumed
   `explore-<id>.md`. For `scope-mapping`, which declares
@@ -374,7 +373,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+- **Board** (`BuildPanel`, `moveCard`). Columns are the workflow phases
   named by the synced catalog (analysis/planning/execution/review) +
   Done/Archived — the Bucket is not rendered as a column (its header button +
   gallery own it); cards sit in their stage's phase. Column headings are
@@ -398,14 +397,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   to what actually protects state — nothing takes a card *out* of `archived`,
   while a card already there accepts a drop on its own column without stopping
   a worker for nothing. A genuine move into another phase is untouched.
-- **One state language.** Build Kanban tiles and the open-card header use the
+- **One state language** (`components/board/board-cards.tsx`). Build Kanban tiles and the open-card header use the
   same ordered pills: board location, lifecycle state, worker state, then
   workflow type. The components and tones are shared; a generic “Status”
   label and the stage-as-status variant are not shown on the board, so a
   card reads the same way before and after opening it. Tiles and the
   breadcrumb name the card's project in one muted line — context without
   clutter; list rows already carried it.
-- **Bucket** (one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
+- **Bucket** (`components/board/card-gallery.tsx`; one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
   leaving it is what starts the card. The Bucket renders nowhere as a column — each track header offers it
   as a button (count included) opening an expanded gallery modal — fixed
   dimensions (70vw wide, 85dvh tall, internal scroll), the same board tiles at the board's own column bounds
@@ -457,7 +456,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `prefers-reduced-motion` guards. Scope strips
   (`ScopeStrip`, shared by tiles and rows) and the build detail phase
   rail reuse the same counts, so progress reads as shape everywhere.
-- **Card keyboard.** Enter/Space on a focused card opens its detail;
+- **Card keyboard** (`components/board/board-cards.tsx`). Enter/Space on a focused card opens its detail;
   W opens its worker thread. The handler is bound to the card surface
   only, so typing in nested controls never navigates. Esc (or Back)
   returns to the board with that card focused.
@@ -467,7 +466,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on the needs-attention filter. One shared bar: project + attention are the
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-visit setup, not tours.** No stepper onboarding: Build, Research,
+- **First-visit setup, not tours** (`components/settings/preset-onboarding.tsx`). No stepper onboarding: Build, Research,
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
   second step for Planning depth + your review gates as board defaults.
@@ -490,7 +489,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and offers an explicit install or enable action without hiding the
   sequential fallback. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
-- **Sidebar badge.** Unresolved actions and unread completions; it always
+- **Sidebar badge** (`lib/plugin-update.mjs`). Unresolved actions and unread completions; it always
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
@@ -517,7 +516,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   team pointer (experimental): single-user bb, one bb per teammate,
   GitHub as the team room, linking the site team section and
   `docs/team-playbook.md`.
-- **BB Workflows status.** The About tab and first-visit setup identify the
+- **BB Workflows status** (`components/settings/about-panel.tsx`). The About tab and first-visit setup identify the
   built-in Workflows plugin as installed, disabled, starting, or ready. The
   English explanation names durable native execution, resume, cancellation,
   structured outputs, and safe fan-out; explicit install or enable actions
@@ -595,7 +594,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  111 times: the card had a real type scale, invented by whoever needed a small
+  107 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -608,7 +607,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 81 raw buttons. A test does. The index itself then failed
+  long time next to 83 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -629,7 +628,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   implementation of the same pattern is correct only until one of them changes.
 - **History does not get the first screen.** Progressive disclosure only works
   when the default is closed and the reader earns the opening, and half the
-  sections were opening unconditionally. `startsOpen({ live, blocking })` names
+  sections were opening unconditionally. `startsOpen({ live, blocking })` (`components/disclosure.tsx`) names
   the only two exemptions — something happening right now, and something the
   reader is blocked on — and everything else is history that has to be asked
   for: the files the request NAMED, settled before the worker started; the
@@ -639,12 +638,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   surface, and closes once it is up — its URL is in the header either way. Every
   count stays in the hint, so closing a section costs the reader the list and
   not the number.
-- **Review tools lead a finished card.** The diff and the publication panel used
+- **Review tools lead a finished card** (`components/detail/build-detail-body.tsx`). The diff and the publication panel used
   to sit below Artifacts and the workflow map — six sections down, past the diff's
   own visibility gate — on the one card kind where they are the entire reason to
   open it. A completed card now leads with them; an in-flight card keeps them
   below, where there is nothing yet to review.
-- **A failure reaches the card as the reason the host gave.** Found in
+- **A failure reaches the card as the reason the host gave** (`server/workers.ts`, via `failureCauseFromEvents`). Found in
   production: card_k9gei1jy's own comment log read "Native scope-map failed with
   native status queued" and "Native interface-contrast failed with native status
   running" — two sentences that contradict themselves, from the same five lines.
@@ -826,7 +825,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
     running `git reset --hard`, or any other command that rewrites a shared tree.
   - It is a **report, not a guard**: it refuses nothing, resolves nothing, and
     changes no decision.
-- **Question recovery.** A worker may wait only for a real card form: a live
+- **Question recovery** (`components/conversation/question-batch.tsx`). A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
   once when no form is visible, while the host rejects actual duplicates.
@@ -860,7 +859,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the muted grey that "files claimed" and "no live file claim" once shared,
   which made a defect read as a footnote. A scope with no state dir has an
   unknown claim, and unknown is never a fault.
-- **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
+- **Split choices are unambiguous** (`components/conversation/batch-answer-body.tsx`). Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
   answer even if it did not come from the panel. The split summary states
@@ -870,14 +869,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   forms, so recovery never changes the decision. As choices change, a live
   outcome notice names whether the parent stays, or whether selecting every
   delivery will archive it after creating the child cards.
-- **Question presentation is semantic and language-consistent.** Every
+- **Question presentation is semantic and language-consistent** (`lib/question-presentation.mjs`). Every
   question carries a `standard` or `split` kind from the host interaction
   through durable recovery (with a safe legacy fallback). Shared presentation
   copy is English-only. Workers author question text, option labels, and
   descriptions in English; the host rejects Portuguese structured content
   before it reaches a card. Controls, recovery status, and split consequences
   therefore never guess a locale or mix languages.
-- **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
+- **Unread is a view, not a work state** (`components/panels/inbox-panel.tsx`). Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.
 - **Structured questions** (`ask`, `answerQuestions`,
@@ -935,7 +934,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Marking only the first fixed nothing: on a real card the worker attached no
   document, the host injected the stage's own `interfaces.md` into all four
   options, and every row claimed it as its own evidence.
-- **An option opens at its own section.** A combined brief holds every
+- **An option opens at its own section** (`components/detail/option-section.tsx`). A combined brief holds every
   proposal in one file, so opening it from an option landed on the first line
   — which is precisely not that option. On a real card a reader opened the
   brief from "Hybrid A+C" and found proposals A and B: the hybrid is the last
@@ -963,7 +962,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   check walks the workflow's whole state dir, so the spec the layout wrote to
   `plans/spec-product_<v>.md` is found: “the gate artifact does not exist
   yet” now means the document really is missing.
-- **Workflow classification.** Correct the type freely while a Build card
+- **Workflow classification** (`server/runtime/card-mutations.ts`). Correct the type freely while a Build card
   is in triage (`updateCardIntent`). After triage, **Card actions →
   Reclassify workflow…** starts a fresh worker from triage on the new route;
   it never changes only the label beneath an existing plan.
@@ -1041,8 +1040,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Before scopes exist the live checkpoint pill rides the subtitle line
   (what the target stage produces). Entering execution with zero synced
   scopes while spec-tech carries scope blocks refuses loud instead of
-  running untracked (`executionScopeRefusal`, `doneScopeSyncRefusal` in
-  `lib/spec-scope-reader.mjs` + `lib/completion.mjs`): a spec written with
+  running untracked (refusals built by `diagnoseScopeSync` in `lib/spec-scope-reader.mjs` + `doneEligibility` in `lib/completion.mjs`): a spec written with
   human headings (`### SCOPE-N:`) instead of machine blocks (`[SCOPE-N]`)
   is refused with the rewrite + `bb stelow sync-scopes` redirect, and
   `blockedBy` cycles refuse naming the loop instead of stalling. Scopes
@@ -1097,7 +1095,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
    timed-out questions inline.
 - **Files named in your request.** The card lists only the paths the
   request spells out that actually exist in the workspace (never a basename
-  guess, which used to surface an unrelated file): six at most, and nothing
+  guess, which used to surface an unrelated file): six at most (`server/runtime/mentioned-files.ts`), and nothing
   at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
@@ -1203,7 +1201,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   composer records `worktree`, while a card started by GitHub import,
   the CLI or a restart records `managed` for the same preset — both are
   correct for the shape they were given.
-- **Conversation.** Card/agent comment thread + composer that routes to
+- **Conversation** (`components/conversation/card-conversation.tsx`). Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
   (`stelow-card-detail`), "Open Stelow" header action,
@@ -1403,7 +1401,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   settles. Separately, a deferred band swap no longer stacks a second armed
   timer on one card: it overwrote the handle without cancelling the one it
   replaced, so the orphan timer fired 10ms later and spawned a **third** thread.
-- **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
+- **Automatic spawn retry** (`claimSpawnRetry`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
   lost host session) is respawned automatically — up to 3 attempts with
@@ -1541,7 +1539,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on a `.backup` snapshot of `~/.bb/plugins/stelow/data.db`, inside a
   transaction that is rolled back; the second, real-RPC run and the invariant
   that could not hold are in [`docs/restore-dogfood.md`](docs/restore-dogfood.md)).
-  Before: `status=archived`,
+  Before (one dated dogfood run): `status=archived`,
   `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
   reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
   341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
@@ -1578,7 +1576,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the guarantee is pinned from the components and asserts its own premise (the
   card detail is fetched from the detail body alone — a new prefetch or peek
   would be a second way for a card to lose its review without you choosing it).
-- **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
+- **Failure cause** (`failureCauseFromEvents`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
   `provider/error` detail is resolved once and stored as the card's
@@ -1732,9 +1730,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Four providers, two wire schemas: `jev` (TypeSafe, state + questions,
   key required, the most capable), `simplejev`, `openjev` and `classifier`
   (keyless). The default is `simplejev` — keyless AND deterministic, which is
-  what a gate needs: classifier.dev returned 0.89-0.93 on a clear case and
-  0.27-0.53 on an ambiguous one (spread 0.850 on the case that surfaced this),
-  while simplejev returns the same value every time. It is not unbiased — it
+  what a gate needs: classifier.dev spread 0.040 (clear) → 0.260 (ambiguous) against simplejev 0.000 → 0.000 (`lib/decision-api.mjs`). It is not unbiased — it
   called a plainly generic hint "especifica" once — so an operator with a
   TypeSafe key should configure `jev`.
   Reads report key presence and source, never
@@ -1916,8 +1912,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   hidden read-only reviewer thread on the designated preset, polls
   bounded (10 min), validates the verdict shape, drops findings with
   unverifiable quotes, persists `reviews/review-<stamp>.md`, and leaves
-  a card comment with the summary. v1 covers research + explore; build
-  document review is refused as unsupported. Workers may only offer
+  a card comment with the summary. v1 covers research + explore; whole-card build review is refused — pass `--artifact <registered path>` for one build document. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
   The excerpt the reviewer receives is chosen by the **artifact contract**, not
   by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
@@ -1962,8 +1957,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   separately. Read-only, never a gate. Tasks carrying their own `verify`
   command run deterministically first (exit 0 reads met) and skip the
   judge entirely; scopes roll up deterministically from task verdicts at
-  zero extra cost (met iff every task met). Scopes roll up deterministically from
-  task verdicts at zero extra cost (met iff every task met); taskless done
+  zero extra cost (met iff every task met); taskless done
   scopes read unverifiable, pending scopes read open.
 - **`bb stelow verify-delegation` (advisory, `lib/delegation-evidence.mjs`).**
   Freshness of worker-spawned subagents is unobservable — but whether any
@@ -2042,7 +2036,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   function, so the two surfaces cannot drift. The same row renders both places,
   so a file cannot look like two different things depending on which section it
   landed in.
-- **Checks rollup** (`CardChecksSection`, `lib/card-checks.mjs`). Every
+- **Checks rollup** (`CardChecks`, `groupCardChecks` in `components/detail/build-progress.tsx` + `lib/card-checks.mjs`). Every
   pending thing grouped by type — questions (live + expired asks),
   scopes, tasks, gaps, review — with done/pending counts from the same
   sources the heroes read, never a second truth. A pending-only filter
@@ -2481,7 +2475,7 @@ one input, one artifact.*
   never another round.
   Documented debt rides a date (`expires: YYYY-MM-DD` + `owner:` on the
   row — `parseGapDate`, `isDebtExpired`, `expiredDebts` in
-  `lib/gap-registry.mjs`): settled until the date, open after it. Past-date
+  `lib/gap-debt.mjs`): settled until the date, open after it. Past-date
   debt rejoins the loop — `verify` warns (`EXPIRED …`), `done` refuses —
   with three exits: fix inline, re-scope as escalated, or re-date with an
   owner. A malformed date fails the row where it is written; expiry on any
@@ -2556,7 +2550,7 @@ one input, one artifact.*
 - **Shared machinery.** Board column components, list view, status
   pill, hero, questions, presets, retry/restart/reseed, worker
   history, inbox, and realtime reuse the Research definitions
-  (`LightweightTrackCard`, `LightweightTrackList`,
+  (`LightweightTrackCard`,
   `markThreadRunning`, `noteAgentOutput`) — Explore adds only its
   catalog, prompt, and artifact path, never a forked copy.
 - **Quality panel (Research + Explore).** Research cards show per-substep
@@ -2573,7 +2567,7 @@ dependent-thread ownership (`lifecycleOwnerThreadId` with strict-schema retry
 fallback), `experimental_description` on all RPCs, palette command via
 `app.commands.register` with `commandPaletteAction` fallback, and local squash
 merge in the card shell (`lib/squash-merge.mjs`) — BB exposes no local squash
-action. Dev types come from `@get-bb/plugin-sdk` 0.4.106.
+action. Dev types come from `@get-bb/plugin-sdk` 0.4.108.
 
 Deliberately NOT adopted: preview core unchanged (native open-in-tab + iframe
 already cover the Browser-control overlap; detect/spawn/port/log/share stays),
@@ -2582,9 +2576,9 @@ no project env vars for doctor (singleton design + audit trail), no full
 
 Engines policy: the runtime floor stays `bbPluginSdk >=0.4.6` because the host
 bundle (0.4.84) must accept the plugin — every new API use is feature-detected
-with a fallback, so 0.4.106 is build-time types only.
+with a fallback, so 0.4.108 is build-time types only.
 
-Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0.35.2, verified live: all 96 RPC methods are discoverable via bb plugin rpc list, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
+Host-version note: the 0.43.3 APIs above went live with host 0.43.3 (historical note — current version in `package.json`), verified live: RPC methods are discoverable via `bb plugin rpc list`, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
 
 ## Canonical stages and host-native execution
 
