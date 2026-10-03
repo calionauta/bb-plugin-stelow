@@ -26,6 +26,7 @@ import { UiDesignMcpSection } from "./ui-design-mcp-section";
 import { usePluginUpdateActions } from "./plugin-update-actions";
 import { PluginUpdateStatus } from "./plugin-update-status";
 import { UpdateBadge } from "./update-badge";
+import { CapabilityPanel } from "./capability-panel";
 import { WorkflowDependencyCard } from "./workflow-dependency-card";
 
 function useHostToolState() {
@@ -313,6 +314,7 @@ export function AboutPanel() {
                 <UpdateCard buildInfo={buildInfo} actions={update} />
                 <PluginSummary buildInfo={buildInfo} onOpenSkills={() => setSkillsOpen(true)} />
                 <WorkflowDependencyCard />
+                <CapabilityPanel />
                 <ResourcesCard />
                 <HostToolsSection
                   tools={hostTools.tools}

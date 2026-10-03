@@ -29,6 +29,25 @@ const uiDesignMcpRegistrationSchema = z.enum([
   "unsupported",
 ]);
 
+/**
+ * Whether a live node graph of a card's worker thread is possible at all.
+ * Agent Graph is a host plugin, not a Stelow setting, so the card cannot fix
+ * it — the About tab reports it, and the card offers a thread-scoped action
+ * only while it runs. Deliberately no install/enable verbs: a plugin install
+ * changes the host, and this capability must never change the host on its
+ * own.
+ */
+const agentGraphCapabilityStatusSchema = z.object({
+  id: z.literal("agent-graph"),
+  name: z.literal("Agent Graph"),
+  installed: z.boolean(),
+  enabled: z.boolean(),
+  running: z.boolean(),
+  available: z.boolean(),
+  version: z.string().nullable(),
+  detail: z.string(),
+});
+
 const uiDesignMcpClientSchema = z.object({
   client: z.string(),
   name: z.string(),
@@ -267,6 +286,11 @@ export const platformRpcContract = {
     experimental_description: "Enable the installed BB Workflows plugin on explicit user request",
     input: z.object({}).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
+  },
+  agentGraphStatus: {
+    experimental_description: "Report whether Agent Graph is installed, enabled, and running for the card live-graph action",
+    input: z.object({}).strict(),
+    output: agentGraphCapabilityStatusSchema,
   },
   installTool: {
     experimental_description: "Install one optional host tool with the official installer",

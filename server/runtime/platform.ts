@@ -7,6 +7,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { loadAboutLogo } from "../../lib/about-logo.mjs";
 import { createUiDesignMcpHandlers } from "./ui-design-mcp.js";
+import { createAgentGraphCapabilityHandlers } from "./agent-graph-capability.js";
 import {
   createWorkflowDependencyHandlers,
   runHostBbCli,
@@ -344,6 +345,7 @@ async function listProviderModels(deps: PlatformDeps) {
 
 export function createPlatformHandlers(deps: PlatformDeps) {
   const workflowDependency = createWorkflowDependencyHandlers({ runBbCli: runHostBbCli });
+  const agentGraphCapability = createAgentGraphCapabilityHandlers({ runBbCli: runHostBbCli });
   const uiDesignMcp = createUiDesignMcpHandlers({ homeDir: deps.homeDir, bb: deps.bb });
   return {
     buildInfo: () => buildInfo(deps),
@@ -362,6 +364,7 @@ export function createPlatformHandlers(deps: PlatformDeps) {
     workflowDependencyStatus: () => workflowDependency.workflowDependencyStatus(),
     installWorkflowDependency: () => workflowDependency.installWorkflowDependency(),
     enableWorkflowDependency: () => workflowDependency.enableWorkflowDependency(),
+    agentGraphStatus: () => agentGraphCapability.agentGraphStatus(),
     previewState: ({ cardId, appOrigin }: { cardId: string; appOrigin?: string | null }) =>
       deps.preview.view(cardId, appOrigin ?? null),
     previewStart: ({ cardId }: { cardId: string }) => deps.preview.start(cardId),

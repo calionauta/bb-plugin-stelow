@@ -289,6 +289,7 @@ test("platform exposes the complete public RPC handler set", () => {
   const { handlers } = harness();
   assert.deepEqual(Object.keys(handlers).sort(), [
     "aboutLogo",
+    "agentGraphStatus",
     "applyPluginUpdate",
     "buildInfo",
     "checkPluginUpdate",
