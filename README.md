@@ -77,7 +77,7 @@ a single `explore-<stage>.md` artifact:
 
 ## Requirements
 
-1. bb desktop ≥ 0.38 ([getbb.app](https://getbb.app) — macOS one-click download,
+1. bb desktop ≥ 0.43 ([getbb.app](https://getbb.app) — macOS one-click download,
    `npx bb-app@latest` elsewhere; your agents run on your own subscriptions).
 2. A normal bb project backed by a local workspace source.
 3. Stelow skills and product playbooks: **bundled with the plugin** (shipped
@@ -97,7 +97,7 @@ The singleton bb personal project has no workspace source, so the board asks you
 > Pending marketplace approval — install a released version from this repository:
 
 ```bash
-bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@v0.20.0" --yes
+bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@v0.66.0" --yes
 bb plugin list   # stelow should show as running
 ```
 
