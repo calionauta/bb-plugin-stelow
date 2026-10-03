@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 import { createGitEvidence } from "../server/runtime/git-evidence.ts";
+import { snapshotRepository } from "../server/runtime/card-audit-trail.ts";
 
 /** The factory only stores these; nothing here touches a database or a card. */
 const sampler = createGitEvidence({
@@ -110,6 +111,32 @@ test("unrelated repositories do not share an identity", async () => {
     const inProject = await sampler(project);
     const inOther = await sampler(other);
     assert.notEqual(inProject.commonDir, inOther.commonDir);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a successful trail resolves to the common dir of the root it names", async () => {
+  const { base, project } = makeRepo("snapshot");
+  try {
+    const expected = (await sampler(project)).commonDir;
+    const run = {
+      code: 0,
+      stdout: JSON.stringify({
+        ok: true,
+        contract: "v3",
+        path: `${project}/.stelow/x/audit-trail.md`,
+        artifacts: 0,
+        snapshot: { root: project, head: "a".repeat(40) },
+      }),
+      stderr: "",
+    };
+    const deps = {
+      runHelper: async () => run,
+      gitEvidence: async (path) => sampler(path).then(({ commonDir }) => ({ commonDir })),
+    };
+    assert.equal(await snapshotRepository(deps, run), expected);
+    assert.equal(await snapshotRepository(deps, { ...run, code: 1 }), null);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

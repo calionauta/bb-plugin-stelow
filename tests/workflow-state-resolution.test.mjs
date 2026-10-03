@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   resolveWorkflowStateDir,
+  stateRootOf,
   workflowStateDir,
 } from "../server/runtime/workflow-state.ts";
 
@@ -113,4 +114,10 @@ test("a card with no dirHash and no project state file is unreadable too", async
   const bb = host({});
   const resolution = await resolveWorkflowStateDir(bb, ROOT, "seed_1", "sw-seed_1");
   assert.deepEqual(resolution, { kind: "unreadable" });
+});
+
+test("the helper runs in the checkout that holds the state directory", () => {
+  assert.equal(stateRootOf(`${ROOT}/.stelow/2026-09-30/sw-card_1`), ROOT);
+  assert.equal(stateRootOf(null), null);
+  assert.equal(stateRootOf(`${ROOT}/state.md`), null);
 });

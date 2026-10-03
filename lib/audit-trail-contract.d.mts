@@ -8,6 +8,7 @@ export interface AuditTrailSnapshot {
   tracked?: string;
   untracked?: string;
   untracked_count?: number;
+  commonDir?: string;
 }
 
 export interface AuditTrailResult {
@@ -39,10 +40,11 @@ export function auditTrailOutcome(run: AuditTrailRun | null | undefined, options
 export function auditTrailGate(input: {
   build: AuditTrailRun | null | undefined;
   check: AuditTrailRun | null | undefined;
-  verifiedGit: { gitRoot?: string | null; headSha?: string | null } | null | undefined;
+  verifiedGit: { gitRoot?: string | null; headSha?: string | null; commonDir?: string | null } | null | undefined;
+  snapshotCommonDir?: string | null;
   contract?: string;
 }): {
   ready: boolean;
   error: string | null;
-  trailer: { head: string | null; root: string | null; artifacts: number | null; path: string | null; contract?: string } | null;
+  trailer: { head: string | null; root: string | null; commonDir: string | null; artifacts: number | null; path: string | null; contract?: string } | null;
 };

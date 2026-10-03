@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
-import { auditTrailGate } from "../../../lib/audit-trail-contract.mjs";
 import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";
@@ -16,6 +15,8 @@ import type { ExportRunBundle } from "./cli-bundle-writer.js";
 import { completeCard, doneStdout } from "./cli-done-track.js";
 import { text } from "../values.js";
 import type { WorkerCard } from "../../workers-types.js";
+import { auditTrailRefusal } from "../card-audit-trail.js";
+import { stateRootOf } from "../workflow-state.js";
 
 const GIT_EVIDENCE_LOST =
   "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended \
@@ -137,16 +138,13 @@ async function finishBuild(
   card: WorkerCard,
   finish: BuildFinish,
 ): Promise<CliResult> {
-  // Built where the receipt was verified, not at the project root. The gate
-  // below refuses when the trail's repository differs from the verified
-  // checkout, and the comment under it states the rule this line has to obey:
-  // "the audit receipt, portable trail, and final Done transition all name one
-  // checkout". Passing projectPath broke that whenever a card worked in a
-  // worktree — two different directories by construction, so a card could
-  // never reach Done. checkoutPath is the path gitEvidence sampled.
+  // The helper reads registered paths against its cwd, so build in the state
+  // root: neither fixed checkout is right for every card. See `stateRootOf`
+  // for why the state dir decides and the checkout is only a fallback.
+  const trailRoot = stateRootOf(finish.stateDir) ?? finish.checkoutPath ?? finish.projectPath;
   const trailRefusal = await auditTrailRefusal(
     deps,
-    finish.checkoutPath ?? finish.projectPath,
+    trailRoot,
     finish.stateDir,
     finish.git,
   );
@@ -328,43 +326,6 @@ function latestVerificationRun(deps: CliDeps, cardId: string): VerificationRun {
       "SELECT command, git_root, head_sha, exit_code FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1",
     )
     .get(cardId) as VerificationRun;
-}
-
-/** Stelow owns a portable, deterministic audit trail. Build it only after the
- * stricter BB receipt passes, so every Done card carries the same cross-host
- * lineage record as any other host. `--strict` makes the receipt's links
- * complete (a produced document that was never registered would otherwise be
- * missing from them), and the gate re-binds the trail to the Git identity the
- * receipt was validated at: the helper samples the tree while writing, so a
- * checkout that moved after the receipt check fails here instead of leaving
- * Done with two receipts attesting different trees. */
-async function auditTrailRefusal(
-  deps: CliDeps,
-  projectPath: string | null,
-  stateDir: string | null,
-  git: GitEvidence,
-): Promise<string | null> {
-  if (!projectPath) return null;
-  const trail = await deps.runHelper(
-    ["audit-trail", "build", "--strict", "--json"],
-    projectPath,
-    stateDir ?? undefined,
-  );
-  const trailCheck =
-    trail.code === 0
-      ? await deps.runHelper(
-          ["audit-trail", "check", "--strict", "--json"],
-          projectPath,
-          stateDir ?? undefined,
-        )
-      : null;
-  const gate = auditTrailGate({
-    build: trail,
-    check: trailCheck,
-    verifiedGit: git,
-  });
-  if (gate.ready) return null;
-  return gate.error ?? "Audit trail validation failed.";
 }
 
 /** The done trail event: a completed card without it is invisible to flow

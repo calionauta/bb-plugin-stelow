@@ -1,9 +1,12 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { AUDIT_TRAIL_FILE, auditTrailOutcome } from "../../lib/audit-trail-contract.mjs";
+import { AUDIT_TRAIL_FILE, auditTrailGate, auditTrailOutcome } from "../../lib/audit-trail-contract.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "../../lib/recon-receipt.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import type { CliDeps, GitEvidence } from "./cli/cli-deps.js";
+
+type CompletionAuditDeps = Pick<CliDeps, "runHelper" | "gitEvidence">;
 
 type Workspace = { path: string; hostId: string | null };
 type AuditDeps = {
@@ -85,4 +88,58 @@ async function reconStatus(deps: AuditDeps, stateDir: string) {
     .then((file) => file.content)
     .catch(() => null);
   return reconReceiptStatus(content, stateDir);
+}
+
+/**
+ * Completion refuses when the trail does not validate, not when the helper is
+ * merely old. The build/check pair must agree before the gate binds the trail
+ * to the repository the receipt verified.
+ */
+export async function auditTrailRefusal(
+  deps: CompletionAuditDeps,
+  projectPath: string | null,
+  stateDir: string | null,
+  git: GitEvidence,
+): Promise<string | null> {
+  if (!projectPath) return null;
+  const trail = await deps.runHelper(
+    ["audit-trail", "build", "--strict", "--json"],
+    projectPath,
+    stateDir ?? undefined,
+  );
+  const trailCheck =
+    trail.code === 0
+      ? await deps.runHelper(
+          ["audit-trail", "check", "--strict", "--json"],
+          projectPath,
+          stateDir ?? undefined,
+        )
+      : null;
+  const snapshotCommonDir = await snapshotRepository(deps, trailCheck ?? trail);
+  const gate = auditTrailGate({
+    build: trail,
+    check: trailCheck,
+    verifiedGit: git,
+    snapshotCommonDir,
+  });
+  if (gate.ready) return null;
+  return gate.error ?? "Audit trail validation failed.";
+}
+
+/**
+ * The repository the trail's snapshot names, resolved on this machine.
+ *
+ * The vendored helper reports the root it sampled but not the repository
+ * identity. The host can read the identity from that root, rather than wait
+ * for an upstream helper release before the gate can work.
+ */
+export async function snapshotRepository(
+  deps: Pick<CompletionAuditDeps, "runHelper" | "gitEvidence">,
+  run: Awaited<ReturnType<CompletionAuditDeps["runHelper"]>> | null,
+): Promise<string | null> {
+  if (!run || run.code !== 0) return null;
+  const root = auditTrailOutcome(run)?.result?.snapshot?.root;
+  if (typeof root !== "string" || !root) return null;
+  const evidence = await deps.gitEvidence(root).catch(() => null);
+  return evidence?.commonDir ?? null;
 }
