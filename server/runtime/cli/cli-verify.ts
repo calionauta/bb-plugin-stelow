@@ -16,6 +16,7 @@ import {
   type Refusal,
 } from "./cli-contract.js";
 import type { CliDeps, DocDepth, TestCommand } from "./cli-deps.js";
+import { completionRoot } from "../workflow-state.js";
 import type { WorkerCard } from "../../workers-types.js";
 
 const USAGE = "Usage: bb stelow verify [--card <card_id>] [--tests] [--json]";
@@ -106,12 +107,10 @@ async function testTarget(
   deps: CliDeps,
   card: WorkerCard,
 ): Promise<TestTarget | Refusal> {
-  const checkout = await deps.cardCheckout(card);
-  const evidence = checkout?.path
-    ? await deps.gitEvidence(checkout.path)
-    : null;
+  const root = await completionRoot(deps, card);
+  const evidence = root ? await deps.gitEvidence(root) : null;
   if (
-    !checkout?.path ||
+    !root ||
     !evidence?.isGit ||
     !evidence.gitRoot ||
     !evidence.headSha
@@ -121,7 +120,7 @@ async function testTarget(
       stderr:
         "The Build checkout has no verifiable Git root and HEAD. Restore its project workspace, then retry.",
     });
-  const command = deps.testCommandForCheckout(checkout.path);
+  const command = deps.testCommandForCheckout(root);
   if (!command)
     return refuse({
       exitCode: 1,
@@ -130,7 +129,7 @@ async function testTarget(
 command; Stelow will not execute arbitrary shell text from a receipt.",
     });
   return {
-    checkoutPath: checkout.path,
+    checkoutPath: root,
     command,
     gitRoot: evidence.gitRoot,
     headSha: evidence.headSha,

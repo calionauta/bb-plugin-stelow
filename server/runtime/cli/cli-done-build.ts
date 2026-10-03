@@ -98,7 +98,7 @@ async function runDoneBuild(
     trackedScopes,
   );
   if (specRefusal) return { exitCode: 1, stderr: specRefusal };
-  const evidence = await checkoutEvidence(deps, card);
+  const evidence = await checkoutEvidence(deps, card, stateDir);
   if ("refusal" in evidence) return evidence.refusal;
   const shallow = await documentRefusal(deps, card);
   if (shallow) return { exitCode: 1, stderr: shallow };
@@ -228,18 +228,23 @@ function receiptContent(deps: CliDeps, stateDir: string | null): Promise<string 
 
 type CheckoutEvidence = { checkoutPath: string | null; git: GitEvidence };
 
-/** The checkout the worker changed plus the Git identity it has right now.
- * A checkout that exists without verifiable Git root/HEAD evidence cannot be
- * certified as complete. */
+/** The checkout completion binds to, plus the Git identity it has right now.
+ * Prefer the checkout holding the card's state: a state written into the
+ * project while the managed checkout lives in a worktree (or the reverse)
+ * must be verified where its artifacts were read from, not where the worker
+ * happened to be spawned. A state that cannot be resolved keeps the previous
+ * behaviour: the managed checkout, or no evidence at all. */
 async function checkoutEvidence(
   deps: CliDeps,
   card: WorkerCard,
+  stateDir: string | null,
 ): Promise<CheckoutEvidence | Refusal> {
   const checkout = await deps.cardCheckout(card);
-  const git = checkout?.path ? await deps.gitEvidence(checkout.path) : null;
-  if (checkout?.path && (!git?.isGit || !git.gitRoot || !git.headSha))
+  const root = stateRootOf(stateDir) ?? checkout?.path ?? null;
+  const git = root ? await deps.gitEvidence(root) : null;
+  if (root && (!git?.isGit || !git.gitRoot || !git.headSha))
     return refuse({ exitCode: 1, stderr: GIT_EVIDENCE_LOST });
-  return { checkoutPath: checkout?.path ?? null, git };
+  return { checkoutPath: root, git };
 }
 
 /** Recognized workflow documents (spec-product, spec-tech, interfaces,
