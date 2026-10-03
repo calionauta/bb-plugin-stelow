@@ -1,331 +1,76 @@
 # Stelow for bb
 
-Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. 🚀 Created by the original [author of Stelow](https://github.com/calionauta).
+Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. Created by the original [author of Stelow](https://github.com/calionauta).
 
-Turn humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks, run single-stage explorations, then build through an orchestrated workflow — Shape Up proposals, interface trade-offs before code, typed scopes with spikes up front, gated reviews, and agent workers. 
-
-One board, one quiet inbox.
+One board, one quiet inbox: shape proposals, explore interface directions,
+plan typed scopes, and execute with gated reviews and agent workers — with
+blocking questions, agent presets, and GitHub issue automation on top.
 
 > [!TIP]
 > Install now: [https://getbb.app/marketplace/stelow](https://getbb.app/marketplace/stelow)
 
-## What it adds
+## Docs (single source of truth)
 
-- **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
-- **Automation rules:** the Build header dialog lists rules across all projects grouped by project, with search, status filter, counts, and bulk enable/disable/delete; a new rule picks its project inline and watches a GitHub label. Each newly matching open issue becomes one source-linked Inbox card — parked as a draft by default, auto-started when the rule opts in. Rules run on the host scheduler and are idempotent.
-- **Explore runs:** pick one technique (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
-- **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code — per-skill depth contracts (sections, counts, tables), not just file presence; `bb stelow verify` lets the worker self-check before finishing, and cards show per-artifact quality with one-click repair.
-- **Opt-in independent review:** `bb stelow review` spends a designated cross-lineage reviewer preset (never the worker's), only on structurally valid artifacts; chat seals and completion records carry verified / hypothesis-only provenance instead of claiming complete research.
-- **Auditable Build completion:** a Build card can become Done only at Audit, after the host records test evidence, validates its `audit.md` receipt against the exact checkout and Git HEAD, and builds/checks Stelow's portable `audit-trail.md` receipt under `--strict`. The trail must attest that same repository and commit — a checkout that moved while it was written blocks completion instead of leaving two receipts for two different trees — and the card shows a compact verified / changed-since-completion state you can re-check.
-- **About tab:** what Stelow is vs what the plugin adds, with each repo link and each version side by side.
-- **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
-- **Native approval receipts:** approvals are written to `.stelow/approvals/{dirHash}/` using Stelow's canonical filenames.
-- **Artifact comments:** quote a passage in any rendered artifact and send it to the agent as a contextual comment.
-- **Blocking questions:** single-choice and multi-choice forms replace the composer through `bb ui.requestInput` and the `bb stelow ask` CLI. The card stays in its column and signals it is waiting for an answer while a question is open.
-- **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
-- **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items, and nothing else — a finished card is not blocked work. Finished cards carry their own emerald **Review** marker until you open them.
-- **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, request independent artifact review, fan out research, and manage presets.
-- **GitHub issues:** import tagged issues as cards right now, or watch labels per project with automation rules — one dialog, shared dedupe, parked drafts by default, isolated worktrees for auto-start. Operator and trust model in [docs/github-issues.md](./docs/github-issues.md); native execution constraints in [docs/native-workflows.md](./docs/native-workflows.md); decision routing policy in [docs/decision-routing.md](./docs/decision-routing.md); inventory in [FEATURES.md](./FEATURES.md).
+The manual lives on the Stelow site, not here:
 
-The plugin keeps its own board store (cards, questions, presets, publication
-history). `stelow.json` and `.stelow/` remain the source of truth for the
-workflow itself — the board reads them, never replaces them. Details live in
-[FEATURES.md](./FEATURES.md).
+- [Overview + getting started](https://calionauta.github.io/stelow/docs/)
+- [What the plugin adds](https://calionauta.github.io/stelow/docs/plugin/what-plugin-adds/) (core vs plugin)
+- [Install on bb](https://calionauta.github.io/stelow/docs/plugin/install-bb/)
+- [Board and inbox](https://calionauta.github.io/stelow/docs/plugin/board-and-inbox/) ·
+  [Agent presets](https://calionauta.github.io/stelow/docs/plugin/agent-presets/) ·
+  [Automation rules](https://calionauta.github.io/stelow/docs/plugin/automation-rules/) ·
+  [GitHub issues](https://calionauta.github.io/stelow/docs/plugin/github-issues/) ·
+  [Team playbook](https://calionauta.github.io/stelow/docs/plugin/team-playbook/) (experimental)
 
-Maintainers can find the current server module map, lifecycle boundary, and
-remaining extraction work in [docs/runtime-architecture.md](./docs/runtime-architecture.md).
-The measured size debt in the GitHub automation and decision API areas, with
-its ordered repair list, is audited in
-[docs/remaining-debt-audit.md](./docs/remaining-debt-audit.md).
-How the runtime slices absorbed master's execution and scope contracts, and
-which two behaviors the extraction had dropped, is recorded in
-[docs/runtime-integration-2026-09.md](./docs/runtime-integration-2026-09.md).
-
-## Strategies and techniques
-
-The **Research tab** offers 14 product strategies. Each runs one
-`stelow-product-*` playbook and produces a `research-index.md` plus round
-files that can be fanned out into Build cards:
-
-- 💼 **Business models** — Cost and revenue model triggers to adapt and experiment with how the product makes money.
-- 🧬 **Evolutionary strategy** — Adaptability, optionality, and experimentation beyond fixed roadmaps.
-- 🎯 **Jobs to be done** — Segmentation, job map, desired outcomes, plus emotional and social jobs.
-- 🎁 **Launch promotions** — MAGIC launch offers: loss leader, gift cards, and irresistible freebies.
-- 🔭 **Market analysis** — PESTLE, foresight, Delphi, and Wardley maps on a market or niche.
-- 🏪 **Marketplace playbook** — Supply and demand tactics for stimulating marketplaces.
-- 🔓 **Open source strategy** — Delivering value by giving up control: business models and moats.
-- 🗺️ **Opportunity mapping** — Ranked solutions for a problem, from opportunities to bets.
-- 🎟️ **Paywall & onboarding** — Consumer-app monetization funnel, from paywall to trial policy.
-- 💰 **Pricing** — How to charge, how to package and limit usage, and how to frame perceived value.
-- 📣 **Product ads** — Ad categories by audience awareness stage, based on the transtheoretical model.
-- 🧪 **Product discovery** — Short-cycle validation: idea, early adopters, MVP, and first sale.
-- 💓 **Product health** — Success signals held in tension with counterbalance signals to avoid side effects.
-- 🤝 **Trust building** — Perception pillars and guarantees that make trust concrete.
-
-The **Explore tab** offers 8 one-shot techniques. Each runs one
-`stelow-workflow-*` playbook with no triage, pipeline, or gates, and produces
-a single `explore-<stage>.md` artifact:
-
-- 📐 **Shape Up proposal** — Turn an idea into a shaped proposal with IN/OUT scope, appetite, and risks before planning.
-- 🎨 **Interface alternatives** — Explore 1, 3, or 5 interface directions with explicit trade-offs before any code.
-- 🔍 **Product plan critique** — Review a plan or proposal for gaps, risks, assumptions, and open questions.
-- 🧱 **Tech plan + scopes** — Generate a technical plan with typed, dependency-ordered scopes from an existing document.
-- 🏗️ **Codebase critique** — Structural review of a codebase: architecture, coupling, hotspots, and maintenance risk.
-- 🖥️ **UX critique** — Evaluate an interface or live URL against heuristics, accessibility, and visual hierarchy.
-- 🧪 **Testing strategy** — AI-aware testing plan with security gates and risk-based coverage targets.
-- ✅ **Execution critique** — Post-implementation check verifying scope completion and surfacing gaps.
+`stelow.json` and `.stelow/` remain the source of truth for the workflow
+itself — the board reads them, never replaces them.
 
 ## Requirements
 
-1. bb desktop ≥ 0.43 ([getbb.app](https://getbb.app) — macOS one-click download,
-   `npx bb-app@latest` elsewhere; your agents run on your own subscriptions).
+1. bb desktop ≥ 0.43 ([getbb.app](https://getbb.app)).
 2. A normal bb project backed by a local workspace source.
-3. Stelow skills and product playbooks: **bundled with the plugin** (shipped
-   in `skills/`), so no external install step is required. The worker agent
-   loads its stage guide or selected strategy from the plugin's own skills
-   directory.
-4. A `stelow.json` created by a Stelow workflow for board data.
-5. Optional host tools (all fail-soft — the plugin never installs binaries
-   itself): [`sem`](https://github.com/Ataraxy-Labs/sem) adds a one-line
-   entity summary to the card Diff section (`~/.local/bin/sem` on the host
-   is enough); without it the patch list renders on its own.
-
-The singleton bb personal project has no workspace source, so the board asks you to select/create a normal project.
+3. Stelow skills: **bundled with the plugin** (shipped in `skills/`), no
+   separate install step.
 
 ## Install
 
-> Marketplace is live: `bb plugin install stelow` — or pin a released version from this repository:
+Marketplace (Extensions → Plugins → Stelow), or:
 
 ```bash
-bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@v0.66.0" --yes
-bb plugin list   # stelow should show as running
+bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@<tag>" --yes
 ```
 
-Or in bb: Extensions → Plugins → Add plugin, paste
-`git:https://github.com/calionauta/bb-plugin-stelow.git`, Install.
-BB checks whether the installed plugin has a compatible update without
-changing a running workflow. When one is available, the About tab shows it
-and offers a confirmation step; BB then applies the released, verified bundle.
-
-(`bb skill list` can confirm the bundled skills. Third-party plugins are
-full-trust server code: install only sources you trust.)
-
-For development (clone + hot-reload):
-
-```bash
-npm install
-bb plugin build
-bb plugin install . --yes
-```
-
-### Development checks
-
-After `npm install`, one command gives both people and coding agents the
-current quality picture:
-
-```bash
-npm run quality:report
-```
-
-It reports lint, unused-code, and duplication findings without blocking an
-existing checkout on its initial backlog. `npm run architecture` is the
-enforced boundary check; `npm run security:full` fails on high/critical npm
-advisories. CI runs all of these automatically. Database
-backward-compatibility branches are tracked in `docs/legacy-compat.md` for
-the v1 cleanup, and `tests/legacy-compat.test.mjs` (part of `npm run
-test:fresh`) fails if a tracked anchor disappears without a ledger update.
-Socket's deeper package scan
-is optional and requires the repository's own Socket API token.
-
-```bash
-bb plugin dev
-```
+(check the [releases](https://github.com/calionauta/bb-plugin-stelow/releases)
+for the latest tag). Third-party plugins are full-trust server code:
+install only sources you trust.
 
 ## Use
 
-Open **Stelow** in bb's left navigation (the row shows a live badge of items needing your attention). Select a project with Stelow state, then:
+1. Open **Stelow** in bb's left navigation, select a project, choose
+   **Appetite** (default Lean) and **Review mode** (default Auto), and
+   submit a request. The card starts in Triage and the agent begins there.
+2. Answer structured questions in the form, the thread, or the card. The
+   agent waits instead of guessing.
+3. Open specs, plans, and diffs from the board; approve gates to record
+   portable receipts.
+4. Cards: **Enter** opens, **W** opens the worker thread, **Esc** goes back.
 
-1. Choose the workflow's **Appetite** and **Review mode** above the composer
-   (defaults: **Lean** and **Auto**). Then enter a product request in the
-   **composer** (bb's full new-thread editor). Those choices are written
-   to the new workflow's `state.md` and `stelow.json`, so the worker does not
-   ask for them again. After a successful creation, they also become the
-   board's defaults for your next card. The card is created in **Triage** and
-   the agent begins there.
-2. The agent runs the pipeline and, the moment it needs a
-   decision, opens a structured question. While a question is pending the card
-   stays in its column, marked as waiting for your answer. Reply in the form, in the thread, or from the card
-   detail's "Answer in thread" action. Unanswered questions stay answerable
-   on the card — the agent waits instead of guessing.
-3. Open product specs, interface proposals, and technical plans from the board;
-   quote a passage to comment on it.
-4. Approve the matching gate only after review; the plugin creates the portable
-   receipt. Track planned scopes and execution tasks in the board.
+CLI essentials: `bb stelow status`, `ask`, `advance`, `verify`, `review`,
+`preset list|add|assign` (full surface in [FEATURES.md](./FEATURES.md)).
 
-### Cards and keyboard
+## If a card looks stuck
 
-- **Enter** / **Space** on a card opens its detail.
-- **W** on a card opens the worker thread without a double-click.
-- **Esc** (or the Back button) leaves the detail and returns focus to
-  that card on the board.
-- The card detail explains **Repair** and **Archive** with confirmation dialogs.
-  Repair reseeds `state.md` and `stelow.json` and restarts the worker from
-  triage; Archive converts the card to the Archived column and stops the worker.
+A worker reporting "The question could not be recorded" with an `idle`
+card and no pending question means the ask timed out while persisting.
+Check the plugin log (`~/.bb/plugins/stelow/logs/plugin.log`) for
+`stelow ask persist attempt` warnings; one `SQLITE_BUSY` retry is normal,
+repeated non-busy errors mean a closed DB handle or full disk. To unstick:
+send any message on the worker thread — the worker re-asks once.
 
-### Agent presets
+## For maintainers
 
-A preset is a named provider/model reasoning/permission (plus optional
-environment, base branch, machine, and instructions) profile. Cards remember
-their preset; the worker thread is spawned with that profile.
-
-When the provider is **Pi**, the preset picker intentionally shows only the
-configured Bifrost routes. It does not expose Pi's unrelated
-OpenCode/OpenRouter route catalog.
-
-```bash
-bb stelow preset list
-bb stelow preset add --name "Deep shape" --model gpt-5 --reasoning high
-bb stelow preset add --name "Quick" --model gpt-5-mini --reasoning low --permission auto
-bb stelow preset assign --card <card_id> --preset <preset_id>
-```
-
-To apply a changed preset to a running card, assign it and then click
-**Repair** — the worker thread is recreated with the new profile.
-
-### CLI
-
-```bash
-bb stelow status --project <proj_id>
-bb stelow status --project <proj_id> --json
-
-bb stelow ask \
-  --thread <thr_id> \
-  --question "Which direction should we use?" \
-  --option "Option A" \
-  --option "Option B"
-
-bb stelow ask \
-  --thread <thr_id> \
-  --question "Which constraints apply?" \
-  --multiple \
-  --option "Offline" \
-  --option "Accessible" \
-  --option "Mobile"
-
-# Batch independent questions into one call — the human answers them
-# together instead of being pinged one by one:
-bb stelow ask \
-  --thread <thr_id> \
-  --question "Which direction should we use?" \
-  --option "Option A" \
-  --option "Option B" \
-  --question "Which constraints apply?" \
-  --multiple \
-  --option "Offline" \
-  --option "Accessible"
-
-bb stelow preset list|add|remove|assign
-
-bb stelow advance --dry-run <stage>   # validate a transition without mutating
-bb stelow done [--card <card_id>]     # verify in code and record completion
-bb stelow verify [--card <card_id>]   # worker self-check: artifacts are valid
-bb stelow doctor [--project <id>]     # detect workflow drift
-bb stelow split [--card <card_id>]    # execute an approved card-split proposal
-bb stelow preview [status|start|stop] [--card <card_id>]  # card workspace dev server
-bb stelow playbook [--card <card_id>] # exact state and playbook paths
-bb stelow fan-out --opportunity <id> [--card <card_id>]   # index opportunities into build cards
-bb stelow seed --project <proj_id> --name <name> --intent <type>  # seed state files
-bb stelow schema [command]            # machine-readable subcommand contracts
-bb stelow sync-scopes [--json]        # parse spec-tech scopes (auto-runs on advance to execution)
-bb stelow scope <start|done|seed-tasks> --scope <id>  # validated scope transitions (single writer)
-bb stelow gap-scopes [--card <card_id>]   # convert escalated gaps into rework scopes
-bb stelow metrics [--json] [--card <card_id>]  # lead/cycle time and gap rates (fleet-wide without --card)
-bb stelow storage [--json] [--card <card_id>]  # worktree disk usage per card, heaviest first (read-only)
-bb stelow manifest [--json] [--card <card_id>] # paste-ready Stelow-Artifacts trailer for commits
-bb stelow export [--json] [--check] [--card <card_id>]   # refresh docs/runs/<card> + manifest.md (also automatic at done); --check reports drift + uncommitted
-bb stelow draft --prompt <brief> [--card <card_id>]  # disposable Tier G draft burst (generation preset)
-bb stelow review [--card <card_id>]       # opt-in independent artifact review
-bb stelow lock acquire|release|check --scope <id> [--file ...] [--ttl N] [--json]
-bb stelow config get <field> [default]
-```
-
-## Working as a team (experimental)
-
-bb is single-user — one board, one inbox — so a team does not
-meet inside the plugin. It meets in the GitHub repository: the
-owner labels each issue with a risk tier (`risk:go-alone`,
-`risk:consult`, `risk:approve`), a specialty (`needs:product`,
-`needs:design`, `needs:tech`), and an assignee; each member
-imports their own issues into their own bb and runs them there.
-At marked gates the named specialist consults (🟡, operator
-still decides) or approves (🔴, operator cannot advance alone);
-verdicts land as receipts, and completion writes back to the
-issue. Full proposal — roles, label schema, gate table,
-rituals, limits — in [docs/team-playbook.md](./docs/team-playbook.md);
-the short version lives in the
-[site's team section](https://calionauta.github.io/stelow/#teams).
-
-## Deploy / hot-reload (CRITICAL)
-
-Use the explicit development reload command after every plugin change:
-
-```bash
-npm run build:reload
-```
-
-It builds the current `dist/` bundle and runs `bb plugin reload stelow`,
-which replaces this plugin in the already-running BB process. This preserves
-active threads and is the reliable fallback when automatic hot-reload does not
-refresh an open client panel. Reopen the Stelow panel afterwards; hard-refresh
-the browser only if it still displays stale UI.
-
-`npm run build` remains useful for build-only validation. `npm run reload` is
-available when the bundle is already current. Bump `package.json#version` when
-you need the Plugins screen to display a new version number, then run
-`npm run build:reload`.
-
-**NEVER run `systemctl --user restart bb-daemon.service` as a deploy step.**
-A daemon restart SIGTERMs every running thread and each one is marked
-"Thread interrupted because the host daemon disconnected". On 2026-08-25 this
-exact pattern killed this thread four times in one day (16:22, 16:33, 18:22,
-18:51 UTC) — the agent resumed, ran its deploy playbook with a daemon restart,
-and terminated itself.
-
-If a full daemon restart is ever truly required, do it outside of any active
-thread and expect live threads to be interrupted.
-
-## Gate behavior
-
-| Stelow gate | Artifact | Receipt |
-|---|---|---|
-| `gate` | Product spec | `gate-approved.md` |
-| `int-gate` | Interface proposals | `int-gate-approved.md` |
-| `plan-gate` | Technical plan | `plan-gate-approved.md` |
-| `diff-gate` | Working-tree diff | `diff-gate-approved.md` |
-
-Approval creates a receipt only. The Stelow agent/router remains responsible for validating and advancing the state machine.
-
-## Operator runbook: stuck asks
-
-If a worker reports "The question could not be recorded" and the card stays
-`idle` with no pending question, the ask timed out (or was interrupted) while
-its persist to `expired_questions` failed. Diagnose in order:
-
-1. Plugin log (`~/.bb/plugins/stelow/logs/plugin.log`): look for `stelow ask
-   persist attempt` warnings — they name the card, thread, and exact DB error.
-2. A single `SQLITE_BUSY` / `database is locked` warning followed by success
-   is normal (one automatic retry); repeated non-busy errors mean the DB
-   handle is closed (hot-reload timing) or the disk is full — restart the
-   daemon outside active threads and retry the ask.
-3. To unstick the card: send any message on the worker thread — the worker
-   re-asks once, per protocol.
-
-## Validate
-
-```bash
-npm run typecheck   # tsc --noEmit
-npm run build       # bb plugin build && node scripts/postbuild.mjs
-bb plugin list
-```
-
-See [CHANGELOG.md](./CHANGELOG.md) for per-release changes.
+- [FEATURES.md](./FEATURES.md) — internal feature inventory (job-grouped).
+- [docs/README.md](./docs/README.md) — maintainer docs index and policy.
+- [CHANGELOG.md](./CHANGELOG.md) — per-release changes.
+- After any change: `npm run build:reload`. Never restart the host daemon
+  as a deploy step (it kills every running thread).

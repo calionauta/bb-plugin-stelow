@@ -6,17 +6,21 @@ This folder holds **maintainer-only** material plus the operator guides
 that are still waiting for their canonical home. Do not add new
 user-facing manuals here.
 
+## Migrated to the site (stubs with canonical links)
+
+These guides moved to `stelow/docs/plugin/`; each file below is now a
+stub with the canonical URL plus an operator summary. Maintainer-only
+sections stay inline where they existed.
+
+- `github-issues.md` → `docs/plugin/github-issues/` (+ `automation-rules/`)
+- `native-workflows.md` → `docs/plugin/native-workflows/`
+- `decision-routing.md` → `docs/plugin/decision-routing/`
+- `team-playbook.md` → `docs/plugin/team-playbook/`
+- `interface-contrast.md` → `docs/plugin/scope-contracts/`
+
 ## Will move to `stelow/docs/plugin/` (user-canonical, still pending)
 
-These are operator guides useful to end users. They stay here until the
-unified docs are published; afterwards each becomes a stub with a link.
-
-- `github-issues.md` → `docs/plugin/github-issues/`
-- `native-workflows.md` → `docs/plugin/native-workflows/` (or fold into execution page)
-- `decision-routing.md` → `docs/plugin/decision-routing/` (or fold into Operate section)
-- `team-playbook.md` → `docs/plugin/team-playbook/` (experimental, mark as such)
-- `interface-contrast.md` → `docs/plugin/` (scope-map + contrast contracts)
-- `legacy-compat.md` → maintainer-only after v1 cleanup (see below)
+None pending — all operator guides migrated (see above).
 
 ## Stays here (maintainer-only, never public)
 
