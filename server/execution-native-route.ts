@@ -7,8 +7,9 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { BB_NATIVE_CAPABILITIES } from "../lib/bb-workflow-capabilities.mjs";
-import { recipeById } from "../lib/recipe-catalog.mjs";
-import { resolveExecutionRoute } from "../lib/execution-route.mjs";
+import { applyRouteContext } from "../lib/recipe-width.mjs";
+import { recipeById, type Recipe } from "../lib/recipe-catalog.mjs";
+import { missingNativeCapabilities, resolveExecutionRoute } from "../lib/execution-route.mjs";
 import { STAGE_BY_ID } from "../lib/workflow-vocabulary.mjs";
 import { nativeWorkflowAvailable } from "./bb-workflow-bridge.js";
 import { requiredCapabilities } from "./execution-native-catalog.js";
@@ -26,6 +27,17 @@ export type SequentialRoute = {
   reason?: string;
   missingCapabilities?: string[];
   preserves?: string[];
+  effectiveWidth?: number;
+  humanBoundary?: string;
+};
+
+/** Runtime task context for the width overlay (knobs from state.md when known). */
+export type RouteContext = {
+  explorationCount?: number;
+  appetite?: string;
+  partitionSafe?: boolean;
+  uiScopePresent?: boolean;
+  humanBoundaryPolicy?: "native" | "sequential";
 };
 
 export function createNativeRouter(deps: RouteDeps) {
@@ -34,7 +46,8 @@ export function createNativeRouter(deps: RouteDeps) {
       card: WorkerCard,
       stageId: string,
       workspacePath: string,
-    ) => resolveStageExecutionRoute(deps, card, stageId, workspacePath),
+      routeContext?: RouteContext,
+    ) => resolveStageExecutionRoute(deps, card, stageId, workspacePath, routeContext),
     recordCoordinatorSequentialRoute: (
       cardId: string,
       stage: string,
@@ -49,59 +62,113 @@ export async function resolveStageExecutionRoute(
   card: WorkerCard,
   stageId: string,
   workspacePath: string,
+  routeContext?: RouteContext,
 ): Promise<CardRoute | null> {
   const recipeId = STAGE_BY_ID[stageId]?.execution?.recipe;
   if (!recipeId) return null;
   const recipe = recipeById(recipeId);
-  if (!recipe) {
-    return {
-      recipeId,
-      recipe: null,
-      route: {
-        mode: "refused",
-        code: "fallback-unknown",
-        reason: `Unknown recipe ${recipeId}.`,
-        redirect: "Fix the canonical recipe catalog.",
-      },
-    };
-  }
+  if (!recipe) return unknownRecipeRoute(recipeId);
   const stage = STAGE_BY_ID[stageId];
-  const nativeAvailable = await isNativeCandidate(
-    card,
-    recipeId,
-    recipe.write_policy as string | undefined,
-    workspacePath,
-  );
+  const early = pureSequentialRoute(card, stage, recipeId, recipe);
+  if (early) return early;
+  return probeAndOverlay(card, recipeId, recipe, stage, workspacePath, routeContext);
+}
+
+function unknownRecipeRoute(recipeId: string): CardRoute {
   return {
     recipeId,
-    recipe,
-    route: resolveExecutionRoute({
-      recipe,
-      requiredCapabilities: requiredCapabilities(stage, recipe),
-      nativeCapabilities: BB_NATIVE_CAPABILITIES,
-      nativeAvailable,
-    }),
+    recipe: null,
+    route: {
+      mode: "refused",
+      code: "fallback-unknown",
+      reason: `Unknown recipe ${recipeId}.`,
+      redirect: "Fix the canonical recipe catalog.",
+    },
   };
 }
 
 /**
- * Native execution needs a coordinator thread to own, a write policy that does
- * not touch the card's own files, and a host that reports the workflow bridge
- * available. Anything else is a question for the route, not for this check.
+ * Pure checks first: write policy, capabilities, and coordinator thread cost
+ * nothing, while the availability probe costs two CLI round trips. A route
+ * that is already decided must never pay for a probe.
  */
-async function isNativeCandidate(
+function pureSequentialRoute(
+  card: WorkerCard,
+  stage: (typeof STAGE_BY_ID)[string],
+  recipeId: string,
+  recipe: Recipe,
+): CardRoute | null {
+  const writePolicy = (recipe as { write_policy?: string }).write_policy
+    ?? (stage as { execution?: { write_policy?: string } }).execution?.write_policy;
+  if (writePolicy === "workspace" || recipeId === "scope-batch") {
+    return {
+      recipeId,
+      recipe,
+      route: {
+        mode: "coordinator-sequential",
+        reason: "workspace-writing execution uses the existing card coordinator sequentially",
+        preserves: fallbackPreserves(recipe),
+      },
+    };
+  }
+  const required = requiredCapabilities(stage, recipe);
+  const missing = missingNativeCapabilities(required, BB_NATIVE_CAPABILITIES);
+  if (missing.length > 0) {
+    return {
+      recipeId,
+      recipe,
+      route: {
+        mode: "coordinator-sequential",
+        reason: "native capabilities are unavailable",
+        missingCapabilities: missing,
+        preserves: fallbackPreserves(recipe),
+      },
+    };
+  }
+  if (!card.worker_thread_id) {
+    return {
+      recipeId,
+      recipe,
+      route: {
+        mode: "coordinator-sequential",
+        reason: "native Workflows are unavailable",
+        preserves: fallbackPreserves(recipe),
+      },
+    };
+  }
+  return null;
+}
+
+async function probeAndOverlay(
   card: WorkerCard,
   recipeId: string,
-  writePolicy: string | undefined,
+  recipe: Recipe,
+  stage: (typeof STAGE_BY_ID)[string],
   workspacePath: string,
-): Promise<boolean> {
-  if (writePolicy === "workspace" || recipeId === "scope-batch") return false;
-  if (!card.worker_thread_id) return false;
-  return nativeWorkflowAvailable({
+  routeContext?: RouteContext,
+): Promise<CardRoute> {
+  const nativeAvailable = await nativeWorkflowAvailable({
     projectId: card.project_id,
-    threadId: card.worker_thread_id,
+    threadId: card.worker_thread_id!,
     workspaceId: workspacePath,
   });
+  const base = resolveExecutionRoute({
+    recipe,
+    requiredCapabilities: requiredCapabilities(stage, recipe),
+    nativeCapabilities: BB_NATIVE_CAPABILITIES,
+    nativeAvailable,
+  });
+  if (base.mode !== "native") return { recipeId, recipe, route: base };
+  const overlaid = applyRouteContext(base, recipe, routeContext ?? {}, {
+    humanBoundaryPolicy: routeContext?.humanBoundaryPolicy ?? "sequential",
+  });
+  return { recipeId, recipe, route: overlaid };
+}
+
+function fallbackPreserves(recipe: Recipe): string[] {
+  const fallback = recipe.fallback as { preserves?: unknown } | undefined;
+  const preserves = fallback?.preserves;
+  return Array.isArray(preserves) ? preserves.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 export function recordCoordinatorSequentialRoute(
@@ -133,5 +200,11 @@ function routeExplanation(route: SequentialRoute): string {
   const preserves = route.preserves?.length
     ? ` Preserved: ${route.preserves.join(", ")}.`
     : "";
-  return `${route.reason ?? "Native execution was not selected."}${missing}${preserves}`;
+  const width = typeof route.effectiveWidth === "number"
+    ? ` Effective width: ${route.effectiveWidth}.`
+    : "";
+  const boundary = route.humanBoundary
+    ? ` Human boundary: ${route.humanBoundary}.`
+    : "";
+  return `${route.reason ?? "Native execution was not selected."}${missing}${preserves}${width}${boundary}`;
 }
