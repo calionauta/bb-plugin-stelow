@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.69.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.68.0...v0.69.0) (2026-10-04)
+
+
+### Features
+
+* provider-schema fit enforcement for decision points ([#316](https://github.com/calionauta/bb-plugin-stelow/issues/316)) ([fa61bc1](https://github.com/calionauta/bb-plugin-stelow/commit/fa61bc1d777bf0b984031038dfd9e6d65187ea52))
+
 ## [0.68.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.67.0...v0.68.0) (2026-10-04)
 
 
