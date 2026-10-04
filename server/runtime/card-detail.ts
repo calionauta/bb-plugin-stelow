@@ -1,6 +1,7 @@
 import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { cleanOptions } from "../../lib/question-batch.mjs";
+import { isTerminalCardStatus } from "../../lib/card-status.mjs";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
 import {
@@ -282,6 +283,11 @@ async function readExpiredQuestions(
   deps: CardDetailDeps,
   card: WorkerCard,
 ): Promise<Question[]> {
+  // A finished card's open questions closed with it, so serving them as
+  // answerable forms is a phantom affordance — submitting wakes nothing the
+  // card can still use. The answered ones stay readable through the trail
+  // comments, which is where a person looks for what was decided.
+  if (isTerminalCardStatus(card.status)) return [];
   const rows = deps.db
     .prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC")
     .all(card.id) as Array<Record<string, unknown>>;
