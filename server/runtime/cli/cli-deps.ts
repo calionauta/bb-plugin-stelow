@@ -14,6 +14,7 @@ import type {
   ScoredBatchResult,
 } from "../../decisions/scored-batch-judge.js";
 import type { CardCreateInput } from "../../cards-create.js";
+import type { RetryResult } from "../../execution-lifecycle-retry.js";
 import type { Workers } from "../../workers.js";
 import type { WorkerCard } from "../../workers-types.js";
 import type { CliResult, CliRunContext } from "./cli-contract.js";
@@ -187,6 +188,8 @@ export type CliDeps = {
     threadId?: string,
   ) => Promise<CliResult | null>;
   advanceCli: ExecutionAdvance["cli"];
+  /** The worker's own Retry button: same retrier, same refusals as the UI door. */
+  retryExecutionRun: (args: { runId: string }) => Promise<RetryResult>;
   scopeCommand: (
     argv: string[],
     ctx: CliRunContext,

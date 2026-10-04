@@ -728,6 +728,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same action and review requests shown by **Needs attention**;
+  one timed-out question batch counts once, not once per sub-question: rows
+  from the same timeout share one notification keyed by the batch, while a
+  genuinely new batch (or a live interaction beside it) keeps its own row —
+  one card is one decision moment, not N identical pings.
   an unopened completion reads **Ready for review** — the request it actually is —
   until the Done card is opened, which is also what clears the card's Review
   check. Archiving a card closes EVERY open row, completions included, and
@@ -917,6 +921,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preselected rows checked; unchecking removes, and the submit carries what
   remains. Scope and IN/OUT confirms use this form: every mapped scope (or
   IN item) starts checked with its outcome as preview, unchecking removes.
+  Scope confirms carry the machine tag `--tag scope-adjust`, and the host
+  enforces the shape instead of trusting prose: every group must be
+  `--multiple`, at most six options each, at least one `--selected`
+  somewhere — and in review mode Auto the ask is refused outright, because
+  there the worker adjusts scope itself and never parks waiting. An unreadable
+  state never blocks: unknown modes fail open.
   **Asking whether something is pending needs no question.** A worker on
   card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
   because no read-only verb reported the answer. `bb stelow status` now
@@ -1342,6 +1352,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preflight both entry points share now refuses to leave a stage whose **newest**
   run failed, and the refusal names the door: `Retry run to try it again —
   the card cannot leave the stage until a run of it succeeds.`
+  The door has two hands: the UI button and `bb stelow retry-run --run
+  <exec_id>`, which runs the same lifecycle retrier through the same refusals
+  plus one the button never needs — a worker retries only its own card's
+  runs. Before the verb existed, a worker told "retry" could only yield and
+  wait for a host retry that does not exist.
   "Newest for the **stage**" is the whole design, and it is what makes the hold
   survivable. A retry writes a newer run, so the hold releases the moment the
   retry starts and re-tightens by itself if the retry fails too — nothing to
@@ -1363,6 +1378,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card could no longer show what actually happened. A refusal from the launch is
   shown to the reader rather than swallowed, because a retry that is declined
   leaves the card exactly where it was.
+  One failure never reaches the hold at all: a run the host **proved did
+  nothing** (*"the recipe produced no task outputs"* — the workflow finished
+  with zero task outputs, as on card_a9q5zhzd where the scope-map run ended in
+  0.3s with no agent calls) is retried **automatically, once**, by the
+  reconciler through that same launch rule, with the spent budget stamped on
+  the new row (`auto_retry_count`) and a trail comment saying the host retried
+  it. Only a failure the run actually performed — or a second consecutive
+  no-op, which means dispatch itself is sick — parks the card and asks a
+  person. Unreachable runs, launch failures, and start timeouts are excluded on
+  purpose: there the host has no proof nothing ran, and a blind retry could
+  fork two workers on one stage.
   The card is **told** which run blocks (`detail.card.blockingRun`) rather than
   re-deriving the rule in the UI, so the button and the gate cannot disagree.
   That one fact decides two affordances: the Execution runs section **opens**

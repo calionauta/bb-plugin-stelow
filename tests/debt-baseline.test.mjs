@@ -69,6 +69,11 @@ const inheritedBaseline = [
   // waived, and `source-debt.json` no longer carries it either.
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
+  // The run table's migration ledger grows by one ALTER per schema column by
+  // construction — the auto-retry budget column took it from 50 to 51.
+  // Splitting a migration list would scatter the single-writer convention the
+  // ledger exists to enforce, so the ceiling is recorded, not refactored.
+  "lib/execution-run-ledger.mjs:ensureExecutionRunTable#1: 51 lines (recorded 51)",
   // The --selected flag and its validation moved into validateAskGroups,
   // and per-flag details into applyOptionDetail, so the argv loop stays a
   // dispatcher — 80 lines at the fork point, 68 now.

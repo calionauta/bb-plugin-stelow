@@ -13,6 +13,7 @@ import {
   recordSplitProposal,
   verifyAskSurface,
   type AskGroup,
+  type AskTag,
 } from "./cli-ask-gate.js";
 import type { CliCommandFn, CliResult, Refusal } from "./cli-contract.js";
 import type { CliDeps, PendingAsk } from "./cli-deps.js";
@@ -44,7 +45,7 @@ async function askRefusals(
   deps: CliDeps,
   cardId: string,
   liveAsks: PendingAsk[],
-  intent: { tag: "split" | null; groups: AskGroup[] },
+  intent: { tag: AskTag; groups: AskGroup[] },
   argv: string[],
 ): Promise<Refusal | null> {
   const gated = await gateAsk(deps, cardId, liveAsks, intent.tag, intent.groups, argv);
@@ -65,7 +66,7 @@ async function askRefusals(
 async function blockOnAnswer(
   deps: CliDeps,
   cardId: string,
-  intent: { threadId: string; tag: "split" | null; groups: AskGroup[]; batched: boolean },
+  intent: { threadId: string; tag: AskTag; groups: AskGroup[]; batched: boolean },
   signal: AbortSignal | undefined,
 ): Promise<CliResult> {
   const { groups, threadId } = intent;
@@ -259,7 +260,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 async function answerOutcome(
   deps: CliDeps,
   cardId: string,
-  intent: { tag: "split" | null; groups: AskGroup[] },
+  intent: { tag: AskTag; groups: AskGroup[] },
   requested: Requested,
 ): Promise<CliResult> {
   const result = requested.result;
