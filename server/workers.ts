@@ -8,6 +8,7 @@ import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
+import { judgeRetryTransientError } from "./decision-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
@@ -204,6 +205,7 @@ export function createWorkers(deps: WorkerDeps) {
     failedCause: (threadId) => failedCause(deps, threadId),
     scheduler,
     retryDelayMs: deps.retryDelayMs,
+    judgeTransientError: (cause, attempt) => judgeRetryTransientError({ db: deps.db }, cause, attempt),
   });
   const history = createWorkerHistory(deps.db, deps.bb);
   const respawnScheduler = createRespawnScheduler(

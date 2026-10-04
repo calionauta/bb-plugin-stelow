@@ -98,4 +98,51 @@ assert.equal(
   "sequential routes pass through untouched",
 );
 
+// Every stage-bound recipe keeps width >= 1 under every context: the
+// zero-width fallback is provably vacuous live, so RouteContext plumbing
+// waits until a recipe makes it reachable (or until the width-1 flip needs
+// verification's 1..2 range from real knobs).
+import { STAGE_BY_ID } from "../lib/workflow-vocabulary.mjs";
+
+const stageRecipeIds = [
+  ...new Set(
+    Object.values(STAGE_BY_ID).map((stage) => stage.execution?.recipe).filter(Boolean),
+  ),
+];
+const contextGrid = [
+  {},
+  { explorationCount: 1 },
+  { explorationCount: 5 },
+  { uiScopePresent: false },
+  { uiScopePresent: true },
+  { partitionSafe: false },
+  { appetite: "Lean" },
+];
+for (const id of stageRecipeIds) {
+  const stageRecipe = recipeById(id);
+  assert.ok(stageRecipe, `stage recipe resolves: ${id}`);
+  for (const context of contextGrid) {
+    assert.ok(
+      effectiveRecipeWidth(stageRecipe, context) >= 1,
+      `${id} never collapses to zero width under ${JSON.stringify(context)}`,
+    );
+  }
+}
+const verificationWidths = new Set(contextGrid.map((context) => effectiveRecipeWidth(verification, context)));
+assert.deepEqual(
+  [...verificationWidths].sort(),
+  [1, 2],
+  "verification spans 1..2 with context: the one range future plumbing unlocks",
+);
+
+// A degenerate recipe with no tasks collapses to width 0 and falls back
+// instead of starting an empty native run.
+const empty = { id: "empty", tasks: [], fallback: { mode: "sequential", preserves: ["artifact"] } };
+assert.equal(effectiveRecipeWidth(empty, {}), 0, "no tasks means zero width");
+assert.equal(
+  applyRouteContext({ mode: "native" }, empty, {}).mode,
+  "coordinator-sequential",
+  "empty recipes never pay for a native run",
+);
+
 console.log("execution route context test ok: width, cascade, and human-boundary overlay");

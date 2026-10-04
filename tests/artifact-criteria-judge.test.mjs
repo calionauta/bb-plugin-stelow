@@ -57,10 +57,11 @@ const spied = await judgeArtifactCriteria({
   routeAt: 0.6,
   fetchImpl: spyingFetch("disk-full"),
 });
-assert.equal(seenBodies.length, 2, "one atomic call per semantic criterion, never batched");
+assert.equal(seenBodies.length, 3, "evidence gate plus one atomic call per semantic criterion, never batched");
 assert.ok(seenBodies.every((body) => Object.keys(body.questions).length === 1), "each call carries exactly one question");
+assert.deepEqual(Object.keys(seenBodies[0].questions), ["evidence:sufficiency"], "evidence is asked first and separately");
 assert.ok(seenBodies.every((body) => body.state.includes("disk-full")), "every call carries the artifact excerpt as state");
-const quoted = seenBodies.map((body) => Object.values(body.questions)[0].instructions).join("\n");
+const quoted = seenBodies.slice(1).map((body) => Object.values(body.questions)[0].instructions).join("\n");
 assert.ok(quoted.includes("concrete failure modes"), "the first question quotes its criterion");
 assert.ok(quoted.includes("explicit sacrifices"), "the second question quotes its criterion");
 const hitCall = await judgeArtifactCriteria({

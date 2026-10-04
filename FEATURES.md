@@ -1771,7 +1771,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   saves explicitly; saves refresh only the routers section, never the
   board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.
-  Unknown modes degrade to rules; refusals name the valid set.
+  Retry-transient rescues unclassified spawn failures a confident judge
+  calls transient, within the same bounded budget — classified errors never
+  consult it, and every miss keeps fail-fast. Preset-tier reviews the stage
+  model hint in shadow only: agreement is logged, presets never change.
+  Artifact criteria ask evidence sufficiency separately from outcomes: a
+  confident absence of checkable evidence marks every criterion
+  unverifiable without spending their calls. Unknown modes degrade to
+  rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
   closed, rotates down when open); native details/summary keeps the

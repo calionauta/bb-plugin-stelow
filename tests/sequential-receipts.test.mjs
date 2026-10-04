@@ -63,4 +63,20 @@ assert.deepEqual(
   "checklist names every required output with its task",
 );
 
+// The live gap from routing interface-contrast sequentially: no machine
+// gate runs on the coordinator path, so this lib must at least detect a
+// malformed receipt. Wiring it into a gate is the named follow-up.
+const contrast = recipeById("interface-contrast");
+const badContrast = collectSequentialReceipts({
+  recipe: contrast,
+  contents: { "interfaces/contrast.json": "{}" },
+  context: {},
+});
+assert.equal(badContrast.ok, false, "malformed contrast receipt fails");
+assert.ok(
+  badContrast.malformed.includes("interfaces/contrast.json"),
+  "the offending file is named",
+);
+assert.ok(badContrast.issues.length > 0, "field-level issues are reported");
+
 console.log("sequential receipts test ok: plan, validation, and skipped receipts");

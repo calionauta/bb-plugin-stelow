@@ -216,6 +216,7 @@ function buildAdvance(
     getCardPresetId: (cardId) => presetServer.getPresetForCard(cardId).id,
     respawn: (cardId, presetId) => workers.respawn(cardId, presetId),
     scheduleRespawn: (cardId, presetId) => workers.scheduleRespawn(cardId, presetId),
+    suggestTier: (card, stage) => core.decision.suggestTierShadow(card, stage),
     requestGatePreReview: core.requestGatePreReview,
     publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
     isArchivedCard,
