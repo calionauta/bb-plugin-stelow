@@ -95,6 +95,13 @@ function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) 
 // the split keep/clear rule). Its parts are coupled — splitting custom
 // from skip or pick from merged would scatter one decision across hooks
 // for the metric's sake (KISS wins). Revisit if it grows past 70.
+// Empty means none on multiple-choice: an unchecked checkbox list completes
+// as an explicit none decision (single-select still needs a pick; split
+// proposals keep their explicit keep choice).
+function isQuestionDone(q: BatchItem, skipped: Set<string>, merged: (id: string) => string[]) {
+  return skipped.has(q.id) || merged(q.id).length > 0 || (q.multiple && !isSplitQuestion(q));
+}
+
 function useBatchSelection(questions: BatchItem[]) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Record<string, string[]>>(() => preselectedAnswers(questions));
@@ -112,7 +119,7 @@ function useBatchSelection(questions: BatchItem[]) {
     if (text) out.push(text);
     return out;
   };
-  const doneCount = questions.filter((q) => skipped.has(q.id) || merged(q.id).length > 0).length;
+  const doneCount = questions.filter((q) => isQuestionDone(q, skipped, merged)).length;
   const remainingCount = questions.length - doneCount;
   const complete = remainingCount === 0;
   const isLastQuestion = index === questions.length - 1;
@@ -229,7 +236,10 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   const copy = questionCopy();
   const prompt = sel.isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
   const splitNotice = sel.isSplitProposal ? splitSelectionNotice(current.options, sel.selected[current.id] ?? []) : null;
-  const isDone = (id: string): boolean => sel.skipped.has(id) || sel.merged(id).length > 0;
+  const isDone = (id: string): boolean => {
+    const question = questions.find((entry) => entry.id === id);
+    return question ? isQuestionDone(question, sel.skipped, sel.merged) : false;
+  };
   return (
     <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">

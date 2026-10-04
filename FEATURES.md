@@ -904,7 +904,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Timed-out asks stay answerable on the card, batched the same way.
   **Answering is also programmatic**: `bb stelow answer --card <card_id>
   --question <question_id> --answer <text>` (repeat pairs; one
-  `--question` may take several `--answer` values for a multi-select)
+  `--question` may take several `--answer` values for a multi-select;
+  `--answer ""` on a multiple-choice question answers none)
   applies the card form's exact rules — atomic per door, contract consumed,
   outcome written to the trail, worker resumed — so a scripted run or a test
   can clear a wait without a browser. A recovery question is addressed as
@@ -919,7 +920,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   checked (multi-select groups only — single-select refuses it, and stray
   flags read as unchecked, so nothing confirms silently). The card renders
   preselected rows checked; unchecking removes, and the submit carries what
-  remains. Scope and IN/OUT confirms use this form: every mapped scope (or
+  remains. Empty means none on multiple-choice: submitting a checkbox list
+  with nothing checked records an explicit none (trail reads "skipped — use
+  your recommendation"), so no confirm ever forces a pick nobody wants; a
+  single-select radio with nothing picked stays unanswered. Scope and IN/OUT confirms use this form: every mapped scope (or
   IN item) starts checked with its outcome as preview, unchecking removes.
   Scope confirms carry the machine tag `--tag scope-adjust`, and the host
   enforces the shape instead of trusting prose: every group must be

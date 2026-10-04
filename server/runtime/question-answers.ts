@@ -18,7 +18,7 @@ type Decision = { question: string; answers: string[] };
 type RecordedDecision = Decision & { contract: string | null };
 type PendingAsk = { id: string; payload?: { title?: string } };
 type Result = { ok: boolean; answered: number; error: string | null };
-type OpenRow = { id: string; thread_id: string; question: string };
+type OpenRow = { id: string; thread_id: string; question: string; multiple: unknown; kind: unknown };
 type AnswerRow = OpenRow & { answers: string[] };
 
 /**
@@ -231,7 +231,7 @@ async function answerQuestions(
 
 function openExpiredRows(deps: QuestionAnswersDeps, cardId: string): OpenRow[] {
   return deps.db.prepare(
-    "SELECT id, thread_id, question FROM expired_questions WHERE card_id = ? AND answered = 0",
+    "SELECT id, thread_id, question, multiple, kind FROM expired_questions WHERE card_id = ? AND answered = 0",
   ).all(cardId) as OpenRow[];
 }
 
@@ -240,7 +240,15 @@ function answerRows(openRows: OpenRow[], answers: Answer[]): AnswerRow[] {
   for (const item of answers) {
     const row = openRows.find((entry) => entry.id === item.questionId);
     const clean = cleanAnswerList(item.answers);
-    if (row && !selected.has(item.questionId) && clean.length > 0) {
+    // Empty means none — but only where none is expressible. A multiple
+    // question with nothing checked is a decision (keep nothing / add
+    // nothing), except split proposals, whose explicit none is the keep
+    // choice. A single-select radio with nothing picked is an unfinished
+    // form, so it stays unanswered and the batch refusal names it. The flag
+    // is read as stored (0/1 integers) rather than coerced upstream, so the
+    // row keeps the database representation end to end.
+    const none = clean.length === 0 && Boolean(row?.multiple) && row?.kind !== "split";
+    if (row && !selected.has(item.questionId) && (clean.length > 0 || none)) {
       selected.set(item.questionId, { ...row, answers: clean });
     }
   }
