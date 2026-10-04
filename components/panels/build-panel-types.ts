@@ -24,6 +24,9 @@ export type BuildPanelState = {
   collapsedListGroups: Record<string, boolean>;
   githubAuthMissing: boolean;
   githubAutomationEnabled: boolean;
+  selectedIds: Set<string>;
+  toggleSelection: (cardId: string) => void;
+  clearSelection: () => void;
   toggleProject: (value: string) => void;
   toggleStage: (value: string) => void;
   toggleIntent: (value: string) => void;

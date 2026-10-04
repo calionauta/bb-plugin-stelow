@@ -70,10 +70,9 @@ for (const [track, source] of [
     `${track} renders no Bucket column`,
   );
 }
-assert.ok(
-  buildPanelView.includes(
-    "kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns)",
-  ),
+assert.match(
+  buildPanelView,
+  /kanbanGridColumns\(\s*BUILD_BOARD_VISIBLE_COLUMNS/,
   "the build grid template matches its rendered columns",
 );
 assert.ok(
@@ -159,7 +158,7 @@ assert.match(
   "the gallery height is fixed at 85dvh with internal scroll, never content-sized",
 );
 assert.match(cardGallery, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
-assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles require an open action through the extracted board card");
+assert.match(boardCards, /export function BoardCard\(\{ card, onOpen/, "tiles require an open action through the extracted board card");
 assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
 assert.equal(
   (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length

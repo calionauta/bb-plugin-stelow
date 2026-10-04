@@ -1,8 +1,10 @@
 import { Children, useCallback, useState, type MouseEvent, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
+import { EditParkedSheet } from "./edit-parked-sheet";
 import { errorActivityLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
@@ -109,20 +111,23 @@ export function CardHeading({ title, status, action }: { title: string; status: 
   );
 }
 
-export function BoardCard({ card, onOpen }: { card: BoardCardItem; onOpen: () => void }) {
+type BoardCardProps = {
+  card: BoardCardItem;
+  onOpen: () => void;
+  selected?: boolean;
+  onToggleSelection?: (cardId: string) => void;
+};
+
+export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCardProps) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
+  const [editing, setEditing] = useState(false);
   const open = useCallback(() => onOpen(), [onOpen]);
   const openThread = useCallback(() => {
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
-  const retry = cardCanResume(card) && card.activity !== "error" ? (
-    <CardRetryButton cardId={card.id} label="Resume work" />
-  ) : null;
-  const progressTitle =
-    `${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · `
-    + `${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`
-    + (card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : "");
+  const canEdit = !card.workerThreadId && (card.status === "draft" || card.status === "pending");
+  const showCheckbox = typeof onToggleSelection === "function";
   return (
     <div
       role="button"
@@ -137,24 +142,130 @@ export function BoardCard({ card, onOpen }: { card: BoardCardItem; onOpen: () =>
         else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}`}
+      className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"} ${selected ? "ring-1 ring-primary" : ""}`}
       aria-label={`Open card ${card.displayName}.`}
     >
+      {showCheckbox ? (
+        <BoardCardSelect
+          cardId={card.id}
+          displayName={card.displayName}
+          selected={Boolean(selected)}
+          onToggleSelection={onToggleSelection}
+        />
+      ) : null}
       <CardHeading
         title={card.displayName}
-        action={retry}
+        action={<BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />}
         status={<BuildStatusPills card={card} statusTone={statusTone} intentLabel={(intent: string) => INTENT_LABEL[intent]} />}
       />
-      {card.scopeSummary.scopesTotal > 0 ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-          <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
-          <span className="whitespace-nowrap text-muted-foreground" title={progressTitle}>
-            ✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks
-            {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
-          </span>
-        </div>
-      ) : null}
+      <BoardCardProgress card={card} />
       <CardMetaRows card={card} />
+      <BoardCardEditSheet card={card} editing={editing} onClose={() => setEditing(false)} />
+    </div>
+  );
+}
+
+/**
+ * The parked-edit sheet, mounted only while editing. The card mapping lives
+ * here so the tile passes its card once and the sheet contract stays in one
+ * place — a second mapping elsewhere would drift from this one.
+ */
+function BoardCardEditSheet({ card, editing, onClose }: {
+  card: BoardCardItem;
+  editing: boolean;
+  onClose: () => void;
+}) {
+  if (!editing) return null;
+  return (
+    <EditParkedSheet
+      card={{
+        id: card.id,
+        displayName: card.displayName,
+        prompt: card.prompt,
+        projectId: card.projectId,
+        status: card.status,
+        workerThreadId: card.workerThreadId,
+      }}
+      open={editing}
+      onClose={onClose}
+      onSaved={onClose}
+    />
+  );
+}
+
+/**
+ * The multi-select checkbox, floating over the tile. Split out because it is
+ * the bulk-selection concern on a tile that otherwise only opens the card —
+ * and because the label must stop propagation so checking never opens.
+ */
+function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
+  cardId: string;
+  displayName: string;
+  selected: boolean;
+  onToggleSelection?: (cardId: string) => void;
+}) {
+  return (
+    <label
+      className="absolute left-2 top-2 flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background/90"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelection?.(cardId)}
+        className="h-4 w-4 cursor-pointer"
+        aria-label={`Select ${displayName}`}
+      />
+    </label>
+  );
+}
+
+/**
+ * The edit/resume row on a parked tile. Gated to draft/pending without a
+ * worker — the sheet itself re-checks, so a stale tile cannot save.
+ */
+function BoardCardActions({ card, canEdit, onEdit }: {
+  card: BoardCardItem;
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  const retry = cardCanResume(card) && card.activity !== "error" ? (
+    <CardRetryButton cardId={card.id} label="Resume work" />
+  ) : null;
+  return (
+    <div className="flex gap-2">
+      {canEdit ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={(event) => { event.stopPropagation(); onEdit(); }}
+          className="min-h-11 cursor-pointer"
+        >
+          Edit
+        </Button>
+      ) : null}
+      {retry}
+    </div>
+  );
+}
+
+/**
+ * The scope/task strip under the heading. Progress only — the numbers live
+ * with the scopes, and this never duplicates them elsewhere on the tile.
+ */
+function BoardCardProgress({ card }: { card: BoardCardItem }) {
+  if (card.scopeSummary.scopesTotal === 0) return null;
+  const title =
+    `${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · `
+    + `${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`
+    + (card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : "");
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
+      <span className="whitespace-nowrap text-muted-foreground" title={title}>
+        ✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks
+        {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
+      </span>
     </div>
   );
 }
