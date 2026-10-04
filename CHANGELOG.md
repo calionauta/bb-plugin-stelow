@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.70.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.69.0...v0.70.0) (2026-10-04)
+
+
+### Features
+
+* self-healing runs and deterministic scope asks ([#318](https://github.com/calionauta/bb-plugin-stelow/issues/318)) ([767a62a](https://github.com/calionauta/bb-plugin-stelow/commit/767a62a5dc88321313b26718b7b2e37a85d60b58))
+
 ## [0.69.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.68.0...v0.69.0) (2026-10-04)
 
 
