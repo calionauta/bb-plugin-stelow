@@ -19,12 +19,14 @@ export declare function ensureInboxSeverityColumns(db: { prepare(query: string):
 
 export function insertInboxEvent(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, event: InboxEventInput): boolean;
 export function questionInboxDedupeKey(cardId: string, interactionId: string): string;
-export function markQuestionsAnswered(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, input: {
+/** Batch-aware sync identity: live ids stay per-id, one timed-out batch shares one key. */
+export function questionSyncKeys(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }> } }, cardId: string, interactionIds: string[]): string[];
+export function markQuestionsAnswered(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }>; run(...values: unknown[]): { changes: number } } }, input: {
   cardId: string;
   interactionIds: string[];
   occurredAt: number;
 }): number;
-export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, input: {
+export function syncQuestionInboxEvents(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }>; run(...values: unknown[]): { changes: number } } }, input: {
   cardId: string;
   interactionIds: string[];
   occurredAt: number;

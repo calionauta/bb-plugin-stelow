@@ -2,6 +2,7 @@ import { refuse, usage, type CliCommandFn, type CliResult, type CliRunContext, t
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 import { workspaceUnavailable } from "../../../lib/workspace-refusal.mjs";
+import { flagValue } from "../../../lib/cli-argv.mjs";
 
 const SYNC_SCOPES_USAGE =
   "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]";
@@ -87,11 +88,6 @@ function createSyncScopesCommand(deps: CliDeps): CliCommandFn {
     }
     return { exitCode: 0, stdout: result.stdout };
   };
-}
-
-function flagValue(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
 }
 
 /** Only `--name <workflow>` and `--json` reach the helper (plus `--project`,

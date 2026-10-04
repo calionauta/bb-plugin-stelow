@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { EMPTY_OUTPUT_ERROR } from "../lib/transient-run-retry.mjs";
 import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities } from "../lib/bb-workflow-capabilities.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -171,7 +172,7 @@ export function scriptOutcome(run: unknown): unknown {
   // no-op, and leaving it as "succeeded" is what turned a real failure into
   // a missing-file mystery three layers down.
   if (state === "succeeded" && isEmptyOutputs(script.outputs)) {
-    return { ...record, status: "failed", scriptState: state, scriptError: "the recipe produced no task outputs" };
+    return { ...record, status: "failed", scriptState: state, scriptError: EMPTY_OUTPUT_ERROR };
   }
   return run;
 }
