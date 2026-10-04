@@ -713,8 +713,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   resolved history last, read; per-item **Mark as read** / **Show again**
   (the reversible pair, driven by read state); deep-links into card+event.
   The vocabulary is a notification's, never a card's: an item says
-  **Set aside**, not *Archived*, and its filter is **Read**, not *Archived* —
-  "archive" is a card's fate, and a button on a notice that reads as an
+  **Set aside**, not *Archived*, with its own **Set aside** filter, so Bring
+  back is reachable from the panel — without it a dismissal is a one-way
+  door. "Archive" stays a card's fate, and a button on a notice that reads as an
   action on the card it names is a wrong affordance. An item carries BOTH
   reversible actions, because **read and handled are different facts**: a read
   question that has not been answered still needs an answer, so it stays in
@@ -747,9 +748,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `resolved_at` as well as `read_at`, since only a card's death ends a review,
   not an unread row — this is the card's own attention
   marker on the board.
-  The toolbar is one row: four tabs with semantic status dots (amber waits,
-  emerald resolved, zinc archived, primary all) and a single Unread-only
-  checkbox — no detached Show label.
+  The toolbar is one row: five tabs with semantic status dots (amber waits,
+  emerald resolved, zinc read, zinc set-aside, primary all) and a single Unread-only
+  checkbox — no detached Show label. Severity chips that merely restate the
+  row's own label are suppressed (one signal, not two); chips that add
+  information — stall age, error counts — always survive.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
@@ -757,6 +760,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Verify blockage** (`VerifyBlockageNotice`, `verifyBlockage` RPC,
+  `lib/verify-blockage.mjs`). A card parked on open questions after a failed
+  verify names whether the failure is still the one to act on: the last test
+  run's HEAD versus the checkout's HEAD now. `stale` (tree moved — resume to
+  re-verify), `confirmed` (failed on this exact checkout — re-running changes
+  nothing), `clear`/`unknown` (renders nothing). The decision stays human;
+  the notice only says which action is worth taking. Asked lazily on the
+  decision hero, never on the open-card path.
 - **Severity bump** (`maybeBumpSeverity`, Inbox severity router). With the
   router in Decision API mode, the reconcile sweep judges up to 3
   unjudged routine items per tick (older than 5 minutes) with one yes/no
@@ -2158,7 +2169,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   belongs to a project or a preset), so a name field would be free text wearing
   attribution's clothes. Only a `completed` card can be accepted; an unfinished
   one is refused naming Done, and an archived one naming restore. The row shows
-  on all three card kinds, because Research and Explore finish too.
+  on all three card kinds, because Research and Explore finish too. A Done card
+  can also carry an unmerged pull request with nothing linking the two halves,
+  so while the button is still offered the row names it (`PR #N still needs
+  merging in Publication below — this only records your review`, via
+  `unmergedPrNumber`): approving otherwise reads as finishing.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { inboxEventDescription, inboxEventPresentation, inboxEventText, inboxEventTime, isOpenInboxAction, unreadInboxEntries } from "../lib/inbox-event-presentation.mjs";
+import {
+  inboxDisplayReasons,
+  inboxEventDescription,
+  inboxEventPresentation,
+  inboxEventText,
+  inboxEventTime,
+  inboxFilterEntries,
+  isOpenInboxAction,
+  unreadInboxEntries,
+} from "../lib/inbox-event-presentation.mjs";
 
 const openQuestion = { kind: "question", occurredAt: 10, resolvedAt: null, archivedAt: null };
 assert.deepEqual(inboxEventPresentation(openQuestion), { label: "Needs a decision", tone: null, stateAt: 10, stateLabel: null });
@@ -45,4 +54,23 @@ assert.equal(inboxEventText({ ...openQuestion, summary: "Needs a decision: pick 
 // Time: state time carries its label, open events read the relative clock.
 assert.match(inboxEventTime({ ...resolvedQuestion, summary: "x" }), /^Resolved /, "resolved time carries its state");
 assert.match(inboxEventTime({ ...openQuestion, summary: "x" }), /(Just now|\d+[mhd] ago|Yesterday)$/, "open time reads the relative clock");
+
+// Severity chips that restate the row's own label are noise, not signal:
+// "Needs a decision" beside "needs decision" is one fact printed twice.
+const noisyQuestion = { ...openQuestion, summary: "The agent is waiting for your answer to continue.", severityReasons: ["needs decision"] };
+assert.deepEqual(inboxDisplayReasons(noisyQuestion), [], "a reason that restates the label is dropped");
+const stalledQuestion = { ...openQuestion, summary: "Pick one", severityReasons: ["needs decision", "stalled 3d"] };
+assert.deepEqual(inboxDisplayReasons(stalledQuestion), ["stalled 3d"], "reasons that add information survive the filter");
+assert.deepEqual(inboxDisplayReasons({ ...noisyQuestion, resolvedAt: 20 }), [], "kept history never carries chips");
+assert.deepEqual(inboxDisplayReasons({ ...openQuestion, severityReasons: null }), [], "missing reasons read as none, never a throw");
+
+// Set-aside items live in their own filter and nowhere else: without it a
+// dismissal is a one-way door and "Bring back" is unreachable.
+const archivedQuestion = { ...openQuestion, archivedAt: 30, severityReasons: [] };
+assert.deepEqual(
+  inboxFilterEntries([openQuestion, archivedQuestion], "archived"),
+  [archivedQuestion],
+  "the archived filter shows exactly the dismissed items",
+);
+assert.deepEqual(inboxFilterEntries([openQuestion, archivedQuestion], "all"), [openQuestion], "All stays the active inbox");
 console.log("inbox event presentation test ok: active, resolved, archived, and informational states");

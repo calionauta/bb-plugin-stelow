@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
+import { splitOptionDescriptionPreview } from "../../lib/question-presentation.mjs";
 import { splitOptionDescription } from "../../lib/split-question-presentation.mjs";
 import type {
   AskArtifact,
@@ -171,6 +172,10 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   const artifact = option.artifact;
+  // Long descriptions collapse behind a disclosure placed OUTSIDE the pick
+  // control: a details element inside a button is invalid markup and expanding
+  // it would also pick the option. Short text renders inline, as before.
+  const preview = splitOptionDescriptionPreview(description);
   const rowFrame = `flex min-h-11 items-stretch overflow-hidden rounded-md border ${
     active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"
   }`;
@@ -179,7 +184,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
       <div className={rowFrame}>
         <OptionPickControl
           label={option.label}
-          description={description}
+          description={preview.tail ? `${preview.head}…` : preview.head}
           active={active}
           multiple={multiple}
           isKeepOption={isKeepOption}
@@ -194,7 +199,32 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
           />
         ) : null}
       </div>
+      {preview.tail ? (
+        <OptionFullDetail description={description} />
+      ) : null}
       <OptionPreview preview={option.preview} />
+    </div>
+  );
+}
+
+/**
+ * The collapsed remainder of a long description. Apart from the row because
+ * it is a second disclosure beside the preview one, with the same family and
+ * the same one-click cost — and because the row owns picking, not reading.
+ */
+function OptionFullDetail({ description }: { description: string }) {
+  return (
+    <div className="ml-1 border-l-2 border-muted pl-2">
+      <details className="group">
+        <summary className={SUMMARY_LINK}>
+          <DisclosureChevron />
+          Full detail
+        </summary>
+        {/* The whole description, not just the tail: a fragment starting
+            mid-sentence forces the reader to reassemble head plus tail
+            across two regions. The in-button glance above stays truncated. */}
+        <p className="whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</p>
+      </details>
     </div>
   );
 }

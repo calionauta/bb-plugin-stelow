@@ -6,6 +6,7 @@ import { AcceptanceRow } from "./acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { VerifyBlockageNotice } from "./verify-blockage-notice";
 import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 
@@ -148,9 +149,14 @@ function BuildHeroActions({
       }}
       continuation="continuing from the current stage"
       retryTail=" from the current stage"
-      extra={hero.kind === "decision" && target
-        ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} />
-        : null}
+      extra={hero.kind === "decision" ? (
+        <>
+          {target ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} /> : null}
+          {detail?.pendingQuestions?.[0] ? (
+            <VerifyBlockageNotice cardId={card.id} onResume={lifecycle.doRetry} retrying={lifecycle.retrying} />
+          ) : null}
+        </>
+      ) : null}
       onStart={lifecycle.doStart}
       onRetry={lifecycle.doRetry}
       onRestart={() => lifecycle.setRestartWorkerOpen(true)}

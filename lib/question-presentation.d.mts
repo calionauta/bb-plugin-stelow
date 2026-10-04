@@ -29,3 +29,8 @@ export declare function describeAskSubmission(value: unknown): {
   title?: string;
   detail?: string;
 };
+export declare const OPTION_DESCRIPTION_PREVIEW_LIMIT: number;
+export declare function splitOptionDescriptionPreview(description: unknown, limit?: unknown): {
+  head: string;
+  tail: string | null;
+};

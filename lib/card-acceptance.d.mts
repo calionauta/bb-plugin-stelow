@@ -14,3 +14,8 @@ export declare function acceptanceLine(acceptedAt?: number | null): string | nul
 
 /** The date half of the line, as a plain calendar date in UTC. */
 export declare function acceptedDate(acceptedAt?: number | null): string;
+
+/** The number of the card's still-open pull request, or null. */
+export declare function unmergedPrNumber(publication?: {
+  pullRequest?: { number?: unknown; state?: unknown } | null;
+} | null): number | null;
