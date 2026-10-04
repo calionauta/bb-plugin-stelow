@@ -16,7 +16,7 @@ import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
 import { BucketGalleryButton } from "../board/card-gallery";
-import { BuildBulkBar } from "../board/build-bulk-bar";
+import { BulkBarSlot } from "../board/build-bulk-bar";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
@@ -238,7 +238,6 @@ function BuildBoardView({
   onOpenThread,
   onMoveCard,
 }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
-  const onConfirm = useDeleteArchivedCards(state.rpc);
   if (state.viewMode === "list") {
     return (
       <BuildList
@@ -259,21 +258,22 @@ function BuildBoardView({
       />
     );
   }
+  return <BuildBoardKanban state={state} onOpenCard={onOpenCard} onMoveCard={onMoveCard} />;
+}
+
+/**
+ * The kanban grid itself: view-mode routing above decides list/hill/kanban,
+ * and this owns only the grid plus the selection bar above it.
+ */
+function BuildBoardKanban({ state, onOpenCard, onMoveCard }: {
+  state: BuildPanelState;
+  onOpenCard: (card: { kind: "build" | "research" | "explore" }, cardId: string) => void;
+  onMoveCard: (cardId: string, target: string) => void;
+}) {
+  const onConfirm = useDeleteArchivedCards(state.rpc);
   return (
     <>
-      {state.selectedIds.size > 0 ? (
-        <div className="mb-3">
-          <BuildBulkBar
-            cards={state.cards as never}
-            selectedIds={state.selectedIds}
-            onClear={state.clearSelection}
-            onSuccess={() =>
-              state.rpc.call("listCards", {}).catch(() => undefined)
-            }
-            rpc={state.rpc as never}
-          />
-        </div>
-      ) : null}
+      <BulkBarSlot state={state} />
       <div
         data-testid="kanban-board"
         className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
