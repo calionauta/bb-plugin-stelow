@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.72.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.71.0...v0.72.0) (2026-10-04)
+
+
+### Features
+
+* bucket editable parked cards plus bulk start/archive/delete ([#326](https://github.com/calionauta/bb-plugin-stelow/issues/326)) ([edc12ab](https://github.com/calionauta/bb-plugin-stelow/commit/edc12ab8094105b5f9b3a9f9f59cebe58691786f))
+* inbox set-aside filter, verify-blockage notice, and quieter git and question surfaces ([#327](https://github.com/calionauta/bb-plugin-stelow/issues/327)) ([a7c521e](https://github.com/calionauta/bb-plugin-stelow/commit/a7c521edc08965cf0bfa2244d016a4b818b08151))
+
 ## [0.71.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.1...v0.71.0) (2026-10-04)
 
 
