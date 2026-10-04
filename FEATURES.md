@@ -1913,6 +1913,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   is never overwritten by a retry. An archived card is never renamed and never
   receives a record. The open-card breadcrumb edits inline with explicit
   Save/Cancel; blank restores the heuristic.
+- **Parked prompt editing + Start-time title reuse** (`updateCardPrompt`,
+  `needsNaming`). A parked Bucket card's description edits inline in the
+  detail hero through one shared component (build/research/explore), gated
+  to worker-less pre-start statuses with named refusals
+  (`ERR_CARD_STARTED` / `ERR_CARD_COMPLETED` / `ERR_CARD_ARCHIVED` /
+  `ERR_PROMPT_EMPTY` / `ERR_PROMPT_TOO_LONG`); the gate re-checks before
+  the write so a Start landing mid-edit wins and the draft is preserved.
+  Starting a parked card whose title is still the heuristic re-fires the
+  same title burst creation uses (at most once per Start, human titles
+  never overwritten); prompt saves refresh still-heuristic titles
+  synchronously and never spawn a burst.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an

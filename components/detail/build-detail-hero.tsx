@@ -6,6 +6,7 @@ import { AcceptanceRow } from "./acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 
 const SPLIT_PROPOSAL_TITLE = [
@@ -63,7 +64,7 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
             {hero.title}
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-          <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+          <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={() => void view.load()} />
           <RecoveryPrompt card={card} view={view} />
           <BuildHeroActions
             card={card}

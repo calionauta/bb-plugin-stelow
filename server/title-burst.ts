@@ -32,6 +32,17 @@ const TITLE_POLLS = 24;
 const TITLE_RETRY_POLLS = 12;
 // Process-wide, because what is bounded is host concurrency, not any one card.
 const TITLE_RETRY_INFLIGHT = 2;
+// One burst per card at a time, whatever the trigger (creation, Start): a
+// second trigger for a card with a burst already in flight is a duplicate,
+// not a queue. The retry cap above bounds second attempts; this bounds
+// overlapping first attempts.
+const titlesInFlight = new Set<string>();
+
+function claimTitleSlot(cardId: string): boolean {
+  if (titlesInFlight.has(cardId)) return false;
+  titlesInFlight.add(cardId);
+  return true;
+}
 
 type TitleCard = { id: string; project_id: string; prompt: string; kind: string; display_name: string | null; name: string };
 
@@ -137,43 +148,56 @@ export function createTitleBurst(deps: TitleBurstDeps) {
   return async function suggestCardName(cardId: string): Promise<void> {
     const card = deps.getCard(cardId);
     if (!card) return;
-    let outcome: TitleOutcome;
-    let retried = false;
-    let context: Record<string, unknown> = { presetName: "unknown", presetSource: null, retried: false };
+    if (!claimTitleSlot(cardId)) return;
     try {
-      const resolution = deps.resolveGenerationPreset(card);
-      const params = deps.presetParams(resolution.preset);
-      context = { presetName: resolution.preset.name, presetSource: resolution.source, retried: false };
-      const first = await runAttempt(deps, card, params, TITLE_POLLS);
-      outcome = first.outcome;
-      if (first.outcome === "delivered" && first.name) deps.writeTitle(cardId, first.name);
-      if (isRetryable(outcome) && retriesInFlight < TITLE_RETRY_INFLIGHT) {
-        // Re-read before retrying: a post-hoc comparison can only see a rename
-        // that already happened, never one that is about to. The archived AND
-        // renamed checks are both required — a retry must never overwrite a
-        // human's name, and must never write to a terminal card.
-        const current = deps.getCard(cardId);
-        if (current && !deps.isArchivedCard(current) && titleOf(current) === titleOf(card)) {
-          retried = true;
-          retriesInFlight++;
-          try {
-            const second = await runAttempt(deps, current, params, TITLE_RETRY_POLLS);
-            outcome = second.outcome;
-            if (second.outcome === "delivered" && second.name) {
-              deps.writeTitle(cardId, second.name);
-              outcome = "delivered_after_retry";
-            }
-          } finally {
-            retriesInFlight--;
-          }
-        }
-      }
-      const wrote = outcome === "delivered" || outcome === "delivered_after_retry";
-      if (record(deps, cardId, outcome, { ...context, retried }) || wrote) refresh(deps, cardId);
-    } catch {
-      // The resolved preset and the retried flag are in scope even here, so
-      // the record still names the evidence it was supposed to name.
-      record(deps, cardId, "internal_error", { ...context, retried });
+      await runBurst(deps, card, cardId);
+    } finally {
+      titlesInFlight.delete(cardId);
     }
   };
+}
+
+async function runBurst(
+  deps: TitleBurstDeps,
+  card: TitleCard,
+  cardId: string,
+): Promise<void> {
+  let outcome: TitleOutcome;
+  let retried = false;
+  let context: Record<string, unknown> = { presetName: "unknown", presetSource: null, retried: false };
+  try {
+    const resolution = deps.resolveGenerationPreset(card);
+    const params = deps.presetParams(resolution.preset);
+    context = { presetName: resolution.preset.name, presetSource: resolution.source, retried: false };
+    const first = await runAttempt(deps, card, params, TITLE_POLLS);
+    outcome = first.outcome;
+    if (first.outcome === "delivered" && first.name) deps.writeTitle(cardId, first.name);
+    if (isRetryable(outcome) && retriesInFlight < TITLE_RETRY_INFLIGHT) {
+      // Re-read before retrying: a post-hoc comparison can only see a rename
+      // that already happened, never one that is about to. The archived AND
+      // renamed checks are both required — a retry must never overwrite a
+      // human's name, and must never write to a terminal card.
+      const current = deps.getCard(cardId);
+      if (current && !deps.isArchivedCard(current) && titleOf(current) === titleOf(card)) {
+        retried = true;
+        retriesInFlight++;
+        try {
+          const second = await runAttempt(deps, current, params, TITLE_RETRY_POLLS);
+          outcome = second.outcome;
+          if (second.outcome === "delivered" && second.name) {
+            deps.writeTitle(cardId, second.name);
+            outcome = "delivered_after_retry";
+          }
+        } finally {
+          retriesInFlight--;
+        }
+      }
+    }
+    const wrote = outcome === "delivered" || outcome === "delivered_after_retry";
+    if (record(deps, cardId, outcome, { ...context, retried }) || wrote) refresh(deps, cardId);
+  } catch {
+    // The resolved preset and the retried flag are in scope even here, so
+    // the record still names the evidence it was supposed to name.
+    record(deps, cardId, "internal_error", { ...context, retried });
+  }
 }

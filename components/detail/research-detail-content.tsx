@@ -14,6 +14,7 @@ import { LightweightStatusPills } from "../dashboard/build-status-pills";
 import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 import { InboxEventBanner, shouldShowInboxEventBanner, type InboxEventItem } from "./inbox-event-banner";
 import { InputFiles } from "./input-files";
@@ -63,7 +64,7 @@ function ResearchStatus({ card, detail, index, strategies, actions, onOpenRestar
           <div className="min-w-0 flex-1 space-y-1">
             <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-            <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+            <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={onQuestionsChanged} />
             {index?.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p> : null}
             <ResearchIdentity card={card} strategyLabel={strategyLabel} />
             <ResearchHeroActions

@@ -11,6 +11,7 @@ import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
 import { checkoutNoteFor, WorkerSection } from "../worker-history/worker-history";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 import { ExploreQualitySection } from "./explore-quality-section";
 import type { ExploreCard, ExploreDetail } from "./explore-detail-types";
@@ -42,7 +43,7 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
           <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-          <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+          <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={onChanged} />
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
             <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={LIGHTWEIGHT_COLUMN_LABELS[researchColumnForStatus(card.status)] ?? null} tagLabel={stageLabel} tagTitle="Technique — the focused approach this exploration runs." kind="explore" />
             {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
