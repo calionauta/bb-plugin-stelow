@@ -378,9 +378,7 @@ export function BuildPanelView(props: Props) {
       ) : null}
       <FlowStrip
         rpc={state.rpc}
-        projectId={
-          state.projectIds.length === 1 ? (state.projectIds[0] ?? null) : null
-        }
+        projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}
         onOpenCard={(kind, cardId) => props.onOpenCard({ kind }, cardId)}
       />
       <BuildBoardView {...props} />
