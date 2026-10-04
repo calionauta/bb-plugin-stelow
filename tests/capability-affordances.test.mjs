@@ -90,24 +90,16 @@ test("About carries the capability panel and nothing installs from it", () => {
   );
 });
 
-test("the card action is thread-scoped, benefit-worded, and gated on the probe", () => {
-  assert.match(action, /if \(!threadId \|\| available !== true\) return null/,
-    "no thread or no running capability means no button, never a dead one");
-  assert.match(action, /navigate\.toThread\(threadId\)/,
-    "the button opens this card's thread, where the live graph lives");
-  assert.match(action, /See live graph ↗/, "the label names the benefit, not the plugin");
-  assert.doesNotMatch(action, />Agent [Gg]raph</, "no label advertises the plugin name");
-  assert.doesNotMatch(action, /toPluginPanel\(["']agent-graph/,
-    "the card never jumps to the generic graph page and loses the card");
-});
-
-test("every Open thread site gains its graph sibling, plus one dismissable nudge", () => {
+test("the card hero keeps one thread opener, never a look-alike", () => {
+  // No cross-plugin thread-panel seam exists (openThreadPanel and
+  // toPluginPanel are own-plugin only; Agent Graph exposes no
+  // thread-addressed route), so a "live graph" button could only duplicate
+  // Open thread's destination under a misleading label. One opener stays.
+  assert.doesNotMatch(hero, /<OpenGraphButton /, "no second thread opener beside Open thread");
+  assert.doesNotMatch(action, /See live graph/, "the overpromising label is gone with the button");
   const threadSites = hero.match(/<OpenThreadButton /g) ?? [];
-  const graphSites = hero.match(/<OpenGraphButton /g) ?? [];
   assert.ok(threadSites.length >= 3, "the hero keeps its thread sites");
-  assert.equal(graphSites.length, threadSites.length,
-    "each Open thread site gains exactly one graph sibling");
-  assert.match(hero, /<GraphNudge threadId=\{card\.workerThreadId\} \/>/);
+  assert.match(hero, /<GraphNudge threadId=\{card\.workerThreadId\} \/>/, "the absent-capability nudge stays: it points somewhere real");
   assert.match(action, /stelow-hide-graph-nudge/, "the nudge dismisses into localStorage");
   assert.match(action, /toPluginPanel\(STELOW_PANEL_ID, \{ subPath: "about" \}\)/,
     "the nudge sends the reader to About, where capabilities live");
