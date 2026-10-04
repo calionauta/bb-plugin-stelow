@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.70.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.0...v0.70.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* strip pattern from engine-bound recipe schemas ([#320](https://github.com/calionauta/bb-plugin-stelow/issues/320)) ([9fac20f](https://github.com/calionauta/bb-plugin-stelow/commit/9fac20ffe50e7de8c1467e5a3d61073404cf7b2d))
+
 ## [0.70.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.69.0...v0.70.0) (2026-10-04)
 
 
