@@ -24,6 +24,7 @@ import { githubUnavailableStatus } from "../../github-status.js";
 import { createWorkspacesRecovery } from "../../workspaces-recovery.js";
 import { cancelScopeBatchRun } from "../../scope-batch.js";
 import { createSharedCheckoutReader, listBbThreads } from "../shared-checkout.js";
+import { createVerifyBlockageReader } from "../verify-blockage.js";
 import { createCardDetailHandler } from "../card-detail.js";
 import { createCardMutationHandlers } from "../card-mutations.js";
 import { cancelCardScopeBatches, createCardLifecycleHandlers } from "../card-lifecycle.js";
@@ -65,6 +66,7 @@ export function createCardSurfaces(deps: CardSurfaceDeps) {
     workspacesRecovery,
     cardDetail: buildCardDetail(core, execution),
     sharedCheckoutExposure: buildSharedCheckoutExposure(core),
+    verifyBlockage: buildVerifyBlockage(core),
     cardMutations: buildCardMutations(core),
     cardLifecycle: buildCardLifecycle(core, execution),
     cardOperations: buildCardOperations(core),
@@ -157,6 +159,22 @@ function buildSharedCheckoutExposure(core: RuntimeCore) {
     dirtyStatusResultIn: core.git.dirtyStatusResultIn,
     listThreads: listBbThreads,
     now: core.now,
+  });
+  return ({ cardId }: { cardId: string }) => reader.reportFor(cardId);
+}
+
+/**
+ * Whether the verify failure parking the card is stale. A reader, not a
+ * guard: it refuses nothing and resolves nothing — the decision stays with
+ * the person reading the question. Wired next to the checkout reader because
+ * both answers describe the same working tree.
+ */
+function buildVerifyBlockage(core: RuntimeCore) {
+  const reader = createVerifyBlockageReader({
+    db: core.db,
+    getCard: core.getCard,
+    cardWorkspace: core.cardWorkspace,
+    runGitIn: core.git.runGitIn,
   });
   return ({ cardId }: { cardId: string }) => reader.reportFor(cardId);
 }

@@ -45,9 +45,10 @@ const inheritedBaseline = [
   // questions — that is the split the budget asked for, not a line shaved to
   // fit a number.
   "components/github/github-linked-discussion.tsx:LinkedDiscussionSection#1: 115 lines (baseline 116)",
-  // The read toggles moved into their own unit, so this is smaller than the
-  // 111 the fork point carried — the recorded number is the fork point's.
-  "components/panels/inbox-panel.tsx:InboxPanel#1: 106 lines (baseline 119)",
+  // The filter toolbar moved into InboxToolbar, so this shrank from 106 to
+  // 87 — the split the budget asked for, not a line shaved to fit a number.
+  // The parenthesised number is the debt the FORK POINT carried (119).
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 87 lines (baseline 119)",
   // The parenthesised number is the debt the FORK POINT carried, not today's:
   // the gate reports what the branch started with, so it stays stable while the
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —

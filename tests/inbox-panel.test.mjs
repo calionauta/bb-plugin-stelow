@@ -45,6 +45,11 @@ assert.deepEqual(
   ["event-1", "event-4"],
   "unread-only filtering applies after the selected view",
 );
+assert.deepEqual(
+  inboxVisibleEntries([attention, read, archived, resolved], "archived", false).map((entry) => entry.id),
+  ["event-3"],
+  "set-aside items live in their own filter, so Bring back is reachable from the panel",
+);
 // The item's button is the reversible one, so it is driven by read state.
 // Keyed off the archive flag it offered "Mark as read" to something already
 // read, and offered "Show again" to a reader who had never seen the item.

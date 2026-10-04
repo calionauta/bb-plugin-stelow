@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   acceptanceLine,
   acceptanceRefusal,
   acceptedDate,
   isAccepted,
+  unmergedPrNumber,
 } from "../lib/card-acceptance.mjs";
 
 /**
@@ -86,3 +90,32 @@ test("the same stamp renders the same line, so no surface can phrase it differen
   assert.equal(acceptanceLine(at), acceptanceLine(at));
   assert.equal(acceptedDate(at), "2026-01-15");
 });
+
+test("the cross-reference names only a still-open pull request", () => {
+  // A Done card can carry both a receipt and an unmerged PR with nothing
+  // linking them — approving then reads as finishing. Merged, closed, absent
+  // and unreadable all read as null: the note is advisory, so a missing
+  // sentence is a missing sentence, never an error on the receipt.
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "open" } }), 322, "an open PR is named");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "draft" } }), 322, "a draft still needs merging");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "merged" } }), null, "merged needs no cross-reference");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "closed" } }), null, "closed needs none either");
+  assert.equal(unmergedPrNumber({ pullRequest: null }), null, "no PR means no note");
+  assert.equal(unmergedPrNumber(null), null, "an unreadable snapshot reads as no note, never a throw");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: "322", state: "open" } }), null, "a non-numeric number is not rendered");
+});
+
+// Wiring: the row reads the publication snapshot instead of re-deriving PR
+// state, and only while the button is still offered — after acceptance the
+// row is a stamp, and a fetch per render of a settled row would be a request
+// nobody asked for.
+const rowSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../components/detail/acceptance-row.tsx"),
+  "utf8",
+);
+assert.match(rowSource, /rpc\.call\("publicationStatus", \{ cardId \}\)/, "the cross-reference asks the snapshot that owns PR state");
+assert.match(
+  rowSource,
+  /useUnmergedPrNumber\(cardId, status === "completed" && !acceptanceLine\)/,
+  "the snapshot is read only while the receipt can still be written",
+);
