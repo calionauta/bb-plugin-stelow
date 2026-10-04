@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.71.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.1...v0.71.0) (2026-10-04)
+
+
+### Features
+
+* bucket naming reuse on Start plus editable parked prompt ([#322](https://github.com/calionauta/bb-plugin-stelow/issues/322)) ([6195416](https://github.com/calionauta/bb-plugin-stelow/commit/6195416b1fc4ad7010ee1c54e805f69634ef64f7))
+* empty multiple-choice answers complete as none ([#323](https://github.com/calionauta/bb-plugin-stelow/issues/323)) ([54d7255](https://github.com/calionauta/bb-plugin-stelow/commit/54d72557992b3c08373a36f9a7bfd06f98db0366))
+
+
+### Bug Fixes
+
+* drop the duplicate live-graph button ([#325](https://github.com/calionauta/bb-plugin-stelow/issues/325)) ([b9a82af](https://github.com/calionauta/bb-plugin-stelow/commit/b9a82af59dab874565c0b93759b3bdb6c6e9f20d))
+
 ## [0.70.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.0...v0.70.1) (2026-10-04)
 
 
