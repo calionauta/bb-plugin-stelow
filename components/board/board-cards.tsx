@@ -1,6 +1,7 @@
 import { Children, useCallback, useState, type MouseEvent, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
 import { EditParkedSheet } from "./edit-parked-sheet";
@@ -130,13 +131,14 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
     <CardRetryButton cardId={card.id} label="Resume work" />
   ) : null;
   const editButton = canEdit ? (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="sm"
       onClick={(event) => { event.stopPropagation(); setEditing(true); }}
-      className="min-h-11 cursor-pointer rounded-md border px-2 text-xs font-medium hover:bg-muted"
+      className="min-h-11 cursor-pointer"
     >
       Edit
-    </button>
+    </Button>
   ) : null;
   const progressTitle =
     `${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · `

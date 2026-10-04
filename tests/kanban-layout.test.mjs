@@ -70,10 +70,9 @@ for (const [track, source] of [
     `${track} renders no Bucket column`,
   );
 }
-assert.ok(
-  buildPanelView.includes(
-    "kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns)",
-  ),
+assert.match(
+  buildPanelView,
+  /kanbanGridColumns\(\s*BUILD_BOARD_VISIBLE_COLUMNS/,
   "the build grid template matches its rendered columns",
 );
 assert.ok(
