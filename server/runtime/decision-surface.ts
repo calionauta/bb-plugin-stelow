@@ -21,6 +21,11 @@ export function createDecisionSurface(deps: DecisionSurfaceDeps) {
     /** Whether a silent stop is worth resuming the worker for. */
     vetAutoContinue: (stateText: string | null) =>
       api.vetAutoContinue(stateText),
+    /** Shadow tier suggestion for the stage model hint; records, never overrides. */
+    suggestTierShadow: (
+      card: { kind?: unknown; intent?: unknown },
+      stage: string,
+    ) => api.suggestTierShadow(card, stage),
     maybeBumpSeverity: () => api.maybeBumpSeverity(),
     reviewPolicy: () => api.reviewPolicy(),
     routeConfig: (

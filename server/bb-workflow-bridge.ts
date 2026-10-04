@@ -5,6 +5,27 @@ import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities } from "../lib/bb-wor
 const execFileAsync = promisify(execFile);
 const bbBin = process.env.BB_CLI || "bb";
 
+/** Availability probes cost two CLI round trips, and the router plus the
+ * launcher plus the 45s reconcile sweep each probe the same thread. Cache
+ * per thread+workspace briefly: availability changes on thread lifecycle
+ * events, never within a minute of steady state. */
+export const NATIVE_PROBE_TTL_MS = 60_000;
+
+type ProbeCacheEntry = { at: number; available: boolean };
+const probeCache = new Map<string, ProbeCacheEntry>();
+
+export function nativeProbeCacheKey(ref: { projectId: string; threadId: string; workspaceId: string }): string {
+  return `${ref.projectId}::${ref.threadId}::${ref.workspaceId}`;
+}
+
+export function isNativeProbeFresh(entry: ProbeCacheEntry | undefined, now: number): boolean {
+  return !!entry && now - entry.at >= 0 && now - entry.at < NATIVE_PROBE_TTL_MS;
+}
+
+export function clearNativeWorkflowCache(): void {
+  probeCache.clear();
+}
+
 export { BB_NATIVE_CAPABILITIES, missingNativeCapabilities };
 
 export interface NativeWorkflowRun {
@@ -33,6 +54,19 @@ export async function nativeWorkflowAvailable(ref?: { projectId: string; threadI
       await execFileAsync(bbBin, ["workflows", "--help"], { timeout: 10_000 });
       return true;
     }
+    const key = nativeProbeCacheKey(ref);
+    const cached = probeCache.get(key);
+    if (isNativeProbeFresh(cached, Date.now())) return cached!.available;
+    const available = await probeNativeWorkflow(ref);
+    probeCache.set(key, { at: Date.now(), available });
+    return available;
+  } catch {
+    return false;
+  }
+}
+
+async function probeNativeWorkflow(ref: { projectId: string; threadId: string; workspaceId: string }): Promise<boolean> {
+  try {
     const { stdout: threadJson } = await execFileAsync(
       bbBin,
       ["thread", "show", ref.threadId, "--json"],

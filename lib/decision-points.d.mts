@@ -2,6 +2,8 @@ export declare const DECISION_POINT_TRIAGE_INTENT: string;
 export declare const DECISION_POINT_ARTIFACT_CRITERIA: string;
 export declare const DECISION_POINT_AUTO_CONTINUE: string;
 export declare const DECISION_POINT_INBOX_SEVERITY: string;
+export declare const DECISION_POINT_RETRY_TRANSIENT: string;
+export declare const DECISION_POINT_PRESET_TIER: string;
 export declare const DECISION_POINT_MODES: string[];
 
 export declare const PRESET_JUDGE_POINTS: string[];
@@ -82,3 +84,31 @@ export declare function resolveAutoContinue(options: {
   apiNoul?: number | null;
   routeAt?: number | null;
 }): AutoContinueResolution;
+
+export declare function retryTransientQuestions(): Record<string, unknown>;
+
+export interface RetryTransientResolution {
+  retry: boolean;
+  source: "api" | "rules";
+  confidence?: number | null;
+}
+
+export declare function resolveRetryTransient(options: {
+  apiNoul?: number | null;
+  routeAt?: number | null;
+}): RetryTransientResolution;
+
+export declare const PRESET_TIER_CRITERIA: Record<string, string>;
+
+export declare function presetTierQuestions(): Record<string, unknown>;
+
+export interface PresetTierResolution {
+  tier: string | null;
+  source: "api" | "rules";
+  confidence: number | null;
+}
+
+export declare function resolvePresetTier(options: {
+  apiAnswers?: Record<string, { type?: string; choice?: string; confidence?: number | null } | null> | null;
+  routeAt?: number | null;
+}): PresetTierResolution;

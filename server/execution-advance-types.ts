@@ -5,6 +5,7 @@
  * vocabulary rather than each carrying its own idea of "prepared".
  */
 import type { ExecutionNative, ExecutionRouteInfo } from "./execution-native.js";
+import type { TierSuggestion } from "./decision-tier.js";
 import type { WorkerCard } from "./workers-types.js";
 
 export type Workspace = { path: string; hostId: string | null };
@@ -45,6 +46,8 @@ export type AdvanceDeps = {
   getCardPresetId: (cardId: string) => string;
   respawn: (cardId: string, presetId: string) => Promise<unknown>;
   scheduleRespawn: (cardId: string, presetId: string) => void;
+  /** Tier shadow, shadow-only: records hint agreement, never changes the swap. */
+  suggestTier?: (card: WorkerCard, stage: string) => Promise<TierSuggestion | null>;
   requestGatePreReview: (cardId: string, stage: string) => Promise<void>;
   publishCard: (cardId: string) => void;
   isArchivedCard: (card: WorkerCard) => boolean;

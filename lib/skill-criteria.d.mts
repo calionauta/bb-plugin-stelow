@@ -16,6 +16,13 @@ export declare function groupCriteriaByKind(items: unknown): {
 
 export declare function semanticCriterionToScore(criterion: unknown): Record<string, unknown>;
 
+export declare function criteriaEvidenceQuestion(): Record<string, unknown>;
+
+export declare function resolveEvidenceSufficiency(options: {
+  apiNoul?: number | null;
+  routeAt?: number | null;
+}): { sufficient: boolean; source: "api" | "rules"; confidence?: number | null };
+
 export declare const CRITERIA_MET_SCORE: number;
 export declare const CRITERIA_UNMET_SCORE: number;
 
