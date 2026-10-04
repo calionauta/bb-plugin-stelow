@@ -309,6 +309,11 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), prompt: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  updateCardWorkspace: {
+    experimental_description: "Move a parked empty card to another project/checkout (gated)",
+    input: z.object({ cardId: z.string(), projectId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   acceptCard: {
     experimental_description: "Record a human acceptance of a finished card's result; a receipt, never a gate",
     input: z.object({ cardId: z.string() }).strict(),

@@ -16,6 +16,7 @@ import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
 import { BucketGalleryButton } from "../board/card-gallery";
+import { BuildBulkBar } from "../board/build-bulk-bar";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
@@ -46,7 +47,10 @@ type Props = {
   onNewIssue: () => void;
   onOpenPresets: () => void;
   onOpenGithub: () => void;
-  onOpenCard: (card: { kind: "build" | "research" | "explore" }, cardId: string) => void;
+  onOpenCard: (
+    card: { kind: "build" | "research" | "explore" },
+    cardId: string,
+  ) => void;
   onOpenThread: (threadId: string) => void;
   onMoveCard: (cardId: string, target: string) => void;
 };
@@ -62,14 +66,17 @@ type BuildHeaderProps = {
   onOpenGithub: () => void;
 };
 
-function BuildHeaderIntro({ attentionCount, onAttention }: Pick<BuildHeaderProps, "attentionCount" | "onAttention">) {
+function BuildHeaderIntro({
+  attentionCount,
+  onAttention,
+}: Pick<BuildHeaderProps, "attentionCount" | "onAttention">) {
   return (
     <div className="min-w-0">
       <h1 className="text-xl font-semibold tracking-tight">Build</h1>
       <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-        An AI agent carries each card through a structured workflow—from triage to
-        scope-by-scope execution—pausing for your decisions wherever your review
-        mode requires it.
+        An AI agent carries each card through a structured workflow—from triage
+        to scope-by-scope execution—pausing for your decisions wherever your
+        review mode requires it.
       </p>
       {attentionCount > 0 ? (
         <button
@@ -82,7 +89,8 @@ function BuildHeaderIntro({ attentionCount, onAttention }: Pick<BuildHeaderProps
           )}
           aria-label={`Show the ${attentionCount} ${attentionCount === 1 ? "card" : "cards"} that need attention`}
         >
-          {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
+          {attentionCount} {attentionCount === 1 ? "item needs" : "items need"}{" "}
+          your attention
         </button>
       ) : null}
     </div>
@@ -92,7 +100,10 @@ function BuildHeaderIntro({ attentionCount, onAttention }: Pick<BuildHeaderProps
 function BuildHeaderActions(props: BuildHeaderProps) {
   return (
     <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={props.onNewIssue}>
+      <Button
+        className="min-h-11 w-full sm:w-auto sm:flex-none"
+        onClick={props.onNewIssue}
+      >
         <Icon name="Plus" className="h-4 w-4" aria-hidden />
         New issue
       </Button>
@@ -127,7 +138,10 @@ function BuildHeaderActions(props: BuildHeaderProps) {
 function BuildHeader(props: BuildHeaderProps) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <BuildHeaderIntro attentionCount={props.attentionCount} onAttention={props.onAttention} />
+      <BuildHeaderIntro
+        attentionCount={props.attentionCount}
+        onAttention={props.onAttention}
+      />
       <BuildHeaderActions {...props} />
     </header>
   );
@@ -141,7 +155,12 @@ function GithubAuthNotice({ enabled }: { enabled: boolean }) {
         Import issues needs a GitHub account linked in the{" "}
         <span className="font-medium">github</span> plugin.
       </span>
-      <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
+      <a
+        className="text-primary underline underline-offset-2"
+        href="https://github.com/settings/tokens"
+        target="_blank"
+        rel="noreferrer"
+      >
         Set up GitHub auth
       </a>
     </div>
@@ -151,11 +170,13 @@ function GithubAuthNotice({ enabled }: { enabled: boolean }) {
 function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
   return (
     <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
-      <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
+      <h2 className="text-sm font-semibold text-foreground">
+        Product work, guided end to end
+      </h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-        Stelow is an opinionated product workflow for humans and AI agents. Start with
-        an outcome or problem; it guides the work through framing, critique, planning,
-        execution, and review.
+        Stelow is an opinionated product workflow for humans and AI agents.
+        Start with an outcome or problem; it guides the work through framing,
+        critique, planning, execution, and review.
       </p>
       <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
         <Button onClick={onNewIssue}>Start new issue</Button>
@@ -170,7 +191,13 @@ function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
   );
 }
 
-function BuildFilters({ state, onAttention }: { state: BuildPanelState; onAttention: () => void }) {
+function BuildFilters({
+  state,
+  onAttention,
+}: {
+  state: BuildPanelState;
+  onAttention: () => void;
+}) {
   return (
     <div className="flex items-start gap-2 border-b pb-3">
       <div className="min-w-0 flex-1">
@@ -195,12 +222,22 @@ function BuildFilters({ state, onAttention }: { state: BuildPanelState; onAttent
           onReset={state.reset}
         />
       </div>
-      <ViewToggle view={state.viewMode} track="build" onChange={state.setViewMode} label="Build cards view" />
+      <ViewToggle
+        view={state.viewMode}
+        track="build"
+        onChange={state.setViewMode}
+        label="Build cards view"
+      />
     </div>
   );
 }
 
-function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
+function BuildBoardView({
+  state,
+  onOpenCard,
+  onOpenThread,
+  onMoveCard,
+}: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
   const onConfirm = useDeleteArchivedCards(state.rpc);
   if (state.viewMode === "list") {
     return (
@@ -223,22 +260,42 @@ function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Pr
     );
   }
   return (
-    <div
-      data-testid="kanban-board"
-      className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
-      style={{ gridTemplateColumns: kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns) }}
-    >
-      {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
-        <BuildBoardColumn
-          key={column}
-          column={column}
-          state={state}
-          onOpenCard={onOpenCard}
-          onMoveCard={onMoveCard}
-          onConfirm={onConfirm}
-        />
-      ))}
-    </div>
+    <>
+      {state.selectedIds.size > 0 ? (
+        <div className="mb-3">
+          <BuildBulkBar
+            cards={state.cards as never}
+            selectedIds={state.selectedIds}
+            onClear={state.clearSelection}
+            onSuccess={() =>
+              state.rpc.call("listCards", {}).catch(() => undefined)
+            }
+            rpc={state.rpc as never}
+          />
+        </div>
+      ) : null}
+      <div
+        data-testid="kanban-board"
+        className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
+        style={{
+          gridTemplateColumns: kanbanGridColumns(
+            BUILD_BOARD_VISIBLE_COLUMNS,
+            state.collapsedColumns,
+          ),
+        }}
+      >
+        {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
+          <BuildBoardColumn
+            key={column}
+            column={column}
+            state={state}
+            onOpenCard={onOpenCard}
+            onMoveCard={onMoveCard}
+            onConfirm={onConfirm}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -265,7 +322,14 @@ function BuildBoardColumn(props: {
       onToggleCollapsed={() => state.toggleColumn(column)}
       onDrop={(cardId) => onMoveCard(cardId, column)}
       labels={BUILD_BOARD_COLUMN_LABELS}
-      renderCard={(card) => <BoardCard card={card} onOpen={() => onOpenCard(card, card.id)} />}
+      renderCard={(card) => (
+        <BoardCard
+          card={card}
+          onOpen={() => onOpenCard(card, card.id)}
+          selected={state.selectedIds.has(card.id)}
+          onToggleSelection={state.toggleSelection}
+        />
+      )}
       deleteAll={archivedDeleteProps({
         column,
         cards: state.grouped[column],
@@ -297,17 +361,26 @@ export function BuildPanelView(props: Props) {
         onAttention={() => state.setAttention(true)}
       />
       <GithubAuthNotice enabled={state.githubAuthMissing} />
-      <BuildFilters state={state} onAttention={() => state.setAttention(true)} />
-      {state.cards.length === 0 && !state.loading ? <EmptyBuildState onNewIssue={props.onNewIssue} /> : null}
+      <BuildFilters
+        state={state}
+        onAttention={() => state.setAttention(true)}
+      />
+      {state.cards.length === 0 && !state.loading ? (
+        <EmptyBuildState onNewIssue={props.onNewIssue} />
+      ) : null}
       {state.viewMode === "board" ? (
         <p className="text-xs text-muted-foreground">
           <span className="sm:hidden">Swipe sideways to view every stage.</span>
-          <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
+          <span className="hidden sm:inline">
+            Use Shift + scroll to move across stages.
+          </span>
         </p>
       ) : null}
       <FlowStrip
         rpc={state.rpc}
-        projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}
+        projectId={
+          state.projectIds.length === 1 ? (state.projectIds[0] ?? null) : null
+        }
         onOpenCard={(kind, cardId) => props.onOpenCard({ kind }, cardId)}
       />
       <BuildBoardView {...props} />

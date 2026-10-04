@@ -159,7 +159,7 @@ assert.match(
   "the gallery height is fixed at 85dvh with internal scroll, never content-sized",
 );
 assert.match(cardGallery, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
-assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles require an open action through the extracted board card");
+assert.match(boardCards, /export function BoardCard\(\{ card, onOpen/, "tiles require an open action through the extracted board card");
 assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
 assert.equal(
   (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length

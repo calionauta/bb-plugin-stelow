@@ -80,6 +80,8 @@ export function createCardMutationHandlers(deps: CardMutationDeps) {
       renameCard(deps, input),
     updateCardPrompt: (input: { cardId: string; prompt: string }) =>
       updateCardPrompt(deps, input),
+    updateCardWorkspace: (input: { cardId: string; projectId: string }) =>
+      updateCardWorkspace(deps, input),
     addCardComment: (input: {
       cardId: string;
       target: "card" | "scope" | "task";
@@ -226,6 +228,25 @@ async function updateCardPrompt(
     : live.display_name;
   deps.db.prepare("UPDATE cards SET prompt = ?, display_name = ?, updated_at = ? WHERE id = ?")
     .run(next, title, deps.now(), cardId);
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
+}
+
+async function updateCardWorkspace(
+  deps: CardMutationDeps,
+  { cardId, projectId }: { cardId: string; projectId: string },
+) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound };
+  if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
+  if (card.status === "completed") return { ok: false, error: ERR_CARD_COMPLETED };
+  if (card.worker_thread_id) return { ok: false, error: ERR_CARD_STARTED };
+  if (!PARKED_STATUSES.has(card.status)) return { ok: false, error: ERR_CARD_STARTED };
+  const live = deps.getCard(cardId);
+  if (!live) return { ok: false, error: deps.errors.cardNotFound };
+  const raced = promptEditRefusal(live);
+  if (raced) return { ok: false, error: raced };
+  deps.db.prepare("UPDATE cards SET project_id = ?, updated_at = ? WHERE id = ?").run(projectId, deps.now(), cardId);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }

@@ -32,6 +32,8 @@ test("one shared prompt editor serves all three detail heroes", () => {
     assert.match(source, /<PromptEdit cardId=\{card\.id\}/, `${heroes[index]} renders the shared control with the card`);
   }
   assert.doesNotMatch(heroSources.join("\n"), /<textarea/, "no hero owns a track-local textarea — the shared control is the only editor");
+  assert.equal((control.match(/<textarea/g) ?? []).length, 1, "and the shared control owns exactly one");
+  assert.match(control, /from "@\/components\/ui\/button"/, "its actions use the shared Button, not raw elements");
 });
 
 test("exactly one sync namer with an allowlisted call-site set", () => {
@@ -58,6 +60,14 @@ test("Start re-fire runs on start only, never restart", () => {
   assert.equal((workers.match(/refreshUnsettledTitle\(deps, card\)/g) ?? []).length, 1, "a second call site (restart/retry) overwrites settled titles");
   const hook = /titleRefresh\?: \{ request: \(\(cardId: string\) => void\) \| null \}/;
   assert.match(workers, hook, OPTIONAL_HOOK_NOTE);
+});
+
+test("BoardCard supports selection for bulk bucket actions", () => {
+  const board = read("components/board/board-cards.tsx");
+  assert.match(board, /export function BoardCard\(/, "BoardCard exists");
+  assert.match(board, /selected\?/, "BoardCard supports selection prop for bucket bulk");
+  assert.match(board, /onToggleSelection/, "BoardCard has selection toggle for bucket");
+  assert.match(board, /EditParkedSheet/, "BoardCard wires the parked edit sheet");
 });
 
 test("updateCardPrompt is a contracted RPC with handler-owned length gate", () => {
