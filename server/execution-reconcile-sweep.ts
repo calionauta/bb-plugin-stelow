@@ -8,6 +8,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { listExecutionRuns } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
+import { STAGE_BY_ID } from "../lib/workflow-vocabulary.mjs";
 import type { ReconcileStopper } from "./execution-reconcile-deps.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -56,6 +57,15 @@ export async function reconcileStageEntries(deps: SweepDeps): Promise<void> {
   for (const { id } of cards) {
     const card = deps.getCard(id);
     if (!card?.worker_thread_id) continue;
+    // Ledger first: a card that already owns a run for its stage needs no
+    // route decision and, above all, no availability probe (two CLI calls).
+    const recipeId = (STAGE_BY_ID as Record<string, { execution?: { recipe?: string } }>)[
+      card.stage
+    ]?.execution?.recipe;
+    if (!recipeId) continue;
+    const owned = listExecutionRuns(deps.db, card.id)
+      .some((run) => run.stage === card.stage && run.recipeId === recipeId);
+    if (owned) continue;
     const workspace = await deps.cardWorkspace(card).catch(() => null);
     if (!workspace?.path) continue;
     const route = await deps.native.resolveStageExecutionRoute(card, card.stage, workspace.path);

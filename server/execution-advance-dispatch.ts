@@ -6,12 +6,14 @@
  * deferred; anything else is a plain stage advance with a note.
  */
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
+import { sequentialTaskPlan } from "../lib/sequential-receipts.mjs";
 import type { ExecutionRouteInfo } from "./execution-native.js";
+import type { SequentialRoute } from "./execution-native-route.js";
 import type { AdvanceDeps } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
 type DispatchDeps = Pick<AdvanceDeps, "native" | "recordExecutionEntry">;
-type BandDeps = Pick<AdvanceDeps, "getReliablePreset" | "getCardPresetId" | "respawn" | "scheduleRespawn">;
+type BandDeps = Pick<AdvanceDeps, "getReliablePreset" | "getCardPresetId" | "respawn" | "scheduleRespawn" | "suggestTier">;
 
 export type DispatchInput = {
   card: WorkerCard;
@@ -44,18 +46,44 @@ export async function dispatchAdvance(
     recordEntered(deps, input);
   }
   if (input.route?.route.mode === "coordinator-sequential") {
+    const plan = input.route.recipe ? sequentialTaskPlan(input.route.recipe, {}) : null;
     deps.native.recordCoordinatorSequentialRoute(
       input.card.id,
       input.stage,
       input.route.recipeId,
-      input.route.route,
+      withSequentialChecklist(input.route, plan),
     );
-    return { stdout: `${input.note}\n(coordinator-sequential fallback selected)`.trim(), error: null };
+    return { stdout: `${input.note}\n${sequentialFallbackNote(plan)}`.trim(), error: null };
   }
   if (input.route?.route.mode === "native") {
     return dispatchNative(deps, input);
   }
   return { stdout: input.note, error: null };
+}
+
+/**
+ * The coordinator worker gets the same explicit checklist a native run
+ * enforces by schema: every required artifact up front. Fields already set
+ * by the route (width 0, human boundary) are never overwritten here.
+ */
+function withSequentialChecklist(
+  route: ExecutionRouteInfo,
+  plan: ReturnType<typeof sequentialTaskPlan> | null,
+): SequentialRoute {
+  if (!plan) return route.route;
+  return {
+    ...route.route,
+    requiredOutputs: plan.requiredOutputs,
+    effectiveWidth: typeof route.route.effectiveWidth === "number"
+      ? route.route.effectiveWidth
+      : plan.width,
+  };
+}
+
+function sequentialFallbackNote(plan: ReturnType<typeof sequentialTaskPlan> | null): string {
+  const outputs = plan?.requiredOutputs ?? [];
+  if (outputs.length === 0) return "(coordinator-sequential fallback selected)";
+  return `(coordinator-sequential fallback selected; expected outputs: ${outputs.join(", ")})`;
 }
 
 async function dispatchNative(
@@ -105,4 +133,13 @@ export async function applyBand(
   if (!preset || preset.id === currentPresetId) return;
   if (deferred) deps.scheduleRespawn(card.id, preset.id);
   else await deps.respawn(card.id, preset.id);
+  // Shadow only, after the real decision: the suggestion is recorded by the
+  // verb itself and can never change this swap. Absent in tests and in any
+  // wiring that does not opt in; a throwing provider is swallowed here so
+  // observation can never break a band swap.
+  try {
+    await deps.suggestTier?.(card, stage);
+  } catch {
+    /* shadow never breaks the swap */
+  }
 }

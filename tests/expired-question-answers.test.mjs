@@ -2,6 +2,19 @@ import assert from "node:assert/strict";
 import { expiredAnswerPayload, cleanAnswerList } from "../lib/expired-question-answers.mjs";
 
 assert.deepEqual(expiredAnswerPayload([{ id: "one" }, { id: "two" }], [["A", "B", "C"], []]), [], "an incomplete timed-out batch never creates a partial submit payload");
+assert.deepEqual(
+  expiredAnswerPayload(
+    [{ id: "one", multiple: true }, { id: "two", multiple: true }],
+    [["A", "B", "C"], []],
+  ),
+  [{ questionId: "one", answers: ["A", "B", "C"] }, { questionId: "two", answers: [] }],
+  "an unchecked multiple submits as an explicit none instead of blocking the batch",
+);
+assert.deepEqual(
+  expiredAnswerPayload([{ id: "one", multiple: true, kind: "split" }], [[]]),
+  [],
+  "a split proposal keeps its explicit keep choice: empty never means none there",
+);
 assert.deepEqual(expiredAnswerPayload([{ id: "one" }], [["  A  ", "", "B"]]), [{ questionId: "one", answers: ["A", "B"] }], "answers are cleaned without collapsing a multiple choice to its first value");
 assert.deepEqual(expiredAnswerPayload(null, []), [], "odd inputs fail closed");
 

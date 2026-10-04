@@ -19,7 +19,7 @@ export type InboxPanelNotification = {
 
 export function inboxVisibleEntries(
   notifications: InboxPanelNotification[],
-  filter: "attention" | "resolved" | "read" | "all",
+  filter: "attention" | "resolved" | "read" | "archived" | "all",
   unreadOnly: boolean,
 ): InboxPanelNotification[];
 export function inboxAction(entry: InboxPanelNotification): "archive" | "restore";

@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.71.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.1...v0.71.0) (2026-10-04)
+
+
+### Features
+
+* bucket naming reuse on Start plus editable parked prompt ([#322](https://github.com/calionauta/bb-plugin-stelow/issues/322)) ([6195416](https://github.com/calionauta/bb-plugin-stelow/commit/6195416b1fc4ad7010ee1c54e805f69634ef64f7))
+* empty multiple-choice answers complete as none ([#323](https://github.com/calionauta/bb-plugin-stelow/issues/323)) ([54d7255](https://github.com/calionauta/bb-plugin-stelow/commit/54d72557992b3c08373a36f9a7bfd06f98db0366))
+
+
+### Bug Fixes
+
+* drop the duplicate live-graph button ([#325](https://github.com/calionauta/bb-plugin-stelow/issues/325)) ([b9a82af](https://github.com/calionauta/bb-plugin-stelow/commit/b9a82af59dab874565c0b93759b3bdb6c6e9f20d))
+
+## [0.70.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.0...v0.70.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* strip pattern from engine-bound recipe schemas ([#320](https://github.com/calionauta/bb-plugin-stelow/issues/320)) ([9fac20f](https://github.com/calionauta/bb-plugin-stelow/commit/9fac20ffe50e7de8c1467e5a3d61073404cf7b2d))
+
+## [0.70.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.69.0...v0.70.0) (2026-10-04)
+
+
+### Features
+
+* self-healing runs and deterministic scope asks ([#318](https://github.com/calionauta/bb-plugin-stelow/issues/318)) ([767a62a](https://github.com/calionauta/bb-plugin-stelow/commit/767a62a5dc88321313b26718b7b2e37a85d60b58))
+
+## [0.69.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.68.0...v0.69.0) (2026-10-04)
+
+
+### Features
+
+* provider-schema fit enforcement for decision points ([#316](https://github.com/calionauta/bb-plugin-stelow/issues/316)) ([fa61bc1](https://github.com/calionauta/bb-plugin-stelow/commit/fa61bc1d777bf0b984031038dfd9e6d65187ea52))
+
+## [0.68.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.67.0...v0.68.0) (2026-10-04)
+
+
+### Features
+
+* retry-transient and preset-tier decision points with evidence-gated criteria ([#314](https://github.com/calionauta/bb-plugin-stelow/issues/314)) ([a832f10](https://github.com/calionauta/bb-plugin-stelow/commit/a832f10b665556482c13ce1f8f2483f209f67a2f))
+
 ## [0.67.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.1...v0.67.0) (2026-10-03)
 
 

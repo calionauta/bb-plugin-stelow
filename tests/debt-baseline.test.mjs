@@ -45,9 +45,10 @@ const inheritedBaseline = [
   // questions — that is the split the budget asked for, not a line shaved to
   // fit a number.
   "components/github/github-linked-discussion.tsx:LinkedDiscussionSection#1: 115 lines (baseline 116)",
-  // The read toggles moved into their own unit, so this is smaller than the
-  // 111 the fork point carried — the recorded number is the fork point's.
-  "components/panels/inbox-panel.tsx:InboxPanel#1: 106 lines (baseline 119)",
+  // The filter toolbar moved into InboxToolbar, so this shrank from 106 to
+  // 87 — the split the budget asked for, not a line shaved to fit a number.
+  // The parenthesised number is the debt the FORK POINT carried (119).
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 87 lines (baseline 119)",
   // The parenthesised number is the debt the FORK POINT carried, not today's:
   // the gate reports what the branch started with, so it stays stable while the
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —
@@ -69,6 +70,11 @@ const inheritedBaseline = [
   // waived, and `source-debt.json` no longer carries it either.
   "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
+  // The run table's migration ledger grows by one ALTER per schema column by
+  // construction — the auto-retry budget column took it from 50 to 51.
+  // Splitting a migration list would scatter the single-writer convention the
+  // ledger exists to enforce, so the ceiling is recorded, not refactored.
+  "lib/execution-run-ledger.mjs:ensureExecutionRunTable#1: 51 lines (recorded 51)",
   // The --selected flag and its validation moved into validateAskGroups,
   // and per-flag details into applyOptionDetail, so the argv loop stays a
   // dispatcher — 80 lines at the fork point, 68 now.

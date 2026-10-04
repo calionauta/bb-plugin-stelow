@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { acceptanceRefusal, acceptedDate } from "../../lib/card-acceptance.mjs";
 import { heuristicDisplayName } from "../../lib/draft-burst.mjs";
+import { needsNaming } from "../../lib/card-naming.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent } from "../../lib/workflow-intent-policy.mjs";
@@ -77,6 +78,10 @@ export function createCardMutationHandlers(deps: CardMutationDeps) {
       updateCardIntent(deps, input),
     renameCard: (input: { cardId: string; name: string }) =>
       renameCard(deps, input),
+    updateCardPrompt: (input: { cardId: string; prompt: string }) =>
+      updateCardPrompt(deps, input),
+    updateCardWorkspace: (input: { cardId: string; projectId: string }) =>
+      updateCardWorkspace(deps, input),
     addCardComment: (input: {
       cardId: string;
       target: "card" | "scope" | "task";
@@ -162,6 +167,86 @@ async function renameCard(
     heuristicDisplayName(card.prompt, card.name);
   deps.db.prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?")
     .run(next, deps.now(), cardId);
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
+}
+
+export const ERR_PROMPT_EMPTY = "The description is empty.";
+export const ERR_PROMPT_TOO_LONG = "The description is over 20,000 characters.";
+const ERR_CARD_STARTED = "This card already started — its description is locked.";
+const ERR_CARD_COMPLETED = "This card is completed — its description is locked.";
+
+const PARKED_STATUSES = new Set(["draft", "pending"]);
+
+/**
+ * Which refusal a prompt edit earns, if any. Parked means worker-less AND
+ * in a pre-start status: a completed row with a cleaned-up worker is still
+ * refused, and a row the worker already consumed is refused even when the
+ * thread handle is momentarily absent.
+ */
+function promptEditRefusal(card: WorkerCard): string | null {
+  if (isArchivedCard(card)) return ERR_CARD_ARCHIVED;
+  if (card.status === "completed") return ERR_CARD_COMPLETED;
+  if (card.worker_thread_id) return ERR_CARD_STARTED;
+  if (!PARKED_STATUSES.has(card.status)) return ERR_CARD_STARTED;
+  return null;
+}
+
+/**
+ * Edit a parked card's description. Allowed only before Start: the worker
+ * prompt is built from `cards.prompt` at spawn, so a parked edit is what
+ * the worker receives, while a post-start edit would fork live work.
+ *
+ * The gate is re-checked immediately before the write: a Start landing
+ * mid-edit is refused, never half-applied, and the draft stays with the
+ * caller (refusals carry no write). Synchronous DB write — no timeout,
+ * no retry, no trail comment.
+ */
+async function updateCardPrompt(
+  deps: CardMutationDeps,
+  { cardId, prompt }: { cardId: string; prompt: string },
+) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound };
+  const gate = promptEditRefusal(card);
+  if (gate) return { ok: false, error: gate };
+  const next = typeof prompt === "string" ? prompt.trim() : "";
+  if (next.length === 0) return { ok: false, error: ERR_PROMPT_EMPTY };
+  if (next.length > 20_000) return { ok: false, error: ERR_PROMPT_TOO_LONG };
+  // Re-read before writing: a Start may have landed between the gate check
+  // and this line, and only the live row decides.
+  const live = deps.getCard(cardId);
+  if (!live) return { ok: false, error: deps.errors.cardNotFound };
+  const raced = promptEditRefusal(live);
+  if (raced) return { ok: false, error: raced };
+  // Single-burst-site rule: a prompt save never spawns the title burst.
+  // When the title is still the heuristic of the prompt being replaced it
+  // is recomputed from the new prompt in the same write; a human-set title
+  // is left untouched.
+  const title = needsNaming({ displayName: live.display_name ?? live.name, name: live.name, prompt: live.prompt })
+    ? heuristicDisplayName(next, live.name)
+    : live.display_name;
+  deps.db.prepare("UPDATE cards SET prompt = ?, display_name = ?, updated_at = ? WHERE id = ?")
+    .run(next, title, deps.now(), cardId);
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
+}
+
+async function updateCardWorkspace(
+  deps: CardMutationDeps,
+  { cardId, projectId }: { cardId: string; projectId: string },
+) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound };
+  if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
+  if (card.status === "completed") return { ok: false, error: ERR_CARD_COMPLETED };
+  if (card.worker_thread_id) return { ok: false, error: ERR_CARD_STARTED };
+  if (!PARKED_STATUSES.has(card.status)) return { ok: false, error: ERR_CARD_STARTED };
+  const live = deps.getCard(cardId);
+  if (!live) return { ok: false, error: deps.errors.cardNotFound };
+  const raced = promptEditRefusal(live);
+  if (raced) return { ok: false, error: raced };
+  deps.db.prepare("UPDATE cards SET project_id = ?, updated_at = ? WHERE id = ?").run(projectId, deps.now(), cardId);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }

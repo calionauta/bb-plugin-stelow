@@ -80,6 +80,17 @@ async function buildFlowMetrics(
   return { ...result, coverage };
 }
 
+/** The card readers: detail, checkout exposure, verify blockage. One-call
+ * reports, never mutations — grouped because the table otherwise buries three
+ * reads among three mutation spreads that look identical at a glance. */
+function cardReaderHandlers(cards: CardSurfaces) {
+  return {
+    cardDetail: cards.cardDetail as never,
+    sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
+    verifyBlockage: cards.verifyBlockage as never,
+  };
+}
+
 /** Register every Stelow RPC on the host, from the assembled surfaces. */
 export function registerStelowRpc(deps: RpcSurfacesDeps): void {
   registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps));
@@ -102,8 +113,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...cards.cardMutations,
     ...cards.cardLifecycle,
     ...cards.cardOperations,
-    cardDetail: cards.cardDetail as never,
-    sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
+    ...cardReaderHandlers(cards),
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),
     catchUp: (input: { cardId: string }) => core.briefings.catchUp(input.cardId),

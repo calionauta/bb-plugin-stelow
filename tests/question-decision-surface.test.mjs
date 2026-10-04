@@ -67,4 +67,28 @@ assert.ok(
   "the reader learns what to DO before the file list is even mentioned",
 );
 
+// 3. Option descriptions at 150+ characters each turned a 4-option question
+// into a wall nobody reads before picking. The decision stays at a glance;
+// the full text is one click away, mirroring the preview policy above.
+assert.match(
+  optionRows,
+  /splitOptionDescriptionPreview\(description\)/,
+  "the row splits long descriptions instead of printing them inline",
+);
+assert.match(
+  optionRows,
+  /preview\.tail \? \(\s*<OptionFullDetail/,
+  "the full text collapses behind a disclosure of its own, beside the preview one",
+);
+assert.match(
+  optionRows,
+  /function OptionFullDetail\(\{ description \}[\s\S]{0,400}<details className="group">/,
+  "the disclosure uses the named family, not a re-spelled summary",
+);
+// A <details> inside a <button> is invalid markup, and expanding it would
+// pick the option — the disclosure sits beside the pick control, not in it.
+const pickControl = optionRows.slice(optionRows.indexOf("function OptionPickControl"), optionRows.indexOf("function BatchOptionRow"));
+assert.ok(pickControl.length > 0, "the rendered pick control is found");
+assert.doesNotMatch(pickControl, /<details/, "expanding the full text never picks the option by accident");
+
 console.log("question decision surface test ok: previews readable at a glance, staleness says what to do first");

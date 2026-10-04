@@ -7,4 +7,5 @@ export declare function decideAskGate(input: {
   tag?: unknown;
   forced?: unknown;
   groups?: unknown;
+  reviewMode?: unknown;
 }): { allowed: boolean; reason: string | null; code: 0 | 1 | 2 };

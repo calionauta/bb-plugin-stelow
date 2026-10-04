@@ -115,6 +115,81 @@ assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?")
 assert.equal(markQuestionsAnswered(db, { cardId: "card_4", interactionIds: [], occurredAt: 1030 }), 0, "empty answer batch marks nothing");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_4");
 
+// One batch, one notification: a timed-out batched ask persists as one
+// expired row per sub-question sharing expired_at. Without batch keys the
+// inbox minted one notification per row and the badge counted one decision
+// several times over (card_a9q5zhzd: Keep IN + Add to IN as two identical
+// rows). Live interactions keep per-id keys; a new expired_at still earns
+// its own row.
+db.exec(`
+  CREATE TABLE expired_questions (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, thread_id TEXT NOT NULL,
+    question TEXT NOT NULL, expired_at INTEGER NOT NULL, answered INTEGER NOT NULL DEFAULT 0
+  );
+`);
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_5", "Batch", "batch", "project_1", "build");
+const expireBatch = (rows) => {
+  const insert = db.prepare(
+    "INSERT INTO expired_questions (id, card_id, thread_id, question, expired_at, answered) VALUES (?, 'card_5', 'thr_5', ?, ?, 0)",
+  );
+  for (const row of rows) insert.run(row.id, row.question, row.at);
+};
+let batchSerial = 0;
+const syncBatch = (ids, at) => syncQuestionInboxEvents(db, {
+  cardId: "card_5", interactionIds: ids, occurredAt: at, createId: () => `evt_batch_${batchSerial += 1}`, summary: questionSummary,
+});
+const openBatchRows = () => db.prepare(
+  "SELECT dedupe_key, resolved_at, resolved_reason FROM inbox_events "
+  + "WHERE card_id = 'card_5' AND kind = 'question' ORDER BY occurred_at",
+).all();
+const openBatchCount = () => openBatchRows().filter((row) => row.resolved_at === null).length;
+// An unknown expired id notifies nothing: no row, no batch, no phantom.
+// Placed before the first batch exists, so the empty key set resolves nothing.
+assert.equal(syncBatch(["expired:ghost"], 900).inserted, 0, "a stale expired id invents no attention");
+assert.equal(openBatchRows().length, 0, "and leaves no row behind");
+expireBatch([{ id: "qexp_a1", question: "Keep IN?", at: 1000 }, { id: "qexp_a2", question: "Add to IN?", at: 1000 }]);
+assert.equal(syncBatch(["expired:qexp_a1", "expired:qexp_a2"], 1100).inserted, 1, "one timed-out batch mints one notification, not one per sub-question");
+assert.equal(openBatchRows().length, 1, "the badge counts one decision moment once");
+assert.equal(openBatchRows()[0].dedupe_key, "question:card_5:expired:1000", "the batch shares one event key");
+assert.equal(syncBatch(["expired:qexp_a1", "expired:qexp_a2"], 1200).inserted, 0, "re-polling the batch inserts no duplicate");
+expireBatch([{ id: "qexp_b1", question: "Later?", at: 2000 }]);
+syncBatch(["expired:qexp_a1", "expired:qexp_a2", "expired:qexp_b1"], 2100);
+assert.equal(openBatchCount(), 2, "a genuinely new batch earns its own notification");
+syncBatch(["pint_live", "expired:qexp_a1", "expired:qexp_a2", "expired:qexp_b1"], 2200);
+assert.equal(openBatchCount(), 3, "a live interaction keeps its own row beside the batches");
+// The expired answer flow commits answered=1 BEFORE marking: the mapping
+// must still find the rows, or the reason degrades to superseded.
+db.prepare("UPDATE expired_questions SET answered = 1 WHERE id IN ('qexp_a1', 'qexp_a2')").run();
+const batchMarked = markQuestionsAnswered(db, {
+  cardId: "card_5", interactionIds: ["expired:qexp_a1", "expired:qexp_a2"], occurredAt: 2300,
+});
+assert.equal(batchMarked, 1, "answering marks the batch");
+assert.equal(openBatchRows()[0].resolved_reason, "answered", "a human answer keeps its reason");
+// A resolved batch reopens while its questions are still open: resolve the
+// row, then sync the same expired ids and the same key comes back open.
+db.prepare("UPDATE inbox_events SET resolved_at = 100, resolved_reason = 'superseded' WHERE card_id = 'card_5'").run();
+syncBatch(["expired:qexp_b1", "pint_live"], 2400);
+const reopened = openBatchRows().filter((row) => row.resolved_at === null);
+assert.equal(reopened.length, 2, "open batches and live asks reopen their rows");
+assert.ok(reopened.some((row) => row.dedupe_key === "question:card_5:expired:2000"), "the batch key, not a per-id row, is what reopens");
+// Legacy per-id rows from before batch keys self-heal: the next sync with
+// the batch set supersedes the look-alike while the batch row stays open.
+db.prepare(
+  "INSERT INTO inbox_events (id, card_id, kind, summary, dedupe_key, occurred_at) "
+  + "VALUES ('evt_legacy', 'card_5', 'question', ?, 'question:card_5:expired:qexp_b1', 1500)",
+).run(questionSummary);
+syncBatch(["expired:qexp_b1", "pint_live"], 2600);
+assert.equal(
+  db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = 'evt_legacy'").get().resolved_reason,
+  "superseded",
+  "the pre-batch per-id row resolves once the batch key owns the moment",
+);
+assert.ok(
+  openBatchRows().some((row) => row.dedupe_key === "question:card_5:expired:2000" && row.resolved_at === null),
+  "while the batch notification itself stays actionable",
+);
+db.prepare("DELETE FROM cards WHERE id = ?").run("card_5");
+
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_2");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_2b");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_3");

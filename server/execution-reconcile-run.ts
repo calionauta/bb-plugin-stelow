@@ -14,6 +14,7 @@ import {
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
 import { nativeNeedsInput } from "./bb-workflow-bridge.js";
+import { attemptAutoRetry } from "./execution-auto-retry.js";
 import type { ReconcileBoundary, ReconcileResult } from "./execution-reconcile-deps.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -217,17 +218,24 @@ async function applyNativeState(
     return;
   }
   if (SIMPLE_STATES.includes(native.state as SimpleState)) {
-    reconcileSimpleState(deps, card, run, native, native.state as SimpleState);
+    await reconcileSimpleState(deps, card, run, native, native.state as SimpleState);
   }
 }
 
-function reconcileSimpleState(
+/**
+ * A failure the host proved needs no human is retried before anyone is told
+ * to wait: an empty recipe output means nothing ran, so a fresh run cannot
+ * duplicate work. Anything else parks on the failed row, where the stage gate
+ * holds and Retry run is the door. The attempt is fail-soft — a retry that
+ * cannot start leaves the card exactly where the failure left it.
+ */
+async function reconcileSimpleState(
   deps: RunDeps,
   card: WorkerCard,
   run: ExecutionRun,
   native: NativeStatus,
   state: SimpleState,
-): void {
+): Promise<void> {
   if (state === run.normalizedStatus) return;
   const reason = failureReason(native, state);
   const next = transitionExecutionRun(deps.db, run.id, state, {
@@ -246,6 +254,7 @@ function reconcileSimpleState(
     `Native ${run.recipeId} failed: ${next.errorCode ?? reason}. `
     + "The card remains available for retry.",
   );
+  await attemptAutoRetry(deps, next);
 }
 
 /** What the row looks like before and after: the tell for "this really moved". */

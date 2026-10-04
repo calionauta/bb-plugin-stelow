@@ -44,6 +44,24 @@ export const cardDetailRpcContract = {
       reason: z.enum(EXPOSURE_REASONS),
     }),
   },
+  /**
+   * Whether the verify failure parking this card is still the failure to act
+   * on: the last test run's HEAD versus the checkout's HEAD now.
+   *
+   * A SEPARATE call, like `sharedCheckoutExposure` above and for the same
+   * reason — the answer costs a subprocess, and most cards never show the
+   * notice. Asked when the reader is looking at a decision hero.
+   */
+  verifyBlockage: {
+    experimental_description: "Whether a verify failure blocking this card is stale: last test run HEAD versus checkout HEAD now",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      state: z.enum(["clear", "stale", "confirmed", "unknown"]),
+      exitCode: z.number().nullable(),
+      runHeadSha: z.string().nullable(),
+      currentHeadSha: z.string().nullable(),
+    }),
+  },
   cardDetail: {
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),

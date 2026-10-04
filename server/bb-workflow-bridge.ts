@@ -1,9 +1,31 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { EMPTY_OUTPUT_ERROR } from "../lib/transient-run-retry.mjs";
 import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities } from "../lib/bb-workflow-capabilities.mjs";
 
 const execFileAsync = promisify(execFile);
 const bbBin = process.env.BB_CLI || "bb";
+
+/** Availability probes cost two CLI round trips, and the router plus the
+ * launcher plus the 45s reconcile sweep each probe the same thread. Cache
+ * per thread+workspace briefly: availability changes on thread lifecycle
+ * events, never within a minute of steady state. */
+export const NATIVE_PROBE_TTL_MS = 60_000;
+
+type ProbeCacheEntry = { at: number; available: boolean };
+const probeCache = new Map<string, ProbeCacheEntry>();
+
+export function nativeProbeCacheKey(ref: { projectId: string; threadId: string; workspaceId: string }): string {
+  return `${ref.projectId}::${ref.threadId}::${ref.workspaceId}`;
+}
+
+export function isNativeProbeFresh(entry: ProbeCacheEntry | undefined, now: number): boolean {
+  return !!entry && now - entry.at >= 0 && now - entry.at < NATIVE_PROBE_TTL_MS;
+}
+
+export function clearNativeWorkflowCache(): void {
+  probeCache.clear();
+}
 
 export { BB_NATIVE_CAPABILITIES, missingNativeCapabilities };
 
@@ -33,6 +55,19 @@ export async function nativeWorkflowAvailable(ref?: { projectId: string; threadI
       await execFileAsync(bbBin, ["workflows", "--help"], { timeout: 10_000 });
       return true;
     }
+    const key = nativeProbeCacheKey(ref);
+    const cached = probeCache.get(key);
+    if (isNativeProbeFresh(cached, Date.now())) return cached!.available;
+    const available = await probeNativeWorkflow(ref);
+    probeCache.set(key, { at: Date.now(), available });
+    return available;
+  } catch {
+    return false;
+  }
+}
+
+async function probeNativeWorkflow(ref: { projectId: string; threadId: string; workspaceId: string }): Promise<boolean> {
+  try {
     const { stdout: threadJson } = await execFileAsync(
       bbBin,
       ["thread", "show", ref.threadId, "--json"],
@@ -137,20 +172,35 @@ export function scriptOutcome(run: unknown): unknown {
   // no-op, and leaving it as "succeeded" is what turned a real failure into
   // a missing-file mystery three layers down.
   if (state === "succeeded" && isEmptyOutputs(script.outputs)) {
-    return { ...record, status: "failed", scriptState: state, scriptError: "the recipe produced no task outputs" };
+    return { ...record, status: "failed", scriptState: state, scriptError: EMPTY_OUTPUT_ERROR };
   }
   return run;
 }
 
 function isEmptyOutputs(outputs: unknown): boolean {
-  return outputs !== null && typeof outputs === "object" && !Array.isArray(outputs) && Object.keys(outputs).length === 0;
+  if (outputs === null || typeof outputs !== "object" || Array.isArray(outputs)) return false;
+  const values = Object.values(outputs);
+  // Null-valued outputs count as empty: a task that "produced" null produced
+  // no evidence (a swallowed host call resolves nullish), and JSON drops
+  // undefined values on the wire, so {scope-map: undefined} already arrives
+  // here as {}. Either shape means nothing ran.
+  return values.length === 0 || values.every((value) => value === null || value === undefined);
 }
 
 function stripWorkflowSchemaMetadata(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripWorkflowSchemaMetadata);
   if (!value || typeof value !== "object") return value;
+  // `pattern` is also stripped — but only the keyword form (string value).
+  // The engine's safe schema subset rejects regular expressions outright
+  // (catastrophic-backtracking guard), so a schema carrying `pattern` fails
+  // the agent call before dispatch — and the failure surfaces as an
+  // empty-output no-op, not as the engine's message. A schema property
+  // literally NAMED pattern carries an object, not a regex, and survives:
+  // position plus value type distinguish the keyword from the field name.
+  // Local artifact validation keeps the full contract (with `pattern`); only
+  // the engine-bound copy is sanitized, which is this function's whole job.
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-    .filter(([key]) => key !== "$schema")
+    .filter(([key, child]) => key !== "$schema" && !(key === "pattern" && typeof child === "string"))
     .map(([key, child]) => [key, stripWorkflowSchemaMetadata(child)]));
 }
 
@@ -251,6 +301,8 @@ while (completed.size + skipped.size < input.tasks.length) {
   for (let index = 0; index < ready.length; index += 1) {
     const result = results[index];
     if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
+    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
+      + " (the host call returned nothing — read the run history for the rejected call)");
     completed.add(ready[index].id);
   }
 }

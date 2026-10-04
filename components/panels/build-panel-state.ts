@@ -216,6 +216,17 @@ export function useBuildPanelState(rpc: BuildRpc, projectId: string | null) {
     ...current,
     [column]: !current[column],
   }));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const toggleSelection = useCallback((cardId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const selection = { selectedIds, toggleSelection, clearSelection };
   return {
     ...data,
     ...preferences,
@@ -226,6 +237,7 @@ export function useBuildPanelState(rpc: BuildRpc, projectId: string | null) {
     setViewMode,
     toggleColumn,
     toggleListGroup,
+    ...selection,
   };
 }
 

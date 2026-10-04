@@ -6,6 +6,8 @@ import { AcceptanceRow } from "./acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { VerifyBlockageNotice } from "./verify-blockage-notice";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 
 const SPLIT_PROPOSAL_TITLE = [
@@ -63,7 +65,7 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
             {hero.title}
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-          <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+          <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={() => void view.load()} />
           <RecoveryPrompt card={card} view={view} />
           <BuildHeroActions
             card={card}
@@ -147,9 +149,14 @@ function BuildHeroActions({
       }}
       continuation="continuing from the current stage"
       retryTail=" from the current stage"
-      extra={hero.kind === "decision" && target
-        ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} />
-        : null}
+      extra={hero.kind === "decision" ? (
+        <>
+          {target ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} /> : null}
+          {detail?.pendingQuestions?.[0] ? (
+            <VerifyBlockageNotice cardId={card.id} onResume={lifecycle.doRetry} retrying={lifecycle.retrying} />
+          ) : null}
+        </>
+      ) : null}
       onStart={lifecycle.doStart}
       onRetry={lifecycle.doRetry}
       onRestart={() => lifecycle.setRestartWorkerOpen(true)}

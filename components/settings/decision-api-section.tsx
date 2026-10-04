@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { DECISION_PROVIDERS, DEFAULT_DECISION_PROVIDER } from "../../lib/decision-api.mjs";
+import { pointsServedBySchema } from "../../lib/decision-points.mjs";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import type { DecisionApiConfig, ManagerRpc } from "./decision-api-types";
@@ -100,14 +101,23 @@ function useDecisionApiActions(
   return { message, busy, save, probe };
 }
 
-function ProviderSchemaHint({ schema, needsKey }: { schema: string; needsKey: boolean }) {
+const PROVIDER_FIT_NOTE: Record<string, string> = {
+  simplejev: "Deterministic, but biased on vague hints.",
+  openjev: "Experimental.",
+  jev: "The accurate option.",
+  classifier: "Fast, clear-cut cases only.",
+};
+
+function ProviderSchemaHint({ providerId, schema, needsKey }: { providerId: string; schema: string; needsKey: boolean }) {
+  const fit = PROVIDER_FIT_NOTE[providerId] ?? "";
   if (schema === "labels") {
-    return <p className="text-[11px] text-muted-foreground">Labels schema — endpoint only, no key; Choice questions only.</p>;
+    const served = pointsServedBySchema("labels");
+    return <p className="text-[11px] text-muted-foreground">Choice-only, no key. Serves: {served.join(", ")} — other points keep built-in rules. {fit}</p>;
   }
   if (!needsKey) {
-    return <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + model, no key.</p>;
+    return <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + model, no key. {fit}</p>;
   }
-  return <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + key + model required.</p>;
+  return <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + key + model required. {fit}</p>;
 }
 
 type DecisionApiDraftView = ReturnType<typeof useDecisionApiDraft>;
@@ -130,7 +140,7 @@ function DecisionApiProviderFields({ view }: { view: DecisionApiDraftView }) {
           ))}
         </select>
       </label>
-      {providerEntry ? <ProviderSchemaHint schema={providerEntry.schema} needsKey={needsKey} /> : null}
+      {providerEntry ? <ProviderSchemaHint providerId={providerEntry.id} schema={providerEntry.schema} needsKey={needsKey} /> : null}
     </>
   );
 }

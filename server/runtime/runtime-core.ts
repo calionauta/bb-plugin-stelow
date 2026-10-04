@@ -105,8 +105,15 @@ function createSpawnSurfaces(
   workers: ReturnType<typeof createWorkerRuntime>,
 ) {
   const shared = { ...deps, ...workers };
+  const drafting = createDraftRuntime(shared);
+  // Late-bind the Start-time title hook: workers were constructed before
+  // drafting existed, so the holder waited empty until now. Same
+  // fire-and-forget shape as creation (cards-create-persist.ts).
+  workers.titleRefresh.request = (cardId) => {
+    void drafting.suggestCardName(cardId).catch(() => undefined);
+  };
   return {
-    drafting: createDraftRuntime(shared),
+    drafting,
     briefings: createBriefingSurface(shared),
     requestGatePreReview: createGatePreReviewRuntime(shared),
   };

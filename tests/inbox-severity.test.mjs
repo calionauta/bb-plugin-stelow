@@ -168,7 +168,8 @@ assert.match(
   /severity: row\.severity \?\? 1,[\s\S]*severityReasons: parseSeverityReasons\(row\.severity_reasons\)/,
   "list rows map stored tiers with safe fallbacks",
 );
-assert.match(app, /severityReasons\.slice\(0, 3\)\.join\(" · "\)/, "rows render up to three reason chips");
+assert.match(app, /reasons\.slice\(0, 3\)\.join\(" · "\)/, "rows render up to three reason chips");
+assert.match(app, /inboxDisplayReasons\(entry\)/, "chips that merely restate the row's label are filtered before the cap");
 assert.match(app, /entry\.severity >= 2 && entry\.resolvedAt == null/, "the escalating mark shows on open escalations only");
 
 console.log("inbox severity test ok: tiers, reasons, write scoring, ordering, sweep recompute, frozen badge");

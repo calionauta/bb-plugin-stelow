@@ -20,6 +20,13 @@ type RetryDeps = {
   failedCause: (threadId: string) => Promise<string | null>;
   scheduler?: WorkerScheduler;
   retryDelayMs?: (attempt: number) => number;
+  /**
+   * Second opinion for unclassified failures only. Absent means today's
+   * behavior: classified transient errors retry, everything else fails
+   * fast. Never consulted for classified errors, empty causes, or an
+   * exhausted budget, so the happy path pays no extra call.
+   */
+  judgeTransientError?: (cause: string, attempt: number) => Promise<boolean>;
 };
 
 type RetryState = {
@@ -123,9 +130,40 @@ async function applyFailed(
   const fresh = state.deps.getCard(cardId);
   if (!fresh || terminal(fresh.status) || state.pending.get(cardId) === threadId) return;
   if (specific && canRetry(state, fresh, specific) && schedule(state, cardId, threadId)) return;
+  if (specific && await rescuedByJudge(state, fresh, specific, threadId)) return;
   state.deps.updateCard(cardId, specific
     ? { activity: "error", last_error: specific }
     : { activity: "error" });
+}
+
+/**
+ * Second opinion for unclassified failures only. Classified errors never
+ * arrive here (transient ones already retried above, the rest fail fast
+ * below), and neither do empty causes, answered workers, pending cards, or
+ * exhausted budgets — the judge pays a call only where rules are blind.
+ */
+async function rescuedByJudge(
+  state: RetryState,
+  card: WorkerCard,
+  cause: string,
+  threadId: string,
+): Promise<boolean> {
+  if (!cause.trim() || isRetryableSpawnError(cause)) return false;
+  if (card.last_assistant_text != null) return false;
+  if (state.pending.get(card.id) === threadId) return false;
+  const used = card.spawn_retry_thread === threadId ? (card.spawn_retry_count ?? 0) : 0;
+  if (used >= MAX_SPAWN_RETRIES) return false;
+  const judge = state.deps.judgeTransientError;
+  if (!judge) return false;
+  let transient = false;
+  try {
+    transient = await judge(cause, used + 1);
+  } catch {
+    return false;
+  }
+  if (!transient || !schedule(state, card.id, threadId)) return false;
+  state.deps.comment(card.id, "Unclassified failure judged transient — automatic retry spent from the same bounded budget.");
+  return true;
 }
 
 function dispose(state: RetryState): void {

@@ -59,6 +59,16 @@ assert.deepEqual(
   [{ questionId: "q1", answers: ["A", "B"] }],
   "a multi-select question keeps every selected option on its own entry",
 );
+assert.deepEqual(
+  parseAnswerArgs(["--card", "c1", "--question", "q1", "--answer", ""]).pairs,
+  [{ question: "q1", answer: "" }],
+  "an empty --answer value survives argv parsing: the server reads it as none on multiple-choice",
+);
+assert.deepEqual(
+  buildAnswerPayload([{ question: "q1", answer: "" }]).live,
+  [{ questionId: "q1", answers: [""] }],
+  "and it groups like any answer — cleaning to none happens server-side, once",
+);
 
 // Answering is atomic per door: mixing live and recovery ids in one call is
 // refused instead of half-answering, because each door answers its own set.

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { failureCauseFromEvents } from "../lib/worker-failure.mjs";
+import { needsNaming } from "../lib/card-naming.mjs";
 import { recordWorkerThread } from "../lib/worker-ledger.mjs";
 import { resetSpawnRetry } from "../lib/spawn-retry.mjs";
 import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
@@ -8,6 +9,7 @@ import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
+import { judgeRetryTransientError } from "./decision-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
@@ -56,6 +58,13 @@ export type WorkerDeps = {
   resetAutoContinue: () => { count: number; stage: string | null };
   scheduler?: WorkerScheduler;
   retryDelayMs?: (attempt: number) => number;
+  /**
+   * Late-bound title-burst hook. The drafting server (which owns
+   * suggestCardName) is constructed after the workers, so the composition
+   * root passes a holder and fills `request` once drafting exists. Absent
+   * means naming stays creation-only — the pre-change behavior.
+   */
+  titleRefresh?: { request: ((cardId: string) => void) | null };
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
 };
 
@@ -123,6 +132,7 @@ async function fresh(
     ? `Worker started on preset "${presetName}", ${continuationText(card)}.`
     : `Worker restarted on preset "${presetName}", ${continuationText(card)}. Previous worker thread: ${previousThreadId} (archived).`;
   deps.comment(cardId, trail);
+  if (reason === "start") refreshUnsettledTitle(deps, card);
   const reset = deps.resetAutoContinue();
   deps.updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
   resetSpawnRetry(deps.db, cardId);
@@ -144,6 +154,21 @@ function respawnDeps(deps: WorkerDeps): RespawnDeps {
     lineage: (input) => lineage(deps, input),
     continuingEnvironment: (card, fallback) => continuingEnvironment(deps, card, fallback),
   };
+}
+
+/**
+ * Start-time title reuse: a parked card whose title is still the unsettled
+ * heuristic gets the same suggestCardName burst creation fires. Human-set
+ * titles never reach the hook (needsNaming is false), and a failure here
+ * never breaks the Start itself — naming is advisory.
+ */
+function refreshUnsettledTitle(deps: WorkerDeps, card: WorkerCard): void {
+  try {
+    const request = deps.titleRefresh?.request;
+    if (!request) return;
+    if (!needsNaming({ displayName: card.display_name ?? card.name, name: card.name, prompt: card.prompt })) return;
+    request(card.id);
+  } catch { /* naming never breaks Start */ }
 }
 
 async function failedCause(deps: WorkerDeps, threadId: string): Promise<string | null> {
@@ -204,6 +229,7 @@ export function createWorkers(deps: WorkerDeps) {
     failedCause: (threadId) => failedCause(deps, threadId),
     scheduler,
     retryDelayMs: deps.retryDelayMs,
+    judgeTransientError: (cause, attempt) => judgeRetryTransientError({ db: deps.db }, cause, attempt),
   });
   const history = createWorkerHistory(deps.db, deps.bb);
   const respawnScheduler = createRespawnScheduler(

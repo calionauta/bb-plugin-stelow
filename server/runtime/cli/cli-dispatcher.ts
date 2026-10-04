@@ -16,6 +16,7 @@ import { createManifestCommand } from "./cli-manifest.js";
 import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
 import { createReviewCommand } from "./cli-review.js";
+import { createRetryRunCommand } from "./cli-retry-run.js";
 import { createSeedCommand } from "./cli-seed.js";
 import { createScopeApproveCommand } from "./cli-scope-approve.js";
 import { createSplitCommand } from "./cli-split.js";
@@ -51,6 +52,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createFanOutCommand(deps),
     createVerifyCommand(deps),
     createReviewCommand(deps),
+    createRetryRunCommand(deps),
     createCriteriaCommand(deps),
     createVerifyTasksCommand(deps),
     createVerifyDelegationCommand(deps),

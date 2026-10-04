@@ -529,12 +529,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   running, starting, installed but disabled, or not installed, decided by one
   `bb plugin list --json` probe (`agentGraphStatus`, read-only: the panel
   detects and points to BB Extensions but never installs or enables anything).
-  While it runs, each card hero shows a benefit-worded "See live graph" action
-  beside "Open thread" that opens the card's own worker thread, where the
-  thread header holds the live graph — there is no cross-plugin thread-panel
-  seam (`openThreadPanel` is same-plugin-only) and no thread-addressed graph
-  route, so a deep link does not exist and the card never jumps to the generic
-  graph page. While it is absent, the card shows a one-line dismissable mention
+  There is deliberately no card-level "see live graph" button: no cross-plugin
+  thread-panel seam exists (`openThreadPanel` and `toPluginPanel` are
+  same-plugin-only) and Agent Graph exposes no thread-addressed route, so such
+  a button could only duplicate "Open thread" under a misleading label — and
+  did, until it was removed. Each hero keeps the single honest "Open thread"
+  action; the live graph itself opens from the thread header's own Agent Graph
+  button. While the capability is absent, the card shows a one-line dismissable mention
   pointing at About instead of a permanent badge.
 - **Open on an execution run lands where you can see it.** Each run's **Open**
   deep-links into the card at that run, and the link now has an observable
@@ -712,8 +713,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   resolved history last, read; per-item **Mark as read** / **Show again**
   (the reversible pair, driven by read state); deep-links into card+event.
   The vocabulary is a notification's, never a card's: an item says
-  **Set aside**, not *Archived*, and its filter is **Read**, not *Archived* —
-  "archive" is a card's fate, and a button on a notice that reads as an
+  **Set aside**, not *Archived*, with its own **Set aside** filter, so Bring
+  back is reachable from the panel — without it a dismissal is a one-way
+  door. "Archive" stays a card's fate, and a button on a notice that reads as an
   action on the card it names is a wrong affordance. An item carries BOTH
   reversible actions, because **read and handled are different facts**: a read
   question that has not been answered still needs an answer, so it stays in
@@ -728,6 +730,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same action and review requests shown by **Needs attention**;
+  one timed-out question batch counts once, not once per sub-question: rows
+  from the same timeout share one notification keyed by the batch, while a
+  genuinely new batch (or a live interaction beside it) keeps its own row —
+  one card is one decision moment, not N identical pings.
   an unopened completion reads **Ready for review** — the request it actually is —
   until the Done card is opened, which is also what clears the card's Review
   check. Archiving a card closes EVERY open row, completions included, and
@@ -742,9 +748,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `resolved_at` as well as `read_at`, since only a card's death ends a review,
   not an unread row — this is the card's own attention
   marker on the board.
-  The toolbar is one row: four tabs with semantic status dots (amber waits,
-  emerald resolved, zinc archived, primary all) and a single Unread-only
-  checkbox — no detached Show label.
+  The toolbar is one row: five tabs with semantic status dots (amber waits,
+  emerald resolved, zinc read, zinc set-aside, primary all) and a single Unread-only
+  checkbox — no detached Show label. Severity chips that merely restate the
+  row's own label are suppressed (one signal, not two); chips that add
+  information — stall age, error counts — always survive.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
@@ -752,6 +760,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Verify blockage** (`VerifyBlockageNotice`, `verifyBlockage` RPC,
+  `lib/verify-blockage.mjs`). A card parked on open questions after a failed
+  verify names whether the failure is still the one to act on: the last test
+  run's HEAD versus the checkout's HEAD now. `stale` (tree moved — resume to
+  re-verify), `confirmed` (failed on this exact checkout — re-running changes
+  nothing), `clear`/`unknown` (renders nothing). The decision stays human;
+  the notice only says which action is worth taking. Asked lazily on the
+  decision hero, never on the open-card path.
 - **Severity bump** (`maybeBumpSeverity`, Inbox severity router). With the
   router in Decision API mode, the reconcile sweep judges up to 3
   unjudged routine items per tick (older than 5 minutes) with one yes/no
@@ -900,7 +916,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Timed-out asks stay answerable on the card, batched the same way.
   **Answering is also programmatic**: `bb stelow answer --card <card_id>
   --question <question_id> --answer <text>` (repeat pairs; one
-  `--question` may take several `--answer` values for a multi-select)
+  `--question` may take several `--answer` values for a multi-select;
+  `--answer ""` on a multiple-choice question answers none)
   applies the card form's exact rules — atomic per door, contract consumed,
   outcome written to the trail, worker resumed — so a scripted run or a test
   can clear a wait without a browser. A recovery question is addressed as
@@ -915,8 +932,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   checked (multi-select groups only — single-select refuses it, and stray
   flags read as unchecked, so nothing confirms silently). The card renders
   preselected rows checked; unchecking removes, and the submit carries what
-  remains. Scope and IN/OUT confirms use this form: every mapped scope (or
+  remains. Empty means none on multiple-choice: submitting a checkbox list
+  with nothing checked records an explicit none (trail reads "skipped — use
+  your recommendation"), so no confirm ever forces a pick nobody wants; a
+  single-select radio with nothing picked stays unanswered. Scope and IN/OUT confirms use this form: every mapped scope (or
   IN item) starts checked with its outcome as preview, unchecking removes.
+  Scope confirms carry the machine tag `--tag scope-adjust`, and the host
+  enforces the shape instead of trusting prose: every group must be
+  `--multiple`, at most six options each, at least one `--selected`
+  somewhere — and in review mode Auto the ask is refused outright, because
+  there the worker adjusts scope itself and never parks waiting. An unreadable
+  state never blocks: unknown modes fail open.
   **Asking whether something is pending needs no question.** A worker on
   card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
   because no read-only verb reported the answer. `bb stelow status` now
@@ -1342,6 +1368,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preflight both entry points share now refuses to leave a stage whose **newest**
   run failed, and the refusal names the door: `Retry run to try it again —
   the card cannot leave the stage until a run of it succeeds.`
+  The door has two hands: the UI button and `bb stelow retry-run --run
+  <exec_id>`, which runs the same lifecycle retrier through the same refusals
+  plus one the button never needs — a worker retries only its own card's
+  runs. Before the verb existed, a worker told "retry" could only yield and
+  wait for a host retry that does not exist.
   "Newest for the **stage**" is the whole design, and it is what makes the hold
   survivable. A retry writes a newer run, so the hold releases the moment the
   retry starts and re-tightens by itself if the retry fails too — nothing to
@@ -1363,6 +1394,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card could no longer show what actually happened. A refusal from the launch is
   shown to the reader rather than swallowed, because a retry that is declined
   leaves the card exactly where it was.
+  One failure never reaches the hold at all: a run the host **proved did
+  nothing** (*"the recipe produced no task outputs"* — the workflow finished
+  with zero task outputs, as on card_a9q5zhzd where the scope-map run ended in
+  0.3s with no agent calls) is retried **automatically, once**, by the
+  reconciler through that same launch rule, with the spent budget stamped on
+  the new row (`auto_retry_count`) and a trail comment saying the host retried
+  it. Only a failure the run actually performed — or a second consecutive
+  no-op, which means dispatch itself is sick — parks the card and asks a
+  person. Unreachable runs, launch failures, and start timeouts are excluded on
+  purpose: there the host has no proof nothing ran, and a blind retry could
+  fork two workers on one stage.
   The card is **told** which run blocks (`detail.card.blockingRun`) rather than
   re-deriving the rule in the UI, so the button and the gate cannot disagree.
   That one fact decides two affordances: the Execution runs section **opens**
@@ -1771,7 +1813,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   saves explicitly; saves refresh only the routers section, never the
   board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.
-  Unknown modes degrade to rules; refusals name the valid set.
+  Retry-transient rescues unclassified spawn failures a confident judge
+  calls transient, within the same bounded budget — classified errors never
+  consult it, and every miss keeps fail-fast. Preset-tier reviews the stage
+  model hint in shadow only: agreement is logged, presets never change.
+  Artifact criteria ask evidence sufficiency separately from outcomes: a
+  confident absence of checkable evidence marks every criterion
+  unverifiable without spending their calls. Point saves refuse an
+  explicit api-mode provider pin the point's question types cannot serve
+  (labels-schema on yes/no or scored judgments), naming both exits; the
+  provider picker names which points each schema serves, derived from the
+  same registry metadata. Unknown modes degrade to
+  rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
   closed, rotates down when open); native details/summary keeps the
@@ -1876,6 +1929,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   is never overwritten by a retry. An archived card is never renamed and never
   receives a record. The open-card breadcrumb edits inline with explicit
   Save/Cancel; blank restores the heuristic.
+- **Parked prompt editing + Start-time title reuse** (`updateCardPrompt`,
+  `needsNaming`). A parked Bucket card's description edits inline in the
+  detail hero through one shared component (build/research/explore), gated
+  to worker-less pre-start statuses with named refusals
+  (`ERR_CARD_STARTED` / `ERR_CARD_COMPLETED` / `ERR_CARD_ARCHIVED` /
+  `ERR_PROMPT_EMPTY` / `ERR_PROMPT_TOO_LONG`); the gate re-checks before
+  the write so a Start landing mid-edit wins and the draft is preserved.
+  Starting a parked card whose title is still the heuristic re-fires the
+  same title burst creation uses (at most once per Start, human titles
+  never overwritten); prompt saves refresh still-heuristic titles
+  synchronously and never spawn a burst.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an
@@ -2105,7 +2169,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   belongs to a project or a preset), so a name field would be free text wearing
   attribution's clothes. Only a `completed` card can be accepted; an unfinished
   one is refused naming Done, and an archived one naming restore. The row shows
-  on all three card kinds, because Research and Explore finish too.
+  on all three card kinds, because Research and Explore finish too. A Done card
+  can also carry an unmerged pull request with nothing linking the two halves,
+  so while the button is still offered the row names it (`PR #N still needs
+  merging in Publication below — this only records your review`, via
+  `unmergedPrNumber`): approving otherwise reads as finishing.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
@@ -2597,7 +2665,8 @@ Host-version note: the 0.43.3 APIs above went live with host 0.43.3 (historical 
 
 - **Shared stage catalog.** The board, state template, artifact ordering, playbooks, question contracts, and route projections read the generated upstream `stage-catalog.json`; the plugin no longer keeps a hand-maintained list of the 17 Build stages. A pinned sync preserves the last good catalog when an older upstream pin does not contain it.
 - **Capability-negotiated execution.** Host-neutral execution adapters normalize run state and negotiate required capabilities before starting a recipe. Missing capabilities produce a named refusal or an explicit coordinator-owned sequential route; permission requirements are never silently weakened. The coordinator route is not presented as a native run and has no fabricated run ID, resume handle, or cancel semantics. The optional BB Workflows binding reports its real capability limits, including no per-call permission control, while the card remains the owner of human input and resume.
-- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. A run that deliberately STOPS to name a decision is `needs_input`, not `failed`: the card shows "Waiting for you" and quotes the run's own question, so a wait is never a spinner with nothing behind it. Artifact rejections name the fields that failed, not just the file — "malformed: contrast.json" costs a run and tells the worker nothing it can act on. The host also reads the recipe script's OWN return value: a workflow finishing successfully only means the script ran, and a script that produced no task outputs is a failure rather than a pass — otherwise a recipe that did nothing surfaced three layers down as a missing file. Scope-map approval is a host decision, not agent prose: `bb stelow scope-approve` (or the `approveScopeMap` RPC) stamps `status: approved` with a host-minted receipt and an approver, refusing a map that violates its contract, one already approved, or an approval nobody can attribute — and it is the only writer of an approved map, so the X-ray is reachable from the real workflow instead of a hand-edited artifact. The approved map's Shape version is mirrored into `state.md` so X-ray freshness is a live signal instead of a permanent `unknown`. Every `bb stelow answer` refusal names its exit: which id space a recovery question lives in, and exactly which questions are still open in an incomplete batch. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential except for the approved native pilot: disjoint scopes with satisfied claims fan out only when file-claims and isolated-workspace capabilities both report true, the batch fits the concurrency bound, every child returns a per-scope receipt (claim verification, files touched, artifact manifest), and the parent merge passes post-merge verification — any gate failure falls back sequentially with no partial fan-out, overlapping scopes never fan out, and `native_pilot_allowed=false` rolls everything back (see [docs/native-workflows.md](./docs/native-workflows.md)).
+- **Context-aware native routing.** The router checks free facts first (write policy, missing capabilities, coordinator thread) before paying for the two-call availability probe, caches probe results per thread for 60s, and skips cards that already own a run for their stage in the reconcile sweep. A native decision then passes a context overlay: zero runnable tasks under the current context, or a coordinator human boundary while the live needs-input cycle is unproven, fall back with "Effective width: 0." / "Human boundary: coordinator." in the card trail. Width 1 stays native until live latency/success evidence says otherwise. The coordinator note and trail also carry the expected-output checklist so the worker sees every required artifact up front.
+- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. A run that deliberately STOPS to name a decision is `needs_input`, not `failed`: the card shows "Waiting for you" and quotes the run's own question, so a wait is never a spinner with nothing behind it. Artifact rejections name the fields that failed, not just the file — "malformed: contrast.json" costs a run and tells the worker nothing it can act on. The host also reads the recipe script's OWN return value: a workflow finishing successfully only means the script ran, and a script that produced no task outputs is a failure rather than a pass — otherwise a recipe that did nothing surfaced three layers down as a missing file. Null-valued outputs read the same as missing ones, a completed task with no result entry fails loudly instead of succeeding empty, and dispatched schemas are sanitized for the engine safe subset (`pattern` is refused outright by host agent validation, so it is stripped from the dispatched copy while local validation keeps the full contract). Scope-map approval is a host decision, not agent prose: `bb stelow scope-approve` (or the `approveScopeMap` RPC) stamps `status: approved` with a host-minted receipt and an approver, refusing a map that violates its contract, one already approved, or an approval nobody can attribute — and it is the only writer of an approved map, so the X-ray is reachable from the real workflow instead of a hand-edited artifact. The approved map's Shape version is mirrored into `state.md` so X-ray freshness is a live signal instead of a permanent `unknown`. Every `bb stelow answer` refusal names its exit: which id space a recovery question lives in, and exactly which questions are still open in an incomplete batch. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential except for the approved native pilot: disjoint scopes with satisfied claims fan out only when file-claims and isolated-workspace capabilities both report true, the batch fits the concurrency bound, every child returns a per-scope receipt (claim verification, files touched, artifact manifest), and the parent merge passes post-merge verification — any gate failure falls back sequentially with no partial fan-out, overlapping scopes never fan out, and `native_pilot_allowed=false` rolls everything back (see [docs/native-workflows.md](./docs/native-workflows.md)).
 
 ## Cross-cutting rules (apply to every feature above)
 

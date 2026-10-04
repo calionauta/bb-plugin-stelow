@@ -50,7 +50,10 @@ const reconcile = codeOf(server("execution-reconcile-run.ts"));
 
 test("the reason the host produced is the reason the card gets", () => {
   // Link 1: the host really does hand us a reason, so discarding it was a
-  // choice and not a limitation of the platform.
+  // choice and not a limitation of the platform. The no-op reason lives in
+  // exactly one place (`lib/transient-run-retry.mjs`, the same module the
+  // auto-retry policy reads) and the bridge references it — a literal written
+  // twice is a rule that can drift, and drift here re-parks cards.
   assert.match(
     bridge,
     /scriptError: error/,
@@ -58,8 +61,13 @@ test("the reason the host produced is the reason the card gets", () => {
   );
   assert.match(
     bridge,
-    /scriptError: "the recipe produced no task outputs"/,
+    /scriptError: EMPTY_OUTPUT_ERROR/,
     "and the silent no-op case must carry its own reason — that is the failure this whole chain was hiding",
+  );
+  assert.doesNotMatch(
+    bridge,
+    /scriptError: "the recipe produced no task outputs"/,
+    "through the shared constant, not a second literal that can drift from the policy",
   );
 });
 
