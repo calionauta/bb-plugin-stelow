@@ -4,8 +4,12 @@ User documentation (canonical):
 https://calionauta.github.io/stelow/docs/plugin/decision-routing/
 
 Operator summary: deterministic rules first, then the configured Decision
-API (`simplejev` default; `classifier.dev` cannot gate; `jev` needs a
-key), then a preset fallback — never a silently spawned unconfigured LLM.
-Four registered points (`triage-intent`, `artifact-criteria`,
-`auto-continue`, `inbox-severity`); no point sits at a stage transition or
-artifact acceptance.
+API (`simplejev` default: keyless and deterministic, which is what a gate
+needs; `classifier.dev` is Choice-only and cannot gate ambiguous cases;
+`jev` needs a key and buys accuracy; per-point provider pins exist, so no
+global default change is needed), then a preset fallback — never a
+silently spawned unconfigured LLM.
+Six registered points (`triage-intent`, `artifact-criteria`,
+`auto-continue`, `inbox-severity`, `retry-transient`, `preset-tier`);
+no point sits at a stage transition or artifact acceptance. `preset-tier`
+is shadow-only: it records hint agreement and never overrides a preset.
