@@ -12,6 +12,14 @@ export declare function pointSupportsPresetJudge(id: unknown): boolean;
 
 export declare function modesForPoint(id: string): string[];
 
+export declare function questionKindsForPoint(id: string): string[];
+
+export declare function questionKindsForPoint(id: string): string[];
+
+export declare function needsSchemaForPoint(id: string): string;
+
+export declare function pointsServedBySchema(schema: string): string[];
+
 export interface DecisionPointRoute {
   provider: string | null;
   endpoint: string | null;

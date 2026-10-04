@@ -13,3 +13,6 @@ Six registered points (`triage-intent`, `artifact-criteria`,
 `auto-continue`, `inbox-severity`, `retry-transient`, `preset-tier`);
 no point sits at a stage transition or artifact acceptance. `preset-tier`
 is shadow-only: it records hint agreement and never overrides a preset.
+Question kinds per point are registry metadata: api-mode saves with an
+explicit labels-schema pin on a yes/no or scored point refuse with both
+exits, and the picker derives which points each schema serves.
