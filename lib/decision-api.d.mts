@@ -19,6 +19,8 @@ export declare const DECISION_PROVIDERS: DecisionProvider[];
 export declare function providerById(id: unknown): DecisionProvider | null;
 
 export declare function providerSchema(provider: unknown): "jev" | "labels";
+
+export declare function providerServesPoint(provider: unknown, questionKinds: unknown): boolean;
 export declare const CLASSIFIER_DEFAULT_ENDPOINT: string;
 
 export declare function normalizeDecisionProvider(value: unknown, fallback?: string): string;

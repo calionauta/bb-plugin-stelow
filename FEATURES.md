@@ -1777,7 +1777,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   model hint in shadow only: agreement is logged, presets never change.
   Artifact criteria ask evidence sufficiency separately from outcomes: a
   confident absence of checkable evidence marks every criterion
-  unverifiable without spending their calls. Unknown modes degrade to
+  unverifiable without spending their calls. Point saves refuse an
+  explicit api-mode provider pin the point's question types cannot serve
+  (labels-schema on yes/no or scored judgments), naming both exits; the
+  provider picker names which points each schema serves, derived from the
+  same registry metadata. Unknown modes degrade to
   rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
