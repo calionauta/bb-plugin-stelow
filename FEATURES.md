@@ -913,7 +913,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Workers batch independent questions into one `bb stelow ask` call
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
-  Timed-out asks stay answerable on the card, batched the same way.
+  Timed-out asks stay answerable on the card, batched the same way —
+  except on terminal cards: a completed or archived card serves no expired
+  questions (`isTerminalCardStatus`), because its open asks closed with it and
+  submitting would wake nothing the card can still use. Answered ones stay
+  readable through the trail comments.
   **Answering is also programmatic**: `bb stelow answer --card <card_id>
   --question <question_id> --answer <text>` (repeat pairs; one
   `--question` may take several `--answer` values for a multi-select;

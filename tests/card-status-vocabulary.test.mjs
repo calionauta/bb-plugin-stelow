@@ -9,6 +9,7 @@ import {
   assertCardStatus,
   cardStatusLabel,
   isKnownCardStatus,
+  isTerminalCardStatus,
 } from "../lib/card-status.mjs";
 import { createCardUpdater } from "../server/runtime/card-state.ts";
 
@@ -146,4 +147,23 @@ test("every card write refuses a status that is not one of the five", async () =
 
   assert.doesNotThrow(() => update("card_1", { status: "completed" }));
   assert.equal(db.prepare("SELECT status FROM cards WHERE id = 'card_1'").get().status, "completed");
+});
+
+test("a finished card is past answering", () => {
+  // A Done card kept showing its expired question as an answerable form: the
+  // completion resolves the inbox rows but the expired row stays
+  // unanswered=0, and the detail served it back. Submitting wakes nothing the
+  // card can still use, so terminal cards serve no expired questions.
+  for (const status of ["completed", "archived"]) {
+    assert.equal(isTerminalCardStatus(status), true, `${status} is past answering`);
+  }
+  for (const status of ["draft", "pending", "in-progress", null, undefined, "bogus"]) {
+    assert.equal(isTerminalCardStatus(status), false, `${String(status)} can still be asked`);
+  }
+  const detail = readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8");
+  assert.match(
+    detail,
+    /if \(isTerminalCardStatus\(card\.status\)\) return \[\];/,
+    "the expired-question read stops at terminal cards instead of serving phantom forms",
+  );
 });
