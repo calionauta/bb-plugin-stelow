@@ -178,14 +178,29 @@ export function scriptOutcome(run: unknown): unknown {
 }
 
 function isEmptyOutputs(outputs: unknown): boolean {
-  return outputs !== null && typeof outputs === "object" && !Array.isArray(outputs) && Object.keys(outputs).length === 0;
+  if (outputs === null || typeof outputs !== "object" || Array.isArray(outputs)) return false;
+  const values = Object.values(outputs);
+  // Null-valued outputs count as empty: a task that "produced" null produced
+  // no evidence (a swallowed host call resolves nullish), and JSON drops
+  // undefined values on the wire, so {scope-map: undefined} already arrives
+  // here as {}. Either shape means nothing ran.
+  return values.length === 0 || values.every((value) => value === null || value === undefined);
 }
 
 function stripWorkflowSchemaMetadata(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripWorkflowSchemaMetadata);
   if (!value || typeof value !== "object") return value;
+  // `pattern` is also stripped — but only the keyword form (string value).
+  // The engine's safe schema subset rejects regular expressions outright
+  // (catastrophic-backtracking guard), so a schema carrying `pattern` fails
+  // the agent call before dispatch — and the failure surfaces as an
+  // empty-output no-op, not as the engine's message. A schema property
+  // literally NAMED pattern carries an object, not a regex, and survives:
+  // position plus value type distinguish the keyword from the field name.
+  // Local artifact validation keeps the full contract (with `pattern`); only
+  // the engine-bound copy is sanitized, which is this function's whole job.
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-    .filter(([key]) => key !== "$schema")
+    .filter(([key, child]) => key !== "$schema" && !(key === "pattern" && typeof child === "string"))
     .map(([key, child]) => [key, stripWorkflowSchemaMetadata(child)]));
 }
 
@@ -286,6 +301,8 @@ while (completed.size + skipped.size < input.tasks.length) {
   for (let index = 0; index < ready.length; index += 1) {
     const result = results[index];
     if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
+    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
+      + " (the host call returned nothing — read the run history for the rejected call)");
     completed.add(ready[index].id);
   }
 }
