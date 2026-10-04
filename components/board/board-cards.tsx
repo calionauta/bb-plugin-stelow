@@ -158,7 +158,7 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
         action={<BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />}
         status={<BuildStatusPills card={card} statusTone={statusTone} intentLabel={(intent: string) => INTENT_LABEL[intent]} />}
       />
-      <BoardCardProgress summary={card.scopeSummary} />
+      <BoardCardProgress card={card} />
       <CardMetaRows card={card} />
       <BoardCardEditSheet card={card} editing={editing} onClose={() => setEditing(false)} />
     </div>
@@ -249,24 +249,22 @@ function BoardCardActions({ card, canEdit, onEdit }: {
   );
 }
 
-type ScopeSummary = BoardCardItem["scopeSummary"];
-
 /**
  * The scope/task strip under the heading. Progress only — the numbers live
  * with the scopes, and this never duplicates them elsewhere on the tile.
  */
-function BoardCardProgress({ summary }: { summary: ScopeSummary }) {
-  if (summary.scopesTotal === 0) return null;
+function BoardCardProgress({ card }: { card: BoardCardItem }) {
+  if (card.scopeSummary.scopesTotal === 0) return null;
   const title =
-    `${summary.scopesDone} of ${summary.scopesTotal} scopes done · `
-    + `${summary.tasksDone} of ${summary.tasksTotal} tasks done`
-    + (summary.elapsedMs != null ? ` · ${formatDuration(summary.elapsedMs)} elapsed` : "");
+    `${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · `
+    + `${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`
+    + (card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : "");
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-      <ScopeStrip done={summary.scopesDone} total={summary.scopesTotal} />
+      <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
       <span className="whitespace-nowrap text-muted-foreground" title={title}>
-        ✓ {summary.scopesDone}/{summary.scopesTotal} scopes · {summary.tasksDone}/{summary.tasksTotal} tasks
-        {summary.elapsedMs != null ? ` · ${formatDuration(summary.elapsedMs)} elapsed` : ""}
+        ✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks
+        {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
       </span>
     </div>
   );
