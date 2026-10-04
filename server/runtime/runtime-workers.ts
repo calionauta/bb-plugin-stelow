@@ -43,6 +43,10 @@ export type WorkerRuntimeDeps = {
 export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
   const spawnDisposable = createDisposableSpawner(deps.bb);
   const { services, ledger, prompts } = deps;
+  // Filled by the composition root once the drafting server exists (it owns
+  // suggestCardName but is constructed after the workers). See SCOPE-1 spike
+  // notes: a holder breaks the cycle without reordering construction.
+  const titleRefresh: { request: ((cardId: string) => void) | null } = { request: null };
   const workers = createWorkers({
     db: deps.db,
     bb: deps.bb,
@@ -68,13 +72,14 @@ export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
       protocols: WORKER_PROTOCOL_CLAUSES,
     }),
     resetAutoContinue,
+    titleRefresh,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,
       presetNotFound: ERRORS.presetNotFound,
     },
   });
-  return { workers, spawnDisposable };
+  return { workers, spawnDisposable, titleRefresh };
 }
 
 export function createDraftRuntime(

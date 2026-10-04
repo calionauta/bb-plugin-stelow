@@ -301,6 +301,14 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  updateCardPrompt: {
+    experimental_description: "Edit a parked card's description (up to 20000 chars after trim); refused once started, completed, or archived",
+    // No .max() here on purpose: the handler trims before measuring, so a
+    // padded-but-legal input must pass the contract and reach the handler's
+    // ERR_PROMPT_TOO_LONG only when the trimmed text is actually over-long.
+    input: z.object({ cardId: z.string(), prompt: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   acceptCard: {
     experimental_description: "Record a human acceptance of a finished card's result; a receipt, never a gate",
     input: z.object({ cardId: z.string() }).strict(),
