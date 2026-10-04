@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { createAdvancePreflight } from "../server/execution-advance-preflight.ts";
-import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 
 /**
  * The gate is only real if the advance REACHES it.
@@ -23,10 +23,7 @@ import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-ru
  */
 
 function preflightWith(runs) {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
-  ensureExecutionRunTable(db);
+  const db = executionRunDb("card_1");
   for (const { id, stage, status } of runs) {
     createExecutionRun(db, {
       id,

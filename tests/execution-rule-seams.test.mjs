@@ -5,11 +5,11 @@
 // below names the behaviour it would stop if the rule were inlined back, so a
 // reverted split cannot pass this file green.
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import { reconcileBoundary } from "../server/execution-reconcile-boundary.ts";
 import { reconcileArtifacts } from "../server/execution-reconcile-artifacts.ts";
 import { reconcileOne } from "../server/execution-reconcile-run.ts";
-import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, transitionExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun, getExecutionRun, transitionExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 import { canonicalStage, requiredCapabilities } from "../server/execution-native-catalog.ts";
 import { stopOwned } from "../server/execution-lifecycle-stop.ts";
 import { routeAnswerContinuation } from "../server/execution-lifecycle-resume.ts";
@@ -18,11 +18,7 @@ import { STAGE_BY_ID } from "../lib/workflow-vocabulary.mjs";
 
 // A ledger with a card, so ownership and foreign keys behave as in production.
 function ledger(cardId = "card-1") {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run(cardId);
-  ensureExecutionRunTable(db);
-  return db;
+  return executionRunDb(cardId);
 }
 
 const RUN = {

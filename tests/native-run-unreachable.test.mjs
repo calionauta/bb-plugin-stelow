@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
 import {
   NATIVE_UNREACHABLE_MS,
   createRunReconciler,
@@ -8,9 +7,9 @@ import {
 import {
   getExecutionRun,
   createExecutionRun,
-  ensureExecutionRunTable,
 } from "../lib/execution-run-ledger.mjs";
 import { keepsCardRunning } from "../lib/native-run.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 
 /**
  * The wedge this closes was introduced by the liveness fix and is the exact
@@ -34,10 +33,7 @@ import { keepsCardRunning } from "../lib/native-run.mjs";
  */
 
 function harness({ answering = false, now = 1_000_000 } = {}) {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
-  ensureExecutionRunTable(db);
+  const db = executionRunDb("card_1");
   createExecutionRun(db, {
     id: "exec_1",
     cardId: "card_1",

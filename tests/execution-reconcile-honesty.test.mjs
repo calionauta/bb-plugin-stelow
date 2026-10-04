@@ -27,23 +27,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import Database from "better-sqlite3";
 import {
   createExecutionRun,
-  ensureExecutionRunTable,
   getExecutionRun,
   transitionExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 import { reconcileOne } from "../server/execution-reconcile-run.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function newDb() {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card-1");
-  ensureExecutionRunTable(db);
-  return db;
+  return executionRunDb("card-1");
 }
 
 const CARD = {
