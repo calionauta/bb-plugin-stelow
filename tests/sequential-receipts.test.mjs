@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { recipeById } from "../lib/recipe-catalog.mjs";
 import {
+  checklistLines,
   collectSequentialReceipts,
   sequentialTaskPlan,
 } from "../lib/sequential-receipts.mjs";
@@ -50,6 +51,16 @@ const partial = collectSequentialReceipts({
 assert.ok(
   partial.receipts.some((receipt) => receipt.skipped),
   "skipped tasks land as skipped receipts, never as missing",
+);
+
+assert.deepEqual(
+  checklistLines(planning, {}),
+  [
+    "plans/stack-research.md [planning-stack]",
+    "plans/testing-strategy.md [planning-testing]",
+    "plans/planning-alignment.md [planning-alignment]",
+  ],
+  "checklist names every required output with its task",
 );
 
 console.log("sequential receipts test ok: plan, validation, and skipped receipts");

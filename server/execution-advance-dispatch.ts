@@ -6,7 +6,9 @@
  * deferred; anything else is a plain stage advance with a note.
  */
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
+import { sequentialTaskPlan } from "../lib/sequential-receipts.mjs";
 import type { ExecutionRouteInfo } from "./execution-native.js";
+import type { SequentialRoute } from "./execution-native-route.js";
 import type { AdvanceDeps } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
@@ -48,14 +50,37 @@ export async function dispatchAdvance(
       input.card.id,
       input.stage,
       input.route.recipeId,
-      input.route.route,
+      withSequentialChecklist(input.route),
     );
-    return { stdout: `${input.note}\n(coordinator-sequential fallback selected)`.trim(), error: null };
+    return { stdout: `${input.note}\n${sequentialFallbackNote(input.route)}`.trim(), error: null };
   }
   if (input.route?.route.mode === "native") {
     return dispatchNative(deps, input);
   }
   return { stdout: input.note, error: null };
+}
+
+/**
+ * The coordinator worker gets the same explicit checklist a native run
+ * enforces by schema: every required artifact up front. Fields already set
+ * by the route (width 0, human boundary) are never overwritten here.
+ */
+function withSequentialChecklist(route: ExecutionRouteInfo): SequentialRoute {
+  const plan = route.recipe ? sequentialTaskPlan(route.recipe, {}) : null;
+  if (!plan) return route.route;
+  return {
+    ...route.route,
+    requiredOutputs: plan.requiredOutputs,
+    effectiveWidth: typeof route.route.effectiveWidth === "number"
+      ? route.route.effectiveWidth
+      : plan.width,
+  };
+}
+
+function sequentialFallbackNote(route: ExecutionRouteInfo): string {
+  const outputs = route.recipe ? sequentialTaskPlan(route.recipe, {}).requiredOutputs : [];
+  if (outputs.length === 0) return "(coordinator-sequential fallback selected)";
+  return `(coordinator-sequential fallback selected; expected outputs: ${outputs.join(", ")})`;
 }
 
 async function dispatchNative(

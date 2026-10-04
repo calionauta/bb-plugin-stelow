@@ -29,6 +29,7 @@ export type SequentialRoute = {
   preserves?: string[];
   effectiveWidth?: number;
   humanBoundary?: string;
+  requiredOutputs?: string[];
 };
 
 /** Runtime task context for the width overlay (knobs from state.md when known). */
@@ -206,5 +207,8 @@ function routeExplanation(route: SequentialRoute): string {
   const boundary = route.humanBoundary
     ? ` Human boundary: ${route.humanBoundary}.`
     : "";
-  return `${route.reason ?? "Native execution was not selected."}${missing}${preserves}${width}${boundary}`;
+  const outputs = route.requiredOutputs?.length
+    ? ` Expected outputs: ${route.requiredOutputs.join(", ")}.`
+    : "";
+  return `${route.reason ?? "Native execution was not selected."}${missing}${preserves}${width}${boundary}${outputs}`;
 }

@@ -15,6 +15,10 @@ export function sequentialTaskPlan(
   recipe: { tasks?: readonly unknown[] },
   context?: Record<string, unknown>,
 ): SequentialPlan;
+export function checklistLines(
+  recipe: { tasks?: readonly unknown[] },
+  context?: Record<string, unknown>,
+): string[];
 export function collectSequentialReceipts(input: {
   recipe: { id?: string; tasks?: readonly unknown[] };
   contents?: Record<string, unknown>;
