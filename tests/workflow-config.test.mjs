@@ -164,3 +164,20 @@ assert.equal(
   undefined,
   "an invalid redFirst is dropped, never invented",
 );
+
+// red_first reads from state.md exactly when declared: absent blobs keep
+// their shape (existing contracts above), declared values surface.
+assert.equal(
+  parseWorkflowConfig(`config:\n  quality: production\n  red_first: off\n`).redFirst,
+  "off",
+  "a declared red_first parses",
+);
+assert.equal(
+  parseWorkflowConfig(`config:\n  quality: production\n`).redFirst,
+  undefined,
+  "an absent red_first stays absent (derive downstream)",
+);
+assert.ok(
+  !("redFirst" in parseWorkflowConfig(`config:\n  quality: production\n`)),
+  "absent red_first adds no key (existing shapes unchanged)",
+);

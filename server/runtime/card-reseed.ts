@@ -45,13 +45,14 @@ type ReseedDeps = {
     supervisor?: string | null;
     explorationCount?: number | null;
     explorationHybrid?: boolean | null;
+    redFirst?: string | null;
     reviewGates?: string[] | null;
   } | null>;
   seedWorkflow: (args: {
     rootPath: string;
     card: WorkerCard;
     intent: string;
-    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
+    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean; redFirst?: string };
     reviewGates: string[];
   }) => Promise<SeedResult>;
   getPresetById: (presetId: string) => PresetRow | null;
@@ -148,6 +149,9 @@ async function reseedCard(
       supervisor: config?.supervisor ?? "high",
       explorationCount: config?.explorationCount ?? 3,
       explorationHybrid: config?.explorationHybrid ?? (config?.explorationCount ?? 3) >= 2,
+      // An explicit red_first survives the reseed; absent stays absent so
+      // the quality-derived default applies (never silently re-stricten).
+      redFirst: config?.redFirst ?? undefined,
     },
     reviewGates: config?.reviewGates ?? [],
   });
