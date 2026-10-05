@@ -13,3 +13,8 @@ stelow.json
 # One-shot 0.3 migration backup
 .stelow-0.3-backup/
 .stelow-ux-critique/
+
+# BB session scratch (workflow runs, thread storage). Keep local-only;
+# to share a workflow intentionally: git add -f .bb/workflows/<name>.js
+# AND reference it from docs (see mini-redis-comparison precedent).
+.bb/
