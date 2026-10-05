@@ -8,15 +8,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
 - **New card composer** (CreateBuildDialog, `createCard`). Prompt + file/image
-  attachments, intent, run knobs (quality, supervision, exploration count),
-  your review gates, agent preset from
+  attachments, intent, run knobs (quality, supervision, exploration count,
+  acceptance tests), your review gates, agent preset from
   the analysis band. Knobs and review gates render as compact
   rows under the composer — title plus current value always visible, so
   consequential choices stay discoverable without a wall of option cards
   pushing content below the fold. One tap expands a row into the
   full controls (real inputs, min-h-11 targets) — no hidden select.
   Quality defaults to production, supervision to high, exploration to 3 +
-  hybrid; a legacy appetite default maps once (rigor always strongest).
+  hybrid, acceptance tests to Strict (Advisory on experimental cards);
+  a legacy appetite default maps once (rigor always strongest).
   Review gates are a pure multi-select (product spec, interface
   direction, build scopes, technical plan, code diff) with Select all /
   Clear and one-click preset templates; nothing picked means Auto and the
@@ -1115,7 +1116,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `DanglingDependency`, `UnclaimedExecution`, `ClaimLapsed`) derived generically per kind
   (`trackable-evidence` over a flattened id registry, sidecar paths resolved
   from the contracts table) — a scope done with an unverified Record blocks `done`
-  with the checklist redirect. All derived paths (plans, scopes, context)
+  with the checklist redirect. Whether it blocks or only warns is the card's
+  Acceptance-tests knob (Strict / Advisory / Off, picked at creation):
+  Strict refuses the close without red proof, freeze, and baseline;
+  Advisory warns and closes; Off skips the gate. All derived paths (plans, scopes, context)
   resolve through one layout rule (state-dir areas), so `state.md`,
   `stelow.json`, and every other artifact share the same naming strategy
   instead of per-callsite joins. The timeline never paints everything

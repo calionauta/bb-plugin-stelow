@@ -48,7 +48,7 @@ install only sources you trust.
 
 1. Open **Stelow** in bb's left navigation, select a project, choose
    run knobs (quality defaults to production, supervision to high,
-   exploration to 3 + hybrid) and **Review mode** (default Auto), and
+   exploration to 3 + hybrid, acceptance tests to Strict) and **Review mode** (default Auto), and
    submit a request. The card starts in Triage and the agent begins there.
 2. Answer structured questions in the form, the thread, or the card. The
    agent waits instead of guessing.
