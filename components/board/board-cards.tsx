@@ -109,7 +109,7 @@ export function CardHeading({ title, status }: { title: string; status: ReactNod
   const statusItems = Children.toArray(status);
   return (
     <header className="min-w-0 space-y-1.5">
-      <h3 className="min-w-0 break-words text-sm font-semibold leading-5 text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] overflow-hidden">{title}</h3>
+      <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-5 text-foreground">{title}</h3>
       {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">{statusItems}</div> : null}
     </header>
   );
