@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.73.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.0...v0.73.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* board card checkbox no longer overlaps the title ([#334](https://github.com/calionauta/bb-plugin-stelow/issues/334)) ([c0cdfee](https://github.com/calionauta/bb-plugin-stelow/commit/c0cdfeebc99415a2c20fd02ac0ab8d6296a52990))
+
 ## [0.73.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.72.1...v0.73.0) (2026-10-05)
 
 
