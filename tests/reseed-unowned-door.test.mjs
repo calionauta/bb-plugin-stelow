@@ -48,7 +48,7 @@ function recordingDeps(calls) {
 }
 
 /** The deps that answer the WORKSPACE, wired to the real seeder and resolver. */
-function workspaceDeps(root, bb, calls) {
+function workspaceDeps(root, bb, calls, stateConfig = null) {
   return {
     ...recordingDeps(calls),
     bb,
@@ -60,9 +60,9 @@ function workspaceDeps(root, bb, calls) {
       calls.push(["resolve", verdict.kind]);
       return verdict.kind === "resolved" ? verdict.path : null;
     },
-    readStateConfig: async () => null,
+    readStateConfig: async () => stateConfig,
     seedWorkflow: (args) => {
-      calls.push(["seed", args.intent]);
+      calls.push(["seed", args.intent, args.knobs]);
       return seedWorkflow(
         bb,
         root,
@@ -172,6 +172,28 @@ try {
     false,
     "archived is terminal and the menu is not a resurrection",
   );
+
+  // An explicit red_first survives Restart fresh: the reseed rebuilds knobs
+  // from the prior state's config, and dropping the mode would silently
+  // re-stricten a card the reader set to off. The seed call is the recorder —
+  // the knobs it carries are what the fresh state is written from.
+  const redCalls = [];
+  const redReseed = createCardReseed({
+    ...workspaceDeps(root, bb, redCalls, {
+      quality: "production",
+      supervisor: "high",
+      explorationCount: 3,
+      explorationHybrid: true,
+      redFirst: "off",
+      reviewGates: [],
+    }),
+    ...workerDeps(redCalls),
+  });
+  const redResult = await redReseed({ cardId: CARD_ID });
+  assert.equal(redResult.error, null, `reseed stays open: ${redResult.error}`);
+  const seedCall = redCalls.find(([name]) => name === "seed");
+  assert.ok(seedCall, "the reseed seeds");
+  assert.equal(seedCall[2]?.redFirst, "off", "the explicit red_first rides along to the fresh seed");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
