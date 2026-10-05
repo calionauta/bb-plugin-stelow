@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.73.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.72.1...v0.73.0) (2026-10-05)
+
+
+### Features
+
+* red-first frozen acceptance gates with upstream sync ([65e388b](https://github.com/calionauta/bb-plugin-stelow/commit/65e388bde6ea1fd3fc1b9d18ea39dd5666fb63d6))
+* red-first run knob in creation prefs with server seed wiring ([67f2844](https://github.com/calionauta/bb-plugin-stelow/commit/67f2844c3c87ec156565f7eb867161201409883e))
+
+
+### Bug Fixes
+
+* preserve explicit red_first across reseed and pin seed writes ([07934f3](https://github.com/calionauta/bb-plugin-stelow/commit/07934f3499edf6e6ff84ecd7ba08e98d6832e8a6))
+* red_first round-trips through parse, reseed, and seed ([42ff205](https://github.com/calionauta/bb-plugin-stelow/commit/42ff205e8ea56016fd3ce61d6b9903b1586ef1d4))
+
 ## [0.72.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.72.0...v0.72.1) (2026-10-04)
 
 
