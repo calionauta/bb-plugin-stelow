@@ -28,7 +28,7 @@ type RpcResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>
 export type BoardCardItem = Extract<RpcResult, { cards: unknown }>["cards"][number];
 
 const BOARD_CARD_CLASS =
-  "stelow-live-surface stelow-board-card relative block w-full cursor-pointer overflow-hidden "
+  "stelow-live-surface stelow-board-card block w-full cursor-pointer overflow-hidden "
   + "rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md "
   + "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 
@@ -65,48 +65,52 @@ export function CardRetryButton({ cardId, label }: { cardId: string; label: stri
 export function CardMetaRows({ card }: { card: BoardCardItem }) {
   const stopped = errorActivityLabel(card);
   const paused = pausedActivityLabel(card);
+  const showAlerts =
+    stopped != null ||
+    paused != null ||
+    cardShowsAttention(card) ||
+    card.integrationPending != null ||
+    card.activity === "running" ||
+    card.activity === "awaiting-answer" ||
+    cardNeedsReview(card);
   return (
     <>
-      <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>
-        {card.projectName}
-      </div>
-      {stopped ? (
-        <div className="mt-2"><ErrorChip label={stopped.label} detail={stopped.detail} /></div>
-      ) : null}
-      {paused ? (
-        <div className="mt-2"><PausedChip label={paused.label} detail={paused.detail} /></div>
-      ) : null}
-      {cardShowsAttention(card) ? (
-        <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
-      ) : null}
-      {card.integrationPending ? (
-        <div className="mt-2">
-          <IntegrationPendingChip
-            label={card.integrationPending.label}
-            detail={card.integrationPending.detail}
-          />
+      {showAlerts ? (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+          {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
+          {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
+          {cardShowsAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
+          {card.integrationPending ? (
+            <IntegrationPendingChip
+              label={card.integrationPending.label}
+              detail={card.integrationPending.detail}
+            />
+          ) : null}
+          {card.activity === "running" || card.activity === "awaiting-answer" ? (
+            <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} />
+          ) : null}
+          {cardNeedsReview(card) ? <ReviewChip /> : null}
         </div>
       ) : null}
-      {card.activity === "running" || card.activity === "awaiting-answer" ? (
-        <div className="mt-2 max-w-full"><DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /></div>
-      ) : null}
-      {cardNeedsReview(card) ? (
-        <div className="mt-2"><ReviewChip /></div>
-      ) : null}
-      {card.activity === "idle" ? (
-        <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div>
-      ) : null}
+      <div
+        className="mt-2 flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground"
+        title={`Project: ${card.projectName}${card.activity === "idle" ? ` · Idle since ${new Date(card.updatedAt).toLocaleString()}` : ""}`}
+      >
+        <span className="truncate">{card.projectName}</span>
+        {card.activity === "idle" ? (
+          <span className="shrink-0">· Idle since {new Date(card.updatedAt).toLocaleString()}</span>
+        ) : null}
+      </div>
     </>
   );
 }
 
-export function CardHeading({ title, status, action }: { title: string; status: ReactNode; action?: ReactNode }) {
+export function CardHeading({ title, status }: { title: string; status: ReactNode }) {
   const statusItems = Children.toArray(status);
   return (
-    <header className="min-w-0 space-y-2.5">
-      <h3 className="min-w-0 break-all text-sm font-semibold leading-5 text-foreground">{title}</h3>
+    <header className="min-w-0 space-y-1.5">
+      <h3 className="min-w-0 break-words text-sm font-semibold leading-5 text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] overflow-hidden">{title}</h3>
       {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">{statusItems}</div> : null}
-      {action ? <div className="border-t border-border/70 pt-2">{action}</div> : null}
     </header>
   );
 }
@@ -128,6 +132,8 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
   }, [navigate, card.workerThreadId]);
   const canEdit = !card.workerThreadId && (card.status === "draft" || card.status === "pending");
   const showCheckbox = typeof onToggleSelection === "function";
+  const retryable = cardCanResume(card) && card.activity !== "error";
+  const showFooter = canEdit || retryable;
   return (
     <div
       role="button"
@@ -145,21 +151,29 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"} ${selected ? "ring-1 ring-primary" : ""}`}
       aria-label={`Open card ${card.displayName}.`}
     >
-      {showCheckbox ? (
-        <BoardCardSelect
-          cardId={card.id}
-          displayName={card.displayName}
-          selected={Boolean(selected)}
-          onToggleSelection={onToggleSelection}
-        />
+      <div className="flex min-w-0 items-start gap-2">
+        {showCheckbox ? (
+          <BoardCardSelect
+            cardId={card.id}
+            displayName={card.displayName}
+            selected={Boolean(selected)}
+            onToggleSelection={onToggleSelection}
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <CardHeading
+            title={card.displayName}
+            status={<BuildStatusPills card={card} statusTone={statusTone} intentLabel={(intent: string) => INTENT_LABEL[intent]} />}
+          />
+          <BoardCardProgress card={card} />
+          <CardMetaRows card={card} />
+        </div>
+      </div>
+      {showFooter ? (
+        <div className="mt-2 border-t border-border/70 pt-2">
+          <BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />
+        </div>
       ) : null}
-      <CardHeading
-        title={card.displayName}
-        action={<BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />}
-        status={<BuildStatusPills card={card} statusTone={statusTone} intentLabel={(intent: string) => INTENT_LABEL[intent]} />}
-      />
-      <BoardCardProgress card={card} />
-      <CardMetaRows card={card} />
       <BoardCardEditSheet card={card} editing={editing} onClose={() => setEditing(false)} />
     </div>
   );
@@ -194,9 +208,14 @@ function BoardCardEditSheet({ card, editing, onClose }: {
 }
 
 /**
- * The multi-select checkbox, floating over the tile. Split out because it is
- * the bulk-selection concern on a tile that otherwise only opens the card —
- * and because the label must stop propagation so checking never opens.
+ * The multi-select checkbox, inline at the head of the tile's flex row — in
+ * flow, never floating. It used to be `absolute left-2 top-2`, a 44px opaque
+ * box drawn over the title's first lines, so the card's most important text
+ * read through a translucent checkbox. An overlay can always drift back over
+ * content; a flex item cannot overlap by construction — it pushes content
+ * aside instead. Compact (32px) on purpose: the whole tile already opens the
+ * card, so this is a secondary bulk action for a dense kanban, not a primary
+ * touch target. The label stops propagation so checking never opens.
  */
 function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
   cardId: string;
@@ -206,14 +225,21 @@ function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
 }) {
   return (
     <label
-      className="absolute left-2 top-2 flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background/90"
+      className={
+        "mt-0.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border transition "
+        + (selected
+          ? "border-primary/50 bg-primary/10"
+          : "border-transparent hover:border-border hover:bg-muted/60")
+      }
       onClick={(event) => event.stopPropagation()}
+      onDragStart={(event) => event.stopPropagation()}
     >
       <input
         type="checkbox"
         checked={selected}
         onChange={() => onToggleSelection?.(cardId)}
-        className="h-4 w-4 cursor-pointer"
+        onClick={(event) => event.stopPropagation()}
+        className="size-4 cursor-pointer accent-primary"
         aria-label={`Select ${displayName}`}
       />
     </label>
@@ -304,13 +330,14 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}`}
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
-      <CardHeading title={card.displayName} action={retry} status={<ActivityPill activity={card.activity} detail={card.lastError} />} />
+      <CardHeading title={card.displayName} status={<ActivityPill activity={card.activity} detail={card.lastError} />} />
       {tagLabel ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
           <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={null} tagLabel={tagLabel} tagTitle={tagTitle} kind={kind} />
         </div>
       ) : null}
       <CardMetaRows card={card} />
+      {retry ? <div className="mt-2 border-t border-border/70 pt-2">{retry}</div> : null}
     </div>
   );
 }
