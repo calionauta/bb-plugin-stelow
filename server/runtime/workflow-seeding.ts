@@ -130,6 +130,9 @@ export type RunKnobs = {
   supervisor: string;
   explorationCount: number;
   explorationHybrid: boolean;
+  /** Explicit red-first mode; absent means the quality-derived default
+   * applies downstream (absent is "derive me", never a mode). */
+  redFirst?: string;
 };
 
 async function writeStateFile(
@@ -150,6 +153,9 @@ async function writeStateFile(
   }
   const gates = normalizeReviewGates(reviewMode);
   const rung = legacyLabelForGates(gates) ?? "Auto";
+  const redFirstLine = typeof knobs.redFirst === "string" && knobs.redFirst
+    ? `  red_first: ${knobs.redFirst}\n`
+    : "";
   const body = STATE_TEMPLATE.replace("<workflow-id>", workflowId)
     .replace("<workflow-name>", name)
     .replace(
@@ -163,6 +169,7 @@ async function writeStateFile(
       .replace("supervisor: high", `supervisor: ${knobs.supervisor}`)
       .replace("exploration_count: 3", `exploration_count: ${knobs.explorationCount}`)
       .replace("exploration_hybrid: true", `exploration_hybrid: ${knobs.explorationHybrid}`)
+      .replace("  review_mode: Auto", `${redFirstLine}  review_mode: Auto`)
       .replace(
         "review_mode: Auto",
         `review_gates: ${formatReviewGates(gates)}\n  review_mode: ${rung}`,
@@ -213,6 +220,7 @@ function trackSeededWorkflow(
         supervisor: knobs.supervisor,
         exploration_count: knobs.explorationCount,
         exploration_hybrid: knobs.explorationHybrid,
+        ...(typeof knobs.redFirst === "string" && knobs.redFirst ? { red_first: knobs.redFirst } : {}),
         review_mode: legacyLabelForGates(gates) ?? "Auto",
         review_gates: gates,
       },

@@ -2,6 +2,7 @@ import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { cleanOptions } from "../../lib/question-batch.mjs";
 import { isTerminalCardStatus } from "../../lib/card-status.mjs";
+import { readFrozenAcceptance } from "./card-detail-frozen.js";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
 import {
@@ -146,7 +147,8 @@ async function loadDetailInputs(
   return {
     card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
-    workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft, hold,
+    workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft,
+    frozen: await readFrozenAcceptance(deps, card, workspace.path), hold,
     nativeRun: readNativeRun(deps.db, cardId),
     blockingRun: readBlockingRun(deps.db, card),
     // Derived from the SAME enriched scopes the card renders, so the hero's

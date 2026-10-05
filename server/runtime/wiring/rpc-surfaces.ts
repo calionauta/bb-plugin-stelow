@@ -183,11 +183,13 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
     supervisor: parsed.data.supervisor,
     explorationCount: parsed.data.explorationCount,
     appetite: parsed.data.appetite,
+    redFirst: parsed.data.redFirst,
   });
   return {
     quality: knobs.quality as BoardWorkflowDefaults["quality"],
     supervisor: knobs.supervisor as BoardWorkflowDefaults["supervisor"],
     explorationCount: knobs.explorationCount as BoardWorkflowDefaults["explorationCount"],
+    redFirst: knobs.redFirst as BoardWorkflowDefaults["redFirst"],
     reviewMode: legacyLabelForGates(reviewGates) ?? "Auto",
     reviewGates,
   };
@@ -197,6 +199,7 @@ const DEFAULT_BOARD_WORKFLOW_DEFAULTS: BoardWorkflowDefaults = {
   quality: "production",
   supervisor: "high",
   explorationCount: 3,
+  redFirst: "strict",
   reviewMode: "Auto",
   reviewGates: [],
 };

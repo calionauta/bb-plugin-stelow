@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { DEFAULT_APPETITE, DEFAULT_REVIEW_MODE, parseWorkflowConfig } from "../lib/workflow-config.mjs";
+import { DEFAULT_APPETITE, DEFAULT_REVIEW_MODE, parseWorkflowConfig, resolveKnobInput } from "../lib/workflow-config.mjs";
 import { STATE_TEMPLATE } from "../lib/state-template.mjs";
 
 // Regression: config lives indented under `config:` (see
@@ -145,3 +145,22 @@ assert.deepEqual(
 );
 
 console.log("workflow config test ok: indented block, quotes, knobs, legacy mapping, fallbacks, no truncation");
+
+// Red-first knob: an explicit valid mode passes through; anything else stays
+// absent so the quality-derived default applies downstream (single source:
+// absent never means a mode, it means "derive me").
+assert.equal(
+  resolveKnobInput({ quality: "production", redFirst: "off" }).redFirst,
+  "off",
+  "an explicit redFirst survives knob resolution",
+);
+assert.equal(
+  resolveKnobInput({ quality: "production" }).redFirst,
+  undefined,
+  "an absent redFirst stays absent (quality default applies later)",
+);
+assert.equal(
+  resolveKnobInput({ quality: "production", redFirst: "bogus" }).redFirst,
+  undefined,
+  "an invalid redFirst is dropped, never invented",
+);

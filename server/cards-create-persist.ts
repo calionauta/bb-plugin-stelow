@@ -106,6 +106,7 @@ export async function finishCard(
       quality: knobs.quality,
       supervisor: knobs.supervisor,
       explorationCount: knobs.explorationCount,
+      redFirst: knobs.redFirst,
       reviewMode: track.reviewRung,
       reviewGates: track.reviewGates,
     });

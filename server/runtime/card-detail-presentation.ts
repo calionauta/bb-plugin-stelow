@@ -79,6 +79,13 @@ export type DetailParts = {
   };
   scopeXray: ScopeXray | null;
   scopeDraft: ScopeDraft | null;
+  /** The frozen technical acceptance the hero mirrors beside the human
+   * receipt. Null when there is no snapshot — the row renders nothing. */
+  frozen: {
+    frozenTestMap: Array<{ test: string; frozen: boolean; redProof: unknown }>;
+    freezeSha: string | null;
+    currentHeadSha: string | null;
+  } | null;
   /** The card-level file-claim wait, derived from `scopes`. Null when free. */
   fileLocks: BlockedFileWait | null;
   /** The host's hold on the card's next dispatch, with its derived sentence.
@@ -212,6 +219,11 @@ function detailCard(
     ...cardLifecycle(deps, card, parts),
     ...cardPreset(preset),
     ...cardProgress(deps, card, parts, flow),
+    // Flat because the hero reads them beside, never inside, the human
+    // receipt: frozenTestMap/freezeSha/currentHeadSha, nulls when no freeze.
+    frozenTestMap: parts.frozen?.frozenTestMap ?? null,
+    freezeSha: parts.frozen?.freezeSha ?? null,
+    currentHeadSha: parts.frozen?.currentHeadSha ?? null,
   };
 }
 

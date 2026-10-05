@@ -24,6 +24,7 @@ export type CardCreateInput = {
   supervisor?: string;
   explorationCount?: number;
   explorationHybrid?: boolean;
+  redFirst?: string;
   /** Deprecated alias; maps once when knobs are absent. */
   appetite?: string;
   reviewMode: string | string[];

@@ -6,6 +6,7 @@ import {
   composerExecutionSchema,
   explorationCountSchema,
   qualitySchema,
+  redFirstSchema,
   reviewModeInputSchema,
   cardStatusSchema,
   scopeSummarySchema,
@@ -276,6 +277,7 @@ export const cardRpcContract = {
         quality: qualitySchema.default("production"),
         supervisor: supervisorSchema.default("high"),
         explorationCount: explorationCountSchema.default(3),
+        redFirst: redFirstSchema.optional(),
         /** Deprecated alias; when present without knobs it maps once to knobs. */
         appetite: appetiteSchema.optional(),
         reviewMode: reviewModeInputSchema,

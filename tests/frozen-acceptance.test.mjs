@@ -278,3 +278,30 @@ test("verify stays silent about frozen acceptance when the snapshot is green", a
   assert.equal(result.exitCode, 0, result.stderr);
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /frozen/i);
 });
+
+test("frozenDetailView maps a snapshot to the row the hero renders", async () => {
+  const { frozenDetailView } = await import("../lib/audit-verification.mjs");
+  const view = frozenDetailView(
+    {
+      baseline: { "npm test": 0 },
+      testMap: ["node tests/a.test.mjs", { test: "node tests/b.test.mjs", criterion: "b works" }],
+      redProof: { failed_command: "node tests/a.test.mjs", exit_code: 1, output_excerpt: "not ok" },
+      freezeSha: HEAD,
+    },
+    HEAD,
+  );
+  assert.equal(view.freezeSha, HEAD);
+  assert.equal(view.currentHeadSha, HEAD);
+  assert.equal(view.frozenTestMap.length, 2);
+  assert.equal(view.frozenTestMap[0].test, "node tests/a.test.mjs");
+  assert.equal(view.frozenTestMap[0].frozen, true);
+  assert.deepEqual(view.frozenTestMap[0].redProof, { failed_command: "node tests/a.test.mjs", exit_code: 1, output_excerpt: "not ok" });
+  assert.equal(view.frozenTestMap[1].test, "node tests/b.test.mjs");
+});
+
+test("frozenDetailView drops entries with no proving test and nulls empty maps", async () => {
+  const { frozenDetailView } = await import("../lib/audit-verification.mjs");
+  assert.equal(frozenDetailView(null, HEAD), null);
+  assert.equal(frozenDetailView({}, HEAD), null);
+  assert.equal(frozenDetailView({ testMap: [{ criterion: "no test" }, ""], freezeSha: HEAD }, HEAD), null);
+});

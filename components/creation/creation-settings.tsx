@@ -17,6 +17,8 @@ const WORKFLOW_PREFS_DESCRIPTION =
   "Quality caps verification rigor, supervision sets checkpoint cadence, " +
   "and exploration sets how many directions get compared (with a hybrid " +
   "synthesis whenever more than one exists). " +
+  "Acceptance tests decide whether scopes must prove themselves with a " +
+  "failing test before implementation. " +
   "Review checkpoints are where the run stops and waits for " +
   "your decision. These are the board defaults — kept for every new " +
   "card until you change them.";
@@ -34,6 +36,11 @@ const EXPLORATION_HINT =
   "architecture. A hybrid synthesis is produced whenever more than one " +
   "exists. Single (1) means one direct direction with no hybrid — " +
   "trivial changes only, by explicit choice.";
+
+const RED_FIRST_HINT =
+  "Strict proves every scope with a failing test before implementation " +
+  "and blocks close without the proof. Advisory warns instead of blocking. " +
+  "Off skips the gate entirely — spikes and trivial work only.";
 
 const QUALITY_OPTIONS = [
   { value: "production", label: "Production", description: "Full paths, edge cases, parallel reviewers, full test layers." },
@@ -58,6 +65,12 @@ const REVIEW_HINT =
   "The agent stops at each checkpoint you pick and waits — nothing " +
   "advances until you answer. Nothing picked means Auto: the agent " +
   "decides everything itself.";
+
+const RED_FIRST_OPTIONS = [
+  { value: "strict", label: "Strict", description: "Scope close blocks without red proof, freeze and baseline. Production default." },
+  { value: "advisory", label: "Advisory", description: "Warns on missing evidence but closes. Experimental default." },
+  { value: "off", label: "Off", description: "No acceptance-test gate. Spikes and trivial work only." },
+] as const;
 
 const REVIEW_GATE_OPTIONS = [
   { value: "spec", label: "Product spec", description: "Review the shaped product specification and assumptions." },
@@ -86,6 +99,7 @@ const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }>
 export type Quality = (typeof QUALITY_OPTIONS)[number]["value"];
 export type Supervisor = (typeof SUPERVISOR_OPTIONS)[number]["value"];
 export type ExplorationCount = (typeof EXPLORATION_OPTIONS)[number]["value"];
+export type RedFirst = (typeof RED_FIRST_OPTIONS)[number]["value"];
 /** @deprecated Alias only. Run knobs replaced the appetite ladder. */
 export type Appetite = "Lean" | "Core" | "Complete";
 export type ReviewGate = (typeof REVIEW_GATE_OPTIONS)[number]["value"];
@@ -130,7 +144,7 @@ export function CreateCardAlert({ message }: { message: string }) {
 function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, labelHidden = false }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string; labelHidden?: boolean }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      {labelHidden ? null : <legend className="text-sm font-medium text-foreground">{label}</legend>}
+      {labelHidden ? <legend className="sr-only">{label}</legend> : <legend className="text-sm font-medium text-foreground">{label}</legend>}
       {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
       <div className="grid gap-2">
         {options.map((option) => {
@@ -204,6 +218,7 @@ export type KnobPrefs = {
   quality: Quality;
   supervisor: Supervisor;
   explorationCount: ExplorationCount;
+  redFirst: RedFirst;
 };
 
 /** Keep a prefs patch inside the option vocabularies; unknown values keep the current pick. */
@@ -214,7 +229,10 @@ export function sanitizeKnobPrefs(value: unknown, current: KnobPrefs): KnobPrefs
   const explorationCount = EXPLORATION_OPTIONS.some((option) => option.value === record.explorationCount)
     ? (record.explorationCount as ExplorationCount)
     : current.explorationCount;
-  return { quality, supervisor, explorationCount };
+  const redFirst = RED_FIRST_OPTIONS.some((option) => option.value === record.redFirst)
+    ? (record.redFirst as RedFirst)
+    : current.redFirst;
+  return { quality, supervisor, explorationCount, redFirst };
 }
 
 export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGatesChange, groupNamePrefix }: {
@@ -232,6 +250,8 @@ export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGa
         onChange={(supervisor) => onPrefsChange({ supervisor })} groupName={`${groupNamePrefix}-supervisor`} />
       <CollapsibleChoiceCards label="Exploration" hint={EXPLORATION_HINT} value={prefs.explorationCount} options={EXPLORATION_OPTIONS}
         onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`} />
+      <CollapsibleChoiceCards label="Acceptance tests" hint={RED_FIRST_HINT} value={prefs.redFirst} options={RED_FIRST_OPTIONS}
+        onChange={(redFirst) => onPrefsChange({ redFirst })} groupName={`${groupNamePrefix}-red-first`} />
       <ReviewGatePicker label="Pause for my review" hint={REVIEW_HINT} value={reviewGates}
         onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>

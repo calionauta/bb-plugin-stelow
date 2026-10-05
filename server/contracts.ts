@@ -105,6 +105,9 @@ export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 export const qualitySchema = z.enum(["production", "experimental"]);
 export const supervisorSchema = z.enum(["low", "med", "high"]);
 export const explorationCountSchema = z.number().int().min(1).max(5);
+/** Red-first acceptance gate. Optional everywhere: absent means the
+ * quality-derived default applies downstream, never an invented mode. */
+export const redFirstSchema = z.enum(["strict", "advisory", "off"]);
 export const reviewModeSchema = z.enum([
   "Auto",
   "Product Spec Gate",
@@ -126,6 +129,7 @@ export const boardWorkflowDefaultsSchema = z
     reviewGates: z.array(reviewGateAtomSchema).default([]),
     /** Deprecated alias for stored values written before knobs; migrated on read. */
     appetite: appetiteSchema.optional(),
+    redFirst: redFirstSchema.optional(),
   })
   .strict();
 

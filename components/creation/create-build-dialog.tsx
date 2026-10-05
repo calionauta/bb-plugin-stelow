@@ -54,6 +54,7 @@ function createCardPayload(
     quality: prefs.quality,
     supervisor: prefs.supervisor,
     explorationCount: Number(prefs.explorationCount),
+    redFirst: prefs.redFirst,
     reviewMode: reviewGates,
     start: startImmediately,
     execution: composerExecutionOf(request),

@@ -75,7 +75,7 @@ function readStoredReviewGates(): StoredReviewGates {
 }
 
 function useBuildWorkflowPreferences(rpc: BuildRpc) {
-  const [prefs, setPrefs] = useState<KnobPrefs>({ quality: "production", supervisor: "high", explorationCount: "3" });
+  const [prefs, setPrefs] = useState<KnobPrefs>({ quality: "production", supervisor: "high", explorationCount: "3", redFirst: "strict" });
   const updatePrefs = useCallback((patch: Partial<KnobPrefs>) => setPrefs((current) => ({ ...current, ...patch })), []);
   const [initialReviewGates] = useState(() => readStoredReviewGates());
   const [reviewGates, setReviewGates] = useState<ReviewGates>(
@@ -87,6 +87,7 @@ function useBuildWorkflowPreferences(rpc: BuildRpc) {
         quality: defaults.quality,
         supervisor: defaults.supervisor,
         explorationCount: String(defaults.explorationCount),
+        redFirst: defaults.redFirst,
       }, current));
       setReviewGates((current) => reviewGatesAfterDefaults(
         current,
