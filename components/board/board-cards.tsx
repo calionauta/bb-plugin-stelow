@@ -131,9 +131,6 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
   const canEdit = !card.workerThreadId && (card.status === "draft" || card.status === "pending");
-  const showCheckbox = typeof onToggleSelection === "function";
-  const retryable = cardCanResume(card) && card.activity !== "error";
-  const showFooter = canEdit || retryable;
   return (
     <div
       role="button"
@@ -152,7 +149,7 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
       aria-label={`Open card ${card.displayName}.`}
     >
       <div className="flex min-w-0 items-start gap-2">
-        {showCheckbox ? (
+        {typeof onToggleSelection === "function" ? (
           <BoardCardSelect
             cardId={card.id}
             displayName={card.displayName}
@@ -169,11 +166,7 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
           <CardMetaRows card={card} />
         </div>
       </div>
-      {showFooter ? (
-        <div className="mt-2 border-t border-border/70 pt-2">
-          <BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />
-        </div>
-      ) : null}
+      <BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />
       <BoardCardEditSheet card={card} editing={editing} onClose={() => setEditing(false)} />
     </div>
   );
@@ -247,8 +240,10 @@ function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
 }
 
 /**
- * The edit/resume row on a parked tile. Gated to draft/pending without a
- * worker — the sheet itself re-checks, so a stale tile cannot save.
+ * The edit/resume footer on a parked tile. Self-gating: null when there is
+ * nothing to act on, so callers never render an empty bordered strip.
+ * Gated to draft/pending without a worker — the sheet itself re-checks,
+ * so a stale tile cannot save.
  */
 function BoardCardActions({ card, canEdit, onEdit }: {
   card: BoardCardItem;
@@ -258,19 +253,22 @@ function BoardCardActions({ card, canEdit, onEdit }: {
   const retry = cardCanResume(card) && card.activity !== "error" ? (
     <CardRetryButton cardId={card.id} label="Resume work" />
   ) : null;
+  if (!canEdit && !retry) return null;
   return (
-    <div className="flex gap-2">
-      {canEdit ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={(event) => { event.stopPropagation(); onEdit(); }}
-          className="min-h-11 cursor-pointer"
-        >
-          Edit
-        </Button>
-      ) : null}
-      {retry}
+    <div className="mt-2 border-t border-border/70 pt-2">
+      <div className="flex gap-2">
+        {canEdit ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(event) => { event.stopPropagation(); onEdit(); }}
+            className="min-h-11 cursor-pointer"
+          >
+            Edit
+          </Button>
+        ) : null}
+        {retry}
+      </div>
     </div>
   );
 }
