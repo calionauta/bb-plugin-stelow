@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { FROZEN_ACCEPTANCE_FILE } from "../lib/audit-verification.mjs";
 import {
   auditableBuildDone,
   callsNamed,
@@ -298,4 +299,35 @@ test("the audit trail is built in the card's checkout, not at the project root",
     WORKSPACE,
     "built where the receipt was verified, so the two halves of the gate name one checkout",
   );
+});
+
+// `doneEligibility` passing is not completion: the frozen technical gate runs
+// after eligibility in cli-done-build, and a present-but-junk snapshot opts
+// the card into strict evaluation. A done that completed here would prove the
+// frozen chain is decorative. The second case pins the documented fail-open:
+// no snapshot at all (old cards) still completes.
+test("a build done with a frozen snapshot missing its baseline refuses even though eligibility passes", async () => {
+  const base = auditableBuildDone();
+  const { invoke, calls } = cliHarness({
+    ...base,
+    files: {
+      ...base.files,
+      [`/w/.stelow/state/${FROZEN_ACCEPTANCE_FILE}`]: JSON.stringify({
+        test_map: [{ test: "node tests/x.test.mjs", criterion: "x works" }],
+        red_proof: { failed_command: "node tests/x.test.mjs", exit_code: 1, output_excerpt: "not ok" },
+        freeze_sha: "b".repeat(40),
+      }),
+    },
+  });
+  const result = await invoke(["done"]);
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /\[MissingBaseline\]/);
+  assert.deepEqual(
+    callsNamed(calls, "updateCard").map(([, , fields]) => fields.status),
+    [],
+    "a frozen refusal never completes the card",
+  );
+
+  const open = cliHarness(auditableBuildDone());
+  assert.equal((await open.invoke(["done"])).exitCode, 0, "no snapshot still completes (old-card fail-open)");
 });

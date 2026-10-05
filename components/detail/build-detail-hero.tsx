@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { SECTION_SURFACE } from "../disclosure";
 import { fileLinkTarget } from "../artifacts/artifact-inventory";
 import { AcceptanceRow } from "./acceptance-row";
+import { FrozenAcceptanceRow, type FrozenTestMapEntry } from "./frozen-acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
@@ -108,6 +109,16 @@ function BuildHeroBelow({ card, detail, view }: { card: BuildCard; detail: Build
         status={card.status}
         acceptanceLine={detail?.card.acceptanceLine}
         onChanged={view.load}
+      />
+      {/* Frozen technical acceptance beside the human receipt, never inside
+          it: one row per fact. Null-safe — renders nothing until a gate
+          (Fase 4) supplies test_map/freeze data. The cast is the seam: the
+          server card type gains these fields in Fase 4, and until then the
+          row receives null and renders nothing. */}
+      <FrozenAcceptanceRow
+        entries={(detail?.card as unknown as { frozenTestMap?: FrozenTestMapEntry[] | null } | null | undefined)?.frozenTestMap ?? null}
+        freezeSha={(detail?.card as unknown as { freezeSha?: string | null } | null | undefined)?.freezeSha ?? null}
+        currentHeadSha={(detail?.card as unknown as { currentHeadSha?: string | null } | null | undefined)?.currentHeadSha ?? null}
       />
       <HeroSplitAction detail={detail} view={view} />
     </>

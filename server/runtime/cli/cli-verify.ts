@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { expiredDebts } from "../../../lib/gap-debt.mjs";
+import { FROZEN_ACCEPTANCE_FILE, frozenAcceptanceReadiness, parseFrozenAcceptance } from "../../../lib/audit-verification.mjs";
+import { unmappedCriterionConditions } from "../../../lib/trackable-evidence.mjs";
+import { frozenGatesEnabled } from "../../scope-batch-gates.js";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import {
   exploreVerifyReport,
@@ -171,6 +175,7 @@ async function testResult(
   // before done refuses with the same lines.
   const docDepths = await deps.docDepths(card).catch(() => []);
   const gapLoop = await reworkLoopWarning(deps, card);
+  const frozen = await frozenAcceptanceWarning(deps, card).catch(() => "");
   if (json)
     return {
       exitCode: run.exitCode,
@@ -189,7 +194,7 @@ async function testResult(
         2,
       ),
     };
-  const warnings = docWarning(docDepths) + gapWarning(gapLoop);
+  const warnings = docWarning(docDepths) + gapWarning(gapLoop) + frozen;
   return run.exitCode === 0
     ? {
         exitCode: 0,
@@ -253,6 +258,60 @@ function gapWarning(gapLoop: GapLoop): string {
       ),
     ].join("\n")
   }`;
+}
+
+/** The same frozen acceptance done enforces, surfaced early: a stale freeze
+ * or a missing baseline/test mapping/red proof warns here instead of
+ * ambushing at done. Warn-only — verify never blocks on it. Read-only and
+ * fail-open: no snapshot file means nothing to warn about. */
+async function frozenAcceptanceWarning(
+  deps: CliDeps,
+  card: WorkerCard,
+): Promise<string> {
+  if (!frozenGatesEnabled()) return "";
+  let stateDir: string | null = null;
+  try {
+    const workspace = await deps.cardWorkspace(card);
+    stateDir = workspace && card.dir_hash
+      ? await deps.workflowStateDir(workspace.path, card.id, card.dir_hash)
+      : null;
+  } catch {
+    return "";
+  }
+  if (!stateDir) return "";
+  const raw = await deps.bb.sdk.files
+    .read({ path: join(stateDir, FROZEN_ACCEPTANCE_FILE) })
+    .then((file) => file.content)
+    .catch(() => null);
+  if (raw === null) return "";
+  const snapshot = parseFrozenAcceptance(raw) ?? { baseline: null, testMap: null, redProof: null, freezeSha: null };
+  let headSha: string | null = null;
+  try {
+    const checkout = await deps.cardCheckout(card);
+    const evidence = checkout ? await deps.gitEvidence(checkout.path) : null;
+    headSha = evidence?.headSha ?? null;
+  } catch {
+    /* staleness stays unknown without HEAD; the other checks still warn */
+  }
+  const check = frozenAcceptanceReadiness({ ...snapshot, headSha });
+  if (check.ready) return "";
+  const rows: string[] = [];
+  if (check.code === "UnmappedCriterion") {
+    const entries: unknown[] = Array.isArray(snapshot.testMap) ? snapshot.testMap : [];
+    const criteria = entries.map((entry: unknown) =>
+      entry && typeof entry === "object"
+        ? ((entry as { criterion?: unknown; name?: unknown }).criterion ??
+          (entry as { name?: unknown }).name ?? entry)
+        : entry,
+    );
+    for (const condition of unmappedCriterionConditions({ criteria, testMap: snapshot.testMap })) {
+      rows.push(`UNMAPPED ${condition.message}`);
+    }
+  } else {
+    rows.push(`FROZEN ${(check.code ?? "FrozenAcceptance").toUpperCase()} ${(check.error ?? "").split("\n")[0]}`);
+  }
+  if (rows.length === 0) return "";
+  return `\nWARNING: frozen acceptance open (done will refuse):\n${rows.join("\n")}`;
 }
 
 /** Research and explore verify their own deliverable through the pure

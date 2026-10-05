@@ -43,6 +43,10 @@ export declare function evidenceConditions(options?: {
   claimed?: boolean | null;
   claimLapsed?: boolean;
 }): EvidenceCondition[];
+export declare function unmappedCriterionConditions(options?: {
+  criteria?: unknown;
+  testMap?: unknown;
+}): EvidenceCondition[];
 export interface EnrichClaim {
   card_id?: string;
   scope?: string | null;

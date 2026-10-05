@@ -30,6 +30,20 @@ function scopeIdOf(scope: BatchScope): string | null {
 }
 
 /**
+ * Frozen-gates kill-switch (toggle-plugin half owned by this package).
+ * Default on: frozen acceptance (baseline / test_map / red_proof /
+ * freeze_sha) blocks done. Set STELOW_FROZEN_GATES to 0/off/false/no to
+ * roll the rollout back without a deploy — done and verify then behave as
+ * before the freeze existed. The env object is injected so the predicate
+ * stays unit-testable; callers pass process.env.
+ */
+export function frozenGatesEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = env?.STELOW_FROZEN_GATES;
+  if (raw === undefined) return true;
+  return !["0", "off", "false", "no"].includes(String(raw).trim().toLowerCase());
+}
+
+/**
  * Admission + claim, before the helper can move anything. A refused batch
  * never reaches the transition, so no partial dispatch can happen.
  */

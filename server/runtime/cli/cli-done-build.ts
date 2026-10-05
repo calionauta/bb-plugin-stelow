@@ -1,12 +1,13 @@
 import { join } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
 import { expiredDebts } from "../../../lib/gap-debt.mjs";
-import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
+import { FROZEN_ACCEPTANCE_FILE, parseFrozenAcceptance, sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
-import { doneBuildGates } from "../../../lib/build-gates.mjs";
+import { doneBuildGates, frozenAcceptanceGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
+import { frozenGatesEnabled } from "../../scope-batch-gates.js";
 import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
@@ -105,6 +106,8 @@ async function runDoneBuild(
   if (shallow) return { exitCode: 1, stderr: shallow };
   const rework = await reworkLoopRefusal(deps, card);
   if (rework) return { exitCode: 1, stderr: rework };
+  const frozen = await frozenAcceptanceRefusal(deps, stateDir, evidence.git?.headSha ?? null);
+  if (frozen) return { exitCode: 1, stderr: frozen };
   const verificationRun = latestVerificationRun(deps, card.id);
   const verification = verificationReadiness(verificationRun, evidence.git);
   if (!verification.ready) return { exitCode: 1, stderr: verification.error };
@@ -312,6 +315,28 @@ the critique, then run done again:\n${unscoped.map((gap) => `- ${gap.description
 scope(s) still open — finish them, then run done again:\n${
     pendingRework.map((scope) => `- ${scope.name} (${scope.status})`).join("\n")
   }`;
+}
+
+/** Frozen technical acceptance: a present snapshot opts the card into the
+ * lock (baseline, test_map, red_proof, freeze_sha at this HEAD). Absent
+ * means no snapshot was ever taken — old cards fail open. Behind the
+ * STELOW_FROZEN_GATES kill-switch with the batch gates. Runs after the
+ * rework loop (known rework first) and before the live test-run check (the
+ * freeze must name the HEAD the run just verified). */
+async function frozenAcceptanceRefusal(
+  deps: CliDeps,
+  stateDir: string | null,
+  headSha: string | null,
+): Promise<string | null> {
+  if (!frozenGatesEnabled()) return null;
+  if (!stateDir) return null;
+  const raw = await deps.bb.sdk.files
+    .read({ path: join(stateDir, FROZEN_ACCEPTANCE_FILE) })
+    .then((file) => file.content)
+    .catch(() => null);
+  if (raw === null) return null;
+  const snapshot = parseFrozenAcceptance(raw) ?? { baseline: null, testMap: null, redProof: null, freezeSha: null };
+  return frozenAcceptanceGates({ ...snapshot, headSha });
 }
 
 /** Invisible-scopes companion: audit with zero synced scopes but scope

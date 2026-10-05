@@ -135,7 +135,23 @@ function seedProject(specContent) {
       assert.equal(typeof started.started_at, "string", "start stamps once");
       const scopes = () => tracking().workflows[0].scopes;
       assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "in-progress", "tracking reflects start");
-      assert.equal(run(["scope", "done", "--scope", "scope-1", "--json"]).status, 0, "taskless done commits");
+      // Red-first contract (post-0.73.0-alpha helper): an evidence-less done
+      // refuses in strict (the default) instead of committing.
+      const refused = run(["scope", "done", "--scope", "scope-1", "--json"]);
+      assert.equal(refused.status, 1, "taskless done refuses without red-first evidence");
+      assert.match(refused.stderr, /red_proof|freeze_sha|baseline/, "refusal names the missing evidence");
+      assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "in-progress", "a refused done leaves the status");
+      // A compliant Record (verified + red_proof/freeze_sha/baseline) commits.
+      const trackingPath = join(dir, "stelow.json");
+      const current = JSON.parse(readFileSync(trackingPath, "utf8"));
+      current.workflows[0].scopes.find((scope) => scope.id === "scope-1").record = {
+        verified: true,
+        red_proof: { failed_command: "npm test -- scope-1", exit_code: 1 },
+        freeze_sha: "f".repeat(40),
+        baseline: { "npm test -- scope-1": 1 },
+      };
+      writeFileSync(trackingPath, JSON.stringify(current, null, 2));
+      assert.equal(run(["scope", "done", "--scope", "scope-1", "--json"]).status, 0, "evidenced done commits");
       assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "done", "tracking reflects done");
       assert.equal(run(["scope", "done", "--scope", "scope-1"]).status, 1, "done never regresses");
       assert.equal(run(["scope", "start", "--scope", "scope-1"]).status, 1, "finished never restarts");
