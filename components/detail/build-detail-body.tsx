@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import { statusTone } from "../../lib/detail-presentation.mjs";
-import {
-  STAGE_SEQUENCE,
-  stageLabel,
-} from "../../lib/workflow-vocabulary.mjs";
-import { stageProduces } from "../../lib/stage-vocabulary-surfaces.mjs";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useDetailComment } from "../conversation/use-detail-comment";
 import { GithubCompletionDialog } from "../github/github-completion-dialog";
 import { GithubDoneDraftDialog } from "../github/github-done-draft-dialog";

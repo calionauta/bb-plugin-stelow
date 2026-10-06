@@ -55,9 +55,6 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
 }) {
   const idx = STAGE_SEQUENCE.indexOf(stage);
   const isCurrent = !terminal && stage === currentStage;
-  // A completed card retains its final stage as a completion
-  // record. It is not an earlier stage to reopen from the UI.
-  const isTerminalCheckpoint = terminal === "completed" && stage === currentStage;
   const isOffRoute = !isCurrent && offRoute.has(stage);
   const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
   const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;

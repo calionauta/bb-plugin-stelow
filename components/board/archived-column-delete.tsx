@@ -37,19 +37,22 @@ export function ArchivedColumnDelete(props: ArchivedDeleteProps & { count: numbe
   const scope = `all ${count} archived ${noun} matching "${filterLabel}"`;
   return (
     <>
-      <div className="mb-1 flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="min-h-11 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
-          title={`Delete ${scope}`}
-          aria-label={`Delete ${scope}`}
-          onClick={() => setOpen(true)}
-        >
-          <Icon name="Trash2" className="size-3.5" />
-          Delete all
-        </Button>
-      </div>
+      {/* No wrapper of its own. It used to render a `div.mb-1.flex.justify-end` BETWEEN the
+          header and the cards, which pushed this column's card stack down and left it out
+          of line with every other column — reported from the live board as "the delete all
+          is leaving the cards misaligned horizontally". Its parent is the header row now,
+          so it takes the slot beside the count and adds no height. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="min-h-11 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
+        title={`Delete ${scope}`}
+        aria-label={`Delete ${scope}`}
+        onClick={() => setOpen(true)}
+      >
+        <Icon name="Trash2" className="size-3.5" />
+        Delete all
+      </Button>
       <ConfirmActionDialog
         open={open}
         onOpenChange={setOpen}

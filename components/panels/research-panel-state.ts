@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
+
 import type { rpcContract } from "../../server";
 import {
   useBoardView,

@@ -9,11 +9,6 @@ import {
   matchesFilterValue,
 } from "../lib/kanban-layout.mjs";
 import {
-  filterAndGroupResearchCards,
-  researchCardListRequest,
-  researchCardMatches,
-  researchPresetFor,
-  strategyLabelsById,
 } from "../lib/research-panel-state.mjs";
 
 assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
@@ -38,7 +33,6 @@ const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const researchPanel = readFileSync(join(root, "components", "panels", "research-panel.tsx"), "utf8");
 const explorePanel = readFileSync(join(root, "components", "panels", "explore-panel.tsx"), "utf8");
-const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
 const researchPanelView = readFileSync(join(root, "components", "panels", "research-panel-view.tsx"), "utf8");
 const explorePanelView = readFileSync(join(root, "components", "panels", "explore-panel-view.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");

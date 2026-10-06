@@ -191,10 +191,15 @@ assert.match(
   /positioned \? "where this card is" : <>where this card is · <CurrentStagePill/,
   "only cards without a terminal or scoped position show the live checkpoint pill",
 );
-assert.match(
+// This pin used to require the identifier `isTerminalCheckpoint`, which was declared and
+// never read — so it asserted the NAME of a dead local rather than any behaviour, and it
+// stayed green while the variable did nothing. What the rule actually needs is that a
+// completed card's final stage is not presented as somewhere to go, and that is expressed
+// by the chip being inert: no handler exists to select anything.
+assert.doesNotMatch(
   detailTimeline,
   /isTerminalCheckpoint/,
-  "the terminal Audit checkpoint cannot be selected as a reopen target",
+  "no dead checkpoint flag survives; the rule is carried by the inert chip, not by an unused local",
 );
 // Stronger than the pin it replaces. That one required `disabled={!clickable || isCurrent}`
 // on a BUTTON, so a stage could still be clicked to move the card; the timeline is inert
@@ -205,11 +210,10 @@ assert.doesNotMatch(
   /onClick=\{\(\) => onPick/,
   "no workflow checkpoint is clickable — the whole timeline is inert, not just Audit",
 );
-assert.match(
-  detailTimeline,
-  /isTerminalCheckpoint/,
-  "and the terminal checkpoint is still distinguished visually",
-);
+// (The pin that stood here required `isTerminalCheckpoint` and claimed it "distinguished
+// the terminal checkpoint visually". It did not: the local was declared and never read.
+// Removed rather than kept, because a green assertion about a dead name is worse than no
+// assertion — it is what let the dead code sit there in the first place.)
 assert.match(
   server,
   /cardStatus: snapshot\.card\.status/,

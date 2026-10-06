@@ -18,5 +18,10 @@ if [ ! -d node_modules ]; then
 fi
 
 echo "pre-commit: lint + source shape"
+# `npm run lint` alone does NOT gate: oxlint exits 0 with warnings, so the hook passed
+# while the tree carried 45 of them, six of which this repository's own work had just
+# created. The baseline check is what makes the sentence above true — it fails on a NEW
+# finding and reports the inherited ones as recorded debt.
 npm run --silent lint
+node scripts/check-lint-baseline.mjs
 npm run --silent quality:shape

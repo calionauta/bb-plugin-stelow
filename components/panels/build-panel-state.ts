@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import type { GithubStatus } from "../github/github-dialog-state";
 import {
@@ -250,9 +249,3 @@ export function analysisPreset(data: BuildPanelData) {
   return data.boardPresets.find((preset) => preset.id === assignment?.presetId) ?? fallback;
 }
 
-export async function moveBuildCard(rpc: BuildRpc, cardId: string, target: string) {
-  if (!(BUILD_BOARD_COLUMNS as readonly string[]).includes(target)) return;
-  const status = target as "inbox" | "analysis" | "planning" | "execution" | "review" | "completed" | "archived";
-  const result = await rpc.call("moveCard", { cardId, status });
-  if (!result.ok) toast.error(result.error ?? "Move failed");
-}
