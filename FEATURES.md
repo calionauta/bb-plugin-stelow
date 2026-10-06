@@ -2885,6 +2885,15 @@ notification asking a person to fix something the system is already fixing.
 When the host names a wait, read it (`threads.queuedMessages.list`), project
 it, and offer no action.
 
+**One thing the cache measurement exposed and did not fix: the skill pointer is a
+glob.** Every build path tells the worker to load `stelow-workflow-*` — seventeen
+skills whose entry documents total 215,756 bytes (~54k tokens) if a worker takes
+the instruction literally, against a 12,100-character prompt it was just handed.
+The prompt is not the expensive part of a spawn; the eager-load instruction is, by
+an order of magnitude. The pointer is left as it is because narrowing it changes
+which methodology a worker sees, and that is a workflow-authoring decision rather
+than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
+
 **One ask contract, rendered by every spawn path, pinned by equality.** The
 protocol clauses a worker is spawned with are constants in
 `server/runtime/plugin-protocols.ts`, and the bag every build path receives is
