@@ -2894,6 +2894,33 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**A refused retry says so on the card, and every card can have a token budget.**
+The auto-retry declined to retry five real runs and recorded none of them: each
+reached `attemptAutoRetry`'s stage guard with the card already advanced past the
+failed stage (`scope` → `audit`), and the guard was a bare `return idle`, so
+`auto_retry_count` read 0 on all 54 rows — indistinguishable, from outside, from
+"no retry was ever applicable". That is the phantom wait the project's rules
+forbid, and the reason it was invisible is that the rule lived in three separate
+`if` statements instead of one function. It lives in `lib/retry-decision.mjs` now:
+one decision, every refusal naming a reason and an exit, recorded on the card as an
+openable trail comment. Only a refusal that leaves a person a decision pages them —
+a card that moved on resolves itself and must not become inbox noise. A card that
+failed for a reason outside this path is not re-recorded here, because the caller
+already wrote that line and one fact belongs in one place.
+
+**Budget.** No card had a spend ceiling at all, against a measured cost of 87,296 to
+477,684 tokens per worker thread on this checkout. `lib/card-budget.mjs` adds two
+thresholds and two different movements: at 80% of a budget the card keeps working
+and leaves a trail line, and at 100% it stops and asks a structured question
+carrying both numbers and three named paths (raise the ceiling, continue unchanged,
+or stop the card here — stating explicitly that nothing is deleted). A limit nobody
+chose is worse than no limit, so no budget is the default and stays unlimited; a
+spend that cannot be READ is also unlimited, but reports a different reason, because
+"this card has no budget" and "this card's spend could not be read" are different
+facts and an unreadable figure is unknown rather than zero. A budget of zero or less
+is treated as unset rather than as an instant stop, so a bad config cannot brick
+every card.
+
 **A worker's token figure is shown for nearly every worker now, and it says whether
 it is a measurement or an estimate.** The plugin read exactly one event family,
 `thread/tokenUsage/updated`, and asked only for that one. Measured on the live

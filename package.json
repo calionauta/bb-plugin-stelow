@@ -82,7 +82,7 @@
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
     "test:skills-tables": "node tests/skills-tables.test.mjs",
-    "test:spawn-retry": "node tests/spawn-retry.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/workers-respawn-guard.test.mjs",
+    "test:spawn-retry": "node tests/spawn-retry.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/workers-respawn-guard.test.mjs && node tests/retry-decision.test.mjs && node tests/card-budget.test.mjs",
     "test:skills-atomic": "node tests/skills-atomic-swap.test.mjs",
     "test:github-release": "node tests/github-release.test.mjs",
     "test:release-published": "node tests/release-published.test.mjs && node tests/release-published-script.test.mjs",
