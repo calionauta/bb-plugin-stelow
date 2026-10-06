@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codeOf } from "./helpers/source-code.mjs";
 import {
   KANBAN_COLUMN_WIDTHS,
   kanbanGridColumns,
@@ -38,7 +39,9 @@ const explorePanelView = readFileSync(join(root, "components", "panels", "explor
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
-const cardGallery = readFileSync(join(root, "components", "board", "card-gallery.tsx"), "utf8");
+// Read with comments stripped: assertions below guard the ABSENCE of class names that this
+// file explains in prose, and a comment naming one would satisfy a raw-source match.
+const cardGallery = codeOf(readFileSync(join(root, "components", "board", "card-gallery.tsx"), "utf8"));
 const hillBoard = readFileSync(join(root, "components", "board", "hill-board.tsx"), "utf8");
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
@@ -126,7 +129,15 @@ assert.match(
   /Swipe sideways to view every stage\.[\s\S]*Use Shift \+ scroll to move across stages\./,
   "the Build board keeps its mobile and desktop scroll guidance",
 );
-assert.equal(((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (buildDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "each creation checkbox links to its pile's gallery");
+// Counted across the four surfaces, one line per file so the sum is readable.
+const bucketLinks = [app, buildDialogKanban, researchDialogKanban, exploreDialogKanban].map(
+  (source) => (source.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length,
+);
+assert.equal(
+  bucketLinks.reduce((total, count) => total + count, 0),
+  3,
+  "each creation checkbox links to its pile's gallery",
+);
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
 assert.doesNotMatch(
   app,
@@ -142,7 +153,19 @@ const [minBound, maxBound] = KANBAN_COLUMN_WIDTHS.expanded.replace(/^minmax\(|\)
 const tilesAt = cardGallery.indexOf("data-gallery-tiles");
 assert.ok(tilesAt >= 0, "the gallery grid is addressable");
 const galleryGrid = cardGallery.slice(tilesAt, cardGallery.indexOf(">", tilesAt));
-assert.ok(galleryGrid.includes(`repeat(auto-fill,minmax(min(${minBound},100%),${maxBound}))`), "gallery tracks take the board column's own bounds");
+// `auto-fit`, not `auto-fill`, and the bound stays the board column's own.
+//
+// `auto-fill` creates phantom tracks to fill the width, so four cards in a wide modal
+// reserved the empty columns as real tracks and every tile huddled left with a void beside
+// them — reported from a screenshot of the Bucket. `auto-fit` collapses the empty tracks.
+//
+// The `maxBound` half is unchanged and load-bearing: the assertion below forbids `1fr`
+// because a tile is the board's own tile at the board's own size. Fixing the void by
+// stretching the cards would trade one defect for a worse one.
+assert.ok(
+  galleryGrid.includes(`repeat(auto-fit,minmax(min(${minBound},100%),${maxBound}))`),
+  "gallery tracks collapse empty columns and keep the board column's own bounds",
+);
 assert.ok(galleryGrid.includes("justify-start"), "tiles begin at the left edge and fill rightwards");
 assert.ok(galleryGrid.includes("items-start"), "a tile keeps the board's natural height");
 assert.ok(galleryGrid.includes("content-start"), "rows pin to the top: a short pile never centers in the tall modal");
@@ -150,11 +173,28 @@ assert.doesNotMatch(galleryGrid, /\b1fr\b/, "no gallery track stretches to fill 
 assert.doesNotMatch(cardGallery, /auto-rows-fr/, "gallery rows are never stretched to equal heights");
 assert.doesNotMatch(cardGallery, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles are never stretched vertically");
 assert.doesNotMatch(cardGallery, /grid-flow-col/, "gallery flow is row-major: rightwards, then down");
-assert.match(cardGallery, /sm:w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
+// The HEIGHT stays fixed with internal scroll — a short pile must not resize the modal as
+// cards arrive, and a long one must not push the header off-screen. The WIDTH follows the
+// content instead of a fixed share of the viewport.
+//
+// `sm:w-[70vw]` was chosen for a full grid and reads as a mistake for four cards: the modal
+// stayed wide while the tiles huddled left, which is what the screenshot showed. The width is
+// now bounded by a readable measure (`32rem`) and by the viewport, so a small bucket sits
+// narrow and a large one grows. The `h-[85dvh] overflow-y-auto` pair is unchanged.
 assert.match(
   cardGallery,
-  /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/,
+  /h-\[85dvh\] overflow-y-auto/,
   "the gallery height is fixed at 85dvh with internal scroll, never content-sized",
+);
+assert.match(
+  cardGallery,
+  /sm:max-w-\[min\(92vw,64rem\)\]/,
+  "and its width follows the content within a readable bound, so four cards do not sit inside a wide empty modal",
+);
+assert.doesNotMatch(
+  cardGallery,
+  /sm:w-\[70vw\]/,
+  "the fixed seventy-percent width is gone: it held the modal open at a size its contents did not fill",
 );
 assert.match(cardGallery, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
 assert.match(boardCards, /export function BoardCard\(\{ card, onOpen/, "tiles require an open action through the extracted board card");
