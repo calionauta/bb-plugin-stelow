@@ -11,6 +11,7 @@ import {
   CARD_OWNER_RULES,
   CLI_EQUIVALENTS,
   COMMIT_STYLE,
+  COMMAND_FAILURE_RULE,
   DONE_PROTOCOL,
   WORKFLOW_INTRO,
   WORKFLOW_SKILLS,
@@ -40,6 +41,7 @@ export const WORKER_PROTOCOL_CLAUSES = {
   doneProtocol: DONE_PROTOCOL,
   splitProtocol: SPLIT_PROTOCOL,
   userInputContract: USER_INPUT_CONTRACT,
+  commandFailureRule: COMMAND_FAILURE_RULE,
 } as const;
 
 export type WorkerProtocolClauses = typeof WORKER_PROTOCOL_CLAUSES;

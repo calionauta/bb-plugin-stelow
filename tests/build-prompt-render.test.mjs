@@ -34,6 +34,9 @@ const rules = {
   workflowIntro: "WORKFLOW_INTRO_SENTINEL",
 
   workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+
+  commandFailureRule: "command failure rule",
   userInputContract: "USER_INPUT_CONTRACT_SENTINEL",
 };
 

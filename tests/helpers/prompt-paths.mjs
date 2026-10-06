@@ -68,27 +68,19 @@ const RULES = {
 };
 
 const RESTART_PROTOCOLS = {
-  cardOwnerRules: RULES.cardOwnerRules,
-  neverSeed: RULES.neverSeed,
-  cliEquivalents: RULES.cliEquivalents,
-  reconProtocol: RULES.reconProtocol,
-  draftProtocol: RULES.draftProtocol,
-  turnDiscipline: RULES.turnDiscipline,
-  commitStyle: RULES.commitStyle,
-  interfacePick: RULES.interfacePick,
-  doneProtocol: RULES.doneProtocol,
-  splitProtocol: RULES.splitProtocol,
-  userInputContract: RULES.userInputContract,
+  // Spread, not re-listed: this fixture named every clause by hand and passed a new
+  // one as undefined, so the restart prompt rendered the literal text `undefined`.
+  ...WORKER_PROTOCOL_CLAUSES,
 };
-
 const TRACK_PROTOCOLS = {
+  // The track prompts carry the narrower set their workers can act on, so this one
+  // names its clauses deliberately rather than spreading the whole build bag.
   cardOwnerRules: RULES.cardOwnerRules,
   doneProtocol: RULES.doneProtocol,
   reviewProtocol: "REVIEW_PROTOCOL_SENTINEL",
   draftProtocol: RULES.draftProtocol,
   userInputContract: RULES.userInputContract,
 };
-
 const trackPrompts = createTrackPrompts(TRACK_PROTOCOLS);
 
 /** The shared build context every build path renders from. One object, so a

@@ -122,6 +122,7 @@ const EXPECTED_CLAUSES = [
   "workflowIntro",
   "workflowSkills",
   "cardOwnerRules",
+  "commandFailureRule",
   "neverSeed",
   "cliEquivalents",
   "reconProtocol",

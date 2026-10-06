@@ -9,6 +9,7 @@ export type CardPromptRules = {
   draftProtocol: string;
   turnDiscipline: string;
   commitStyle: string;
+  commandFailureRule: string;
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
@@ -50,6 +51,8 @@ Preserve every gate (product, interface, tech plan, diff).
 
 %USER_INPUT_CONTRACT%
 
+%COMMAND_FAILURE_RULE%
+
 %DONE_PROTOCOL%
 
 %SPLIT_PROTOCOL%
@@ -67,9 +70,7 @@ exploration=\`%EXPLORATION%\`) and review gates=\`%REVIEW_GATES%\`
 (%REVIEW_RUNG%) are already recorded in state.md — use them, never re-ask.
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load only the skills \`bb stelow playbook\` names for your \
-current stage; (3) advance stages and do the work. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). If \
-a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error \
-and move on.
+current stage; (3) advance stages and do the work. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage).
 
 %INSTRUCTIONS%Request:
 %REQUEST%`;
@@ -102,6 +103,7 @@ export function buildBuildPrompt(
     DRAFT_PROTOCOL: rules.draftProtocol,
     TURN_DISCIPLINE: rules.turnDiscipline,
     COMMIT_STYLE: rules.commitStyle,
+    COMMAND_FAILURE_RULE: rules.commandFailureRule,
     INTERFACE_PICK: rules.interfacePick,
     USER_INPUT_CONTRACT: rules.userInputContract,
     DONE_PROTOCOL: rules.doneProtocol,

@@ -204,3 +204,15 @@ export const WORKFLOW_SKILLS =
   + "`npx skills add` unless the playbook reports a path missing. That report means a broken install: say so "
   + "instead of working around it.";
 
+/**
+ * What to do when a Stelow command fails, stated once.
+ *
+ * This lived in three templates with three wordings — "continue the workflow" in the
+ * spawn path, "continue" in the restart path, and a third in reseed — which is the
+ * same drift shape this file already pays for elsewhere. It is a rule about the CLI,
+ * not a fact about any one path, so it belongs here where the coverage test can hold
+ * every path to the same sentence.
+ */
+export const COMMAND_FAILURE_RULE =
+  "If a `bb stelow` command fails, read its stderr once and continue — do NOT spend the turn "
+  + "debugging the CLI; report the exact error and move on.";

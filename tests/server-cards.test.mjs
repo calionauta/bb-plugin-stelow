@@ -21,6 +21,9 @@ const promptRules = {
   workflowIntro: "WORKFLOW_INTRO_SENTINEL",
 
   workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+
+  commandFailureRule: "command failure rule",
   userInputContract: "user input contract",
 };
 

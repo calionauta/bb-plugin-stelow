@@ -29,6 +29,7 @@ type Protocols = {
   draftProtocol: string;
   turnDiscipline: string;
   commitStyle: string;
+  commandFailureRule: string;
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;

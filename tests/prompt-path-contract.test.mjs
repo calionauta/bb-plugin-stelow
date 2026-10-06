@@ -171,6 +171,28 @@ assert.ok(
   "no pinned rule is an advisory restatement of a hard rule",
 );
 
+// --- 3d. No path renders the literal text `undefined`. ---------------------
+// A clause wired from a fixture that does not carry it renders the WORD undefined
+// where a rule should be, and the prompt still reads as a prompt: the worker is told
+// "undefined" and nothing fails. This happened while moving a rule into the bag — the
+// restart path rendered `undefined` in the clause position and every existing
+// assertion passed, because the clause it replaced was absent from the coverage check
+// rather than present-and-wrong.
+//
+// It is the same class of failure as the empty-render this file exists for, and
+// subtler: an empty string leaves a blank line nobody notices, and `undefined` leaves
+// a word that looks like content.
+for (const path of pathNames) {
+  assert.ok(
+    !/\bundefined\b/.test(paths[path]),
+    `${path} renders the literal text "undefined" — a clause is wired from a value that does not exist, so a rule has been replaced by a word`,
+  );
+  assert.ok(
+    !/\bnull\b/.test(paths[path]),
+    `${path} renders the literal text "null" — same failure, one value over`,
+  );
+}
+
 // --- 4. No path carries a clause twice. -------------------------------------
 // The block grew by accretion, and accretion duplicates rules: "never re-ask
 // the same question" was stated once per paragraph it was appended to. A model

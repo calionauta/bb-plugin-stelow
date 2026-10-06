@@ -13,6 +13,7 @@ type Protocols = {
   draftProtocol: string;
   turnDiscipline: string;
   commitStyle: string;
+  commandFailureRule: string;
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
@@ -117,14 +118,16 @@ function buildWorkflowPrompt(input: PromptInput): string {
     protocols.commitStyle,
     protocols.interfacePick,
     protocols.userInputContract,
+    protocols.commandFailureRule,
     protocols.doneProtocol,
     protocols.splitProtocol,
   ].join("\n\n");
   // Everything below differs per card, so it comes last: the cacheable region is
   // everything before this point.
   const card = [
-    `This worker was re-seeded. Your state dir is (${stateDirText(input.seed)}) — its state.md holds name, intent, current_stage, status.`,
-    `Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage).`,
+    `This worker was re-seeded. Your state dir is (${stateDirText(input.seed)}) — its state.md holds name, intent, `
+      + `current_stage, status. Use \`bb stelow advance <stage>\` to change stages `
+      + "(do NOT hand-edit current_stage).",
     `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
     workOrderClause(),
     presetInstructions(input.params.instructions),
@@ -153,7 +156,6 @@ function intentClause(intent: string): string {
 function workOrderClause(): string {
   return [
     "Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work.",
-    "If a `bb stelow` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.",
   ].join(" ");
 }
 

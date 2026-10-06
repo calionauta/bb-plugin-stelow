@@ -17,6 +17,7 @@ type RestartPromptInput = {
     draftProtocol: string;
     turnDiscipline: string;
     commitStyle: string;
+    commandFailureRule: string;
     interfacePick: string;
     doneProtocol: string;
     splitProtocol: string;
@@ -73,8 +74,7 @@ settled in state.md. Pick up exactly where the workflow left off.${previousWorke
 function intentAndOrder(input: RestartPromptInput): string {
   return `Intent is currently \`${input.card.intent}\` in state.md. ${intentContract(input.card.intent)} \
 Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. \
-If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; \
-report the exact error and move on.`;
+%COMMAND_FAILURE_RULE%`;
 }
 
 export function buildWorkerRestartPrompt(input: RestartPromptInput): string {
@@ -84,7 +84,7 @@ export function buildWorkerRestartPrompt(input: RestartPromptInput): string {
     + `${protocols.cliEquivalents}\n\n${protocols.reconProtocol}\n\n${protocols.draftProtocol}\n\n`
     + `${protocols.turnDiscipline}\n\n${protocols.commitStyle}\n\n`
     + `${protocols.interfacePick}\n\n${protocols.userInputContract}\n\n`
-    + `${protocols.doneProtocol}\n\n${protocols.splitProtocol}\n\n`
+    + `${protocols.commandFailureRule}\n\n${protocols.doneProtocol}\n\n${protocols.splitProtocol}\n\n`
     + `${stateOwnership(input)}\n\n${restartContract(input)}\n\n${intentAndOrder(input)}\n\n`
     + `${input.instructions ? `Preset instructions:\n${input.instructions}\n` : ""}Request:\n${input.card.prompt}`;
 }

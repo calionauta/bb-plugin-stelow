@@ -2894,6 +2894,25 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**A rule that was drifting across three templates is now one clause, and a clause
+that renders the word `undefined` fails a test.** The command-failure rule — read a
+`bb stelow` command's stderr once and continue rather than spending the turn debugging
+the CLI — lived in three templates with three wordings: "continue the workflow" in the
+spawn path, "continue" in the restart path, and a third in the reseed path. That is the
+drift shape this work started from, caught mid-divergence rather than after a worker
+was spawned with the weaker version. It is now `COMMAND_FAILURE_RULE` in the bag, so
+every build path renders the same sentence.
+
+Moving it exposed a failure mode nothing was watching for: a clause wired from a value
+the fixture does not carry renders the literal word `undefined` in the clause's place,
+and the prompt still reads as a prompt — the worker is told "undefined" and nothing
+fails. `tests/prompt-path-contract.test.mjs` now rejects any path whose rendered prompt
+contains `undefined` or `null`, which is the subtler sibling of the empty-render check
+it already had: an empty string leaves a blank line nobody notices, and `undefined`
+leaves a word that looks like content. Cross-card cacheable prefix improved to
+90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
+characters.
+
 **A worker's orientation cost is measured and shown, not assumed.** A worker's first
 turn is the most expensive and least informed: it has just been handed a
 12,000-character prompt naming its stage, and the skill family it used to be told to
