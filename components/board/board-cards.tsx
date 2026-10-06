@@ -1,10 +1,8 @@
 import { Children, useCallback, useState, type MouseEvent, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
-import { EditParkedSheet } from "./edit-parked-sheet";
 import { errorActivityLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
@@ -125,12 +123,10 @@ type BoardCardProps = {
 export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCardProps) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
-  const [editing, setEditing] = useState(false);
   const open = useCallback(() => onOpen(), [onOpen]);
   const openThread = useCallback(() => {
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
-  const canEdit = !card.workerThreadId && (card.status === "draft" || card.status === "pending");
   return (
     <div
       role="button"
@@ -164,39 +160,11 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
           <CardMetaRows card={card} />
         </div>
       </div>
-      <BoardCardActions card={card} canEdit={canEdit} onEdit={() => setEditing(true)} />
-      <BoardCardEditSheet card={card} editing={editing} onClose={() => setEditing(false)} />
+      <BoardCardActions card={card} />
     </div>
   );
 }
 
-/**
- * The parked-edit sheet, mounted only while editing. The card mapping lives
- * here so the tile passes its card once and the sheet contract stays in one
- * place — a second mapping elsewhere would drift from this one.
- */
-function BoardCardEditSheet({ card, editing, onClose }: {
-  card: BoardCardItem;
-  editing: boolean;
-  onClose: () => void;
-}) {
-  if (!editing) return null;
-  return (
-    <EditParkedSheet
-      card={{
-        id: card.id,
-        displayName: card.displayName,
-        prompt: card.prompt,
-        projectId: card.projectId,
-        status: card.status,
-        workerThreadId: card.workerThreadId,
-      }}
-      open={editing}
-      onClose={onClose}
-      onSaved={onClose}
-    />
-  );
-}
 
 /**
  * The multi-select checkbox, inline at the head of the tile's flex row — in
@@ -242,30 +210,23 @@ function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
  * Gated to draft/pending without a worker — the sheet itself re-checks,
  * so a stale tile cannot save.
  */
-function BoardCardActions({ card, canEdit, onEdit }: {
-  card: BoardCardItem;
-  canEdit: boolean;
-  onEdit: () => void;
-}) {
+/**
+ * The tile's action row, which is now only ever the resume control.
+ *
+ * It used to carry an "Edit" button opening a parked-edit sheet, and that button was the
+ * ONLY thing that sheet existed for. Editing a parked card happens in the card itself —
+ * the title inline in the header, the description through the prompt control, the provider
+ * through the preset dialog — so a second entry point duplicated four forms and drifted
+ * from them. `canEdit` went with it: its whole job was deciding whether that button showed.
+ */
+function BoardCardActions({ card }: { card: BoardCardItem }) {
   const retry = cardCanResume(card) && card.activity !== "error" ? (
     <CardRetryButton cardId={card.id} label="Resume work" />
   ) : null;
-  if (!canEdit && !retry) return null;
+  if (!retry) return null;
   return (
     <div className="mt-2 border-t border-border/70 pt-2">
-      <div className="flex gap-2">
-        {canEdit ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={(event) => { event.stopPropagation(); onEdit(); }}
-            className="min-h-11 cursor-pointer"
-          >
-            Edit
-          </Button>
-        ) : null}
-        {retry}
-      </div>
+      <div className="flex gap-2">{retry}</div>
     </div>
   );
 }

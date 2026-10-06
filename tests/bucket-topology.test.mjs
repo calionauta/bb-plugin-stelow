@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codeOf } from "./helpers/source-code.mjs";
 
 // Topology pins for the bucket naming + parked prompt feature. Each pin
 // constrains wiring, counts, or refusals and names the regression it
@@ -63,11 +64,65 @@ test("Start re-fire runs on start only, never restart", () => {
 });
 
 test("BoardCard supports selection for bulk bucket actions", () => {
-  const board = read("components/board/board-cards.tsx");
+  // Read with comments stripped: two assertions below guard the ABSENCE of names this
+  // file explains in prose, and a comment naming them would satisfy a raw-source match.
+  const board = codeOf(read("components/board/board-cards.tsx"));
   assert.match(board, /export function BoardCard\(/, "BoardCard exists");
   assert.match(board, /selected\?/, "BoardCard supports selection prop for bucket bulk");
   assert.match(board, /onToggleSelection/, "BoardCard has selection toggle for bucket");
-  assert.match(board, /EditParkedSheet/, "BoardCard wires the parked edit sheet");
+  // The parked-edit sheet is gone, and this pin guards its absence. Editing a parked card
+  // happens in the card itself — title inline in the header, description through the prompt
+  // control, provider through the preset dialog — so the sheet was a second entry point for
+  // four forms that already existed, and it drifted from them.
+  assert.doesNotMatch(
+    board,
+    /EditParkedSheet|canEdit/,
+    "the tile carries no parked-edit affordance: a bucket card is edited inside the card",
+  );
+  assert.doesNotMatch(
+    board,
+    /onClick=\{\(event\) => \{ event\.stopPropagation\(\); onEdit\(\); \}\}/,
+    "and no Edit button survives on the tile",
+  );
+});
+
+/**
+ * The gallery modal sizes itself to its cards, and its grid has no phantom columns.
+ *
+ * Reported from a screenshot of the Bucket: four cards huddled left inside a modal that
+ * stayed wide, with a large void to their right. Two causes, both in the class strings:
+ *
+ *   1. `auto-fill` creates phantom tracks to fill the width, so a row of four cards in a
+ *      wide modal reserved the empty columns as real tracks and every tile aligned left.
+ *   2. The modal was `sm:w-[70vw]` — a width chosen for a full grid, which reads as a
+ *      mistake when the bucket holds four cards.
+ *
+ * Pinned on the CLASS rather than on a screenshot, because that is what a future edit
+ * changes, and read from the code with the repo's comment-stripping helper so the
+ * explanation above cannot satisfy it.
+ */
+test("the gallery grid collapses empty tracks and the modal follows its content", () => {
+  const gallery = codeOf(read("components/board/card-gallery.tsx"));
+  assert.match(
+    gallery,
+    /repeat\(auto-fit,minmax\(min\(240px,100%\),320px\)\)/,
+    "the tile grid uses auto-fit, so empty columns collapse instead of leaving the cards huddled left",
+  );
+  assert.doesNotMatch(
+    gallery,
+    /auto-fill/,
+    "and never auto-fill, which reserves empty columns as real tracks — the void in the report",
+  );
+  assert.doesNotMatch(
+    gallery,
+    /w-\[70vw\]|max-w-\[70vw\]/,
+    "and the modal no longer takes a fixed share of the viewport, which stayed wide for four cards",
+  );
+  assert.match(
+    gallery,
+    /sm:max-w-\[min\(92vw,64rem\)\]/,
+    "its width is bounded by a readable measure and the viewport, so a small bucket sits narrow and a large one grows",
+  );
 });
 
 test("updateCardPrompt is a contracted RPC with handler-owned length gate", () => {
