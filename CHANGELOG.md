@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.75.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.74.0...v0.75.0) (2026-10-06)
+
+
+### Features
+
+* the phone board is a second layout, not a narrower first one ([b6226fd](https://github.com/calionauta/bb-plugin-stelow/commit/b6226fd548c24327adcd76933a74dfd64b5bb72c))
+
+
+### Breaking Changes
+
+* **A card is no longer moved by hand.** Dragging a card between columns and clicking a stage chip to change stage are both gone — the workflow is the agent's to drive, and a person asks it in the conversation instead. The board reads as a status report rather than a manual tool.
+* **A card's delete-all moved into its column header.** It used to sit in the flow between the header and the cards, which pushed the Archived column's cards out of line with every other column.
+
+### Bug Fixes
+
+* a disclosure chevron rotates from state, not from a CSS variant that froze ([9adee91](https://github.com/calionauta/bb-plugin-stelow/commit/9adee9112086095ca38e819aa00707ba81d8af97))
+* gate the lint, and take the delete-all out of the column's flow ([fc9f931](https://github.com/calionauta/bb-plugin-stelow/commit/fc9f9310aef323df6d07780584de4a0150aa100c))
+
 ## [0.74.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.1...v0.74.0) (2026-10-06)
 
 
