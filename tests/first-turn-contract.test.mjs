@@ -51,6 +51,43 @@ assert.deepEqual(skillReads([otherCall("/repo/README.md")]), [], "reading a docu
 assert.deepEqual(skillReads([reasoning]), [], "a reasoning item is not a tool call");
 assert.deepEqual(skillReads([]), [], "no events is no reads");
 
+// --- 2b. Listing skill paths is not reading a skill. -------------------------
+// The playbook command's OUTPUT names every skill document the current stage needs, so
+// a detector matching on the serialised event reports a read for the one command this
+// change tells workers to run — the sanctioned way to find the reading list would look
+// like the violation. Verified against a real thread: a worker ran `bb stelow playbook`
+// (exit 0) and the playbook's own output is what names the documents.
+const listingCall = (command) => ({
+  data: { item: { type: "toolCall", tool: "bash", arguments: { command } } },
+});
+assert.deepEqual(
+  skillReads([listingCall(`bb stelow playbook 2>&1 | head -60`)]),
+  [],
+  "running the playbook is not a skill read, however many SKILL.md paths its output names",
+);
+assert.deepEqual(
+  skillReads([listingCall("bb skill list | grep SKILL.md")]),
+  [],
+  "nor is listing the skills",
+);
+assert.deepEqual(
+  skillReads([listingCall("npx skills add calionauta/stelow@x/SKILL.md")]),
+  [],
+  "nor is fetching one, which is a different act with its own rule",
+);
+assert.equal(
+  firstTurnVerdict([listingCall("bb stelow playbook")]).violated,
+  false,
+  "so a worker that follows the instruction is not reported as violating it",
+);
+// The distinction is the COMMAND, not the mere presence of the word: a genuine read
+// that happens to name the same file still counts.
+assert.equal(
+  skillReads([skillCall(SKILL_A)]).length,
+  1,
+  "while a real read of the same document still counts, so the exclusion is not a blanket one",
+);
+
 // --- 3. The verdict, in the two directions that matter. ----------------------
 // The bulk flag travels into the verdict, not only through `skillReads`. Asserted on
 // the verdict because that is the object a caller records from: a flag that exists on
