@@ -228,6 +228,11 @@ assert.deepEqual(stale, [], `a named owner whose module is gone is a stale decis
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ui = readFileSync(join(repoRoot, "components/worker-history/worker-history.tsx"), "utf8");
 const rpc = readFileSync(join(repoRoot, "server/card-detail-rpc-contract.ts"), "utf8");
+// The worker-history entry schema moved to server/contracts.ts when the detail
+// contract crossed the repository's 400-line budget, so the provenance pin reads the
+// file that owns the shape — the alternative is a pin that fails whenever a schema is
+// extracted, which teaches people to delete it.
+const sharedSchemas = readFileSync(join(repoRoot, "server/contracts.ts"), "utf8");
 const historySource = readFileSync(join(repoRoot, "server/workers-history.ts"), "utf8");
 
 assert.ok(
@@ -235,8 +240,12 @@ assert.ok(
   "the history entry carries the source of its token figure",
 );
 assert.ok(
-  rpc.includes("tokenUsageSource"),
-  "the RPC contract declares the source, or zod strips it and the UI cannot tell an estimate from a measurement",
+  sharedSchemas.includes("tokenUsageSource"),
+  "the entry schema declares the source, or zod strips it and the UI cannot tell an estimate from a measurement",
+);
+assert.ok(
+  rpc.includes("workerHistoryEntrySchema"),
+  "and the detail contract uses that schema rather than declaring a second shape beside it",
 );
 assert.ok(ui.includes("context-estimate"), "the UI distinguishes an estimated figure from a reported one");
 assert.ok(/tokens \(est\.\)/.test(ui), "an estimated figure is LABELLED as one on screen, not merely stored as one");

@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { attachChildTokenBreakdown, attachChildTokenUsage, shapeChildThreads } from "../lib/thread-children.mjs";
 import { tokenBreakdownFromEvents, usageFromEvents } from "../lib/token-usage.mjs";
+import { firstTurnVerdict } from "../lib/first-turn-contract.mjs";
 import type { UsageSource } from "../lib/token-usage.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -105,10 +106,35 @@ async function childThreads(bb: BbPluginApi, threadId: string): Promise<ChildThr
   }
 }
 
+/**
+ * The worker's item events, which is where a skill read is visible.
+ *
+ * A separate read from the usage families because it answers a different question:
+ * those carry token counts, these carry what the worker DID. The limit is generous
+ * on purpose — the first-turn contract is about the opening of a long run, so a page
+ * too small to reach the first advance would report every worker as compliant.
+ */
+async function itemEvents(bb: BbPluginApi, threadId: string) {
+  try {
+    return await bb.sdk.threads.events.list({ threadId, types: ["item/completed"], order: "asc", limit: "200" });
+  } catch {
+    return [];
+  }
+}
+
 async function history(db: Db, bb: BbPluginApi, cardId: string): Promise<WorkerHistoryEntry[]> {
   const rows = db.prepare(HISTORY_SELECT).all(cardId) as HistoryRow[];
   return Promise.all(rows.map(async (row) => {
-    const [report, children] = await Promise.all([tokenReport(bb, row.thread_id), childThreads(bb, row.thread_id)]);
+    const [report, children, items] = await Promise.all([
+      tokenReport(bb, row.thread_id),
+      childThreads(bb, row.thread_id),
+      itemEvents(bb, row.thread_id),
+    ]);
+    // The first-turn verdict is derived from what the worker did, not from what it was
+    // told: a skill read is a tool call naming a SKILL.md, and the rule is that they
+    // happen on advance. Reported rather than blocked, because the plugin cannot stop
+    // a call in flight and a refusal here would be a deadlock with a good message.
+    const firstTurn = firstTurnVerdict(items);
     return {
       threadId: row.thread_id,
       presetName: row.preset_name,
@@ -118,6 +144,7 @@ async function history(db: Db, bb: BbPluginApi, cardId: string): Promise<WorkerH
       tokenUsage: report.total,
       tokenUsageSource: report.source,
       tokenBreakdown: report.breakdown,
+      firstTurn,
       children,
     };
   }));

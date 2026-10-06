@@ -263,3 +263,51 @@ export const githubReleaseSchema = z.object({
   checkedAt: z.number(),
   newer: z.boolean(),
 });
+
+/**
+ * One worker's history row, as the card detail panel receives it.
+ *
+ * Lifted out of `card-detail-rpc-contract.ts` when that file crossed the repository's
+ * 400-line budget, which is the budget working: the row is a shape of its own, shared
+ * with the contracts module, not a detail of the card-detail response.
+ *
+ * `tokenUsageSource` and `firstTurn` are both declared because zod strips undeclared
+ * keys — a field that is not named here never reaches the UI that would show it, which
+ * is how the token provenance crossed three files and vanished at this boundary.
+ */
+export const workerHistoryEntrySchema = z.object({
+  
+        threadId: z.string(),
+        presetName: z.string().nullable(),
+        startedAt: z.number(),
+        endedAt: z.number().nullable(),
+        endedReason: z.string().nullable(),
+        tokenUsage: z.number().nullable(),
+        // The provenance of `tokenUsage`, and it has to cross the RPC boundary or
+        // the UI cannot tell an estimate from a measurement: a zod object strips
+        // undeclared keys, so the field travelled all the way here and was
+        // silently dropped, leaving every row labelled "provider-reported".
+        tokenUsageSource: z.enum(["provider", "context-estimate"]).nullable(),
+        // The first-turn verdict: whether this worker read skills before advancing,
+        // and which. Declared here because zod strips undeclared keys, so a field
+        // that is not named never reaches the UI that would show it.
+        firstTurn: z
+          .object({
+            advanced: z.boolean(),
+            skillsReadBeforeWork: z.number(),
+            violated: z.boolean(),
+            readsBeforeAdvance: z.array(z.object({ skill: z.string(), bulk: z.boolean() })),
+          })
+          .nullable(),
+        tokenBreakdown: tokenBreakdownSchema,
+        children: z.array(
+          z.object({
+            threadId: z.string(),
+            title: z.string().nullable(),
+            status: z.string(),
+            providerId: z.string().nullable(),
+            tokenUsage: z.number().nullable(),
+            tokenBreakdown: tokenBreakdownSchema,
+          }),
+        ),
+});

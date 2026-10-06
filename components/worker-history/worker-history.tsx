@@ -55,6 +55,10 @@ export type WorkerHistoryEntry = {
    * to travel with the number, because presenting an estimate as a measurement is
    * the same class of error as printing 0 for unknown. */
   tokenUsageSource?: "provider" | "context-estimate" | null;
+  /** Whether this worker read skills before advancing. Reported, never blocked: the
+   * plugin cannot stop a tool call in flight, and a rule enforced by refusing work
+   * would be a deadlock with a good error message. */
+  firstTurn?: { advanced: boolean; skillsReadBeforeWork: number; violated: boolean } | null;
   tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null;
   children?: Array<{
     threadId: string;
@@ -113,6 +117,16 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
           <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
           {entry.presetName ? <span> · {entry.presetName}</span> : null}
           <TokenFigure tokens={entry.tokenUsage} source={entry.tokenUsageSource} />
+        {entry.firstTurn?.violated ? (
+          <span
+            className="ml-1 opacity-70"
+            title="This worker read skills before advancing. The stage's reading list comes from `bb stelow playbook`, and skills load on advance."
+          >
+            {" · "}
+            {entry.firstTurn.skillsReadBeforeWork} skill
+            {entry.firstTurn.skillsReadBeforeWork === 1 ? "" : "s"} before work
+          </span>
+        ) : null}
           <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
         </span>
         <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>

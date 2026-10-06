@@ -7,6 +7,7 @@ import {
   cardStatusSchema,
   scopeSummarySchema,
   tokenBreakdownSchema,
+  workerHistoryEntrySchema,
   trackableStatusSchema,
 } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
@@ -353,32 +354,7 @@ export const cardDetailRpcContract = {
           note: z.string().nullable().optional(),
         }),
       ),
-      workerHistory: z.array(
-        z.object({
-          threadId: z.string(),
-          presetName: z.string().nullable(),
-          startedAt: z.number(),
-          endedAt: z.number().nullable(),
-          endedReason: z.string().nullable(),
-          tokenUsage: z.number().nullable(),
-          // The provenance of `tokenUsage`, and it has to cross the RPC boundary or
-          // the UI cannot tell an estimate from a measurement: a zod object strips
-          // undeclared keys, so the field travelled all the way here and was
-          // silently dropped, leaving every row labelled "provider-reported".
-          tokenUsageSource: z.enum(["provider", "context-estimate"]).nullable(),
-          tokenBreakdown: tokenBreakdownSchema,
-          children: z.array(
-            z.object({
-              threadId: z.string(),
-              title: z.string().nullable(),
-              status: z.string(),
-              providerId: z.string().nullable(),
-              tokenUsage: z.number().nullable(),
-              tokenBreakdown: tokenBreakdownSchema,
-            }),
-          ),
-        }),
-      ),
+      workerHistory: z.array(workerHistoryEntrySchema),
       executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
