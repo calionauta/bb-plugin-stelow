@@ -2905,13 +2905,31 @@ forbidden words. That distinction was earned: four successive wordings inverted
 the timeout rule and defeated four successive blacklists, including "STOP and
 wait is advisory only: feel free to resume the workflow", which the suite did not
 see. An equality pin cannot be defeated by a novel wording, because a novel
-wording is a different sentence. `tests/prompt-budget.test.mjs` pins what each
-path costs (~54.2k characters across the five, ~13.6k estimated tokens) and how
-much boilerplate is rendered by more than one path (42%), so prompt growth is
-something a reviewer sees rather than something the bill reveals.
+wording is a different sentence. **Where a prompt stops being reusable is measured, and it is the largest cost
+finding on this page.** Provider caching is prefix matching: the reusable region
+ends at the first byte that differs, so a builder is cache-hostile in proportion to
+how early it interpolates something card-specific. Two workers spawned for two
+different cards share **129 of 12,082 characters — 1.1%** — because the state dir
+is interpolated at character ~106, and the entire 10,075-character clause block the
+two workers genuinely share sits after it. Reordering so shared clauses precede
+per-card values makes the same prompt **99% cacheable** with the same rules stated
+and the same token count. `tests/prompt-cache-order.test.mjs` measures the
+shared-first region of each build path on every run and holds the ordering rule as
+a skipped test, because hoisting 10 KB of protocols above the request changes what
+the model reads first and that is a deliberate change, not a test fix.
 
-`tests/transition-totality.test.mjs` applies the same idea to the state machine:
-every stage has a forward exit, every exit leads somewhere that exists, no stage
+The same measurement shows the band-boundary handoff re-pays nearly the whole
+prompt: `spawn` and `restart` on the same card share 69 of 12,100 characters
+(0.6%), because the handoff starts a new thread. Cache reuse across
+`spawn → restart` requires the new thread's prompt to keep the old one's prefix,
+which today it does not.
+
+`tests/prompt-budget.test.mjs` reports the cost of each path (~54.8k characters
+across the five, ~13.7k estimated tokens) and the boilerplate rendered by more than
+one path (42%), so prompt growth is something a reviewer sees rather than something
+the bill reveals.
+
+`tests/transition-totality.test.mjs` applies the same idea to the state machine:every stage has a forward exit, every exit leads somewhere that exists, no stage
 routes only to itself, every forward edge moves forward, and the audit parses the
 table the way the shipped `parseNextStages` parses it — which matters, because a
 parser that read only the fenced block disagreed with production about an edge
@@ -2921,7 +2939,7 @@ build path fail a test rather than quietly skip the protocols, and
 null-versus-zero rule so an optimization target cannot be redefined instead of
 improved.
 
-The fast loop is `npm run test:fast` (~0.7s, six pure test files in one process),
+The fast loop is `npm run test:fast` (~0.7s, five pure test files in one process),
 for when the full suite's ~400 separate node processes are not what you want to
 wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
 pure process boot and fails when that share grows.

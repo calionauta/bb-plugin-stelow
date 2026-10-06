@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
 import { PATH_CONTRACTS, clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
-import { ASK_CONTRACT_RULES, USER_INPUT_CONTRACT } from "../server/runtime/plugin-protocols.ts";
-import {
-  clausesPresent,
-  contradictedRules,
-  missingClauses,
-  normalizeClause,
-  pinnedSentenceDiff,
-  sharedAcrossPaths,
-} from "../lib/prompt-budget.mjs";
+import { USER_INPUT_CONTRACT } from "../server/runtime/plugin-protocols.ts";
+import { clausesPresent, missingClauses, normalizeClause, pinnedSentenceDiff, sharedAcrossPaths } from "../lib/prompt-budget.mjs";
 
 /**
  * Every spawn path carries every clause it owes, measured on the rendered
@@ -87,54 +80,6 @@ for (const name of pathNames) {
   );
 }
 
-// --- 3b. Presence is not meaning: the contract's rules must not be inverted. -
-// This half exists because a substring match is not a semantics match, and the
-// gap was real and twice over.
-//
-// First, verified by mutation while writing this file: rewording the timeout rule
-// from "STOP and wait: do NOT proceed with the workflow" to "PROCEED with the
-// workflow using your best judgement" left every phrase assertion 3 greps for
-// intact and inverted the rule.
-//
-// Then the first fix — a blacklist of two forbidden literals — was itself
-// defeated by adversarial review, which rewrote the same rule to "CONTINUE the
-// workflow with your best judgement — the older STOP and wait / do NOT proceed
-// wording no longer applies": every required phrase present (the mutation *quotes*
-// them while contradicting them), no blacklisted word, green on all five paths.
-//
-// So the rules are declared in the source beside the clause (`ASK_CONTRACT_RULES`)
-// and each one names both the phrase that states it and the wording that negates
-// it. The declaration lives next to the prose it describes, which is what keeps the
-// two from drifting — the failure this whole file exists for.
-const ASK_PATHS = pathNames.filter((name) => PATH_CONTRACTS[name].includes("userInputContract"));
-assert.ok(ASK_PATHS.length > 0, "at least one path carries the ask contract");
-for (const path of ASK_PATHS) {
-  const reasons = contradictedRules(paths[path], ASK_CONTRACT_RULES);
-  assert.deepEqual(
-    reasons,
-    [],
-    `${path} states every ask-contract rule without contradicting it. Contradictions: ${reasons.join("; ")}`,
-  );
-}
-
-// The rules themselves are guarded: a declaration that lost its teeth (empty
-// lists, a rule with no required phrase) would make the loop above vacuous.
-assert.ok(ASK_CONTRACT_RULES.length >= 7, `the ask contract declares its rules (got ${ASK_CONTRACT_RULES.length})`);
-for (const rule of ASK_CONTRACT_RULES) {
-  assert.ok(typeof rule.required === "string" && rule.required.length > 0, "every rule names the phrase that states it");
-  assert.ok(
-    (rule.contradictedBy?.length ?? 0) > 0 || (rule.negatingVerbs?.length ?? 0) > 0,
-    `every rule names how it could be contradicted, or it can never fail: ${rule.required}`,
-  );
-}
-const timeoutRule = ASK_CONTRACT_RULES.find((rule) => rule.required === "No response after Ns");
-assert.ok(timeoutRule, "the timeout rule is declared");
-assert.equal(timeoutRule.requiredAlso, "STOP and wait", "the timeout rule requires its own positive anchor");
-assert.ok(
-  timeoutRule.negatingVerbs.includes("continue") && timeoutRule.negatingVerbs.includes("proceed"),
-  "the timeout rule knows both verb families the adversarial review used to defeat the blacklist",
-);
-
 // --- 3c. The contract's rules are pinned as EQUALITY, not as a vocabulary. ---
 // This is the third design for this check and the first one that survives a
 // determined rewrite. Four successive wordings defeated four successive blacklists:
@@ -199,6 +144,10 @@ assert.deepEqual(
 const TIMEOUT_ANCHOR = "No response after Ns";
 const TIMEOUT_RULE =
   'If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow.';
+// Every path whose worker can reach a gate carries the ask contract, so every one
+// of them is checked for an appended restatement of its timeout rule.
+const ASK_PATHS = pathNames.filter((name) => PATH_CONTRACTS[name].includes("userInputContract"));
+assert.ok(ASK_PATHS.length > 0, "at least one path carries the ask contract");
 for (const path of ASK_PATHS) {
   const rendered = normalizeClause(paths[path]);
   // Exactly one statement of the timeout rule. A template that appends its own

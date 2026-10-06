@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import {
   CHARS_PER_TOKEN,
-  contradictsClause,
   estimateTokens,
   normalizeClause,
   promptBudget,
@@ -109,33 +108,6 @@ assert.ok(
   shared.duplicatedChars > 0,
   "the duplication measurement found real duplication — a zero here means the detector stopped matching, not that the prompts converged",
 );
-
-// --- The inversion detector is itself guarded. ------------------------------
-// A detector with no negative control is a detector that can silently stop
-// detecting — which is exactly the failure it exists to catch, one level up. The
-// interesting case is the third one: the correct phrasing of a prohibition
-// contains the prohibited phrase, so a naive substring check would flag correct
-// text and the whole assertion would be turned off within a week.
-const PROHIBITED = "proceed with the workflow";
-assert.equal(
-  contradictsClause("STOP and wait: do NOT proceed with the workflow.", PROHIBITED),
-  false,
-  "a negated rule reads as stated, even though it contains the prohibited phrase",
-);
-assert.equal(
-  contradictsClause("STOP and wait, then proceed with the workflow.", PROHIBITED),
-  true,
-  "an un-negated occurrence is a contradiction",
-);
-assert.equal(contradictsClause("never proceed with the workflow.", PROHIBITED), false, "'never' negates the same phrase");
-assert.equal(contradictsClause("nothing about it here.", PROHIBITED), false, "an absent phrase is not a contradiction");
-assert.equal(
-  contradictsClause("do NOT proceed with the workflow, and the gate never parks — so proceed with the workflow.", PROHIBITED),
-  true,
-  "one negated occurrence does not excuse a later un-negated one",
-);
-assert.equal(contradictsClause("", PROHIBITED), false, "empty text contradicts nothing");
-assert.equal(contradictsClause("anything", ""), false, "an empty probe matches nothing, so it can never fire on every prompt");
 
 // --- The clauses are single-owner in the source tree. -----------------------
 // The rendered-prompt assertions live in `prompt-path-contract`; this is the

@@ -38,46 +38,6 @@ the file frees. `lock release` the moment a scope no longer needs its files; ter
 // own clause that callers interpolate beside this one, because the router and
 // the continue nudge quote it alone.
 //
-// ASK_CONTRACT_RULES is the machine-readable half of this prose, and it exists
-// because presence is not meaning. Two rounds of adversarial review proved that
-// in sequence: first a mutation replaced the timeout rule's instruction to stop
-// with an instruction to carry on, which kept every greppable phrase; then a fix
-// that blacklisted the word for "carry on" was itself defeated by a rewrite that
-// QUOTED the required phrases while negating them ("the older ... wording no
-// longer applies"). A list of known-bad words is not a check. Each rule below
-// names both the phrase that states it and the structure that would contradict
-// it; a clause passes only when the first is present and the second is absent.
-//
-// The contradictory wordings are deliberately NOT quoted here. This module is
-// read whole by the test that checks for inversions, so quoting an inversion in a
-// comment makes the comment the thing that gets detected. That happened while
-// writing this.
-export const ASK_CONTRACT_RULES = [
-  {
-    // One rule, two required phrases: a question goes through the form, never as
-    // chat text. Split into two rules it looked like two independent checks while
-    // only one could ever fail — the toothless half was caught by this file's own
-    // "every rule names how it could be contradicted" guard, which is why that
-    // guard exists.
-    required: "MUST call the structured form",
-    requiredAlso: "NEVER just write text like",
-    contradictedBy: ["write a message asking", "ask in chat", "just write text"],
-  },
-  { required: "Batch independent questions into ONE ask call", contradictedBy: ["one question at a time", "ask them separately"] },
-  { required: "attach each option's evidence", contradictedBy: ["do not attach", "omit the evidence"] },
-  { required: "first summarize what you read", contradictedBy: ["list the files and ask"] },
-  { required: "blocks until the user submits", contradictedBy: ["does not block", "returns immediately"] },
-  { required: "Never re-ask the same question", contradictedBy: ["ask again"] },
-  {
-    // The rule that drifted, and the one whose inversion is worst. A fixed word
-    // list cannot cover it — continue, proceed, carry on, move on and "use your
-    // judgement" all express the same inversion — so it is checked by structure:
-    // the timeout sentence must name STOP, and must not tell the worker to carry on.
-    required: "No response after Ns",
-    requiredAlso: "STOP and wait",
-    negatingVerbs: ["continue", "proceed", "carry on", "move on", "press on", "use your judgement", "use your best judgement"],
-  },
-];
 
 export const USER_INPUT_CONTRACT =
   "CRITICAL — User input contract:\n" +
