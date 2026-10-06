@@ -2894,6 +2894,30 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**The prompt-duplication metric was measuring the bag doing its job, and it is
+replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
+five spawn paths, and block by block 21,883 of them — 39 of 44 blocks — came from
+the shared clause consts that the bag exists to render into every path that owes
+them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number was
+largest exactly where the architecture was working, and an optimization loop given
+it would have earned the reduction by deleting protocols from the paths that need
+them, fighting every guard added in this session. `composedDuplicationChars`
+subtracts the clauses first and counts only prose a template authored itself: 2,705
+characters, 15.7% of the 17,180 the templates write, against a naive 41.6% of all
+rendered text. The naive figure is still reported, labelled `_naive`, because the
+gap between them is the fact worth keeping.
+
+**One planned optimization was refuted by reading the text it proposed to
+delete.** A detector was written for "a clause rendered into a path that cannot act
+on it" and it accused 5,786 characters: `doneProtocol` and `draftProtocol` in the
+research and explore paths. Reading the clause showed the opposite — `DONE_PROTOCOL`
+routes by card kind in its own prose ("Build cards complete only at the `audit`
+stage; research/explore cards complete only after `bb stelow verify` passes"), so the
+text the detector called irrelevant was a rule written specifically for those paths,
+and deleting it would have removed the completion rule from every research card. The
+lesson is recorded with the finding: applicability needs the text read, not a marker
+matched.
+
 **An adversarial review of that fix found two holes it had left, and both are
 closed.** The first: a single request for both usage families with a small limit is
 not equivalent to asking per family, because the families interleave — on 2 of the
