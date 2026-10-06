@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.76.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.75.0...v0.76.0) (2026-10-06)
+
+
+### Features
+
+* a failed question-persist records itself on the card and in the inbox ([#341](https://github.com/calionauta/bb-plugin-stelow/issues/341)) ([14d751a](https://github.com/calionauta/bb-plugin-stelow/commit/14d751a47fc95e8885572f63bc5ce227f89a4b43))
+
 ## [0.75.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.74.0...v0.75.0) (2026-10-06)
 
 
