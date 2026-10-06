@@ -103,4 +103,86 @@ assert.equal(
 );
 assert.equal(totalTokenUsage(fleet), 2490239, "and the total itself is unchanged — only the claim about it was wrong");
 
+// The two event families, as the host sends them. Distinct values are the point:
+// a fixture that used the same number in both families let a mutation return the
+// estimate while labelling it `provider` and stay green — adversarial review found
+// that, and the two numbers below are what make the assertions discriminate.
+const CONTEXT_EVENT = (used, window, estimated = true) => ({
+  type: "thread/contextWindowUsage/updated",
+  data: { contextWindowUsage: { usedTokens: used, modelContextWindow: window, estimated } },
+});
+const TOKEN_EVENT = (total) => ({
+  type: "thread/tokenUsage/updated",
+  data: { tokenUsage: { total: { totalTokens: total, inputTokens: 100, outputTokens: 10 } } },
+});
+
+// --- 3b. A reading that is NOT an estimate is not stamped as one. ------------
+// The `(est.)` badge and the provenance are asserted on a reading the provider
+// reported as measured, because the whole previous pin checked for the literal
+// `(est.)` string and stayed green when `estimated` was forced to `false` on every
+// reading — the badge was pinning its own text, not the fact it announces. Adversarial
+// review found that; the mutation is the one below as a test.
+const measuredReading = contextUsageFromEvents([CONTEXT_EVENT(64919, 1000000, false)]);
+assert.equal(measuredReading.estimated, false, "a provider that says its reading is not an estimate is believed");
+assert.equal(
+  usageFromEvents([CONTEXT_EVENT(64919, 1000000, false)]).context.estimated,
+  false,
+  "and the flag survives into the reading the UI labels from, so forcing it false on a true estimate is detectable",
+);
+assert.equal(
+  usageFromEvents([CONTEXT_EVENT(64919, 1000000, true)]).context.estimated,
+  true,
+  "while an estimated reading stays marked, which is the direction that protects the reader",
+);
+assert.notEqual(
+  usageFromEvents([CONTEXT_EVENT(1, 1000, true)]).context.estimated,
+  usageFromEvents([CONTEXT_EVENT(1, 1000, false)]).context.estimated,
+  "the two kinds of reading are distinguishable — a hardcoded flag makes every reading alike",
+);
+
+// --- The measurement wins, and the fixture proves WHICH number won. ----------
+// The original fixture used the SAME value in both families (477684 in each), so a
+// mutation returning the context reading while labelling it `provider` stayed green —
+// the assertion checked the label and never proved the value. Adversarial review found
+// that; two DIFFERENT numbers are what make this discriminate, and the second assertion
+// below is the one that goes red on the mutation.
+const bothFamilies = usageFromEvents([TOKEN_EVENT(500), CONTEXT_EVENT(64919, 1000000)]);
+assert.equal(
+  bothFamilies.total,
+  500,
+  "the provider total is the value used, not the context reading — asserted against a DIFFERENT context number, so the label cannot stand in for the value",
+);
+assert.equal(bothFamilies.source, "provider", "and it is labelled a provider measurement");
+assert.notEqual(
+  bothFamilies.total,
+  64919,
+  "and specifically not the context reading beside it, which is the swap the equal-value fixture let through",
+);
+
+// With no provider total, the context reading supplies the figure and says so.
+const estimatedOnly = usageFromEvents([CONTEXT_EVENT(64919, 1000000)]);
+assert.equal(estimatedOnly.total, 64919, "with no token total, the context reading supplies the figure");
+assert.equal(
+  estimatedOnly.source,
+  "context-estimate",
+  "and it is labelled an estimate — printing it as a measurement is the same class of error as printing 0 for unknown",
+);
+assert.equal(estimatedOnly.context.estimated, true, "the estimate flag survives into the reading");
+
+// Nothing reported is null, not zero, and has no source to claim.
+const nothing = usageFromEvents([]);
+assert.equal(nothing.total, null, "nothing reported is null, not zero");
+assert.equal(nothing.source, null, "and it has no source, so a caller cannot claim one");
+assert.equal(nothing.context, null, "and no context either");
+
+// A measured zero is still a measurement.
+const realZero = usageFromEvents([TOKEN_EVENT(0)]);
+assert.equal(realZero.total, 0, "a measured zero total survives");
+assert.equal(realZero.source, "provider", "and keeps its provider label");
+assert.notEqual(
+  usageFromEvents([TOKEN_EVENT(0), CONTEXT_EVENT(64919, 1000000)]).total,
+  64919,
+  "a measured zero is not replaced by a context reading — zero is a reading, not an absence",
+);
+
 console.log("token usage test ok: provider totals win, context estimates are labelled, absent usage stays hidden");

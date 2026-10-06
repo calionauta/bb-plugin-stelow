@@ -280,6 +280,20 @@ for (const family of ["thread/tokenUsage/updated", "thread/contextWindowUsage/up
   );
 }
 
+// --- 3c. The child figure is not attributed to a source it was not told. -----
+// Adversarial review: adding `source="provider"` to the child's TokenFigure stayed
+// green, because nothing asserted the child renders WITHOUT a source. The child payload
+// does not carry one, so claiming it is a claim the data does not support.
+assert.match(
+  ui,
+  /<TokenFigure tokens=\{child\.tokenUsage\} \/>/,
+  "a child's figure is rendered with no source, so it cannot be labelled as measured when the payload does not say which it is",
+);
+assert.ok(
+  !/<TokenFigure tokens=\{child\.tokenUsage\} source=/.test(ui),
+  "no surface attributes a provenance to a child's figure — the payload does not carry one to attribute",
+);
+
 console.log(
   `metrics contract ok: ${METRIC_CONTRACT.length} metrics pinned ` +
     `(direction, unit, null-vs-zero) · wait share stays a union`,
