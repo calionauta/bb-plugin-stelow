@@ -59,15 +59,6 @@ install only sources you trust.
 CLI essentials: `bb stelow status`, `ask`, `advance`, `verify`, `review`,
 `preset list|add|assign` (full surface in [FEATURES.md](./FEATURES.md)).
 
-## If a card looks stuck
-
-A worker reporting "The question could not be recorded" with an `idle`
-card and no pending question means the ask timed out while persisting.
-Check the plugin log (`~/.bb/plugins/stelow/logs/plugin.log`) for
-`stelow ask persist attempt` warnings; one `SQLITE_BUSY` retry is normal,
-repeated non-busy errors mean a closed DB handle or full disk. To unstick:
-send any message on the worker thread — the worker re-asks once.
-
 ## For maintainers
 
 - [FEATURES.md](./FEATURES.md) — internal feature inventory (job-grouped).
