@@ -2894,6 +2894,17 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**The run bundle's token evidence reads both families, and states which kind of figure
+it is printing.** The bundle writer asked only for `thread/tokenUsage/updated`, so on a
+card whose workers are ACP-backed it wrote "Unknown — no token reports at export time"
+while a context-window reading was available — the same blind spot the panel had. It now
+reads both families, one query each, and the manifest's wording follows the figure: a
+provider total says "provider-reported", a context reading says "estimated from the
+providers' context-window readings", and a figure with no recorded provenance says so
+rather than claiming one. A sum of measurements and estimates is not itself a
+measurement, so the total carries the weakest provenance among its parts — which is the
+same rule as printing no total rather than a zero for unknown.
+
 **A rule that was drifting across three templates is now one clause, and a clause
 that renders the word `undefined` fails a test.** The command-failure rule — read a
 `bb stelow` command's stderr once and continue rather than spending the turn debugging

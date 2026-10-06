@@ -12,9 +12,9 @@ import {
   staleBundleEntries,
   unbundledSources,
 } from "../../../lib/run-bundle.mjs";
-import { sumTokenBreakdowns, tokenBreakdownFromEvents } from "../../../lib/token-usage.mjs";
 import { readCardStateBlob } from "./cli-card-state.js";
 import { resolveBundleSource } from "../../../lib/bundle-source-path.mjs";
+import { bundleTokenEvidence } from "./cli-bundle-tokens.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 
@@ -353,31 +353,4 @@ async function bundleGapTotals(
   const gapState =
     card.kind === "build" ? await deps.gapState(card).catch(() => null) : null;
   return gapState?.matched ? gapState.totals : null;
-}
-
-/** Token evidence joins the bundle: provider-reported splits across the card's
- * threads, summed once, committed with the run. Bounded (20 latest threads)
- * and fail-open — export never blocks on it. */
-async function bundleTokenEvidence(deps: CliDeps, card: WorkerCard) {
-  try {
-    const threadIds = deps.workers.ledgerThreadIds(card.id, 20);
-    const reports = await Promise.all(
-      threadIds.map(async (threadId) => {
-        try {
-          const events = await deps.bb.sdk.threads.events.list({
-            threadId,
-            types: ["thread/tokenUsage/updated"],
-            order: "desc",
-            limit: "1",
-          });
-          return tokenBreakdownFromEvents(events);
-        } catch {
-          return null;
-        }
-      }),
-    );
-    return sumTokenBreakdowns(reports);
-  } catch {
-    return null;
-  }
 }
