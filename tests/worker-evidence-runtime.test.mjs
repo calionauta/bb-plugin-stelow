@@ -53,6 +53,7 @@ function protocols() {
     interfacePick: "PICK",
     doneProtocol: "DONE",
     splitProtocol: "SPLIT",
+    userInputContract: "USER_INPUT_CONTRACT",
   };
 }
 

@@ -120,6 +120,7 @@ export const protocols = {
   interfacePick: "interface",
   doneProtocol: "done",
   splitProtocol: "split",
+  userInputContract: "user input contract",
 };
 
 export const errors = {

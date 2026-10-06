@@ -17,6 +17,7 @@ const promptRules = {
   interfacePick: "pick",
   doneProtocol: "done",
   splitProtocol: "split",
+  userInputContract: "user input contract",
 };
 
 const card = {

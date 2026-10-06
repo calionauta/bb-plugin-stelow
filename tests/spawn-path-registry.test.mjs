@@ -99,6 +99,36 @@ for (const [name, clause] of Object.entries(bag)) {
 // Every wiring site binds the bag rather than rebuilding it. Three literals of
 // the same ten clauses under three names is how the bag stopped being the
 // answer to "what does a worker get".
+// A test fixture that lists the clause bag but omits a clause renders that clause
+// as an empty string, which is the exact failure the rendered-prompt test exists
+// for — one level up, in the tests themselves. This happened while adding the ask
+// contract: four fixtures spelled the ten clauses out by hand, so the reseed
+// prompt rendered an empty ask contract and a test that asserted on it failed
+// with a prompt nobody could read. A fixture that declares `splitProtocol` is
+// declaring the bag, so it must declare all of it.
+const fixtureFiles = [
+  ...readdirSync(join(root, "tests")).filter((name) => name.endsWith(".mjs")).map((name) => `tests/${name}`),
+  ...readdirSync(join(root, "tests/helpers")).filter((name) => name.endsWith(".mjs")).map((name) => `tests/helpers/${name}`),
+];
+const incompleteFixtures = [];
+for (const file of fixtureFiles) {
+  const source = readFileSync(join(root, file), "utf8");
+  // Only files that spell the bag out as an OBJECT LITERAL, not files that merely
+  // mention the names — this file cites the clause list and would otherwise report
+  // itself as an incomplete fixture. The probe is built from the clause name so
+  // the probe itself does not contain the shape it looks for.
+  const literal = /splitProtocol:\s*["']/.test(source);
+  if (!literal) continue;
+  const missing = EXPECTED_CLAUSES.filter((clause) => !new RegExp(`\\b${clause}\\s*:`).test(source));
+  if (missing.length > 0) incompleteFixtures.push(`${file} (missing ${missing.join(", ")})`);
+}
+assert.deepEqual(
+  incompleteFixtures,
+  [],
+  "a test fixture that spells out the protocol bag must spell out all of it, or the clause "
+    + `it omits renders empty. Incomplete: ${incompleteFixtures.join("; ")}`,
+);
+
 const wiringSources = [
   "server/runtime/wiring/card-creator.ts",
   "server/runtime/wiring/gate-surfaces.ts",

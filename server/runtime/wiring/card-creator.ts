@@ -16,18 +16,7 @@ import {
   type ResearchWorkerPromptInput,
 } from "../track-prompts.js";
 import { seedWorkflow } from "../workflow-seeding.js";
-import {
-  CARD_OWNER_RULES,
-  CLI_EQUIVALENTS,
-  COMMIT_STYLE,
-  DONE_PROTOCOL,
-  DRAFT_PROTOCOL,
-  INTERFACE_PICK,
-  NEVER_SEED,
-  RECON_PROTOCOL,
-  SPLIT_PROTOCOL,
-  TURN_DISCIPLINE,
-} from "../plugin-protocols.js";
+
 import { WORKER_PROTOCOL_CLAUSES } from "../worker-protocol-clauses.js";
 import type { RuntimeCore } from "../runtime-core.js";
 

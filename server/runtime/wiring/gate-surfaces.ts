@@ -34,18 +34,7 @@ import { createAuditTrailStatus } from "../card-audit-trail.js";
 import { createCardDiff } from "../card-diff.js";
 import { createCardReseed } from "../card-reseed.js";
 import { recoveredCheckoutIntegrity } from "../../workspaces-recovery.js";
-import {
-  CARD_OWNER_RULES,
-  CLI_EQUIVALENTS,
-  COMMIT_STYLE,
-  DONE_PROTOCOL,
-  DRAFT_PROTOCOL,
-  INTERFACE_PICK,
-  NEVER_SEED,
-  RECON_PROTOCOL,
-  SPLIT_PROTOCOL,
-  TURN_DISCIPLINE,
-} from "../plugin-protocols.js";
+
 import type { RuntimeCore } from "../runtime-core.js";
 import type { Deferred } from "./deferred.js";
 
