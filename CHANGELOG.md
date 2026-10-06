@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.75.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.74.0...v0.75.0) (2026-10-06)
+
+
+### Features
+
+* the phone board is a second layout, not a narrower first one ([b6226fd](https://github.com/calionauta/bb-plugin-stelow/commit/b6226fd548c24327adcd76933a74dfd64b5bb72c))
+
+
+### Bug Fixes
+
+* a disclosure chevron rotates from state, not from a CSS variant that froze ([9adee91](https://github.com/calionauta/bb-plugin-stelow/commit/9adee9112086095ca38e819aa00707ba81d8af97))
+* gate the lint, and take the delete-all out of the column's flow ([fc9f931](https://github.com/calionauta/bb-plugin-stelow/commit/fc9f9310aef323df6d07780584de4a0150aa100c))
+
 ## [0.74.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.1...v0.74.0) (2026-10-06)
 
 
