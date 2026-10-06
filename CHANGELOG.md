@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.77.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.76.0...v0.77.0) (2026-10-06)
+
+
+### Features
+
+* the bucket card is edited in the card, and the gallery fills its own width ([#344](https://github.com/calionauta/bb-plugin-stelow/issues/344)) ([1682e28](https://github.com/calionauta/bb-plugin-stelow/commit/1682e28c7d46594568603aecb61981fd474695ec))
+
 ## [0.76.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.75.0...v0.76.0) (2026-10-06)
 
 
