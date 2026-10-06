@@ -23,24 +23,20 @@ import { createTrackPrompts } from "../../server/runtime/track-prompts.ts";
  * test starts asserting, instead of a clause only the source happens to know. */
 import { WORKER_PROTOCOL_CLAUSES } from "../../server/runtime/worker-protocol-clauses.ts";
 
-/** Clauses required on every path whose worker can reach a gate. The track
- * prompts (research/explore) have no stages and no gates, so they carry the ask
- * contract and the turn discipline but not the build-only protocols; that
- * difference is declared here rather than discovered per test. */
-export const BUILD_PATH_CLAUSES = [
-  "userInputContract",
-  "neverSeed",
-  "turnDiscipline",
-  "commitStyle",
-  "interfacePick",
-  "doneProtocol",
-  "splitProtocol",
-  "cardOwnerRules",
-  "cliEquivalents",
-  "reconProtocol",
-  "draftProtocol",
-];
+/** Clauses required on every path whose worker can reach a gate.
+ *
+ * DERIVED from the bag, not listed by hand. The hand-written version was the same defect
+ * as the fixtures that re-listed the bag: it went stale the moment a clause was added, so
+ * `commandFailureRule`, `workflowIntro` and `workflowSkills` were never asserted owed —
+ * and removing `%COMMAND_FAILURE_RULE%` from the template left the coverage test GREEN.
+ * Deriving means a clause added to the bag is a clause every build path is immediately
+ * held to, which is the property the whole bag exists for.
+ */
+export const BUILD_PATH_CLAUSES = Object.keys(WORKER_PROTOCOL_CLAUSES);
 
+/** The clauses the TRACK prompts carry. They have no stages and no gates, so they get
+ * the ask contract, the completion rule and the draft protocol rather than the whole
+ * build bag — a difference declared here rather than discovered per test. */
 export const TRACK_PATH_CLAUSES = ["userInputContract", "doneProtocol", "draftProtocol"];
 
 /** The canonical card. One fixture for every path, so a difference between two
