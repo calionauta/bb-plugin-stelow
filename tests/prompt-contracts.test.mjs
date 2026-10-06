@@ -151,18 +151,23 @@ for (const clause of [
   "protocols.interfacePick",
   "protocols.doneProtocol",
   "protocols.splitProtocol",
+  "protocols.userInputContract",
 ]) {
   assert.ok(reseedPrompt.includes(clause), `the reseed template references ${clause}`);
 }
+// Topology, not prose: the reseed builder used to carry a pasted copy of the ask
+// contract, which is how the copy in the two other builders drifted from it.
+// What must hold is that it interpolates the one shared const — that the const
+// carries the batching rule and the structured-form requirement is asserted
+// once, in `prompt-budget`, where the const itself is read.
 assert.match(
   reseedPrompt,
-  /Batch independent questions into ONE ask call/,
-  "the reseed ask contract explains why questions batch",
+  /inputContractClause\(protocols\.interfacePick, protocols\.userInputContract\)/,
+  "the reseed ask contract comes from the shared const, never a pasted copy",
 );
-assert.match(
-  reseedPrompt,
-  /ask via the form below/,
-  "the reseed ask contract keeps the structured-form requirement",
+assert.ok(
+  !reseedPrompt.includes("CRITICAL — User input contract:"),
+  "the reseed builder does not paste the ask contract",
 );
 
 // The shared CLI copy must never invite a card worker to seed: that exact

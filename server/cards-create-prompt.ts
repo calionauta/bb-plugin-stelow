@@ -9,6 +9,7 @@ export type CardPromptRules = {
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
+  userInputContract: string;
 };
 
 export type BuildPromptContext = {
@@ -48,23 +49,11 @@ Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, s
 
 %COMMIT_STYLE%
 
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
+%USER_INPUT_CONTRACT%
 
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own label sets) so the user answers them together\
-instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to\
-decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the\
-workspace-relative file they can open.
-
-Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled.\
-Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP\
-and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. %INTERFACE_PICK% For\
-unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a\
-structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+%INTERFACE_PICK% For unselected gates, write the approval receipt yourself \
+(.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives \
+the card or the workflow reaches \`audit\`.
 
 %DONE_PROTOCOL%
 
@@ -100,6 +89,7 @@ export function buildBuildPrompt(
     TURN_DISCIPLINE: rules.turnDiscipline,
     COMMIT_STYLE: rules.commitStyle,
     INTERFACE_PICK: rules.interfacePick,
+    USER_INPUT_CONTRACT: rules.userInputContract,
     DONE_PROTOCOL: rules.doneProtocol,
     SPLIT_PROTOCOL: rules.splitProtocol,
     INSTRUCTIONS: context.instructions ? `Preset instructions:\n${context.instructions}\n` : "",

@@ -32,6 +32,7 @@ type Protocols = {
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
+  userInputContract: string;
 };
 type ReseedDeps = {
   db: Db;

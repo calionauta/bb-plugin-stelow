@@ -18,6 +18,7 @@ import {
   RECON_PROTOCOL,
   SPLIT_PROTOCOL,
   TURN_DISCIPLINE,
+  USER_INPUT_CONTRACT,
 } from "./plugin-protocols.js";
 
 export const WORKER_PROTOCOL_CLAUSES = {
@@ -31,6 +32,7 @@ export const WORKER_PROTOCOL_CLAUSES = {
   interfacePick: INTERFACE_PICK,
   doneProtocol: DONE_PROTOCOL,
   splitProtocol: SPLIT_PROTOCOL,
+  userInputContract: USER_INPUT_CONTRACT,
 } as const;
 
 export type WorkerProtocolClauses = typeof WORKER_PROTOCOL_CLAUSES;

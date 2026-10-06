@@ -9,12 +9,14 @@
  */
 
 import { exploreArtifactFile } from "../../lib/research-artifacts.mjs";
+import { USER_INPUT_CONTRACT } from "./plugin-protocols.js";
 
 export type TrackPromptProtocols = {
   cardOwnerRules: string;
   doneProtocol: string;
   reviewProtocol: string;
   draftProtocol: string;
+  userInputContract: string;
 };
 
 export type ResearchWorkerPromptInput = {
@@ -159,19 +161,6 @@ can open, read, and comment on each output directly from the thread. Then emit o
 needs-work / unverified (the seal resolves from the host, never from your claim).`;
 }
 
-const USER_INPUT_CONTRACT = `CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together \
-instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide \
-(interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the \
-workspace-relative file they can open.
-
-On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question.`;
 
 function researchUserContract(): string {
   return `${USER_INPUT_CONTRACT} There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked \

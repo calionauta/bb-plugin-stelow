@@ -1,0 +1,199 @@
+/**
+ * Every spawn path's prompt, rendered from one canonical fixture.
+ *
+ * There are five ways a build worker is told what to do, and until this helper
+ * existed the suite rendered exactly one of them (`build-prompt-render`). The
+ * other four were only ever checked by scanning source text for a token name,
+ * which cannot see a token that renders empty and cannot see a clause that a
+ * path skips entirely. That blind spot is not theoretical: the ask contract was
+ * pasted five times and two paths lost its waiting-text guard.
+ *
+ * All five are pure functions of (context, rules), so the whole matrix renders
+ * in well under a millisecond with no host, no database, and no spawn. A test
+ * that needs nothing but this helper can afford to render all five on every
+ * run, which is the point.
+ */
+import { buildBuildPrompt } from "../../server/cards-create-prompt.ts";
+import { buildWorkerRestartPrompt } from "../../server/runtime/worker-restart-prompt.ts";
+import { buildReseedPrompt } from "../../server/runtime/card-reseed-prompt.ts";
+import { createTrackPrompts } from "../../server/runtime/track-prompts.ts";
+
+/** The clauses every build worker prompt must carry, from the one bag that
+ * owns them. Spelled out by import so a clause added to the bag is a clause a
+ * test starts asserting, instead of a clause only the source happens to know. */
+import { WORKER_PROTOCOL_CLAUSES } from "../../server/runtime/worker-protocol-clauses.ts";
+
+/** Clauses required on every path whose worker can reach a gate. The track
+ * prompts (research/explore) have no stages and no gates, so they carry the ask
+ * contract and the turn discipline but not the build-only protocols; that
+ * difference is declared here rather than discovered per test. */
+export const BUILD_PATH_CLAUSES = [
+  "userInputContract",
+  "neverSeed",
+  "turnDiscipline",
+  "commitStyle",
+  "interfacePick",
+  "doneProtocol",
+  "splitProtocol",
+  "cardOwnerRules",
+  "cliEquivalents",
+  "reconProtocol",
+  "draftProtocol",
+];
+
+export const TRACK_PATH_CLAUSES = ["userInputContract", "doneProtocol", "draftProtocol"];
+
+/** The canonical card. One fixture for every path, so a difference between two
+ * rendered prompts is a difference between the paths and never between two
+ * test fixtures. */
+export const CARD = {
+  id: "card_probe",
+  name: "add-scope-map",
+  display_name: "Add read-only Scope Map view",
+  kind: "build",
+  status: "in-progress",
+  intent: "feature",
+  stage: "execution",
+  prompt: "Add a read-only Scope Map view to an existing Build card.",
+  worker_thread_id: "thr_previous",
+};
+
+const RULES = {
+  cardOwnerRules: WORKER_PROTOCOL_CLAUSES.cardOwnerRules,
+  neverSeed: WORKER_PROTOCOL_CLAUSES.neverSeed,
+  cliEquivalents: WORKER_PROTOCOL_CLAUSES.cliEquivalents,
+  reconProtocol: WORKER_PROTOCOL_CLAUSES.reconProtocol,
+  draftProtocol: WORKER_PROTOCOL_CLAUSES.draftProtocol,
+  turnDiscipline: WORKER_PROTOCOL_CLAUSES.turnDiscipline,
+  commitStyle: WORKER_PROTOCOL_CLAUSES.commitStyle,
+  interfacePick: WORKER_PROTOCOL_CLAUSES.interfacePick,
+  doneProtocol: WORKER_PROTOCOL_CLAUSES.doneProtocol,
+  splitProtocol: WORKER_PROTOCOL_CLAUSES.splitProtocol,
+  userInputContract: WORKER_PROTOCOL_CLAUSES.userInputContract,
+};
+
+const RESTART_PROTOCOLS = {
+  cardOwnerRules: RULES.cardOwnerRules,
+  neverSeed: RULES.neverSeed,
+  cliEquivalents: RULES.cliEquivalents,
+  reconProtocol: RULES.reconProtocol,
+  draftProtocol: RULES.draftProtocol,
+  turnDiscipline: RULES.turnDiscipline,
+  commitStyle: RULES.commitStyle,
+  interfacePick: RULES.interfacePick,
+  doneProtocol: RULES.doneProtocol,
+  splitProtocol: RULES.splitProtocol,
+  userInputContract: RULES.userInputContract,
+};
+
+const TRACK_PROTOCOLS = {
+  cardOwnerRules: RULES.cardOwnerRules,
+  doneProtocol: RULES.doneProtocol,
+  reviewProtocol: "REVIEW_PROTOCOL_SENTINEL",
+  draftProtocol: RULES.draftProtocol,
+  userInputContract: RULES.userInputContract,
+};
+
+const trackPrompts = createTrackPrompts(TRACK_PROTOCOLS);
+
+/** The shared build context every build path renders from. One object, so a
+ * difference between two rendered prompts is a difference between the paths and
+ * never between two fixtures. */
+const BUILD_CONTEXT = {
+  stateDir: "/repo/.stelow/2026-10-05/sw-card_probe",
+  intent: CARD.intent,
+  managedWorktree: true,
+  knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
+  reviewGates: "[spec, interface, tech]",
+  reviewRung: "Product Spec + Interface + Tech Review",
+  instructions: "Preset instructions:\nstay narrow\n",
+  prompt: CARD.prompt,
+};
+
+/** The reseed builder's input, unwrapped from the shared card. */
+function reseedInput() {
+  return {
+    card: CARD,
+    rootPath: "/repo",
+    intent: CARD.intent,
+    seed: { stateDir: BUILD_CONTEXT.stateDir },
+    params: { instructions: "stay narrow" },
+    protocols: RESTART_PROTOCOLS,
+    research: null,
+    explore: null,
+    roundNo: 1,
+    roundStamp: "2026-10-05",
+    roundFile: "research-index.md",
+    researchPrompt: trackPrompts.researchWorkerPrompt,
+    explorePrompt: trackPrompts.exploreWorkerPrompt,
+  };
+}
+
+/** The fields every track prompt shares. */
+function trackShared() {
+  return {
+    displayName: CARD.display_name,
+    prompt: CARD.prompt,
+    stateDirText: BUILD_CONTEXT.stateDir,
+    workspaceRoot: "/repo",
+    instructions: "stay narrow",
+    flavor: "initial",
+    previousThreadId: CARD.worker_thread_id,
+  };
+}
+
+/**
+ * All five spawn paths, keyed by the name a failure should use.
+ *
+ * The three build paths carry the full protocol set; the two track prompts carry
+ * the narrower set their workers can act on. Every path renders the same card
+ * and the same instructions.
+ */
+export function renderSpawnPaths() {
+  return {
+    spawn: buildBuildPrompt(BUILD_CONTEXT, RULES),
+    restart: buildWorkerRestartPrompt({
+      card: CARD,
+      instructions: "stay narrow",
+      stateHint: BUILD_CONTEXT.stateDir,
+      stateDir: BUILD_CONTEXT.stateDir,
+      protocols: RESTART_PROTOCOLS,
+    }),
+    reseed: buildReseedPrompt(reseedInput()),
+    research: trackPrompts.researchWorkerPrompt({
+      ...trackShared(),
+      strategyLabel: "Opportunity mapping",
+      strategyId: "opportunity-mapping",
+      strategySkill: "stelow-product-opportunity-mapping",
+      roundNo: 1,
+      roundStamp: "2026-10-05",
+      roundFile: "research-index.md",
+    }),
+    explore: trackPrompts.exploreWorkerPrompt({
+      ...trackShared(),
+      stage: {
+        id: "scope-map",
+        label: "Scope Map",
+        skill: "stelow-workflow-scope-map",
+        primaryArtifact: "scope-map.json",
+      },
+    }),
+  };
+}
+
+
+/** Which clause names each path owes, so a test asserts against the
+ * declaration above rather than against its own copy. */
+export const PATH_CONTRACTS = {
+  spawn: BUILD_PATH_CLAUSES,
+  restart: BUILD_PATH_CLAUSES,
+  reseed: BUILD_PATH_CLAUSES,
+  research: TRACK_PATH_CLAUSES,
+  explore: TRACK_PATH_CLAUSES,
+};
+
+/** The clause texts, keyed as the bag names them, for presence checks that look
+ * at prose rather than at a token. */
+export function clauseTexts() {
+  return { ...WORKER_PROTOCOL_CLAUSES };
+}

@@ -25,6 +25,80 @@ a workspace-level claim so sibling cards on this checkout see your files. A `BB-
 do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when \
 the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.";
 
+// The ask contract: how a worker puts a question to the person.
+//
+// This lived as a literal block pasted into five builders, which is how it
+// drifted: two of the five lost the "never write waiting text" guard and the
+// restart path — the one that runs at every band boundary — lost the timeout
+// rule. Telling a model to stop and wait is the difference between a question
+// that gets answered and a card that sits in a column looking busy, so the
+// block is one const and every spawn path renders it.
+//
+// It deliberately does not include INTERFACE_PICK: the gate discipline is its
+// own clause that callers interpolate beside this one, because the router and
+// the continue nudge quote it alone.
+//
+// ASK_CONTRACT_RULES is the machine-readable half of this prose, and it exists
+// because presence is not meaning. Two rounds of adversarial review proved that
+// in sequence: first a mutation replaced the timeout rule's instruction to stop
+// with an instruction to carry on, which kept every greppable phrase; then a fix
+// that blacklisted the word for "carry on" was itself defeated by a rewrite that
+// QUOTED the required phrases while negating them ("the older ... wording no
+// longer applies"). A list of known-bad words is not a check. Each rule below
+// names both the phrase that states it and the structure that would contradict
+// it; a clause passes only when the first is present and the second is absent.
+//
+// The contradictory wordings are deliberately NOT quoted here. This module is
+// read whole by the test that checks for inversions, so quoting an inversion in a
+// comment makes the comment the thing that gets detected. That happened while
+// writing this.
+export const ASK_CONTRACT_RULES = [
+  {
+    // One rule, two required phrases: a question goes through the form, never as
+    // chat text. Split into two rules it looked like two independent checks while
+    // only one could ever fail — the toothless half was caught by this file's own
+    // "every rule names how it could be contradicted" guard, which is why that
+    // guard exists.
+    required: "MUST call the structured form",
+    requiredAlso: "NEVER just write text like",
+    contradictedBy: ["write a message asking", "ask in chat", "just write text"],
+  },
+  { required: "Batch independent questions into ONE ask call", contradictedBy: ["one question at a time", "ask them separately"] },
+  { required: "attach each option's evidence", contradictedBy: ["do not attach", "omit the evidence"] },
+  { required: "first summarize what you read", contradictedBy: ["list the files and ask"] },
+  { required: "blocks until the user submits", contradictedBy: ["does not block", "returns immediately"] },
+  { required: "Never re-ask the same question", contradictedBy: ["ask again"] },
+  {
+    // The rule that drifted, and the one whose inversion is worst. A fixed word
+    // list cannot cover it — continue, proceed, carry on, move on and "use your
+    // judgement" all express the same inversion — so it is checked by structure:
+    // the timeout sentence must name STOP, and must not tell the worker to carry on.
+    required: "No response after Ns",
+    requiredAlso: "STOP and wait",
+    negatingVerbs: ["continue", "proceed", "carry on", "move on", "press on", "use your judgement", "use your best judgement"],
+  },
+];
+
+export const USER_INPUT_CONTRACT =
+  "CRITICAL — User input contract:\n" +
+  'ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":\n' +
+  "\n" +
+  '    bb stelow ask --thread "$BB_THREAD_ID" \\\n' +
+  '      --question "<a single clear question>" \\\n' +
+  '      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]\n' +
+  "\n" +
+  "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them " +
+  "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare " +
+  "artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, " +
+  "--artifact for the workspace-relative file they can open.\n" +
+  "\n" +
+  "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file " +
+  "list as the only content of a question.\n" +
+  "Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer.\n" +
+  'If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card ' +
+  "and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never " +
+  "re-ask the same question — wait for the card answer.";
+
 // Prompt clauses that every build spawn path must carry.
 export const NEVER_SEED =
   "Your workflow is already seeded in your state dir above — never run `bb stelow seed` (it is refused for card workers; seeding again orphans \

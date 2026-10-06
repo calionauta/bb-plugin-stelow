@@ -2884,3 +2884,44 @@ that lies about working, a budget spent on turns that never started, and a
 notification asking a person to fix something the system is already fixing.
 When the host names a wait, read it (`threads.queuedMessages.list`), project
 it, and offer no action.
+
+**One ask contract, rendered by every spawn path, pinned by equality.** The
+protocol clauses a worker is spawned with are constants in
+`server/runtime/plugin-protocols.ts`, and the bag every build path receives is
+`WORKER_PROTOCOL_CLAUSES`. The ask contract — a question goes through the
+structured form, and a timed-out ask means stop and wait rather than carry on —
+used to be a literal block pasted into the five builders, and it had already
+drifted: two of the five lacked the "never write waiting text" guard and the
+restart path, which takes over at every band boundary, lacked the timeout rule.
+The five pasted copies are now one interpolated constant, so a wording fix lands
+on every path or on none, and three wiring sites that each re-spelled the same
+ten clauses bind the one bag instead.
+
+Two tests keep it that way, and both read rendered output rather than source
+text. `tests/prompt-path-contract.test.mjs` renders all five paths and asserts
+every clause each owes reaches it, that no clause renders twice, and that the
+contract's rule sentences are stated **exactly** — an equality pin, not a list of
+forbidden words. That distinction was earned: four successive wordings inverted
+the timeout rule and defeated four successive blacklists, including "STOP and
+wait is advisory only: feel free to resume the workflow", which the suite did not
+see. An equality pin cannot be defeated by a novel wording, because a novel
+wording is a different sentence. `tests/prompt-budget.test.mjs` pins what each
+path costs (~54.2k characters across the five, ~13.6k estimated tokens) and how
+much boilerplate is rendered by more than one path (42%), so prompt growth is
+something a reviewer sees rather than something the bill reveals.
+
+`tests/transition-totality.test.mjs` applies the same idea to the state machine:
+every stage has a forward exit, every exit leads somewhere that exists, no stage
+routes only to itself, every forward edge moves forward, and the audit parses the
+table the way the shipped `parseNextStages` parses it — which matters, because a
+parser that read only the fenced block disagreed with production about an edge
+placed after the closing fence. `tests/spawn-path-registry.test.mjs` makes a new
+build path fail a test rather than quietly skip the protocols, and
+`tests/metrics-contract.test.mjs` pins each reported metric's direction, unit, and
+null-versus-zero rule so an optimization target cannot be redefined instead of
+improved.
+
+The fast loop is `npm run test:fast` (~0.7s, six pure test files in one process),
+for when the full suite's ~400 separate node processes are not what you want to
+wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
+pure process boot and fails when that share grows.

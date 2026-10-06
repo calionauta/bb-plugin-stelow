@@ -15,6 +15,7 @@ type Protocols = {
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
+  userInputContract: string;
 };
 type Params = {
   instructions: string;
@@ -106,7 +107,7 @@ function buildWorkflowPrompt(input: PromptInput): string {
     protocols.commitStyle,
     `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
     workOrderClause(),
-    inputContractClause(protocols.interfacePick),
+    inputContractClause(protocols.interfacePick, protocols.userInputContract),
     protocols.doneProtocol,
     protocols.splitProtocol,
     presetInstructions(input.params.instructions),
@@ -143,34 +144,8 @@ function workOrderClause(): string {
   ].join(" ");
 }
 
-function inputContractClause(interfacePick: string): string {
-  return [
-    "CRITICAL — User input contract:",
-    "ANY time you need user input, you MUST call the structured form:",
-    "",
-    "    bb stelow ask --thread \"$BB_THREAD_ID\" \\",
-    "      --question \"<a single clear question>\" \\",
-    "      --option \"<label 1>\" --option \"<label 2>\" [--option \"<label 3>\" ...] [--multiple]",
-    "",
-    "Batch independent questions into ONE ask call by repeating --question groups " +
-      "(each with its own --option labels). Ask dependent questions (where Q2 " +
-      "needs Q1's answer) one at a time.",
-    "When the human must compare artifacts to decide (interface picks, plan reviews), " +
-      "attach each option's evidence: --desc for trade-offs, --preview for the " +
-      "inline glance, --artifact for the workspace-relative file they can open.",
-    "",
-    "Before asking a question, first summarize what you read (files, plan, codebase) " +
-      "so the user can answer with context — never dump a raw file list as the only " +
-      "content of a question. Do not skip the triage stage.",
-    "Each bb stelow ask call blocks until the user submits; the card stays in its " +
-      "column and signals it is waiting for an answer.",
-    "If an ask returns \"No response after Ns\" (timeout), STOP and wait: do NOT " +
-      "proceed with the workflow. The question stays pending on the card and remains " +
-      "answerable; when the user answers it on the card, the answer is delivered to " +
-      "you as a message and you continue from there. Never re-ask the same question " +
-      "— wait for the card answer.",
-    interfacePick,
-  ].join("\n");
+function inputContractClause(interfacePick: string, userInputContract: string): string {
+  return [userInputContract, interfacePick].join("\n\n");
 }
 
 function presetInstructions(instructions?: string): string {

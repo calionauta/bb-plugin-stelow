@@ -18,6 +18,7 @@ type RestartPromptInput = {
     interfacePick: string;
     doneProtocol: string;
     splitProtocol: string;
+    userInputContract: string;
   };
 };
 
@@ -26,20 +27,6 @@ start by loading them (they live under the plugin's skills directory; \`bb skill
 (stelow-product-*) are also provided by this plugin — check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
 if one is missing.`;
 
-const ASK_CONTRACT = `CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form:
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers \
-them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the \
-human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, \
---preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask \
-call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question.`;
 
 function stateOwnership(input: RestartPromptInput): string {
   const fallback = input.stateDir
@@ -69,7 +56,9 @@ function restartContract(input: RestartPromptInput): string {
 and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already \
 settled in state.md. Pick up exactly where the workflow left off.${previousWorkerContext(input.card.worker_thread_id)}
 
-${ASK_CONTRACT} ${input.protocols.interfacePick} For unselected gates, write the approval receipt yourself \
+${input.protocols.userInputContract}
+
+${input.protocols.interfacePick} For unselected gates, write the approval receipt yourself \
 (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user \
 archives the card or the workflow reaches \`audit\`.`;
 }

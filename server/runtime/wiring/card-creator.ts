@@ -28,21 +28,15 @@ import {
   SPLIT_PROTOCOL,
   TURN_DISCIPLINE,
 } from "../plugin-protocols.js";
+import { WORKER_PROTOCOL_CLAUSES } from "../worker-protocol-clauses.js";
 import type { RuntimeCore } from "../runtime-core.js";
 
-/** The protocol clauses every new card's worker is told to follow. */
-const CARD_CREATOR_RULES = {
-  cardOwnerRules: CARD_OWNER_RULES,
-  neverSeed: NEVER_SEED,
-  cliEquivalents: CLI_EQUIVALENTS,
-  reconProtocol: RECON_PROTOCOL,
-  draftProtocol: DRAFT_PROTOCOL,
-  turnDiscipline: TURN_DISCIPLINE,
-  commitStyle: COMMIT_STYLE,
-  interfacePick: INTERFACE_PICK,
-  doneProtocol: DONE_PROTOCOL,
-  splitProtocol: SPLIT_PROTOCOL,
-} as const;
+/** The protocol clauses every new card's worker is told to follow.
+ *
+ * Re-exported from the one bag rather than spelled out again: this literal used
+ * to be a third hand-maintained copy of the same ten clauses, which is how the
+ * ask contract came to be pasted into builders instead of carried by the bag. */
+const CARD_CREATOR_RULES = WORKER_PROTOCOL_CLAUSES;
 
 /**
  * The worker prompt each new card is spawned with. The prompt builders take
