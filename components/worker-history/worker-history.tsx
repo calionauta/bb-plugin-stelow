@@ -87,9 +87,21 @@ export type WorkerDetailState = {
  * `source` argument is what keeps an estimate from being presented as a
  * measurement: `undefined` means the caller was not told which it is, so the label
  * stays neutral rather than claiming a provenance.
+ *
+ * A worker with NO figure gets a dash rather than nothing. Verified against a live
+ * worker: `acp-opencode` emits no usage event of any kind — 88 events, none of them a
+ * token or context reading — so a row that rendered nothing left a reader unable to
+ * tell "this provider reports nothing" from "the card has not run yet". The dash is
+ * the honest third state, and its title names the cause.
  */
 function TokenFigure({ tokens, source }: { tokens: number | null; source?: "provider" | "context-estimate" | null }) {
-  if (!formatTokenUsage(tokens)) return null;
+  if (!formatTokenUsage(tokens)) {
+    return (
+      <span className="opacity-60" title="This worker's provider reported no token usage — the ACP-backed providers emit no usage event at all.">
+        {" · "}— tokens
+      </span>
+    );
+  }
   const estimated = source === "context-estimate";
   return (
     <span

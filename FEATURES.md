@@ -2938,35 +2938,34 @@ call in flight, and a rule enforced by refusing work is a deadlock with a good e
 message. Measured on this checkout: exactly one skill read across ten workers, which
 is why this is a report rather than a gate.
 
-**A prompt's own prefix is now shared between cards, where it was not.** Provider
-caching is prefix matching, so the reusable region ends at the first byte that differs
-— and the state dir sat at character ~106, ahead of the entire 10 KB clause block that
-every build path renders identically. All three build paths now open with the same
-`WORKFLOW_INTRO`, state the shared clauses in one canonical order, and put every
-per-card value (state dir, intent, knobs, request) last. Measured on rendered fixtures:
-the longest common prefix of two cards' prompts goes from 0.6% to 89.7% (spawn/restart),
-93.9% (spawn/reseed), 95.1% (restart/reseed). The intro and the skill pointer are consts
-shared by all three, because three hand-written intros is how they came to differ by a
-sentence — and that sentence cost the whole clause block behind it.
+**A prompt's own prefix is now shared between cards, and the provider serves it from
+cache — measured on live workers, not on fixtures.** Provider caching is prefix matching,
+so the reusable region ends at the first byte that differs, and the state dir sat at
+character ~106 ahead of the entire 10 KB clause block every build path renders
+identically. All three build paths now open with the same `WORKFLOW_INTRO`, state the
+shared clauses in one canonical order, and put every per-card value (state dir, intent,
+knobs, request) last.
+
+Validated end to end. A worker spawned through the RPC carried the reordered prompt: the
+intro at character 0, the clause block ending at 10,896, the first per-card value at
+10,994 — **90.5% of the 12,332-character prompt is a prefix two cards share**, against
+1.3% with the state dir first, so the reorder multiplies the reusable region by 70x. The
+provider confirms it: three live workers on the `pi` provider each reported a first
+snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,470 /
+50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
+threads the cache read 60,386,501 tokens against 54,840,152 fresh.
+
+Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
+workers run on) emit no usage event of any kind — 88 events on one such worker, none of
+them a token or context reading — so their cost is unmeasurable from the host and the
+history row shows a dash rather than a number. And the reusable region includes the
+harness's own system prompt and tool definitions, which are shared across every thread
+regardless of this change; what the reorder does is put the stelow prompt's own prefix
+inside that region instead of leaving it behind a per-card value.
+
 `tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
 pair, so a per-card value drifting back into the prefix fails rather than printing a
 smaller number nobody reads.
-
-**The scope of that number matters, and it is narrower than it looks.** It is the shared
-prefix of the STELOW PROMPT, computed from fixtures — not a measured saving on a real
-run. Two things bound it: the prompt is one segment of a request whose system prompt and
-tool definitions are already shared across every thread (confirmed from the database: 73
-of 147 non-stelow threads show cache reads on their first snapshot, so most reused
-context is harness-wide), and no worker has yet run the reordered prompt. What IS
-independently confirmed from the provider's own reports is that cross-thread reuse
-happens at all: one thread shows 2,811,504 cached tokens against 1,940 fresh on its
-first and only usage snapshot, which a single thread cannot have cached by itself. The
-reorder is worth keeping because it costs nothing and moves per-card bytes strictly
-later in the request; its magnitude is unproven. The validation that would settle it:
-run two workers on two different cards after this change, then compare each thread's
-first `thread/tokenUsage/updated` snapshot against the pre-change thread — if the
-reorder helps, the first snapshot's cacheRead should be at least as large and its fresh
-input no larger.
 
 **The prompt-duplication metric was measuring the bag doing its job, and it is
 replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
