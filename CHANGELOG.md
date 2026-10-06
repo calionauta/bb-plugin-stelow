@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.74.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.1...v0.74.0) (2026-10-06)
+
+
+### Features
+
+* **A worker's orientation cost is measured and shown on the card.** A skill load is a `toolCall` naming a `SKILL.md`, so reads before the first `bb stelow advance` are orientation spent before work. Violations are reported, never blocked. Measured: one skill read across ten workers.
+* **A worker's token figure is shown for nearly every worker, and says what it is.** The plugin read one usage event family; `acp-opencode` — which 8 of 10 workers run on — emits none of it and reports a context-window reading instead. Both families are read now, and an estimate is labelled `(est.)` rather than presented as a measurement. 1 of 10 workers reporting a figure before, 10 of 10 after.
+* **A refused retry records why and names an exit.** Five real runs hit the auto-retry's stage guard with the card already advanced and every one parked silently, which is why `auto_retry_count` read 0 across the fleet.
+
+
+### Performance
+
+* **Two cards share 90.5% of a build prompt's prefix, up from 0.6%.** Provider caching is prefix matching, so the state dir at character ~106 left the whole 10 KB clause block uncacheable. All three build paths now open with the same intro, state the shared clauses in one canonical order, and put per-card values last. Verified on live workers: 99.3%, 99.1% and 89.3% of their first snapshot's input served from cache; fleet-wide 60,386,501 cached against 54,840,152 fresh.
+* **The prompt-duplication metric measures authored prose.** The previous figure counted shared clauses rendering into the paths that owe them, so it was largest where the architecture worked.
+
+
+### Bug Fixes
+
+* **Every prompt resolves its reading list from `bb stelow playbook`.** All six spawn paths told the worker to load the `stelow-workflow-*` glob — seventeen skills, 215,756 bytes of entry documents — while the `CLI_EQUIVALENTS` clause in the same prompt said to run the playbook and never discover skills that way.
+* **One ask contract, rendered by every spawn path.** The structured-ask block was pasted into five builders and had already drifted: two lacked the "never write waiting text" guard and the restart path lacked the timeout rule.
+* **A provider rate limit and an unowned card no longer advise "Answering below resumes the worker".** False for both — nothing is pending, and the reader was pointed at a box whose answer goes nowhere. A rate limit is matched on the status code, never the word "limit".
+* **No RPC result carries a key holding `undefined`.** The board failed outright with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board whose stored defaults predate red-first.
+* **The run bundle's token evidence reads both families and states its provenance**, and the history row shows a dash rather than nothing when a provider reports no usage at all.
+* **A clause that renders the literal word `undefined` now fails a test**, and the owed-clause list is derived from the clause bag so a new clause is covered at once.
+
 ## [0.73.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.0...v0.73.1) (2026-10-05)
 
 
