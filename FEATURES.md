@@ -2924,6 +2924,25 @@ leaves a word that looks like content. Cross-card cacheable prefix improved to
 90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
 characters.
 
+**Two failure causes stopped being advised as if answering would fix them.** A provider
+rate limit and an unowned card both closed their error note with "Answering below resumes
+the worker", which is false for both: nothing is pending, and the reader was pointed at a
+box whose answer goes nowhere. The unowned case already had `isOwnershipRefusal`; a rate
+limit now has `isRateLimitFailure`, matched on the provider's **status code** rather than
+the word "limit" — a card's own exploration limit and a file-claim limit both contain that
+word, and telling a reader to switch providers for one of those is the wrong door. The
+advice names the action that clears it (switch this card's provider or model, or wait the
+window the provider stated) and warns that retrying now re-hits the same limit.
+
+**A result crossing the RPC wire no longer carries a key holding `undefined`.** The board
+failed with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board
+whose stored defaults predate red-first, because `resolveKnobInput` returns `undefined`
+for "absent, derive me downstream" by contract and the handler echoed that straight into
+its result. `JSON.stringify` would have dropped the key, but the host validates the object
+before serialising, so it refused the whole call. Fixed at the three call sites that built
+such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
+reintroduce it.
+
 **A worker's orientation cost is measured and shown, not assumed.** A worker's first
 turn is the most expensive and least informed: it has just been handed a
 12,000-character prompt naming its stage, and the skill family it used to be told to

@@ -106,7 +106,13 @@ export async function finishCard(
       quality: knobs.quality,
       supervisor: knobs.supervisor,
       explorationCount: knobs.explorationCount,
-      redFirst: knobs.redFirst,
+      // Conditional, not `redFirst: knobs.redFirst`. That value is `undefined` when the
+      // caller did not choose a mode — "derive me downstream" is the contract — and a key
+      // holding undefined is not a JSON value. It survived here only because the storage
+      // layer serialises, and the same pattern on the READ side is what made
+      // `boardWorkflowDefaults` refuse the whole call with
+      // "rpc result at $result.redFirst is not a JSON value (undefined)".
+      ...(typeof knobs.redFirst === "string" ? { redFirst: knobs.redFirst } : {}),
       reviewMode: track.reviewRung,
       reviewGates: track.reviewGates,
     });

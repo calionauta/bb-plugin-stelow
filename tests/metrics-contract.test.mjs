@@ -11,6 +11,7 @@ import {
 import { formatTokenUsage, sumTokenBreakdowns, tokenBreakdownFromEvents, tokenUsageFromEvents, totalTokenUsage } from "../lib/token-usage.mjs";
 import { excerptMetricLine, summarizeExcerpts } from "../lib/review-truncation.mjs";
 import { shareOf, splitWaitWindows, unionLengthMs } from "../lib/wait-attribution.mjs";
+import { resolveKnobInput, withoutUndefined } from "../lib/workflow-config.mjs";
 
 /**
  * The metric contract: what each number means, what direction is better, and
@@ -292,6 +293,61 @@ assert.match(
 assert.ok(
   !/<TokenFigure tokens=\{child\.tokenUsage\} source=/.test(ui),
   "no surface attributes a provenance to a child's figure — the payload does not carry one to attribute",
+);
+
+// --- A result crossing the wire carries no undefined value. ------------------
+// The failure this pins, reported from a live board:
+//
+//   rpc boardWorkflowDefaults failed: rpc result at $result.redFirst is not a JSON
+//   value (undefined)
+//
+// The cause was a result object built with `redFirst: knobs.redFirst`, where that value
+// is undefined BY CONTRACT — resolveKnobInput returns undefined for "absent, derive me
+// downstream". The host validates the result object before serialising, so
+// JSON.stringify's habit of dropping undefined keys never saved it. Only a board whose
+// stored defaults predate red-first hit it, which is why the same screen worked for some
+// people and failed for others.
+assert.equal(
+  resolveKnobInput({ quality: "production", supervisor: "high", explorationCount: 3 }).redFirst,
+  undefined,
+  "an unchosen red-first resolves to undefined, which is the contract — the bug was echoing it onto the wire, not producing it",
+);
+
+// The three shapes the call sites actually build, asserted to survive a JSON round trip
+// with their keys intact.
+const boardResult = { quality: "production", redFirst: undefined, reviewGates: [] };
+assert.ok(
+  Object.prototype.hasOwnProperty.call(boardResult, "redFirst"),
+  "the raw shape has the key present, which is what the host refuses",
+);
+const sanitized = withoutUndefined(boardResult);
+assert.deepEqual(Object.keys(sanitized), ["quality", "reviewGates"], "the guard removes the key that held undefined");
+assert.equal(JSON.stringify(sanitized), JSON.stringify(withoutUndefined(sanitized)), "and the result is stable under a second pass");
+
+// A value that is genuinely present survives, including falsy ones: the rule is about
+// undefined, not about emptiness.
+assert.deepEqual(
+  withoutUndefined({ redFirst: "strict", count: 0, flag: false, empty: "", nothing: null }),
+  { redFirst: "strict", count: 0, flag: false, empty: "", nothing: null },
+  "false, 0, empty string and null are values and are kept — only undefined is absent",
+);
+assert.deepEqual(withoutUndefined({ redFirst: undefined }), {}, "an object whose only key is undefined becomes empty, which is valid JSON");
+assert.equal(withoutUndefined(undefined), undefined, "a bare undefined passes through: there is no key to remove");
+assert.equal(withoutUndefined(null), null, "null passes through as the value it is");
+
+// Nested, because the board result nests knobs and gates.
+assert.deepEqual(
+  withoutUndefined({ knobs: { quality: "production", redFirst: undefined }, gates: ["spec"] }),
+  { knobs: { quality: "production" }, gates: ["spec"] },
+  "the guard recurses, so a nested undefined cannot reach the wire either",
+);
+// Arrays keep their positions: an element is addressed by index, and dropping one would
+// silently change what every later element means.
+assert.deepEqual(withoutUndefined([1, undefined, 2]), [1, undefined, 2], "array elements keep their positions — an index is not a key");
+assert.deepEqual(
+  withoutUndefined([{ redFirst: undefined, quality: "production" }]),
+  [{ quality: "production" }],
+  "while objects INSIDE an array are still cleaned",
 );
 
 console.log(

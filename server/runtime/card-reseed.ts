@@ -151,9 +151,11 @@ async function reseedCard(
       supervisor: config?.supervisor ?? "high",
       explorationCount: config?.explorationCount ?? 3,
       explorationHybrid: config?.explorationHybrid ?? (config?.explorationCount ?? 3) >= 2,
-      // An explicit red_first survives the reseed; absent stays absent so
-      // the quality-derived default applies (never silently re-stricten).
-      redFirst: config?.redFirst ?? undefined,
+      // An explicit red_first survives the reseed; absent stays absent so the
+      // quality-derived default applies (never silently re-stricten). Spelled as a
+      // spread because `redFirst: undefined` leaves the KEY present holding undefined,
+      // which is not a JSON value — the failure mode that broke boardWorkflowDefaults.
+      ...(typeof config?.redFirst === "string" ? { redFirst: config.redFirst } : {}),
     },
     reviewGates: config?.reviewGates ?? [],
   });
