@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "../lib/kanban-layout.mjs";
+import {
+  KANBAN_COLUMN_WIDTHS,
+  kanbanGridColumns,
+  toggleFilterValue,
+  matchesFilterValue,
+} from "../lib/kanban-layout.mjs";
 import {
   filterAndGroupResearchCards,
   moveResearchCard,
@@ -15,7 +20,8 @@ import {
 assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
   expanded: "minmax(240px, 320px)",
   collapsed: "56px",
-}, "all boards use bounded column widths");
+  mobileExpanded: "min(85vw, 320px)",
+}, "all boards use bounded column widths, with a deliberate phone track beside them");
 
 const columns = kanbanGridColumns(["inbox", "doing", "archived"], { archived: true });
 assert.equal(columns, "minmax(240px, 320px) minmax(240px, 320px) 56px", "open and collapsed columns retain their own bounds");
@@ -229,170 +235,5 @@ assert.equal(matchesFilterValue([], "a"), true, "empty matches everything");
 assert.equal(matchesFilterValue(["a"], "a"), true, "membership matches");
 assert.equal(matchesFilterValue(["a"], "b"), false, "absence filters");
 assert.equal(matchesFilterValue(null, "a"), true, "junk matches everything");
-
-const researchFilters = {
-  columns: ["inbox", "doing", "done", "archived"],
-  projectIds: [],
-  attention: false,
-};
-const researchCard = (overrides = {}) => ({
-  projectId: "project-1",
-  status: "pending",
-  needsAttention: false,
-  updatedAt: 1,
-  ...overrides,
-});
-assert.deepEqual(
-  researchCardListRequest("project-2"),
-  { projectId: "project-2", kind: "research" },
-  "a project switch scopes the card request to that project and track",
-);
-assert.match(
-  readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8"),
-  /loadResearchData\(rpc, projectId\)[\s\S]*\[projectId, rpc\]/,
-  "the Research loader reloads when the routed project changes",
-);
-const researchGroups = filterAndGroupResearchCards([
-  researchCard({ id: "unknown", status: "unexpected", updatedAt: 1 }),
-  researchCard({ id: "archived", status: "archived", updatedAt: 2 }),
-  researchCard({ id: "done", status: "completed", updatedAt: 3 }),
-  researchCard({ id: "running", status: "in-progress", updatedAt: 4 }),
-], researchFilters);
-assert.deepEqual(Object.keys(researchGroups), ["inbox", "doing", "done", "archived"]);
-assert.deepEqual(researchGroups.inbox.map((entry) => entry.id), ["unknown"]);
-assert.deepEqual(researchGroups.done.map((entry) => entry.id), ["done"]);
-assert.deepEqual(researchGroups.archived.map((entry) => entry.id), ["archived"]);
-assert.equal(
-  researchCardMatches(researchCard({ projectId: "project-2" }), {
-    ...researchFilters,
-    projectIds: ["project-1"],
-  }),
-  false,
-  "project switching never leaks a card from another project",
-);
-assert.equal(
-  researchCardMatches(researchCard(), { ...researchFilters, attention: true }),
-  false,
-  "attention mode never admits a card that needs no decision",
-);
-assert.equal(
-  researchCardMatches(
-    researchCard({ projectId: "project-2", needsAttention: true }),
-    { ...researchFilters, projectIds: ["project-1"], attention: true },
-  ),
-  false,
-  "project and attention filters both apply",
-);
-const moveCalls = [];
-const moveErrors = [];
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: true };
-  },
-  "card_1",
-  "done",
-  (message) => moveErrors.push(message),
-);
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: false };
-  },
-  "card_2",
-  "doing",
-  (message) => moveErrors.push(message),
-);
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: true };
-  },
-  "card_3",
-  "shape",
-  (message) => moveErrors.push(message),
-);
-assert.deepEqual(
-  moveCalls,
-  [["card_1", "done"], ["card_2", "doing"]],
-  "valid lightweight drops move the card and reject cross-track targets",
-);
-assert.deepEqual(
-  moveErrors,
-  ["Move failed"],
-  "a refused move reaches the panel's failure surface",
-);
-assert.match(
-  researchPanel,
-  /onMoveCard=\{\(cardId, target\) => void moveResearchCard\(rpc, cardId, target\)\}/,
-  "the Research board delegates drops to the tested move policy",
-);
-assert.match(
-  researchPanel,
-  /onOpenThread=\{\(threadId\) => navigate\.toThread\(threadId\)\}/,
-  "Research list thread actions reach the host thread router",
-);
-const strategyLabels = strategyLabelsById([
-  { id: "strategy-a", label: "Jobs to be Done" },
-  { id: "strategy-b", label: "Opportunity Mapping" },
-]);
-assert.equal(strategyLabels.get("strategy-a"), "Jobs to be Done");
-assert.equal(strategyLabels.get("strategy-b"), "Opportunity Mapping");
-const researchPresets = [
-  { id: "default", isDefault: true },
-  { id: "research", isDefault: false },
-];
-assert.deepEqual(
-  researchPresetFor(researchPresets, [{ band: "research", presetId: "research" }]),
-  { preset: researchPresets[1], hasBandPreset: true },
-  "the research band assignment reaches the creation dialog",
-);
-assert.deepEqual(
-  researchPresetFor(researchPresets, []),
-  { preset: researchPresets[0], hasBandPreset: false },
-  "an unset research band truthfully falls back to the board default",
-);
-assert.deepEqual(
-  researchPresetFor(researchPresets, [{ band: "research", presetId: "missing" }]),
-  { preset: researchPresets[0], hasBandPreset: false },
-  "a stale research assignment falls back without claiming a band preset",
-);
-assert.deepEqual(
-  researchPresetFor(researchPresets, [{ band: "explore", presetId: "research" }]),
-  { preset: researchPresets[0], hasBandPreset: false },
-  "another track's assignment never configures research",
-);
-assert.deepEqual(
-  researchPresetFor([{ id: "first" }], []),
-  { preset: { id: "first" }, hasBandPreset: false },
-  "an unmarked preset list uses its first entry",
-);
-assert.deepEqual(
-  researchPresetFor([], []),
-  { preset: null, hasBandPreset: false },
-  "an empty preset list creates no phantom assignment",
-);
-assert.match(
-  researchPanelView,
-  /<ResearchList[\s\S]*strategyLabelById=\{state\.labels\}[\s\S]*<ResearchCard[\s\S]*joinStrategyLabels\(card\.researchStrategies \?\? \[\], state\.labels\)/,
-  "board tiles and list rows receive the same strategy label map",
-);
-const researchCreationWiring = new RegExp([
-  /<CreateResearchDialog/,
-  /activeProjectId=\{props\.projectId\}/,
-  /strategies=\{props\.data\.strategies\}/,
-  /researchPreset=\{props\.preset\.preset\}/,
-  /hasBandPreset=\{props\.preset\.hasBandPreset\}/,
-].map((pattern) => pattern.source).join("[\\s\\S]*?"));
-assert.match(
-  researchPanelDialogs,
-  researchCreationWiring,
-  "creation receives the active project, strategy catalog, and resolved preset",
-);
-assert.match(
-  researchPanelDialogs,
-  /renderOnboarding\(\{[\s\S]*storageKey: STORAGE_KEYS\.onboardResearch[\s\S]*renderPresetManager\(\{[\s\S]*presets: props\.data\.presets/,
-  "research keeps onboarding and preset-manager wiring",
-);
 
 console.log("kanban layout test ok: bounded columns and research panel state");

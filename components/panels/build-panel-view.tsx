@@ -276,8 +276,16 @@ function BuildBoardKanban({ state, onOpenCard, onMoveCard }: {
       <BulkBarSlot state={state} />
       <div
         data-testid="kanban-board"
-        className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
+        // Two layouts, chosen by breakpoint — see lib/kanban-layout.mjs for why a phone
+        // needs a second one rather than a narrower first one.
+        className={[
+          "flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain pb-1",
+          "md:grid md:snap-none md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden",
+        ].join(" ")}
         style={{
+          // The mobile tracks are applied as explicit widths on the children instead of a
+          // grid template, because a snap container needs its items to be the snap points
+          // and a grid template cannot express `scroll-snap-align`.
           gridTemplateColumns: kanbanGridColumns(
             BUILD_BOARD_VISIBLE_COLUMNS,
             state.collapsedColumns,

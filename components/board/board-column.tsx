@@ -94,6 +94,11 @@ export function BoardColumn(props: {
       }}
       className={[
         "flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition",
+        // Below `md` the board is a snap-scrolling rail, so each column takes its width
+        // from here and snaps its own leading edge — that is what makes a swipe land on a
+        // column instead of mid-gutter. `md:w-auto` hands the width back to the grid
+        // template above, so the desktop tracks stay the single source for desktop.
+        collapsed ? "w-14 shrink-0 snap-start" : "w-[min(85vw,320px)] shrink-0 snap-start md:w-auto",
         "md:h-full md:min-h-0",
         over ? "border-primary bg-primary/5" : "border-border",
         collapsed ? "items-center" : "",
