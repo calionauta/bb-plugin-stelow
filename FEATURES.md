@@ -2894,6 +2894,20 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**A worker's orientation cost is measured and shown, not assumed.** A worker's first
+turn is the most expensive and least informed: it has just been handed a
+12,000-character prompt naming its stage, and the skill family it used to be told to
+read is seventeen skills whose entry documents total 215,756 bytes (~54k tokens)
+against that prompt. Nothing stopped it reading them before doing anything. It is
+observable now because a skill load is a `toolCall` item whose arguments name a
+`SKILL.md`, so `lib/first-turn-contract.mjs` derives the verdict from what the worker
+DID: reads before the first `bb stelow advance` are orientation spent before work,
+reads after it are the legitimate case, and reading the repository never counts.
+Violations are reported on the card and never blocked — the plugin cannot stop a tool
+call in flight, and a rule enforced by refusing work is a deadlock with a good error
+message. Measured on this checkout: exactly one skill read across ten workers, which
+is why this is a report rather than a gate.
+
 **Two workers on different cards now share 90–95% of their prompt, where they
 shared 0.6% before.** Provider caching is prefix matching, so the reusable region
 ends at the first byte that differs — and the state dir sat at character ~106, ahead
