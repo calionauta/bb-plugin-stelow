@@ -361,6 +361,11 @@ export const cardDetailRpcContract = {
           endedAt: z.number().nullable(),
           endedReason: z.string().nullable(),
           tokenUsage: z.number().nullable(),
+          // The provenance of `tokenUsage`, and it has to cross the RPC boundary or
+          // the UI cannot tell an estimate from a measurement: a zod object strips
+          // undeclared keys, so the field travelled all the way here and was
+          // silently dropped, leaving every row labelled "provider-reported".
+          tokenUsageSource: z.enum(["provider", "context-estimate"]).nullable(),
           tokenBreakdown: tokenBreakdownSchema,
           children: z.array(
             z.object({

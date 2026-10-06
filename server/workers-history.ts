@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { attachChildTokenBreakdown, attachChildTokenUsage, shapeChildThreads } from "../lib/thread-children.mjs";
-import { tokenBreakdownFromEvents, tokenUsageFromEvents } from "../lib/token-usage.mjs";
+import { tokenBreakdownFromEvents, usageFromEvents } from "../lib/token-usage.mjs";
+import type { UsageSource } from "../lib/token-usage.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -23,6 +24,7 @@ export type WorkerHistoryEntry = {
   endedAt: number | null;
   endedReason: string | null;
   tokenUsage: number | null;
+  tokenUsageSource: UsageSource;
   tokenBreakdown: TokenBreakdown;
   children: ChildThread[];
 };
@@ -46,17 +48,27 @@ const OWNER_SELECT = `
   WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1
 `;
 
-async function tokenReport(bb: BbPluginApi, threadId: string): Promise<{ total: number | null; breakdown: TokenBreakdown }> {
+async function tokenReport(bb: BbPluginApi, threadId: string): Promise<{ total: number | null; breakdown: TokenBreakdown; source: UsageSource }> {
   try {
+    // Both families, because they are not interchangeable and asking for only one
+    // is why eight of this plugin's ten workers reported nothing. The provider
+    // token total is the measurement; the context-window reading is the estimate
+    // ACP-backed agents send instead, and 837 threads send the latter against 148
+    // that send the former. `usageFromEvents` picks the measurement when it exists
+    // and labels the estimate when it does not.
     const events = await bb.sdk.threads.events.list({
       threadId,
-      types: ["thread/tokenUsage/updated"],
+      types: ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"],
       order: "desc",
-      limit: "1",
+      limit: "2",
     });
-    return { total: tokenUsageFromEvents(events), breakdown: tokenBreakdownFromEvents(events) };
+    const usage = usageFromEvents(events);
+    // The breakdown comes from the token report alone: a context reading has no
+    // input/output/cached split, and fabricating legs from a single number would
+    // invent a measurement.
+    return { total: usage.total, breakdown: tokenBreakdownFromEvents(events), source: usage.source };
   } catch {
-    return { total: null, breakdown: null };
+    return { total: null, breakdown: null, source: null };
   }
 }
 
@@ -64,11 +76,11 @@ async function readChildUsage(bb: BbPluginApi, child: ShapedChild) {
   try {
     const events = await bb.sdk.threads.events.list({
       threadId: child.threadId,
-      types: ["thread/tokenUsage/updated"],
+      types: ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"],
       order: "desc",
-      limit: "1",
+      limit: "2",
     });
-    return [child.threadId, tokenUsageFromEvents(events), tokenBreakdownFromEvents(events)] as const;
+    return [child.threadId, usageFromEvents(events).total, tokenBreakdownFromEvents(events)] as const;
   } catch {
     return [child.threadId, null, null] as const;
   }
@@ -97,6 +109,7 @@ async function history(db: Db, bb: BbPluginApi, cardId: string): Promise<WorkerH
       endedAt: row.ended_at,
       endedReason: row.ended_reason,
       tokenUsage: report.total,
+      tokenUsageSource: report.source,
       tokenBreakdown: report.breakdown,
       children,
     };

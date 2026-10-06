@@ -2894,6 +2894,23 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**A worker's token figure is shown for nearly every worker now, and it says whether
+it is a measurement or an estimate.** The plugin read exactly one event family,
+`thread/tokenUsage/updated`, and asked only for that one. Measured on the live
+database: 837 threads emit `thread/contextWindowUsage/updated` against 148 that emit
+a token total, and all ten of this plugin's worker threads emit a context reading
+while exactly ONE emits a reported total — because the providers that send only a
+context reading are the ACP ones, which most cards run on. So the history row showed
+nothing for eight of ten workers, and the one figure it did show was labelled
+"provider-reported tokens" in a line that could not tell the two apart. Both families
+are now read, `usageFromEvents` returns the reported total when it exists and labels
+the context-window reading as an estimate when it does not, and the label travels
+through the history entry and the RPC contract to the row, which prints
+`tokens (est.)` for an estimate and says so in its tooltip. The provenance field is
+declared in the zod contract deliberately: an undeclared key is stripped at the
+boundary, which is how the value crossed three files and vanished. Measured effect
+on the ten real workers: **1 of 10 reporting → 10 of 10**, nine of them estimates.
+
 **Every prompt resolves its reading list from `bb stelow playbook`, instead of
 naming a family of skills to go and find.** All six spawn paths used to tell the
 worker to load `stelow-workflow-*` — seventeen skills — while the `CLI_EQUIVALENTS`

@@ -44,6 +44,11 @@ export type WorkerHistoryEntry = {
   endedAt: number | null;
   endedReason: string | null;
   tokenUsage: number | null;
+  /** Where the figure came from. `provider` is a reported total; `context-estimate`
+   * is the context-window reading an ACP agent sends instead of one. The label has
+   * to travel with the number, because presenting an estimate as a measurement is
+   * the same class of error as printing 0 for unknown. */
+  tokenUsageSource?: "provider" | "context-estimate" | null;
   tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null;
   children?: Array<{
     threadId: string;
@@ -63,6 +68,35 @@ export type WorkerDetailState = {
   card: { needsAttention: boolean; presetProviderId: string | null; presetModelId: string | null };
 };
 
+/**
+ * A token figure with its provenance, because the two must not be printed alike.
+ *
+ * Extracted rather than inlined for two reasons that both hold: it is the same
+ * markup on the parent row and (neutrally) on a child, and the parent row was over
+ * the repository's fifty-line function budget once the label grew a branch. The
+ * `source` argument is what keeps an estimate from being presented as a
+ * measurement: `undefined` means the caller was not told which it is, so the label
+ * stays neutral rather than claiming a provenance.
+ */
+function TokenFigure({ tokens, source }: { tokens: number | null; source?: "provider" | "context-estimate" | null }) {
+  if (!formatTokenUsage(tokens)) return null;
+  const estimated = source === "context-estimate";
+  return (
+    <span
+      title={
+        estimated
+          ? `${tokens!.toLocaleString()} tokens estimated from the provider's context-window reading — not a reported total`
+          : source === "provider"
+            ? `${tokens!.toLocaleString()} provider-reported tokens`
+            : `${tokens!.toLocaleString()} tokens`
+      }
+    >
+      {" · "}{formatTokenUsage(tokens)}
+      {estimated ? " tokens (est.)" : " tokens"}
+    </span>
+  );
+}
+
 function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
   const navigate = useBbNavigate();
   return (
@@ -72,7 +106,7 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
           {entry.presetName ? <span> · {entry.presetName}</span> : null}
-          {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
+          <TokenFigure tokens={entry.tokenUsage} source={entry.tokenUsageSource} />
           <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
         </span>
         <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
@@ -86,7 +120,9 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
                 <span className="font-medium text-foreground">{child.title ?? child.threadId.slice(0, 12)}</span>
                 <span> · {child.status}</span>
                 {child.providerId ? <span> · {child.providerId}</span> : null}
-                {formatTokenUsage(child.tokenUsage) ? <span title={`${child.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(child.tokenUsage)} tokens</span> : null}
+                {/* Neutral label: the child payload does not carry which kind of
+                    figure this is, so provenance is not claimed. */}
+                <TokenFigure tokens={child.tokenUsage} />
               </span>
               <button onClick={() => navigate.toThread(child.threadId)} title="Open this child thread." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
             </div>

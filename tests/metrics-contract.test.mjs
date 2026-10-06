@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -217,6 +217,33 @@ assert.deepEqual(
 );
 const stale = [...METRIC_OWNERS_IN_CONTRACT, ...METRIC_OWNERS_OUTSIDE.keys()].filter((file) => !metricModules.includes(file));
 assert.deepEqual(stale, [], `a named owner whose module is gone is a stale decision: ${stale.join(", ")}`);
+
+// --- A figure and its provenance travel together, across every boundary. -----
+// The failure this pins, found while wiring F4: the provenance field was added to
+// the history entry and to the UI, and a zod object in the RPC contract stripped it
+// because nobody declared it — so the value crossed three files and vanished at the
+// boundary, leaving every row labelled "provider-reported". An estimate presented as
+// a measurement is the same class of error as printing 0 for unknown, and it is
+// invisible without a test that names both halves.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ui = readFileSync(join(repoRoot, "components/worker-history/worker-history.tsx"), "utf8");
+const rpc = readFileSync(join(repoRoot, "server/card-detail-rpc-contract.ts"), "utf8");
+const historySource = readFileSync(join(repoRoot, "server/workers-history.ts"), "utf8");
+
+assert.ok(
+  historySource.includes("tokenUsageSource"),
+  "the history entry carries the source of its token figure",
+);
+assert.ok(
+  rpc.includes("tokenUsageSource"),
+  "the RPC contract declares the source, or zod strips it and the UI cannot tell an estimate from a measurement",
+);
+assert.ok(ui.includes("context-estimate"), "the UI distinguishes an estimated figure from a reported one");
+assert.ok(/tokens \(est\.\)/.test(ui), "an estimated figure is LABELLED as one on screen, not merely stored as one");
+assert.ok(
+  !ui.includes("provider-reported tokens`}> · {formatTokenUsage"),
+  "no row labels every figure as provider-reported, which is false for the ACP-backed workers that report only a context reading",
+);
 
 console.log(
   `metrics contract ok: ${METRIC_CONTRACT.length} metrics pinned ` +
