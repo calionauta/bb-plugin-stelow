@@ -2962,8 +2962,11 @@ independently confirmed from the provider's own reports is that cross-thread reu
 happens at all: one thread shows 2,811,504 cached tokens against 1,940 fresh on its
 first and only usage snapshot, which a single thread cannot have cached by itself. The
 reorder is worth keeping because it costs nothing and moves per-card bytes strictly
-later in the request; its magnitude is unproven, and `.auto/cache-honest.md` records the
-validation that would settle it.
+later in the request; its magnitude is unproven. The validation that would settle it:
+run two workers on two different cards after this change, then compare each thread's
+first `thread/tokenUsage/updated` snapshot against the pre-change thread — if the
+reorder helps, the first snapshot's cacheRead should be at least as large and its fresh
+input no larger.
 
 **The prompt-duplication metric was measuring the bag doing its job, and it is
 replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
