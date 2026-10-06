@@ -6,7 +6,6 @@ import { cardSubPath, STELOW_PANEL_ID } from "../panel/stelow-route.mjs";
 import { useBucketGallery } from "../board/card-gallery";
 import { TrackSkeleton } from "../panel/track-skeleton";
 import {
-  moveExploreCard,
   useExplorePanelState,
   type ExploreCard,
 } from "./explore-panel-state";
@@ -103,7 +102,6 @@ export function ExplorePanel({
               onOpenPresets={controller.openPresets}
               onOpenCard={openCard}
               onOpenThread={(threadId) => navigate.toThread(threadId)}
-              onMoveCard={(cardId, target) => void moveExploreCard(rpc, cardId, target)}
             />
           )}
         </div>

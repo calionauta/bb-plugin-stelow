@@ -34,7 +34,6 @@ type StageSectionProps = {
   runs: Runs;
   focusRunId: string | null;
   intentLabels: Record<string, string>;
-  onPickStage: (stage: string) => void;
   mapOpen: boolean;
   onMapToggle: (open: boolean) => void;
 };
@@ -45,7 +44,6 @@ export function StageSection({
   runs,
   focusRunId,
   intentLabels,
-  onPickStage,
   mapOpen,
   onMapToggle,
 }: StageSectionProps) {
@@ -61,7 +59,6 @@ export function StageSection({
           terminal={terminal}
           nextStages={detail.nextStages}
           artifacts={detail.artifacts}
-          onPick={onPickStage}
           skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
           offRouteReason={offRoute}
         />
@@ -69,7 +66,7 @@ export function StageSection({
           <p className={TEXT_META}>
             {card.status === "completed"
               ? "Workflow complete — choose an earlier stage to reopen it"
-              : "The agent advances on its own · click a lit stage to override"}
+              : "The agent advances on its own — ask it in the conversation to change stage"}
           </p>
         )}
       </StageRegion>

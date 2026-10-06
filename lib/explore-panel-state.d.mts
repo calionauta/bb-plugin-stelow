@@ -34,12 +34,3 @@ export function explorePresetFor<T, B extends { band: string; presetId: string |
   assignments: B[],
 ): { preset: T | null; hasBandPreset: boolean };
 
-export function moveExploreCard(
-  moveCard: (
-    cardId: string,
-    status: "inbox" | "doing" | "done" | "archived",
-  ) => Promise<{ ok: boolean; error?: string | null }>,
-  cardId: string,
-  target: string,
-  onError: (message: string) => void,
-): Promise<void>;

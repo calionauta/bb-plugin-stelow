@@ -13,7 +13,6 @@ import { LIGHTWEIGHT_COLUMNS } from "../../lib/tracks.mjs";
 import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
 import {
   filterAndGroupResearchCards,
-  moveResearchCard as moveResearchCardWithRpc,
   researchCardListRequest,
   researchPresetFor,
   strategyLabelsById,
@@ -149,15 +148,3 @@ function useResearchPresentation(
   };
 }
 
-export async function moveResearchCard(
-  rpc: ResearchRpc,
-  cardId: string,
-  target: string,
-) {
-  await moveResearchCardWithRpc(
-    (movingCardId, status) => rpc.call("moveCard", { cardId: movingCardId, status }),
-    cardId,
-    target,
-    (message) => toast.error(message),
-  );
-}

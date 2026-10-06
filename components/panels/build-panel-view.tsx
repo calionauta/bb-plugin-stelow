@@ -52,7 +52,6 @@ type Props = {
     cardId: string,
   ) => void;
   onOpenThread: (threadId: string) => void;
-  onMoveCard: (cardId: string, target: string) => void;
 };
 
 type BuildHeaderProps = {
@@ -236,7 +235,6 @@ function BuildBoardView({
   state,
   onOpenCard,
   onOpenThread,
-  onMoveCard,
 }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
   if (state.viewMode === "list") {
     return (
@@ -258,17 +256,16 @@ function BuildBoardView({
       />
     );
   }
-  return <BuildBoardKanban state={state} onOpenCard={onOpenCard} onMoveCard={onMoveCard} />;
+  return <BuildBoardKanban state={state} onOpenCard={onOpenCard} />;
 }
 
 /**
  * The kanban grid itself: view-mode routing above decides list/hill/kanban,
  * and this owns only the grid plus the selection bar above it.
  */
-function BuildBoardKanban({ state, onOpenCard, onMoveCard }: {
+function BuildBoardKanban({ state, onOpenCard }: {
   state: BuildPanelState;
   onOpenCard: (card: { kind: "build" | "research" | "explore" }, cardId: string) => void;
-  onMoveCard: (cardId: string, target: string) => void;
 }) {
   const onConfirm = useDeleteArchivedCards(state.rpc);
   return (
@@ -298,7 +295,6 @@ function BuildBoardKanban({ state, onOpenCard, onMoveCard }: {
             column={column}
             state={state}
             onOpenCard={onOpenCard}
-            onMoveCard={onMoveCard}
             onConfirm={onConfirm}
           />
         ))}
@@ -318,17 +314,15 @@ function BuildBoardColumn(props: {
   column: string;
   state: BuildPanelState;
   onOpenCard: Props["onOpenCard"];
-  onMoveCard: (cardId: string, column: string) => void;
   onConfirm: (cardIds: string[]) => Promise<void>;
 }) {
-  const { column, state, onOpenCard, onMoveCard, onConfirm } = props;
+  const { column, state, onOpenCard, onConfirm } = props;
   return (
     <BoardColumn
       column={column}
       cards={state.grouped[column]}
       collapsed={Boolean(state.collapsedColumns[column])}
       onToggleCollapsed={() => state.toggleColumn(column)}
-      onDrop={(cardId) => onMoveCard(cardId, column)}
       labels={BUILD_BOARD_COLUMN_LABELS}
       renderCard={(card) => (
         <BoardCard

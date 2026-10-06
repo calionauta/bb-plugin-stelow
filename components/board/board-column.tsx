@@ -74,24 +74,17 @@ export function BoardColumn(props: {
   cards: BoardCardItem[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  onDrop: (cardId: string) => void;
   labels: Record<string, string>;
   renderCard: (card: BoardCardItem) => ReactNode;
   deleteAll?: ArchivedDeleteProps;
 }) {
-  const { column, cards, collapsed, onToggleCollapsed, onDrop, labels, renderCard, deleteAll } = props;
+  const { column, cards, collapsed, onToggleCollapsed, labels, renderCard, deleteAll } = props;
   const label = labels[column];
-  const [over, setOver] = useState(false);
+  // No drop handling. The column used to be a drop target with a hover highlight, which
+  // is what made the board read as a drag-and-drop tool: it is not one. The workflow is
+  // the agent's to drive, and a person who wants a card elsewhere asks the agent.
   return (
     <section
-      onDragOver={(event) => { event.preventDefault(); setOver(true); }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        const id = event.dataTransfer.getData("text/stelow-card");
-        if (id) onDrop(id);
-      }}
       className={[
         "flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition",
         // Below `md` the board is a snap-scrolling rail, so each column takes its width
@@ -100,7 +93,7 @@ export function BoardColumn(props: {
         // template above, so the desktop tracks stay the single source for desktop.
         collapsed ? "w-14 shrink-0 snap-start" : "w-[min(85vw,320px)] shrink-0 snap-start md:w-auto",
         "md:h-full md:min-h-0",
-        over ? "border-primary bg-primary/5" : "border-border",
+        "border-border",
         collapsed ? "items-center" : "",
       ].join(" ")}
     >

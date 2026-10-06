@@ -14,7 +14,6 @@ import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
 import {
   exploreCardListRequest,
   filterAndGroupExploreCards,
-  moveExploreCard as moveExploreCardWithRpc,
   explorePresetFor,
   techniqueLabelsById,
 } from "../../lib/explore-panel-state.mjs";
@@ -146,15 +145,3 @@ function useExplorePresentation(
   };
 }
 
-export async function moveExploreCard(
-  rpc: ExploreRpc,
-  cardId: string,
-  target: string,
-) {
-  await moveExploreCardWithRpc(
-    (movingCardId, status) => rpc.call("moveCard", { cardId: movingCardId, status }),
-    cardId,
-    target,
-    (message) => toast.error(message),
-  );
-}

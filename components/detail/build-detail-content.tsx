@@ -90,7 +90,6 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         runs={view.execution}
         focusRunId={view.focusRunId}
         intentLabels={view.intentLabels}
-        onPickStage={view.setPendingAdvance}
         mapOpen={view.mapOpen}
         onMapToggle={view.setMapOpen}
       />

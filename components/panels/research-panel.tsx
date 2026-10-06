@@ -6,7 +6,6 @@ import { cardSubPath, STELOW_PANEL_ID } from "../panel/stelow-route.mjs";
 import { useBucketGallery } from "../board/card-gallery";
 import { TrackSkeleton } from "../panel/track-skeleton";
 import {
-  moveResearchCard,
   useResearchPanelState,
   type ResearchCard,
 } from "./research-panel-state";
@@ -103,7 +102,6 @@ export function ResearchPanel({
               onOpenPresets={controller.openPresets}
               onOpenCard={openCard}
               onOpenThread={(threadId) => navigate.toThread(threadId)}
-              onMoveCard={(cardId, target) => void moveResearchCard(rpc, cardId, target)}
             />
           )}
         </div>

@@ -247,12 +247,25 @@ assert.match(
   /if \(result\.error\)[\s\S]*?setComment\(""\);[\s\S]*?await onChanged\(\);/,
   "failed comments stay drafted while success clears and refreshes",
 );
-// Stage timeline: one shared renderer; advance hits the next legal stage,
-// archived never regresses, finished parks past the end.
+// Stage timeline: one shared renderer, and it is INERT — no `onPick`, because the
+// workflow is the agent's to drive. The chip used to be a button that moved the card, and
+// a person who wants a different stage asks the agent in the conversation instead. Pinned
+// as the absence of the prop, because re-adding a click target is the regression: the
+// board would look like a drag-and-drop tool again.
 assert.match(
   detailTimeline,
-  /export function StageTimeline\(\{ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal/,
-  "the timeline lives in the detail module",
+  /export function StageTimeline\(\{ currentStage, nextStages, artifacts, skips, offRouteReason, terminal/,
+  "the timeline lives in the detail module and takes no pick handler",
+);
+assert.doesNotMatch(
+  detailTimeline,
+  /onPick/,
+  "and nothing in it accepts a stage pick — the chips are indicators, not controls",
+);
+assert.doesNotMatch(
+  detailSource,
+  /AdvanceDialog|pendingAdvance/,
+  "the advance dialog is gone with its only trigger: a stage is changed by asking the agent, not by clicking a chip",
 );
 assert.match(
   stageSection,
@@ -271,15 +284,19 @@ assert.doesNotMatch(
   /function StageTimeline\(/,
   "no local timeline copy survives in the detail slice",
 );
+// The advance/regress rules are gone with the click target they governed. `canAdvance`
+// still decides how a chip is TONED (an upcoming legal stage reads as reachable), which is
+// information; what it no longer decides is whether a click does anything, because no
+// click does. The regression to guard is a re-added handler, not a lost legality rule.
 assert.match(
   detailTimeline,
   /const canAdvance = idx === current \+ 1 && legal\.has\(stage\)/,
-  "advance hits the next legal stage only",
+  "an upcoming legal stage is still distinguished, so the reader can see where the card can go",
 );
-assert.match(
+assert.doesNotMatch(
   detailTimeline,
-  /terminal !== "archived" && passed/,
-  "archived stages never regress",
+  /canRegress/,
+  "and no regress rule survives: it existed only to enable a click, and the chips are inert",
 );
 assert.match(
   detailTimeline,

@@ -10,7 +10,6 @@ import {
 } from "../lib/kanban-layout.mjs";
 import {
   filterAndGroupResearchCards,
-  moveResearchCard,
   researchCardListRequest,
   researchCardMatches,
   researchPresetFor,

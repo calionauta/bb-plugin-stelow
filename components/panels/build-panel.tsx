@@ -8,7 +8,6 @@ import { useBucketGallery } from "../board/card-gallery";
 import { TrackSkeleton } from "../panel/track-skeleton";
 import {
   analysisPreset,
-  moveBuildCard,
   useBuildPanelState,
   type BuildCard,
 } from "./build-panel-state";
@@ -188,7 +187,6 @@ export function BuildPanel({
               onOpenGithub={dialogs.openGithub}
               onOpenCard={openCard}
               onOpenThread={(threadId) => navigate.toThread(threadId)}
-              onMoveCard={(cardId, target) => void moveBuildCard(rpc, cardId, target)}
             />
           )}
         </div>

@@ -206,7 +206,7 @@ with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 ### UI vocabulary: a design rule with no test is not a rule
 
 `AGENTS.md` has said *"touch targets are `min-h-11`; every clickable gets
-`cursor-pointer`"* for a long time, and 84 raw `<button>` elements sat next to a
+`cursor-pointer`"* for a long time, and 83 raw `<button>` elements sat next to a
 shared `ui/Button` that 62 files import while 26 never touch it. A sentence in
 markdown does not intercept a commit. So UI rules here are enforced, and the
 enforcement is what tells you the rule is real:

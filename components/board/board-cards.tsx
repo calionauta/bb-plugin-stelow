@@ -136,8 +136,6 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
       role="button"
       tabIndex={0}
       ref={returnFocusRef}
-      draggable
-      onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -225,7 +223,6 @@ function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
           : "border-transparent hover:border-border hover:bg-muted/60")
       }
       onClick={(event) => event.stopPropagation()}
-      onDragStart={(event) => event.stopPropagation()}
     >
       <input
         type="checkbox"
@@ -316,8 +313,6 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
       role="button"
       tabIndex={0}
       ref={returnFocusRef}
-      draggable
-      onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;

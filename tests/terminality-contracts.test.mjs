@@ -196,10 +196,19 @@ assert.match(
   /isTerminalCheckpoint/,
   "the terminal Audit checkpoint cannot be selected as a reopen target",
 );
+// Stronger than the pin it replaces. That one required `disabled={!clickable || isCurrent}`
+// on a BUTTON, so a stage could still be clicked to move the card; the timeline is inert
+// now, so there is no click target at all. Pinned as the absence of a handler, because
+// re-adding one is the regression: the agent advances, and a person asks it to.
+assert.doesNotMatch(
+  detailTimeline,
+  /onClick=\{\(\) => onPick/,
+  "no workflow checkpoint is clickable — the whole timeline is inert, not just Audit",
+);
 assert.match(
   detailTimeline,
-  /disabled=\{!clickable \|\| isCurrent\}/,
-  "every current workflow checkpoint is inert, not Audit alone",
+  /isTerminalCheckpoint/,
+  "and the terminal checkpoint is still distinguished visually",
 );
 assert.match(
   server,

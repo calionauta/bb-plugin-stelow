@@ -22,10 +22,10 @@ function chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance }: {
   canAdvance: boolean;
 }): string {
   if (isCurrent) return CURRENT_STAGE_PILL_CLASS;
-  if (passed) return "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300";
-  if (skipReason ?? isOffRoute) return "border border-dashed border-border text-muted-foreground/70 hover:border-primary/50 hover:text-foreground";
-  if (canAdvance) return "cursor-pointer border border-primary/40 text-primary hover:bg-primary/10";
-  return "cursor-pointer border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground";
+  if (passed) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (skipReason ?? isOffRoute) return "border border-dashed border-border text-muted-foreground/70";
+  if (canAdvance) return "border border-primary/40 text-primary";
+  return "border border-dashed border-border text-muted-foreground";
 }
 
 // Group consecutive stages by band for the banded rows.
@@ -40,8 +40,9 @@ function groupStagesByBand(): Map<string, string[]> {
 }
 
 // One stage chip: passed, current, upcoming, off-route, or skipped — with
-// the artifact count. Only legal advance/regress targets click through.
-function StageChip({ stage, current, currentStage, terminal, legal, offRoute, skipReasonByStage, offRouteReason, artifacts, onPick }: {
+// the artifact count. Inert by design: the workflow is the agent's to drive, and a
+// person who wants a different stage asks it in the conversation.
+function StageChip({ stage, current, currentStage, terminal, legal, offRoute, skipReasonByStage, offRouteReason, artifacts }: {
   stage: string;
   current: number;
   currentStage: string;
@@ -51,7 +52,6 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
   skipReasonByStage: Map<string, string>;
   offRouteReason: string | null;
   artifacts: Array<{ stage: string }>;
-  onPick: (stage: string) => void;
 }) {
   const idx = STAGE_SEQUENCE.indexOf(stage);
   const isCurrent = !terminal && stage === currentStage;
@@ -62,36 +62,48 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
   const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
   const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;
   const canAdvance = idx === current + 1 && legal.has(stage);
-  const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
-  const clickable = canAdvance || canRegress;
   const produced = artifacts.filter((artifact) => artifact.stage === stage);
   // A chip can show a sentence but not a link, so it says what the stage
   // produces and stops there. It used to append "see the Workflow map below
   // for the link" — a pointer to a component it cannot vouch for, which is
   // what let two surfaces answer the same question in two different ways.
   const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : stageSummary(stage)?.text ?? "");
+  // Inert, deliberately. The chip used to be a button that moved the card — a click
+  // target for advancing or regressing a stage — and the workflow is not the human's to
+  // drive that way: the agent advances on its own, and a person who wants a different
+  // stage asks the agent in the conversation. Keeping the affordance made the board look
+  // like a drag-and-drop tool, which is the opposite of what it is.
+  //
+  // The states still read: current is filled, passed carries a check, a skipped stage
+  // shows a ⊘ and its reason, and an off-route stage is struck through. What is gone is
+  // the pointer and the click handler, not the information.
   return (
     <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
-      <button
-        type="button"
-        disabled={!clickable || isCurrent}
+      <span
         title={dimmedTitle}
-        onClick={() => onPick(stage)}
         className={stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}
         >
           {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
           <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
-          {/* Count-only, never a control: files and navigation
-              keep one shape each, and the pill stays one
-              click target (advance/return). */}
+          {/* Count-only, never a control: files and navigation keep one shape each. */}
           {produced.length > 0 ? <span className="text-muted-foreground">· {produced.length} file{produced.length === 1 ? "" : "s"}</span> : null}
-          {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
-      </button>
+      </span>
     </span>
   );
 }
 
-export function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: "completed" | "archived" }) {
+/** The timeline's inputs, named so the signature reads as one line and the component
+ * stays inside the repository's function budget. */
+type StageTimelineProps = {
+  currentStage: string;
+  nextStages: string[];
+  artifacts: Array<{ stage: string }>;
+  skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> };
+  offRouteReason: string | null;
+  terminal?: "completed" | "archived";
+};
+
+export function StageTimeline({ currentStage, nextStages, artifacts, skips, offRouteReason, terminal }: StageTimelineProps) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   // A finished card has no current stage: park the cursor past the end so
   // every reached stage reads as passed and nothing stays lit (or pulsing)
@@ -126,7 +138,6 @@ export function StageTimeline({ currentStage, nextStages, artifacts, onPick, ski
                   skipReasonByStage={skipReasonByStage}
                   offRouteReason={offRouteReason}
                   artifacts={artifacts}
-                  onPick={onPick}
                 />
               ))}
             </div>
@@ -158,7 +169,7 @@ function stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance }: {
 }) {
   return [
     "relative inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-    "transition-colors cursor-pointer disabled:cursor-not-allowed",
+    "transition-colors",
     "min-h-8",
     chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance }),
   ].filter(Boolean).join(" ");

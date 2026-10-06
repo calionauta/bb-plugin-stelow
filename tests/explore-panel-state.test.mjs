@@ -7,7 +7,6 @@ import {
   exploreCardMatches,
   explorePresetFor,
   filterAndGroupExploreCards,
-  moveExploreCard,
   techniqueLabelsById,
 } from "../lib/explore-panel-state.mjs";
 
@@ -64,33 +63,14 @@ assert.deepEqual(
   "explore falls back to the board default without an assignment",
 );
 
-const moveCalls = [];
-const moveErrors = [];
-await moveExploreCard(async (cardId, status) => {
-  moveCalls.push([cardId, status]);
-  return { ok: true };
-}, "card_new", "doing", (message) => moveErrors.push(message));
-await moveExploreCard(async (cardId, status) => {
-  moveCalls.push([cardId, status]);
-  return { ok: false };
-}, "card_old", "doing", (message) => moveErrors.push(message));
-await moveExploreCard(async (cardId, status) => {
-  moveCalls.push([cardId, status]);
-  return { ok: false, error: "Card is archived" };
-}, "card_other", "done", (message) => moveErrors.push(message));
-await moveExploreCard(async (cardId, status) => {
-  moveCalls.push([cardId, status]);
-  return { ok: true };
-}, "card_new", "triage", (message) => moveErrors.push(message));
-assert.deepEqual(
-  moveCalls,
-  [["card_new", "doing"], ["card_old", "doing"], ["card_other", "done"]],
-  "valid lightweight drops reach RPC while cross-track targets are refused",
-);
-assert.deepEqual(
-  moveErrors,
-  ["Move failed", "Card is archived"],
-  "failed moves reach the panel with the RPC reason or an honest fallback",
+// The move policy is gone with the drop target it served, and this pin guards its
+// absence. See the Research panel test for the reasoning: the agent drives the workflow,
+// and a person who wants a card elsewhere asks it in the conversation. Re-adding a drop
+// target is the regression — it makes the board read as a manual tool.
+assert.doesNotMatch(
+  panel,
+  /onMoveCard|moveExploreCard/,
+  "no manual card-move control survives in the Explore panel",
 );
 
 const loadRpcs = new RegExp([
@@ -111,10 +91,11 @@ assert.match(
   /onNewExplore=\{controller\.openCreate\}[\s\S]*onOpenPresets=\{controller\.openPresets\}/,
   "the Explore header actions open the creation and preset dialogs",
 );
+// The thread router is the part that survives: drops are gone with the drop target.
 assert.match(
   panel,
-  /onOpenThread=\{\(threadId\) => navigate\.toThread\(threadId\)\}[\s\S]*onMoveCard=\{\(cardId, target\) => void moveExploreCard\(rpc, cardId, target\)\}/,
-  "Explore threads reach the host router and drops reach the tested move policy",
+  /onOpenThread=\{\(threadId\) => navigate\.toThread\(threadId\)\}/,
+  "Explore threads reach the host router",
 );
 assert.match(
   panel,

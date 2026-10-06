@@ -4,7 +4,6 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   filterAndGroupResearchCards,
-  moveResearchCard,
   researchCardListRequest,
   researchCardMatches,
   researchPresetFor,
@@ -82,49 +81,14 @@ assert.equal(
   false,
   "project and attention filters both apply",
 );
-const moveCalls = [];
-const moveErrors = [];
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: true };
-  },
-  "card_1",
-  "done",
-  (message) => moveErrors.push(message),
-);
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: false };
-  },
-  "card_2",
-  "doing",
-  (message) => moveErrors.push(message),
-);
-await moveResearchCard(
-  async (cardId, status) => {
-    moveCalls.push([cardId, status]);
-    return { ok: true };
-  },
-  "card_3",
-  "shape",
-  (message) => moveErrors.push(message),
-);
-assert.deepEqual(
-  moveCalls,
-  [["card_1", "done"], ["card_2", "doing"]],
-  "valid lightweight drops move the card and reject cross-track targets",
-);
-assert.deepEqual(
-  moveErrors,
-  ["Move failed"],
-  "a refused move reaches the panel's failure surface",
-);
-assert.match(
+// The move policy is gone, and this pin guards its absence. A card used to be dragged
+// between columns; the workflow is the agent's to drive, and a person who wants a card
+// elsewhere asks the agent in the conversation. Re-adding a drop target is the
+// regression — it makes the board read as a manual tool.
+assert.doesNotMatch(
   researchPanel,
-  /onMoveCard=\{\(cardId, target\) => void moveResearchCard\(rpc, cardId, target\)\}/,
-  "the Research board delegates drops to the tested move policy",
+  /onMoveCard|moveResearchCard/,
+  "no manual card-move control survives in the Research panel",
 );
 assert.match(
   researchPanel,

@@ -32,7 +32,6 @@ type ResearchProps = {
   onOpenPresets: () => void;
   onOpenCard: (card: Pick<ResearchPanelCard, "kind">, cardId: string) => void;
   onOpenThread: (threadId: string) => void;
-  onMoveCard: (cardId: string, target: string) => void;
 };
 
 function ResearchHeader(props: ResearchProps) {
@@ -133,7 +132,6 @@ function ResearchBoard(props: ResearchProps) {
           cards={state.grouped[column]}
           collapsed={Boolean(state.collapsedColumns[column])}
           onToggleCollapsed={() => state.toggleColumn(column)}
-          onDrop={(cardId) => props.onMoveCard(cardId, column)}
           labels={LIGHTWEIGHT_COLUMN_LABELS}
           renderCard={(card) => (
             <ResearchCard
