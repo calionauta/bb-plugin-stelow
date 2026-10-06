@@ -159,9 +159,6 @@ function workOrderClause(): string {
   ].join(" ");
 }
 
-function inputContractClause(interfacePick: string, userInputContract: string): string {
-  return [userInputContract, interfacePick].join("\n\n");
-}
 
 function presetInstructions(instructions?: string): string {
   return instructions ? `Preset instructions:\n${instructions}\n` : "";
