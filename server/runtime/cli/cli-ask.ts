@@ -1,4 +1,9 @@
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/ask-cancel.mjs";
+import {
+  persistFailureInboxEvent,
+  persistFailureTrailLine,
+  shouldRecordPersistFailure,
+} from "../../../lib/ask-persist-failure.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
 import { askFinishedUpdates } from "../../../lib/card-question-state.mjs";
 import { splitEligibility } from "../../../lib/split-proposal.mjs";
@@ -170,20 +175,57 @@ async function requestAnswer(
  * timeout so it stays answerable on the card and the worker stops to wait.
  * Explicit end states (user dismissed, thread stopped/deleted) are returned
  * as-is for the worker to interpret. */
-async function persistUnanswered(
+/**
+ * Tell the reader, on the card and in the inbox, that a question could not be recorded.
+ *
+ * Extracted from the retry loop because it is a different responsibility: that loop tries to
+ * persist, and this one reports that it could not. It is also what pushed the loop past the
+ * repository's function budget.
+ *
+ * Every failure here is swallowed. This runs on a failure path, where a throw would replace
+ * the failure being reported with an unrelated one — and the log line the loop already
+ * wrote, plus the worker's own stdout instruction, survive either way.
+ */
+function recordPersistFailure(
+  deps: CliDeps,
+  cardId: string,
+  threadId: string,
+  whyPersistFailed: string,
+  persistError: string | null,
+): void {
+  if (!shouldRecordPersistFailure({ persisted: false, error: persistError })) return;
+  const cause = `${whyPersistFailed}${persistError ? `; ${persistError}` : ""}`;
+  try {
+    deps.logCardComment(
+      cardId,
+      "card",
+      cardId,
+      "agent",
+      persistFailureTrailLine({ threadId, error: cause }),
+    );
+    const event = persistFailureInboxEvent({ cardId, error: cause });
+    deps.recordInboxEvent(event.card, event.kind, event.summary, event.dedupeKey, deps.now());
+  } catch {
+    // Never replace the failure with a report about the failure.
+  }
+}
+
+/**
+ * Write the expired-question rows, twice if the first failure looks transient.
+ *
+ * Two attempts because a concurrent writer — the reconcile timer, a sync poll — can hold
+ * the lock briefly, and `SQLITE_BUSY` is transient rather than fatal. A non-retryable
+ * failure stops at once: retrying a closed handle or a full disk only delays the report.
+ */
+async function tryPersistUnanswered(
   deps: CliDeps,
   cardId: string,
   threadId: string,
   groups: AskGroup[],
   askedAt: number,
-  requested: Requested,
-): Promise<CliResult> {
-  const cancelReason =
-    requested.result.outcome === "cancelled" ? requested.result.reason : null;
+): Promise<{ persisted: boolean; persistError: string | null }> {
   let persisted = false;
   let persistError: string | null = null;
-  // Two attempts: a concurrent writer (reconcile timer, sync poll) can hold the
-  // lock briefly — SQLITE_BUSY is transient, not fatal.
   for (let attempt = 1; attempt <= 2 && !persisted; attempt++) {
     try {
       writeExpiredRows(deps, cardId, threadId, groups, askedAt);
@@ -200,11 +242,32 @@ async function persistUnanswered(
       }
     }
   }
+  return { persisted, persistError };
+}
+
+async function persistUnanswered(
+  deps: CliDeps,
+  cardId: string,
+  threadId: string,
+  groups: AskGroup[],
+  askedAt: number,
+  requested: Requested,
+): Promise<CliResult> {
+  const cancelReason =
+    requested.result.outcome === "cancelled" ? requested.result.reason : null;
+  const { persisted, persistError } = await tryPersistUnanswered(deps, cardId, threadId, groups, askedAt);
   const elapsed = Math.round((deps.now() - askedAt) / 1e3);
   if (!persisted) {
     const whyPersistFailed = requested.failed
       ? "request failure"
       : `cancel reason "${cancelReason ?? "unknown"}"`;
+    // The failure must leave a record, not only a log line. The card was marked
+    // `awaiting-answer` before the blocking wait and is set back to running when the call
+    // ends — which happens BEFORE this persist — so an unrecorded failure leaves a card
+    // that is idle, has no pending question, and shows no trace of what happened. That is
+    // a phantom wait by this project's own rule, and the README used to carry the runbook
+    // because the product said nothing.
+    recordPersistFailure(deps, cardId, threadId, whyPersistFailed, persistError);
     return {
       exitCode: 1,
       stdout: `The question could not be recorded (interrupted storage after ${whyPersistFailed}). STOP and wait: do NOT proceed with the workflow. \
