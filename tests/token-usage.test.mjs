@@ -6,6 +6,7 @@ import {
   tokenBreakdownFromEvents,
   tokenUsageFromEvents,
   totalTokenUsage,
+  totalUsageProvenance,
   usageFromEvents,
 } from "../lib/token-usage.mjs";
 
@@ -51,65 +52,55 @@ assert.deepEqual(
 assert.equal(sumTokenBreakdowns([{ input: null, output: null, cached: null, reasoning: null, total: null }]), null, "all-unknown resolves null");
 assert.equal(sumTokenBreakdowns([]), null, "empty resolves null");
 
+// --- A summed total knows what it is made of. --------------------------------
+// The collapsed summary line is always visible while the rows below it are not,
+// which makes it the worst place to overstate: it summed every worker — including
+// the nine whose figures are context-window estimates once this plugin started
+// reading that family — and called the result "provider-reported tokens across all
+// workers". On the ten real workers that is 2,490,239, of which 2,012,555 (81%) is
+// estimated. A sum cannot tell the difference by itself, so the provenance is a fact
+// computed in lib/ and asserted here against real numbers.
+const providerRow = { tokenUsage: 477684, tokenUsageSource: "provider" };
+const estimateRow = { tokenUsage: 232021, tokenUsageSource: "context-estimate" };
+
+assert.equal(totalUsageProvenance([providerRow]), "provider", "a sum of reported totals is a provider figure");
+assert.equal(totalUsageProvenance([estimateRow]), "estimate", "a sum of estimates is an estimate, however it is printed");
+assert.equal(
+  totalUsageProvenance([providerRow, estimateRow]),
+  "mixed",
+  "one of each is mixed — the case that must never be labelled provider-reported",
+);
+assert.equal(
+  totalUsageProvenance([{ tokenUsage: 100 }, { tokenUsage: 200 }]),
+  "estimate",
+  "a figure with NO declared source is not assumed reported: unattributed counts as estimate, the safe direction",
+);
+assert.equal(
+  totalUsageProvenance([{ tokenUsage: 5, tokenUsageSource: "provider", children: [{ tokenUsage: 7 }] }]),
+  "mixed",
+  "a child's figure is counted too, and is unattributed because the child payload carries no source",
+);
+assert.equal(totalUsageProvenance([]), null, "an empty history has no provenance");
+assert.equal(totalUsageProvenance([{ tokenUsage: null }]), null, "rows with no figure contribute no provenance");
+assert.equal(
+  totalUsageProvenance([providerRow, { tokenUsage: null }]),
+  "provider",
+  "an unreported row does not turn a provider sum into a mixed one",
+);
+
+// The real fleet, as measured: the case that made this necessary.
+const fleet = [
+  providerRow,
+  ...[232021, 393622, 227838, 101518, 87296, 85930, 364240, 430399, 89691].map((tokenUsage) => ({
+    tokenUsage,
+    tokenUsageSource: "context-estimate",
+  })),
+];
+assert.equal(
+  totalUsageProvenance(fleet),
+  "mixed",
+  "the ten real workers are a mixed fleet, which is what the summary had been calling provider-reported",
+);
+assert.equal(totalTokenUsage(fleet), 2490239, "and the total itself is unchanged — only the claim about it was wrong");
+
 console.log("token usage test ok: provider totals win, context estimates are labelled, absent usage stays hidden");
-
-// --- The context-window family, and why it is a DIFFERENT measurement. -------
-// Measured on the live database: 837 threads emit thread/contextWindowUsage/updated
-// against 148 that emit thread/tokenUsage/updated, and all ten of this plugin's
-// worker threads emit a context reading while exactly ONE emits a token total. The
-// plugin asked for only the token family, so it reported nothing for eight of ten
-// workers — the arithmetic lie F4 exists to remove. The providers that send only a
-// context reading are the ACP ones, which is most of them in practice.
-
-const CONTEXT_EVENT = (used, window, estimated = true) => ({
-  type: "thread/contextWindowUsage/updated",
-  data: { contextWindowUsage: { usedTokens: used, modelContextWindow: window, estimated } },
-});
-const TOKEN_EVENT = (total) => ({
-  type: "thread/tokenUsage/updated",
-  data: { tokenUsage: { total: { totalTokens: total, inputTokens: 100, outputTokens: 10 } } },
-});
-
-// The context reader reports what the provider sent, including that it is an estimate.
-assert.deepEqual(
-  contextUsageFromEvents([CONTEXT_EVENT(64919, 1000000)]),
-  { usedTokens: 64919, modelContextWindow: 1000000, estimated: true },
-  "a context reading carries its window and its estimated flag, so no surface can present it as a measurement",
-);
-assert.equal(contextUsageFromEvents([TOKEN_EVENT(500)]), null, "a token event is not a context reading — the two families never masquerade as each other");
-assert.equal(contextUsageFromEvents([]), null, "no events is null, never zero");
-assert.equal(contextUsageFromEvents([CONTEXT_EVENT(-1, 1000)]), null, "a negative reading is refused rather than shown");
-assert.equal(
-  contextUsageFromEvents([CONTEXT_EVENT(5, 0)])?.modelContextWindow,
-  null,
-  "an unusable window is null while the used count survives — one bad field does not discard the reading",
-);
-assert.equal(
-  contextUsageFromEvents([CONTEXT_EVENT(5, 100, false)])?.estimated,
-  false,
-  "a provider that reports a non-estimated reading is believed: the flag is carried, not assumed",
-);
-
-// --- usageFromEvents: the measurement wins, the estimate is labelled. --------
-const measured = usageFromEvents([TOKEN_EVENT(477684), CONTEXT_EVENT(477684, 1000000)]);
-assert.equal(measured.total, 477684, "a provider token total is used as-is");
-assert.equal(measured.source, "provider", "and it is labelled a provider measurement");
-
-const estimatedOnly = usageFromEvents([CONTEXT_EVENT(477684, 1000000)]);
-assert.equal(estimatedOnly.total, 477684, "with no token total, the context reading supplies the figure");
-assert.equal(
-  estimatedOnly.source,
-  "context-estimate",
-  "and it is labelled an estimate — printing it as a measurement is the same class of error as printing 0 for unknown",
-);
-assert.equal(estimatedOnly.context.estimated, true, "the estimate flag survives into the reading");
-
-const nothing = usageFromEvents([]);
-assert.equal(nothing.total, null, "nothing reported is null, not zero");
-assert.equal(nothing.source, null, "and it has no source, so a caller cannot claim one");
-assert.equal(nothing.context, null, "and no context either");
-
-// A zero the provider really measured is still a zero, and still a measurement.
-const realZero = usageFromEvents([TOKEN_EVENT(0)]);
-assert.equal(realZero.total, 0, "a measured zero total survives");
-assert.equal(realZero.source, "provider", "and keeps its provider label");

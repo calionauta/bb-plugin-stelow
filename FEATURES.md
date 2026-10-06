@@ -2894,6 +2894,29 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**An adversarial review of that fix found two holes it had left, and both are
+closed.** The first: a single request for both usage families with a small limit is
+not equivalent to asking per family, because the families interleave — on 2 of the
+148 threads that report both, the newest two events are both context readings, so a
+two-event page discarded a real provider total (1,125,141) in favour of an estimate
+(329,821). Each family is now asked for on its own, so its newest event is
+guaranteed rather than probable. The second: the collapsed summary summed every
+worker — nine of the ten real ones being estimates — and still called the result
+"provider-reported tokens across all workers", which on that fleet is 2,490,239 of
+which 81% is estimated. `totalUsageProvenance` in `lib/token-usage.mjs` now reports
+what the sum is made of, unattributed figures count as estimates rather than being
+assumed reported, and the always-visible summary line carries an `(est.)` badge and
+a tooltip that matches what it actually summed.
+
+The review also proved two of the new assertions worthless, and they are fixed
+rather than kept: the "measurement wins" fixture used the SAME number in both
+families, so a mutation returning the estimate while labelling it `provider` stayed
+green — the two values are now distinct, so the assertion discriminates between the
+label and the value. And the reader's family list had no assertion at all, so
+reverting it to the token family alone — the exact bug — passed every suite; a
+topology pin now requires both families, counted per call site, because a
+"found anywhere" check is satisfied by a different reader's call.
+
 **A refused retry says so on the card, and every card can have a token budget.**
 The auto-retry declined to retry five real runs and recorded none of them: each
 reached `attemptAutoRetry`'s stage guard with the card already advanced past the

@@ -48,42 +48,49 @@ const OWNER_SELECT = `
   WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1
 `;
 
-async function tokenReport(bb: BbPluginApi, threadId: string): Promise<{ total: number | null; breakdown: TokenBreakdown; source: UsageSource }> {
+/**
+ * One family's newest event, asked for on its own.
+ *
+ * A single request for both families with a small limit is NOT equivalent, and the
+ * difference was measured: the two families interleave, and on 2 of the 148 threads
+ * that report both, the newest two events are both context readings — so a
+ * two-event page discarded a real provider total (1,125,141) in favour of an
+ * estimate (329,821). Asking per family makes each family's own newest event
+ * guaranteed rather than probable, whatever the traffic ratio.
+ */
+/** The two event families this module reads. Spelled as the SDK's own union so a
+ * renamed event type fails the build rather than silently returning nothing. */
+type EventType = "thread/tokenUsage/updated" | "thread/contextWindowUsage/updated";
+
+async function latestOfType(bb: BbPluginApi, threadId: string, type: EventType) {
   try {
-    // Both families, because they are not interchangeable and asking for only one
-    // is why eight of this plugin's ten workers reported nothing. The provider
-    // token total is the measurement; the context-window reading is the estimate
-    // ACP-backed agents send instead, and 837 threads send the latter against 148
-    // that send the former. `usageFromEvents` picks the measurement when it exists
-    // and labels the estimate when it does not.
-    const events = await bb.sdk.threads.events.list({
-      threadId,
-      types: ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"],
-      order: "desc",
-      limit: "2",
-    });
-    const usage = usageFromEvents(events);
-    // The breakdown comes from the token report alone: a context reading has no
-    // input/output/cached split, and fabricating legs from a single number would
-    // invent a measurement.
-    return { total: usage.total, breakdown: tokenBreakdownFromEvents(events), source: usage.source };
+    return await bb.sdk.threads.events.list({ threadId, types: [type], order: "desc", limit: "1" });
   } catch {
-    return { total: null, breakdown: null, source: null };
+    return [];
   }
 }
 
+async function tokenReport(
+  bb: BbPluginApi,
+  threadId: string,
+): Promise<{ total: number | null; breakdown: TokenBreakdown; source: UsageSource }> {
+  const [tokenEvents, contextEvents] = await Promise.all([
+    latestOfType(bb, threadId, "thread/tokenUsage/updated"),
+    latestOfType(bb, threadId, "thread/contextWindowUsage/updated"),
+  ]);
+  const usage = usageFromEvents([...tokenEvents, ...contextEvents]);
+  // The breakdown comes from the token report alone: a context reading has no
+  // input/output/cached split, and fabricating legs from a single number would
+  // invent a measurement.
+  return { total: usage.total, breakdown: tokenBreakdownFromEvents(tokenEvents), source: usage.source };
+}
+
 async function readChildUsage(bb: BbPluginApi, child: ShapedChild) {
-  try {
-    const events = await bb.sdk.threads.events.list({
-      threadId: child.threadId,
-      types: ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"],
-      order: "desc",
-      limit: "2",
-    });
-    return [child.threadId, usageFromEvents(events).total, tokenBreakdownFromEvents(events)] as const;
-  } catch {
-    return [child.threadId, null, null] as const;
-  }
+  const [tokenEvents, contextEvents] = await Promise.all([
+    latestOfType(bb, child.threadId, "thread/tokenUsage/updated"),
+    latestOfType(bb, child.threadId, "thread/contextWindowUsage/updated"),
+  ]);
+  return [child.threadId, usageFromEvents([...tokenEvents, ...contextEvents]).total, tokenBreakdownFromEvents(tokenEvents)] as const;
 }
 
 async function childThreads(bb: BbPluginApi, threadId: string): Promise<ChildThread[]> {

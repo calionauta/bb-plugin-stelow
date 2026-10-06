@@ -5,7 +5,13 @@ import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { workerSectionPolicy } from "../../lib/worker-action-policy.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
-import { formatTokenUsage, sumTokenBreakdowns, totalTokenUsage } from "../../lib/token-usage.mjs";
+import {
+  formatTokenUsage,
+  sumTokenBreakdowns,
+  totalTokenUsage,
+  totalUsageProvenance,
+} from "../../lib/token-usage.mjs";
+import type { UsageProvenance } from "../../lib/token-usage.mjs";
 
 // Worker presence: the thread opener, the history list (archived threads
 // stay readable, provider-reported token totals), and the policy-driven
@@ -133,9 +139,20 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
   );
 }
 
+/** The sentence the summary's tooltip shows, which must match what it summed. */
+function totalTitle(total: number, provenance: Exclude<UsageProvenance, null>): string {
+  const count = total.toLocaleString();
+  if (provenance === "provider") return `${count} provider-reported tokens across all workers`;
+  if (provenance === "estimate") return `${count} tokens across all workers, estimated from the providers' context-window readings — no reported totals`;
+  return `${count} tokens across all workers — a mix of reported totals and context-window estimates`;
+}
+
 export function WorkerHistoryList({ history, separated = false }: { history: WorkerHistoryEntry[]; separated?: boolean }) {
   if (history.length === 0) return null;
   const total = totalTokenUsage(history);
+  // The provenance is a fact about the SUM, computed in lib/ where it can be tested
+  // against real numbers rather than asserted as a string in this file.
+  const provenance = totalUsageProvenance(history);
   const breakdown = sumTokenBreakdowns(history.flatMap((entry) => [entry.tokenBreakdown, ...(entry.children ?? []).map((child) => child.tokenBreakdown)]));
   const legs = breakdown ? [
     breakdown.input !== null ? `in ${formatTokenUsage(breakdown.input)}` : null,
@@ -149,8 +166,9 @@ export function WorkerHistoryList({ history, separated = false }: { history: Wor
         <DisclosureChevron />
         Worker history ({history.length}) — archived threads stay readable
         {total !== null ? (
-          <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}>
+          <span title={totalTitle(total, provenance ?? "estimate")}>
             {" · "}{formatTokenUsage(total)} tokens total
+            {provenance === "provider" ? null : <span className="ml-1 opacity-70">(est.)</span>}
           </span>
         ) : null}
       </summary>

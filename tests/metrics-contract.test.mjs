@@ -245,6 +245,32 @@ assert.ok(
   "no row labels every figure as provider-reported, which is false for the ACP-backed workers that report only a context reading",
 );
 
+// --- The reader must ask for BOTH usage families. ----------------------------
+// This pin guards the fix's headline behaviour and nothing asserted it. It is a
+// topology pin, which is the shape the repo's rules allow: it constrains WHICH
+// event families each reader asks the host for, and how many call sites do it —
+// not what any line of prose says.
+//
+// Asking per family rather than as one combined page is load-bearing, not tidy:
+// the families interleave, and on 2 of the 148 threads that report both, the newest
+// two events are both context readings — so a single small page discarded a real
+// provider total (1,125,141) in favour of an estimate (329,821).
+//
+// The count is asserted per family because a "found anywhere" check is satisfied by
+// the OTHER reader's call site: mutating the parent's context query to the token
+// family still matched the child's context call, so the guard read as satisfied
+// while the parent had lost the measurement.
+for (const family of ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"]) {
+  const escaped = family.replace(/\//g, "\\/");
+  const calls = historySource.match(new RegExp(`latestOfType\\(bb, [\\w.]+\\s*,\\s*"${escaped}"\\)`, "g")) ?? [];
+  assert.equal(
+    calls.length,
+    2,
+    `both readers (parent and child) ask for ${family} on its own — found ${calls.length} call sites. `
+      + "The other family's traffic would otherwise push its newest event off the page.",
+  );
+}
+
 console.log(
   `metrics contract ok: ${METRIC_CONTRACT.length} metrics pinned ` +
     `(direction, unit, null-vs-zero) · wait share stays a union`,
