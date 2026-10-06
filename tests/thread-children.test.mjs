@@ -212,15 +212,26 @@ assert.match(
 // renders as "no usage" on the run it belongs to. The pin follows the shape:
 // it still has to carry every leg, and it has to be the shape BOTH the entry
 // and its children use — one name for the one story.
+// The schema lives in server/contracts.ts now, and the WHOLE entry object moved with
+// it when the detail contract crossed the repository's 400-line budget. The pin reads
+// the file that owns the shape, and keeps asserting both legs, so a leg added for
+// children and not for the parent still fails here.
 assert.match(
-  server,
+  sharedSchemas,
   /tokenBreakdown: tokenBreakdownSchema/,
   "worker history entries and their children share one breakdown schema, not two spellings of it",
 );
 assert.equal(
-  (server.match(/tokenBreakdown: tokenBreakdownSchema/g) ?? []).length,
+  (sharedSchemas.match(/tokenBreakdown: tokenBreakdownSchema/g) ?? []).length,
   2,
   "both legs use it — a child thread that reported a split cannot render as no usage",
+);
+// And the detail contract must USE the shared entry schema rather than re-spelling it,
+// which is the failure the extraction exists to prevent.
+assert.match(
+  server,
+  /workerHistory: z\.array\(workerHistoryEntrySchema\)/,
+  "the card detail references the shared entry schema instead of declaring a second one",
 );
 // One regex per leg would stop being one regex, so this is split at the legs
 // instead: five alternatives in a row is the shape being asserted, and a

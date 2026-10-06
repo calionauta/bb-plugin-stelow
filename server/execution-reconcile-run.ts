@@ -54,6 +54,10 @@ export type RunDeps = {
   publishCard: (cardId: string) => void;
   native: ExecutionNative;
   dispatch: RunDispatch;
+  /** Optional: the runtime wiring supplies it so a refusal that leaves a person a
+   * decision can reach the inbox. Absent in narrow tests, which is why the retry
+   * handler treats it as optional and never depends on it to record. */
+  noteInboxEvent?: (cardId: string, body: string) => void;
 };
 
 const SIMPLE_STATES = ["queued", "running", "failed", "cancelled"] as const;

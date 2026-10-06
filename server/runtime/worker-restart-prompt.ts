@@ -1,3 +1,5 @@
+import { WORKFLOW_INTRO, WORKFLOW_SKILLS } from "./plugin-protocols.js";
+
 type RestartPromptInput = {
   card: {
     intent: string;
@@ -15,40 +17,35 @@ type RestartPromptInput = {
     draftProtocol: string;
     turnDiscipline: string;
     commitStyle: string;
+    commandFailureRule: string;
     interfacePick: string;
     doneProtocol: string;
     splitProtocol: string;
+    userInputContract: string;
   };
 };
 
-const WORKFLOW_SKILLS = `The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — \
-start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks \
-(stelow-product-*) are also provided by this plugin — check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
-if one is missing.`;
+// A pointer, not a discovery instruction. It used to name the `stelow-workflow-*`
+// glob and tell the worker to find them with `bb skill list`, which is both the
+// thing `bb stelow playbook` was built to replace (its own docstring: workers
+// "burned whole turns on discovery") and a contradiction of the CLI_EQUIVALENTS
+// clause that says never to discover skills that way. The glob is 17 skills whose
+// entry documents total 215,756 bytes (~54k tokens) against a 12,100-character
+// prompt, so an eager load is an order of magnitude more expensive than the
+// prompt that asked for it.
 
-const ASK_CONTRACT = `CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form:
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers \
-them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the \
-human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, \
---preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask \
-call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question.`;
 
 function stateOwnership(input: RestartPromptInput): string {
   const fallback = input.stateDir
     ? ""
     : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status.";
-  return `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, \
-transitions.md, and stelow.json. Your workflow owns its own state dir (${input.stateHint}) — its state.md holds name, intent, \
-current_stage, status.${fallback} ${input.protocols.cardOwnerRules} ${WORKFLOW_SKILLS} Use \`bb stelow advance <stage>\` to change \
-stages (do NOT hand-edit current_stage). ${input.protocols.neverSeed} Preserve every gate (product, interface, tech plan, diff).`;
+  // Intro and the per-card facts only. The clauses are rendered by the template, in
+  // the canonical order the spawn and reseed paths also use — this function used to
+  // repeat them, which rendered the ask contract twice and pushed the prompt to
+  // 21,421 characters against a 13,500 ceiling.
+  return `This worker was re-seeded. Your state dir is (${input.stateHint}) — its state.md holds name, intent, `
+    + `current_stage, status.${fallback} Use \`bb stelow advance <stage>\` to change stages `
+    + "(do NOT hand-edit current_stage).";
 }
 
 function intentContract(intent: string): string {
@@ -65,37 +62,29 @@ e.g. the previous worker stalled silently — its turn history may hold the miss
 }
 
 function restartContract(input: RestartPromptInput): string {
+  // Per-card facts only. This used to render the ask contract and the gate clause as
+  // well, which put two CLAUSES after a per-card value — so the shared run ended at
+  // the state dir and 3,389 characters that every path renders identically were
+  // uncacheable. Clauses belong above this line, in the canonical order.
   return `You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md \
 and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already \
-settled in state.md. Pick up exactly where the workflow left off.${previousWorkerContext(input.card.worker_thread_id)}
-
-${ASK_CONTRACT} ${input.protocols.interfacePick} For unselected gates, write the approval receipt yourself \
-(.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user \
-archives the card or the workflow reaches \`audit\`.`;
+settled in state.md. Pick up exactly where the workflow left off.${previousWorkerContext(input.card.worker_thread_id)}`;
 }
 
 function intentAndOrder(input: RestartPromptInput): string {
   return `Intent is currently \`${input.card.intent}\` in state.md. ${intentContract(input.card.intent)} \
 Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. \
-If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; \
-report the exact error and move on.`;
+%COMMAND_FAILURE_RULE%`;
 }
 
 export function buildWorkerRestartPrompt(input: RestartPromptInput): string {
   const protocols = input.protocols;
-  return `${stateOwnership(input)} ${protocols.cliEquivalents} ${protocols.reconProtocol} ${protocols.draftProtocol}
-
-${protocols.turnDiscipline}
-
-${protocols.commitStyle}
-
-${intentAndOrder(input)}
-
-${restartContract(input)}
-
-${protocols.doneProtocol}
-
-${protocols.splitProtocol}
-
-${input.instructions ? `Preset instructions:\n${input.instructions}\n` : ""}Request:\n${input.card.prompt}`;
+  return `${WORKFLOW_INTRO}\n\n${protocols.cardOwnerRules}\n\n${WORKFLOW_SKILLS}\n\n`
+    + `${protocols.neverSeed}\n\nPreserve every gate (product, interface, tech plan, diff).\n\n`
+    + `${protocols.cliEquivalents}\n\n${protocols.reconProtocol}\n\n${protocols.draftProtocol}\n\n`
+    + `${protocols.turnDiscipline}\n\n${protocols.commitStyle}\n\n`
+    + `${protocols.interfacePick}\n\n${protocols.userInputContract}\n\n`
+    + `${protocols.commandFailureRule}\n\n${protocols.doneProtocol}\n\n${protocols.splitProtocol}\n\n`
+    + `${stateOwnership(input)}\n\n${restartContract(input)}\n\n${intentAndOrder(input)}\n\n`
+    + `${input.instructions ? `Preset instructions:\n${input.instructions}\n` : ""}Request:\n${input.card.prompt}`;
 }

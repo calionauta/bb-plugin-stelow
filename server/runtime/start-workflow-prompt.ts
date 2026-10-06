@@ -8,9 +8,9 @@
 import { CLI_EQUIVALENTS } from "./plugin-protocols.js";
 
 export function startWorkflowPrompt(request: string): string {
-  return `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, \
-stelow-workflow-*) are provided by bb-plugin-stelow — load them first. The product strategy playbooks (stelow-product-*) are also provided by \
-this plugin — check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow \
+  return `Use the stelow workflow to shape and execute this request. Read \`bb stelow playbook\` and load exactly the skills it \
+names, in the order it lists them — it is the whole reading list, and it resolves the plugin's skill paths. Do not search for skills \
+and do not fetch anything via \`npx skills add\` unless the playbook reports a path missing. Use \`bb stelow \
 advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate \
 (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}\n\nRequest:\n${request}`;
 }

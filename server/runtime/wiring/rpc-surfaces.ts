@@ -10,6 +10,7 @@
  * reads as a table of names.
  */
 import { boardWorkflowDefaultsSchema } from "../../contracts.js";
+import { withoutUndefined } from "../../../lib/workflow-config.mjs";
 import { resolveKnobInput } from "../../../lib/workflow-config.mjs";
 import { rpcContract } from "../../rpc-contract.js";
 import { registerRpcHandlers } from "../composition.js";
@@ -121,7 +122,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     projects: listProjects(bb),
     flowMetrics: (input: FlowMetricsInput) =>
       buildFlowMetrics({ bb, core, gates }, input),
-    boardWorkflowDefaults: () => readBoardWorkflowDefaults(bb),
+    boardWorkflowDefaults: async () => withoutUndefined(await readBoardWorkflowDefaults(bb)),
     ...gates.gateHandlers,
     cardDiff: gates.cardDiff,
     auditTrailStatus: gates.auditTrailStatus,
@@ -164,6 +165,12 @@ function listProjects(bb: BbPluginApi) {
  * string maps to its set, so a saved "Tech Review" default survives instead of
  * degrading to Auto; a stored legacy appetite maps once to knobs (rigor
  * always strongest), so a saved "Core" default survives as breadth 3.
+ *
+ * The caller wraps the result in `withoutUndefined`: `redFirst` is absent by
+ * contract when unchosen, and a key holding `undefined` is not a JSON value, so the
+ * wire refused the whole call with "rpc result at $result.redFirst is not a JSON
+ * value (undefined)". Three call sites built such a key by hand; the guard is at the
+ * boundary so a fourth cannot.
  */
 type BoardWorkflowDefaults = z.infer<typeof boardWorkflowDefaultsSchema>;
 
@@ -185,11 +192,20 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
     appetite: parsed.data.appetite,
     redFirst: parsed.data.redFirst,
   });
+  // `redFirst` is pass-through and is deliberately ABSENT when the caller did not choose
+  // one — `resolveKnobInput` returns undefined for "derive me downstream" rather than a
+  // mode. Spreading it conditionally is what keeps that absence from reaching the wire:
+  // an object with the key PRESENT and holding undefined is not a JSON value, and the
+  // host validates the result before serialising, so it refused the whole call with
+  // "rpc result at $result.redFirst is not a JSON value (undefined)". The default path
+  // below never had the bug because it names "strict" explicitly; only a card whose
+  // stored defaults predate red-first hit it, which is why the board worked for some
+  // people and failed for others.
   return {
     quality: knobs.quality as BoardWorkflowDefaults["quality"],
     supervisor: knobs.supervisor as BoardWorkflowDefaults["supervisor"],
     explorationCount: knobs.explorationCount as BoardWorkflowDefaults["explorationCount"],
-    redFirst: knobs.redFirst as BoardWorkflowDefaults["redFirst"],
+    ...(typeof knobs.redFirst === "string" ? { redFirst: knobs.redFirst as BoardWorkflowDefaults["redFirst"] } : {}),
     reviewMode: legacyLabelForGates(reviewGates) ?? "Auto",
     reviewGates,
   };

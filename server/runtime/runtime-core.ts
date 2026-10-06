@@ -60,6 +60,7 @@ export function createRuntimeCore(bb: BbPluginApi) {
     doneProtocol: WORKER_PROTOCOL_CLAUSES.doneProtocol,
     reviewProtocol: REVIEW_PROTOCOL,
     draftProtocol: WORKER_PROTOCOL_CLAUSES.draftProtocol,
+    userInputContract: WORKER_PROTOCOL_CLAUSES.userInputContract,
   });
   const workers = createWorkerRuntime({ bb, db, now, services, ledger, prompts });
   const deps = { bb, db, now, services, ledger, prompts };

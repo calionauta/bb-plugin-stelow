@@ -141,14 +141,23 @@ test("the retry is traceable from the card", async () => {
   assert.deepEqual(d.published, ["card_1"], "and the card is republished, so the list repaints");
 });
 
-test("a spent budget launches nothing", async () => {
+test("a spent budget launches nothing, and says why", async () => {
   const db = executionRunDb("card_1");
   const failed = seed(db, { autoRetryCount: 1 });
   const d = deps(db, card());
   const result = await attemptAutoRetry(d, failed);
   assert.equal(result.retried, false);
   assert.deepEqual(d.started, [], "a second consecutive no-op parks instead of looping");
-  assert.deepEqual(d.calls, []);
+  // This assertion used to require NO trail comment, and that is the defect this
+  // file's change exists to fix: a card that parks silently is indistinguishable
+  // from a card nothing was ever wrong with. Five real runs refused on this exact
+  // guard and recorded nothing, so `auto_retry_count` read 0 across the fleet.
+  const record = d.calls.find(([, targetId]) => targetId === "exec_1");
+  assert.ok(record, "the refusal leaves an openable record — parking silently is a phantom wait");
+  assert.match(record[2], /did NOT retry/, "and says the retry did not happen");
+  assert.match(record[2], /retry-budget-spent/, "naming the reason");
+  assert.match(record[2], /Retry run stays available/, "and naming the exit, so the reader has a door");
+  assert.deepEqual(d.published, ["card_1"], "and the card repaints so the record is visible");
 });
 
 test("a failure that ran work launches nothing", async () => {
@@ -193,7 +202,10 @@ test("a missing card launches nothing and does not throw", async () => {
   const result = await attemptAutoRetry(d, failed);
   assert.equal(result.retried, false);
   assert.deepEqual(d.started, []);
-  assert.deepEqual(d.calls, []);
+  // Silence is CORRECT here and it is the only place it is: there is no card to
+  // write a trail comment on, so "cannot record" is not "chose not to".
+  assert.deepEqual(d.calls, [], "a card that no longer exists has nowhere to record a refusal");
+  assert.deepEqual(d.published, []);
 });
 
 test("a card that moved on launches nothing", async () => {
@@ -203,19 +215,28 @@ test("a card that moved on launches nothing", async () => {
   const result = await attemptAutoRetry(d, failed);
   assert.equal(result.retried, false, "re-running the old stage would overwrite work done since");
   assert.deepEqual(d.started, []);
-  assert.deepEqual(d.calls, [], "a refused guard leaves no trail either");
-  assert.deepEqual(d.published, []);
+  // The guard that silently refused five real runs, measured: every no-op failure
+  // in the live database arrived here with the card already on a later stage, so
+  // this refusal fired five times and recorded nothing. It records now.
+  const record = d.calls.find(([, targetId]) => targetId === "exec_1");
+  assert.ok(record, "the refusal leaves a record — this is the guard that failed five real runs in silence");
+  assert.match(record[2], /card-moved-on/, "naming the reason: the card advanced past the failed stage");
+  assert.match(record[2], /interface/, "and naming where the card actually is, so the reader understands why nothing ran");
+  assert.deepEqual(d.published, ["card_1"], "and the card repaints");
 });
 
-test("an archived card launches nothing", async () => {
+test("an archived card launches nothing, and the refusal is on the record", async () => {
   const db = executionRunDb("card_1");
   const failed = seed(db);
   const d = deps(db, card({ status: "archived" }));
   const result = await attemptAutoRetry(d, failed);
   assert.equal(result.retried, false);
   assert.deepEqual(d.started, []);
-  assert.deepEqual(d.calls, []);
-  assert.deepEqual(d.published, []);
+  const record = d.calls.find(([, targetId]) => targetId === "exec_1");
+  assert.ok(record, "the refusal is recorded: an archived card is terminal, which is a fact worth stating");
+  assert.match(record[2], /card-archived/, "naming the reason");
+  assert.match(record[2], /terminal/, "and the exit: archiving is terminal to every automated path");
+  assert.deepEqual(d.published, ["card_1"]);
 });
 
 test("a launch refusal stays parked instead of throwing", async () => {

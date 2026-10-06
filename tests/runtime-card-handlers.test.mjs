@@ -48,6 +48,16 @@ const reseedProtocols = {
   cardOwnerRules: "owner", neverSeed: "never seed", cliEquivalents: "cli",
   reconProtocol: "recon", draftProtocol: "draft", turnDiscipline: "turn",
   commitStyle: "commit", interfacePick: "pick", doneProtocol: "done", splitProtocol: "split",
+ workflowIntro: "WORKFLOW_INTRO_SENTINEL",
+ workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+ commandFailureRule: "command failure rule",
+  // The fixture must carry the phrases this test asserts on, and it must be a real
+  // ask contract rather than a label: the reseed builder renders it verbatim, so a
+  // placeholder here would pass the assertion while shipping a worker that cannot
+  // read the rule. The two phrases are the ones the surrounding assertions pin.
+  userInputContract:
+    "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels). ",
 };
 const reseedErrors = {
   cardNotFound: "missing", cardArchived: "archived",

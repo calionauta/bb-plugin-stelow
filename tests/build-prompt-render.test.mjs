@@ -30,6 +30,14 @@ const rules = {
   interfacePick: "INTERFACE_PICK_SENTINEL",
   doneProtocol: "DONE_PROTOCOL_SENTINEL",
   splitProtocol: "SPLIT_PROTOCOL_SENTINEL",
+
+  workflowIntro: "WORKFLOW_INTRO_SENTINEL",
+
+  workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+
+  commandFailureRule: "command failure rule",
+  userInputContract: "USER_INPUT_CONTRACT_SENTINEL",
 };
 
 const prompt = buildBuildPrompt(context, rules);

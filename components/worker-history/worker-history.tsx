@@ -5,7 +5,13 @@ import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { workerSectionPolicy } from "../../lib/worker-action-policy.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
-import { formatTokenUsage, sumTokenBreakdowns, totalTokenUsage } from "../../lib/token-usage.mjs";
+import {
+  formatTokenUsage,
+  sumTokenBreakdowns,
+  totalTokenUsage,
+  totalUsageProvenance,
+} from "../../lib/token-usage.mjs";
+import type { UsageProvenance } from "../../lib/token-usage.mjs";
 
 // Worker presence: the thread opener, the history list (archived threads
 // stay readable, provider-reported token totals), and the policy-driven
@@ -44,6 +50,15 @@ export type WorkerHistoryEntry = {
   endedAt: number | null;
   endedReason: string | null;
   tokenUsage: number | null;
+  /** Where the figure came from. `provider` is a reported total; `context-estimate`
+   * is the context-window reading an ACP agent sends instead of one. The label has
+   * to travel with the number, because presenting an estimate as a measurement is
+   * the same class of error as printing 0 for unknown. */
+  tokenUsageSource?: "provider" | "context-estimate" | null;
+  /** Whether this worker read skills before advancing. Reported, never blocked: the
+   * plugin cannot stop a tool call in flight, and a rule enforced by refusing work
+   * would be a deadlock with a good error message. */
+  firstTurn?: { advanced: boolean; skillsReadBeforeWork: number; violated: boolean } | null;
   tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null;
   children?: Array<{
     threadId: string;
@@ -63,6 +78,47 @@ export type WorkerDetailState = {
   card: { needsAttention: boolean; presetProviderId: string | null; presetModelId: string | null };
 };
 
+/**
+ * A token figure with its provenance, because the two must not be printed alike.
+ *
+ * Extracted rather than inlined for two reasons that both hold: it is the same
+ * markup on the parent row and (neutrally) on a child, and the parent row was over
+ * the repository's fifty-line function budget once the label grew a branch. The
+ * `source` argument is what keeps an estimate from being presented as a
+ * measurement: `undefined` means the caller was not told which it is, so the label
+ * stays neutral rather than claiming a provenance.
+ *
+ * A worker with NO figure gets a dash rather than nothing. Verified against a live
+ * worker: `acp-opencode` emits no usage event of any kind — 88 events, none of them a
+ * token or context reading — so a row that rendered nothing left a reader unable to
+ * tell "this provider reports nothing" from "the card has not run yet". The dash is
+ * the honest third state, and its title names the cause.
+ */
+function TokenFigure({ tokens, source }: { tokens: number | null; source?: "provider" | "context-estimate" | null }) {
+  if (!formatTokenUsage(tokens)) {
+    return (
+      <span className="opacity-60" title="This worker's provider reported no token usage — the ACP-backed providers emit no usage event at all.">
+        {" · "}— tokens
+      </span>
+    );
+  }
+  const estimated = source === "context-estimate";
+  return (
+    <span
+      title={
+        estimated
+          ? `${tokens!.toLocaleString()} tokens estimated from the provider's context-window reading — not a reported total`
+          : source === "provider"
+            ? `${tokens!.toLocaleString()} provider-reported tokens`
+            : `${tokens!.toLocaleString()} tokens`
+      }
+    >
+      {" · "}{formatTokenUsage(tokens)}
+      {estimated ? " tokens (est.)" : " tokens"}
+    </span>
+  );
+}
+
 function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
   const navigate = useBbNavigate();
   return (
@@ -72,7 +128,17 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
           {entry.presetName ? <span> · {entry.presetName}</span> : null}
-          {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
+          <TokenFigure tokens={entry.tokenUsage} source={entry.tokenUsageSource} />
+        {entry.firstTurn?.violated ? (
+          <span
+            className="ml-1 opacity-70"
+            title="This worker read skills before advancing. The stage's reading list comes from `bb stelow playbook`, and skills load on advance."
+          >
+            {" · "}
+            {entry.firstTurn.skillsReadBeforeWork} skill
+            {entry.firstTurn.skillsReadBeforeWork === 1 ? "" : "s"} before work
+          </span>
+        ) : null}
           <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
         </span>
         <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
@@ -86,7 +152,9 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
                 <span className="font-medium text-foreground">{child.title ?? child.threadId.slice(0, 12)}</span>
                 <span> · {child.status}</span>
                 {child.providerId ? <span> · {child.providerId}</span> : null}
-                {formatTokenUsage(child.tokenUsage) ? <span title={`${child.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(child.tokenUsage)} tokens</span> : null}
+                {/* Neutral label: the child payload does not carry which kind of
+                    figure this is, so provenance is not claimed. */}
+                <TokenFigure tokens={child.tokenUsage} />
               </span>
               <button onClick={() => navigate.toThread(child.threadId)} title="Open this child thread." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
             </div>
@@ -97,9 +165,20 @@ function WorkerHistoryRow({ entry }: { entry: WorkerHistoryEntry }) {
   );
 }
 
+/** The sentence the summary's tooltip shows, which must match what it summed. */
+function totalTitle(total: number, provenance: Exclude<UsageProvenance, null>): string {
+  const count = total.toLocaleString();
+  if (provenance === "provider") return `${count} provider-reported tokens across all workers`;
+  if (provenance === "estimate") return `${count} tokens across all workers, estimated from the providers' context-window readings — no reported totals`;
+  return `${count} tokens across all workers — a mix of reported totals and context-window estimates`;
+}
+
 export function WorkerHistoryList({ history, separated = false }: { history: WorkerHistoryEntry[]; separated?: boolean }) {
   if (history.length === 0) return null;
   const total = totalTokenUsage(history);
+  // The provenance is a fact about the SUM, computed in lib/ where it can be tested
+  // against real numbers rather than asserted as a string in this file.
+  const provenance = totalUsageProvenance(history);
   const breakdown = sumTokenBreakdowns(history.flatMap((entry) => [entry.tokenBreakdown, ...(entry.children ?? []).map((child) => child.tokenBreakdown)]));
   const legs = breakdown ? [
     breakdown.input !== null ? `in ${formatTokenUsage(breakdown.input)}` : null,
@@ -113,8 +192,9 @@ export function WorkerHistoryList({ history, separated = false }: { history: Wor
         <DisclosureChevron />
         Worker history ({history.length}) — archived threads stay readable
         {total !== null ? (
-          <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}>
+          <span title={totalTitle(total, provenance ?? "estimate")}>
             {" · "}{formatTokenUsage(total)} tokens total
+            {provenance === "provider" ? null : <span className="ml-1 opacity-70">(est.)</span>}
           </span>
         ) : null}
       </summary>

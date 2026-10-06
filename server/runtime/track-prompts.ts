@@ -9,12 +9,14 @@
  */
 
 import { exploreArtifactFile } from "../../lib/research-artifacts.mjs";
+import { USER_INPUT_CONTRACT } from "./plugin-protocols.js";
 
 export type TrackPromptProtocols = {
   cardOwnerRules: string;
   doneProtocol: string;
   reviewProtocol: string;
   draftProtocol: string;
+  userInputContract: string;
 };
 
 export type ResearchWorkerPromptInput = {
@@ -91,8 +93,8 @@ ${researchFlavorLine(input.flavor)}${previousWorkerContext(input.previousThreadI
 
 function researchIndexStep(input: ResearchWorkerPromptInput): string {
   return `Step 1 — load the strategy playbook: the ${input.strategyLabel} method (${input.strategySkill}) is provided by this \
-plugin — use \`bb skill list\` to confirm it (fetch via \`npx skills add calionauta/stelow\` only \
-if missing), then follow that playbook — not the stelow-workflow-* build skills, which do not apply here.
+plugin — \`bb stelow playbook\` names its path (fetch via \`npx skills add calionauta/stelow\` only \
+if the playbook reports it missing), then follow that playbook — none of the build stage skills apply here.
 
 Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects \
 real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. \
@@ -159,19 +161,6 @@ can open, read, and comment on each output directly from the thread. Then emit o
 needs-work / unverified (the seal resolves from the host, never from your claim).`;
 }
 
-const USER_INPUT_CONTRACT = `CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together \
-instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide \
-(interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the \
-workspace-relative file they can open.
-
-On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question.`;
 
 function researchUserContract(): string {
   return `${USER_INPUT_CONTRACT} There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked \
@@ -213,7 +202,7 @@ ${previousWorkerContext(input.previousThreadId, "artifact")}`;
 }
 
 function exploreWorkStep(input: ExploreWorkerPromptInput): string {
-  return `Step 1 — load the stage skill: ${input.stage.label} (${input.stage.skill}) is bundled with this plugin (\`bb skill list\` shows it). Load it \
+  return `Step 1 — load the stage skill: ${input.stage.label} (${input.stage.skill}) — \`bb stelow playbook\` names its exact path. Load it \
 and follow its instructions exactly.
 
 Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \

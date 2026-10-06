@@ -34,18 +34,7 @@ import { createAuditTrailStatus } from "../card-audit-trail.js";
 import { createCardDiff } from "../card-diff.js";
 import { createCardReseed } from "../card-reseed.js";
 import { recoveredCheckoutIntegrity } from "../../workspaces-recovery.js";
-import {
-  CARD_OWNER_RULES,
-  CLI_EQUIVALENTS,
-  COMMIT_STYLE,
-  DONE_PROTOCOL,
-  DRAFT_PROTOCOL,
-  INTERFACE_PICK,
-  NEVER_SEED,
-  RECON_PROTOCOL,
-  SPLIT_PROTOCOL,
-  TURN_DISCIPLINE,
-} from "../plugin-protocols.js";
+
 import type { RuntimeCore } from "../runtime-core.js";
 import type { Deferred } from "./deferred.js";
 
@@ -62,19 +51,13 @@ export type GateSurfaceDeps = {
   boundary: Deferred<AnswerBoundaryPort>;
 };
 
-/** The protocol clauses the reseed prompt quotes into a restarted card. */
-const RESEED_PROTOCOLS = {
-  cardOwnerRules: CARD_OWNER_RULES,
-  neverSeed: NEVER_SEED,
-  cliEquivalents: CLI_EQUIVALENTS,
-  reconProtocol: RECON_PROTOCOL,
-  draftProtocol: DRAFT_PROTOCOL,
-  turnDiscipline: TURN_DISCIPLINE,
-  commitStyle: COMMIT_STYLE,
-  interfacePick: INTERFACE_PICK,
-  doneProtocol: DONE_PROTOCOL,
-  splitProtocol: SPLIT_PROTOCOL,
-} as const;
+import { WORKER_PROTOCOL_CLAUSES } from "../worker-protocol-clauses.js";
+
+/** The protocol clauses the reseed prompt quotes into a restarted card.
+ *
+ * One bag, not a fourth hand-copied literal: identical clauses under a second
+ * name is what let the ask contract drift out of the spawn paths. */
+const RESEED_PROTOCOLS = WORKER_PROTOCOL_CLAUSES;
 
 export function createGateSurfaces(deps: GateSurfaceDeps) {
   const { core } = deps;

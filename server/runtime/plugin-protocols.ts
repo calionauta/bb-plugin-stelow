@@ -25,6 +25,40 @@ a workspace-level claim so sibling cards on this checkout see your files. A `BB-
 do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when \
 the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.";
 
+// The ask contract: how a worker puts a question to the person.
+//
+// This lived as a literal block pasted into five builders, which is how it
+// drifted: two of the five lost the "never write waiting text" guard and the
+// restart path — the one that runs at every band boundary — lost the timeout
+// rule. Telling a model to stop and wait is the difference between a question
+// that gets answered and a card that sits in a column looking busy, so the
+// block is one const and every spawn path renders it.
+//
+// It deliberately does not include INTERFACE_PICK: the gate discipline is its
+// own clause that callers interpolate beside this one, because the router and
+// the continue nudge quote it alone.
+//
+
+export const USER_INPUT_CONTRACT =
+  "CRITICAL — User input contract:\n" +
+  'ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":\n' +
+  "\n" +
+  '    bb stelow ask --thread "$BB_THREAD_ID" \\\n' +
+  '      --question "<a single clear question>" \\\n' +
+  '      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]\n' +
+  "\n" +
+  "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them " +
+  "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare " +
+  "artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, " +
+  "--artifact for the workspace-relative file they can open.\n" +
+  "\n" +
+  "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file " +
+  "list as the only content of a question.\n" +
+  "Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer.\n" +
+  'If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card ' +
+  "and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never " +
+  "re-ask the same question — wait for the card answer.";
+
 // Prompt clauses that every build spawn path must carry.
 export const NEVER_SEED =
   "Your workflow is already seeded in your state dir above — never run `bb stelow seed` (it is refused for card workers; seeding again orphans \
@@ -133,3 +167,52 @@ marker: never edit it, copy another workflow's state, or use a project-root stat
 into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate \
 structured questions, card state changes, lifecycle commands, or the canonical result. Delegate fresh: package the full task in the call itself \
 (brief plus every file path and fact the delegate needs) — never fork a thread, inherit history, or let siblings talk to each other.";
+
+/**
+ * The opening every build spawn path shares, byte for byte.
+ *
+ * A const rather than a literal per template, because the opening is the most
+ * valuable part of a prompt for caching: a provider reuses the longest common
+ * prefix, so an intro that differs between paths — or carries a per-card value —
+ * forfeits everything after it. Three hand-written intros is how they came to differ
+ * by a sentence, and the difference cost the cache the whole clause block behind it.
+ *
+ * It says nothing about being re-seeded: a first worker and a re-seeded one both
+ * need the same opening, and a sentence true only for one of them is the difference
+ * that breaks the prefix.
+ */
+export const WORKFLOW_INTRO =
+  "You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir, "
+  + "and the host keeps your state.md, transitions.md, and stelow.json in it.";
+
+/**
+ * The skill pointer, stated once.
+ *
+ * A pointer and not a discovery instruction: it used to name the
+ * `stelow-workflow-*` glob and tell the worker to find the skills with
+ * `bb skill list`, which is both the thing `bb stelow playbook` was built to replace
+ * (its docstring records that workers "burned whole turns on discovery") and a
+ * contradiction of the CLI_EQUIVALENTS clause that forbids that discovery. The glob
+ * is 17 skills whose entry documents total 215,756 bytes against a 12,100-character
+ * prompt, so following the older instruction loads an order of magnitude more than
+ * the prompt that asked for it.
+ */
+export const WORKFLOW_SKILLS =
+  "Read `bb stelow playbook` and load exactly the skills it names, in the order it lists them — "
+  + "it is the whole reading list for your current stage, and it already resolves the plugin's skill paths. "
+  + "Do not search for skills, do not load a stage skill you have not reached, and do not fetch anything via "
+  + "`npx skills add` unless the playbook reports a path missing. That report means a broken install: say so "
+  + "instead of working around it.";
+
+/**
+ * What to do when a Stelow command fails, stated once.
+ *
+ * This lived in three templates with three wordings — "continue the workflow" in the
+ * spawn path, "continue" in the restart path, and a third in reseed — which is the
+ * same drift shape this file already pays for elsewhere. It is a rule about the CLI,
+ * not a fact about any one path, so it belongs here where the coverage test can hold
+ * every path to the same sentence.
+ */
+export const COMMAND_FAILURE_RULE =
+  "If a `bb stelow` command fails, read its stderr once and continue — do NOT spend the turn "
+  + "debugging the CLI; report the exact error and move on.";

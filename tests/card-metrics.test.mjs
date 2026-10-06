@@ -173,14 +173,25 @@ assert.doesNotMatch(flowStrip, /p90 lead \{/, "no bare p90 readout survives in t
 assert.match(workerHistory, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
 assert.match(workerHistory, /<WorkerHistoryRow key=\{entry\.threadId\} entry=\{entry\} \/>/, "the list delegates one row per entry");
 assert.match(workerHistory, /entry\.endedAt === null \? "Current worker"/, "a live worker reads current, a replaced one names its end");
-// Whitespace-tolerant: this was `tokens total</span>`, a copy pin that broke the
-// moment the label was wrapped across lines — the behaviour was unchanged and
-// the assertion still went red. A pin on formatting is a test that trains people
-// to fear the formatter; a pin on the claim survives it.
+// The total's own claim, which now depends on what it summed. The old shape pinned
+// `<span>… tokens total</span>`, and that assertion was already softened once for
+// wrapping; it goes red now for the better reason that the line gained a provenance
+// badge. Pinning the LABEL that varies with provenance, rather than the closing tag,
+// checks the claim instead of the markup.
 assert.match(
   workerHistory,
-  /tokens total\s*<\/span>/,
+  /tokens total/,
   "the total reads as a total, not another row",
+);
+assert.match(
+  workerHistory,
+  /totalUsageProvenance\(history\)/,
+  "the summary asks the lib what kind of figure it summed, so it cannot label estimates as reported",
+);
+assert.match(
+  workerHistory,
+  /provenance === "provider" \? null :/,
+  "a figure whose provenance is anything but reported carries the (est.) badge, so the always-visible line never overstates",
 );
 
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

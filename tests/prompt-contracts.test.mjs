@@ -10,6 +10,11 @@ import { fileURLToPath } from "node:url";
 // consts, and every spawn site must reference them: a new spawn path that
 // forgets a clause fails here instead of shipping a weaker worker.
 
+const reseedSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed-prompt.ts"),
+  "utf8",
+);
+
 const cliSplit = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-split.ts"),
   "utf8",
@@ -92,8 +97,13 @@ assert.equal((serverSource.match(/const\s+RECON_PROTOCOL\s*=\s*"/g) ?? []).lengt
 // Every build spawn path references both consts. Prompt templates are
 // single giant lines, so fixed char windows either miss or bleed: bound
 // each site by the next anchor instead.
+// Anchored at the template's OPENING, not at "Step 1". The window has to cover every
+// clause the path renders, and after F2 reordered the prompt so shared clauses come
+// first, an anchor at the intent step started the window BELOW the clause block — so
+// the assertion failed while the tokens were present and correct, which is a pin
+// measuring the old layout rather than the behaviour.
 const sites = {
-  spawn: "Step 1 — verify intent first",
+  spawn: "const BUILD_INITIAL_PROMPT = `",
 };
 const ordered = Object.entries(sites).map(([site, anchor]) => {
   const at = serverSource.indexOf(anchor);
@@ -151,18 +161,27 @@ for (const clause of [
   "protocols.interfacePick",
   "protocols.doneProtocol",
   "protocols.splitProtocol",
+  "protocols.userInputContract",
 ]) {
   assert.ok(reseedPrompt.includes(clause), `the reseed template references ${clause}`);
 }
-assert.match(
-  reseedPrompt,
-  /Batch independent questions into ONE ask call/,
-  "the reseed ask contract explains why questions batch",
+// Topology, not prose, and pinned at the level that survives a reorder: the reseed
+// builder must render the shared const's text and must not carry a pasted copy. It
+// used to be pinned on `inputContractClause(...)` specifically, which broke when F2
+// inlined the clause into the canonical order — the guarantee was unchanged and the
+// pin went red, which is a pin on an implementation detail rather than on the rule.
+assert.ok(
+  /protocols\.userInputContract/.test(reseedPrompt),
+  "the reseed template renders the ask contract from the protocols it is handed, so it is the shared const rather than a copy",
 );
-assert.match(
-  reseedPrompt,
-  /ask via the form below/,
-  "the reseed ask contract keeps the structured-form requirement",
+assert.ok(
+  !reseedPrompt.includes("CRITICAL — User input contract:"),
+  "the reseed builder does not paste the ask contract",
+);
+assert.equal(
+  (reseedSource.match(/CRITICAL — User input contract:/g) ?? []).length,
+  0,
+  "and the pasted prose appears nowhere in its source",
 );
 
 // The shared CLI copy must never invite a card worker to seed: that exact
@@ -186,7 +205,10 @@ const doneSites = {
   // single giant lines, so fixed char windows either miss or bleed, and
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
-  spawn: { anchor: "Step 1 — verify intent first", end: "%REQUEST%`;" },
+  // Anchored at the template opening: F2 put the shared clauses first, so an anchor
+  // at the intent step starts the window below them and the pin reads as missing
+  // while the token is present.
+  spawn: { anchor: "const BUILD_INITIAL_PROMPT = `", end: "%REQUEST%`;" },
 };
 for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const at = serverSource.indexOf(anchor);
@@ -303,7 +325,8 @@ const splitDefs = serverSource.match(/const\s+SPLIT_PROTOCOL\s*=\s*/g) ?? [];
 assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
 const splitSites = {
-  spawn: "Step 1 — verify intent first",
+  // Same reason as doneSites above: the template opening, not the intent step.
+  spawn: "const BUILD_INITIAL_PROMPT = `",
 };
 const splitEnds = {
   spawn: "%REQUEST%`;",

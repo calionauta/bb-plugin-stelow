@@ -118,10 +118,42 @@ assert.ok(withTokens.includes("## Tokens"), "token evidence gets its own section
 assert.ok(withTokens.includes("105,000 total"), "totals render exact, never compacted");
 assert.ok(withTokens.includes("input 80,000"), "reported legs render");
 assert.ok(!withTokens.includes("cached"), "unreported legs never render as zero");
+assert.ok(
+  withTokens.includes("provenance not recorded"),
+  "a total with no recorded provenance says so rather than claiming one",
+);
+
+// The attribution follows the figure's source, because most cards now carry estimates:
+// only one of four providers reports a token total and the rest report a context-window
+// reading. A line that said "provider-reported" over a sum of estimates is the same
+// class of error as printing 0 for an unknown total.
+const measuredTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], gapTotals: null,
+  tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000, source: "provider" },
+});
+assert.ok(measuredTokens.includes("Provider-reported totals"), "a provider total is attributed to the provider");
+assert.ok(!measuredTokens.includes("estimated"), "and is not hedged with a word it does not need");
+
+const estimatedTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], gapTotals: null,
+  tokens: { input: null, output: null, cached: null, reasoning: null, total: 232021, source: "context-estimate" },
+});
+assert.ok(
+  estimatedTokens.includes("estimated from the providers"),
+  "an estimate read from a context window is labelled as one",
+);
+assert.ok(
+  !estimatedTokens.includes("Provider-reported"),
+  "and never presented as a measurement — the two are different claims about the same number",
+);
+assert.ok(estimatedTokens.includes("232,021 total"), "while the number itself still renders");
+
 const withoutTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
   files: [], missing: [], gapTotals: null,
 });
-assert.ok(withoutTokens.includes("Unknown — no provider token reports at export time."), "missing evidence reads unknown");
+assert.ok(withoutTokens.includes("Unknown — no token reports at export time."), "missing evidence reads unknown");
 
 console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");

@@ -11,16 +11,25 @@ import {
   CARD_OWNER_RULES,
   CLI_EQUIVALENTS,
   COMMIT_STYLE,
+  COMMAND_FAILURE_RULE,
   DONE_PROTOCOL,
+  WORKFLOW_INTRO,
+  WORKFLOW_SKILLS,
   DRAFT_PROTOCOL,
   INTERFACE_PICK,
   NEVER_SEED,
   RECON_PROTOCOL,
   SPLIT_PROTOCOL,
   TURN_DISCIPLINE,
+  USER_INPUT_CONTRACT,
 } from "./plugin-protocols.js";
 
 export const WORKER_PROTOCOL_CLAUSES = {
+  // The opening, first in the bag because it must be first in the prompt: a provider
+  // reuses the longest common prefix, so an intro that differs between paths forfeits
+  // everything after it.
+  workflowIntro: WORKFLOW_INTRO,
+  workflowSkills: WORKFLOW_SKILLS,
   cardOwnerRules: CARD_OWNER_RULES,
   neverSeed: NEVER_SEED,
   cliEquivalents: CLI_EQUIVALENTS,
@@ -31,6 +40,8 @@ export const WORKER_PROTOCOL_CLAUSES = {
   interfacePick: INTERFACE_PICK,
   doneProtocol: DONE_PROTOCOL,
   splitProtocol: SPLIT_PROTOCOL,
+  userInputContract: USER_INPUT_CONTRACT,
+  commandFailureRule: COMMAND_FAILURE_RULE,
 } as const;
 
 export type WorkerProtocolClauses = typeof WORKER_PROTOCOL_CLAUSES;

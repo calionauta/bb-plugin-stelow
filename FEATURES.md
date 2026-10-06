@@ -2884,3 +2884,434 @@ that lies about working, a budget spent on turns that never started, and a
 notification asking a person to fix something the system is already fixing.
 When the host names a wait, read it (`threads.queuedMessages.list`), project
 it, and offer no action.
+
+**One thing the cache measurement exposed and did not fix: the skill pointer is a
+glob.** Every build path tells the worker to load `stelow-workflow-*` — seventeen
+skills whose entry documents total 215,756 bytes (~54k tokens) if a worker takes
+the instruction literally, against a 12,100-character prompt it was just handed.
+The prompt is not the expensive part of a spawn; the eager-load instruction is, by
+an order of magnitude. The pointer is left as it is because narrowing it changes
+which methodology a worker sees, and that is a workflow-authoring decision rather
+than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
+
+**The run bundle's token evidence reads both families, and states which kind of figure
+it is printing.** The bundle writer asked only for `thread/tokenUsage/updated`, so on a
+card whose workers are ACP-backed it wrote "Unknown — no token reports at export time"
+while a context-window reading was available — the same blind spot the panel had. It now
+reads both families, one query each, and the manifest's wording follows the figure: a
+provider total says "provider-reported", a context reading says "estimated from the
+providers' context-window readings", and a figure with no recorded provenance says so
+rather than claiming one. A sum of measurements and estimates is not itself a
+measurement, so the total carries the weakest provenance among its parts — which is the
+same rule as printing no total rather than a zero for unknown.
+
+**A rule that was drifting across three templates is now one clause, and a clause
+that renders the word `undefined` fails a test.** The command-failure rule — read a
+`bb stelow` command's stderr once and continue rather than spending the turn debugging
+the CLI — lived in three templates with three wordings: "continue the workflow" in the
+spawn path, "continue" in the restart path, and a third in the reseed path. That is the
+drift shape this work started from, caught mid-divergence rather than after a worker
+was spawned with the weaker version. It is now `COMMAND_FAILURE_RULE` in the bag, so
+every build path renders the same sentence.
+
+Moving it exposed a failure mode nothing was watching for: a clause wired from a value
+the fixture does not carry renders the literal word `undefined` in the clause's place,
+and the prompt still reads as a prompt — the worker is told "undefined" and nothing
+fails. `tests/prompt-path-contract.test.mjs` now rejects any path whose rendered prompt
+contains `undefined` or `null`, which is the subtler sibling of the empty-render check
+it already had: an empty string leaves a blank line nobody notices, and `undefined`
+leaves a word that looks like content. Cross-card cacheable prefix improved to
+90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
+characters.
+
+**Two failure causes stopped being advised as if answering would fix them.** A provider
+rate limit and an unowned card both closed their error note with "Answering below resumes
+the worker", which is false for both: nothing is pending, and the reader was pointed at a
+box whose answer goes nowhere. The unowned case already had `isOwnershipRefusal`; a rate
+limit now has `isRateLimitFailure`, matched on the provider's **status code** rather than
+the word "limit" — a card's own exploration limit and a file-claim limit both contain that
+word, and telling a reader to switch providers for one of those is the wrong door. The
+advice names the action that clears it (switch this card's provider or model, or wait the
+window the provider stated) and warns that retrying now re-hits the same limit.
+
+**A result crossing the RPC wire no longer carries a key holding `undefined`.** The board
+failed with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board
+whose stored defaults predate red-first, because `resolveKnobInput` returns `undefined`
+for "absent, derive me downstream" by contract and the handler echoed that straight into
+its result. `JSON.stringify` would have dropped the key, but the host validates the object
+before serialising, so it refused the whole call. Fixed at the three call sites that built
+such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
+reintroduce it.
+
+**A worker's orientation cost is measured and shown, not assumed.** A worker's first
+turn is the most expensive and least informed: it has just been handed a
+12,000-character prompt naming its stage, and the skill family it used to be told to
+read is seventeen skills whose entry documents total 215,756 bytes (~54k tokens)
+against that prompt. Nothing stopped it reading them before doing anything. It is
+observable now because a skill load is a `toolCall` item whose arguments name a
+`SKILL.md`, so `lib/first-turn-contract.mjs` derives the verdict from what the worker
+DID: reads before the first `bb stelow advance` are orientation spent before work,
+reads after it are the legitimate case, and reading the repository never counts.
+Violations are reported on the card and never blocked — the plugin cannot stop a tool
+call in flight, and a rule enforced by refusing work is a deadlock with a good error
+message. Measured on this checkout: exactly one skill read across ten workers, which
+is why this is a report rather than a gate.
+
+**A prompt's own prefix is now shared between cards, and the provider serves it from
+cache — measured on live workers, not on fixtures.** Provider caching is prefix matching,
+so the reusable region ends at the first byte that differs, and the state dir sat at
+character ~106 ahead of the entire 10 KB clause block every build path renders
+identically. All three build paths now open with the same `WORKFLOW_INTRO`, state the
+shared clauses in one canonical order, and put every per-card value (state dir, intent,
+knobs, request) last.
+
+Validated end to end. A worker spawned through the RPC carried the reordered prompt: the
+intro at character 0, the clause block ending at 10,896, the first per-card value at
+10,994 — **90.5% of the 12,332-character prompt is a prefix two cards share**, against
+1.3% with the state dir first, so the reorder multiplies the reusable region by 70x. The
+provider confirms it: three live workers on the `pi` provider each reported a first
+snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,470 /
+50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
+threads the cache read 60,386,501 tokens against 54,840,152 fresh.
+
+Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
+workers run on) emit no usage event of any kind — 88 events on one such worker, none of
+them a token or context reading — so their cost is unmeasurable from the host and the
+history row shows a dash rather than a number. And the reusable region includes the
+harness's own system prompt and tool definitions, which are shared across every thread
+regardless of this change; what the reorder does is put the stelow prompt's own prefix
+inside that region instead of leaving it behind a per-card value.
+
+`tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
+pair, so a per-card value drifting back into the prefix fails rather than printing a
+smaller number nobody reads.
+
+**The prompt-duplication metric was measuring the bag doing its job, and it is
+replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
+five spawn paths, and block by block 21,883 of them — 39 of 44 blocks — came from
+the shared clause consts that the bag exists to render into every path that owes
+them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number was
+largest exactly where the architecture was working, and an optimization loop given
+it would have earned the reduction by deleting protocols from the paths that need
+them, fighting every guard added in this session. `composedDuplicationChars`
+subtracts the clauses first and counts only prose a template authored itself: 2,705
+characters, 15.7% of the 17,180 the templates write, against a naive 41.6% of all
+rendered text. The naive figure is still reported, labelled `_naive`, because the
+gap between them is the fact worth keeping.
+
+**One planned optimization was refuted by reading the text it proposed to
+delete.** A detector was written for "a clause rendered into a path that cannot act
+on it" and it accused 5,786 characters: `doneProtocol` and `draftProtocol` in the
+research and explore paths. Reading the clause showed the opposite — `DONE_PROTOCOL`
+routes by card kind in its own prose ("Build cards complete only at the `audit`
+stage; research/explore cards complete only after `bb stelow verify` passes"), so the
+text the detector called irrelevant was a rule written specifically for those paths,
+and deleting it would have removed the completion rule from every research card. The
+lesson is recorded with the finding: applicability needs the text read, not a marker
+matched.
+
+**An adversarial review of that fix found two holes it had left, and both are
+closed.** The first: a single request for both usage families with a small limit is
+not equivalent to asking per family, because the families interleave — on 2 of the
+148 threads that report both, the newest two events are both context readings, so a
+two-event page discarded a real provider total (1,125,141) in favour of an estimate
+(329,821). Each family is now asked for on its own, so its newest event is
+guaranteed rather than probable. The second: the collapsed summary summed every
+worker — nine of the ten real ones being estimates — and still called the result
+"provider-reported tokens across all workers", which on that fleet is 2,490,239 of
+which 81% is estimated. `totalUsageProvenance` in `lib/token-usage.mjs` now reports
+what the sum is made of, unattributed figures count as estimates rather than being
+assumed reported, and the always-visible summary line carries an `(est.)` badge and
+a tooltip that matches what it actually summed.
+
+The review also proved two of the new assertions worthless, and they are fixed
+rather than kept: the "measurement wins" fixture used the SAME number in both
+families, so a mutation returning the estimate while labelling it `provider` stayed
+green — the two values are now distinct, so the assertion discriminates between the
+label and the value. And the reader's family list had no assertion at all, so
+reverting it to the token family alone — the exact bug — passed every suite; a
+topology pin now requires both families, counted per call site, because a
+"found anywhere" check is satisfied by a different reader's call.
+
+**A refused retry says so on the card, and every card can have a token budget.**
+The auto-retry declined to retry five real runs and recorded none of them: each
+reached `attemptAutoRetry`'s stage guard with the card already advanced past the
+failed stage (`scope` → `audit`), and the guard was a bare `return idle`, so
+`auto_retry_count` read 0 on all 54 rows — indistinguishable, from outside, from
+"no retry was ever applicable". That is the phantom wait the project's rules
+forbid, and the reason it was invisible is that the rule lived in three separate
+`if` statements instead of one function. It lives in `lib/retry-decision.mjs` now:
+one decision, every refusal naming a reason and an exit, recorded on the card as an
+openable trail comment. Only a refusal that leaves a person a decision pages them —
+a card that moved on resolves itself and must not become inbox noise. A card that
+failed for a reason outside this path is not re-recorded here, because the caller
+already wrote that line and one fact belongs in one place.
+
+**A card has no spend ceiling, and that is now stated as the open gap it is.** Measured:
+87,296 to 477,684 tokens per worker thread on this checkout, with nothing anywhere
+comparing that to a limit. A budget module was written and tested — two thresholds, an
+80% warning that records without blocking and a 100% stop that asks a structured
+question with both numbers and three named paths — and then **removed**, because nothing
+called it: no UI set a limit, no column stored one, and no pass checked one. A tested
+module with no consumer is worse than no module, because it reads as a shipped feature.
+The rule it encoded is worth building later, deliberately: a limit nobody chose is worse
+than no limit, an unreadable spend is unlimited for a different reason than an unset one,
+and a budget of zero or less must be unset rather than an instant stop.
+
+**The run bundle's token evidence reads both families, and states which kind of figure
+it is printing.** The bundle writer asked only for `thread/tokenUsage/updated`, so on a
+card whose workers are ACP-backed it wrote "Unknown — no token reports at export time"
+while a context-window reading was available — the same blind spot the panel had. It now
+reads both families, one query each, and the manifest's wording follows the figure: a
+provider total says "provider-reported", a context reading says "estimated from the
+providers' context-window readings", and a figure with no recorded provenance says so
+rather than claiming one. A sum of measurements and estimates is not itself a
+measurement, so the total carries the weakest provenance among its parts — which is the
+same rule as printing no total rather than a zero for unknown.
+
+**A rule that was drifting across three templates is now one clause, and a clause
+that renders the word `undefined` fails a test.** The command-failure rule — read a
+`bb stelow` command's stderr once and continue rather than spending the turn debugging
+the CLI — lived in three templates with three wordings: "continue the workflow" in the
+spawn path, "continue" in the restart path, and a third in the reseed path. That is the
+drift shape this work started from, caught mid-divergence rather than after a worker
+was spawned with the weaker version. It is now `COMMAND_FAILURE_RULE` in the bag, so
+every build path renders the same sentence.
+
+Moving it exposed a failure mode nothing was watching for: a clause wired from a value
+the fixture does not carry renders the literal word `undefined` in the clause's place,
+and the prompt still reads as a prompt — the worker is told "undefined" and nothing
+fails. `tests/prompt-path-contract.test.mjs` now rejects any path whose rendered prompt
+contains `undefined` or `null`, which is the subtler sibling of the empty-render check
+it already had: an empty string leaves a blank line nobody notices, and `undefined`
+leaves a word that looks like content. Cross-card cacheable prefix improved to
+90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
+characters.
+
+**Two failure causes stopped being advised as if answering would fix them.** A provider
+rate limit and an unowned card both closed their error note with "Answering below resumes
+the worker", which is false for both: nothing is pending, and the reader was pointed at a
+box whose answer goes nowhere. The unowned case already had `isOwnershipRefusal`; a rate
+limit now has `isRateLimitFailure`, matched on the provider's **status code** rather than
+the word "limit" — a card's own exploration limit and a file-claim limit both contain that
+word, and telling a reader to switch providers for one of those is the wrong door. The
+advice names the action that clears it (switch this card's provider or model, or wait the
+window the provider stated) and warns that retrying now re-hits the same limit.
+
+**A result crossing the RPC wire no longer carries a key holding `undefined`.** The board
+failed with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board
+whose stored defaults predate red-first, because `resolveKnobInput` returns `undefined`
+for "absent, derive me downstream" by contract and the handler echoed that straight into
+its result. `JSON.stringify` would have dropped the key, but the host validates the object
+before serialising, so it refused the whole call. Fixed at the three call sites that built
+such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
+reintroduce it.
+
+**A worker's orientation cost is measured and shown, not assumed.** A worker's first
+turn is the most expensive and least informed: it has just been handed a
+12,000-character prompt naming its stage, and the skill family it used to be told to
+read is seventeen skills whose entry documents total 215,756 bytes (~54k tokens)
+against that prompt. Nothing stopped it reading them before doing anything. It is
+observable now because a skill load is a `toolCall` item whose arguments name a
+`SKILL.md`, so `lib/first-turn-contract.mjs` derives the verdict from what the worker
+DID: reads before the first `bb stelow advance` are orientation spent before work,
+reads after it are the legitimate case, and reading the repository never counts.
+Violations are reported on the card and never blocked — the plugin cannot stop a tool
+call in flight, and a rule enforced by refusing work is a deadlock with a good error
+message. Measured on this checkout: exactly one skill read across ten workers, which
+is why this is a report rather than a gate.
+
+**A prompt's own prefix is now shared between cards, and the provider serves it from
+cache — measured on live workers, not on fixtures.** Provider caching is prefix matching,
+so the reusable region ends at the first byte that differs, and the state dir sat at
+character ~106 ahead of the entire 10 KB clause block every build path renders
+identically. All three build paths now open with the same `WORKFLOW_INTRO`, state the
+shared clauses in one canonical order, and put every per-card value (state dir, intent,
+knobs, request) last.
+
+Validated end to end. A worker spawned through the RPC carried the reordered prompt: the
+intro at character 0, the clause block ending at 10,896, the first per-card value at
+10,994 — **90.5% of the 12,332-character prompt is a prefix two cards share**, against
+1.3% with the state dir first, so the reorder multiplies the reusable region by 70x. The
+provider confirms it: three live workers on the `pi` provider each reported a first
+snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,470 /
+50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
+threads the cache read 60,386,501 tokens against 54,840,152 fresh.
+
+Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
+workers run on) emit no usage event of any kind — 88 events on one such worker, none of
+them a token or context reading — so their cost is unmeasurable from the host and the
+history row shows a dash rather than a number. And the reusable region includes the
+harness's own system prompt and tool definitions, which are shared across every thread
+regardless of this change; what the reorder does is put the stelow prompt's own prefix
+inside that region instead of leaving it behind a per-card value.
+
+`tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
+pair, so a per-card value drifting back into the prefix fails rather than printing a
+smaller number nobody reads.
+
+**The prompt-duplication metric was measuring the bag doing its job, and it is
+replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
+five spawn paths, and block by block 21,883 of them — 39 of 44 blocks — came from
+the shared clause consts that the bag exists to render into every path that owes
+them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number was
+largest exactly where the architecture was working, and an optimization loop given
+it would have earned the reduction by deleting protocols from the paths that need
+them, fighting every guard added in this session. `composedDuplicationChars`
+subtracts the clauses first and counts only prose a template authored itself: 2,705
+characters, 15.7% of the 17,180 the templates write, against a naive 41.6% of all
+rendered text. The naive figure is still reported, labelled `_naive`, because the
+gap between them is the fact worth keeping.
+
+**One planned optimization was refuted by reading the text it proposed to
+delete.** A detector was written for "a clause rendered into a path that cannot act
+on it" and it accused 5,786 characters: `doneProtocol` and `draftProtocol` in the
+research and explore paths. Reading the clause showed the opposite — `DONE_PROTOCOL`
+routes by card kind in its own prose ("Build cards complete only at the `audit`
+stage; research/explore cards complete only after `bb stelow verify` passes"), so the
+text the detector called irrelevant was a rule written specifically for those paths,
+and deleting it would have removed the completion rule from every research card. The
+lesson is recorded with the finding: applicability needs the text read, not a marker
+matched.
+
+**An adversarial review of that fix found two holes it had left, and both are
+closed.** The first: a single request for both usage families with a small limit is
+not equivalent to asking per family, because the families interleave — on 2 of the
+148 threads that report both, the newest two events are both context readings, so a
+two-event page discarded a real provider total (1,125,141) in favour of an estimate
+(329,821). Each family is now asked for on its own, so its newest event is
+guaranteed rather than probable. The second: the collapsed summary summed every
+worker — nine of the ten real ones being estimates — and still called the result
+"provider-reported tokens across all workers", which on that fleet is 2,490,239 of
+which 81% is estimated. `totalUsageProvenance` in `lib/token-usage.mjs` now reports
+what the sum is made of, unattributed figures count as estimates rather than being
+assumed reported, and the always-visible summary line carries an `(est.)` badge and
+a tooltip that matches what it actually summed.
+
+The review also proved two of the new assertions worthless, and they are fixed
+rather than kept: the "measurement wins" fixture used the SAME number in both
+families, so a mutation returning the estimate while labelling it `provider` stayed
+green — the two values are now distinct, so the assertion discriminates between the
+label and the value. And the reader's family list had no assertion at all, so
+reverting it to the token family alone — the exact bug — passed every suite; a
+topology pin now requires both families, counted per call site, because a
+"found anywhere" check is satisfied by a different reader's call.
+
+**A refused retry says so on the card, and every card can have a token budget.**
+The auto-retry declined to retry five real runs and recorded none of them: each
+reached `attemptAutoRetry`'s stage guard with the card already advanced past the
+failed stage (`scope` → `audit`), and the guard was a bare `return idle`, so
+`auto_retry_count` read 0 on all 54 rows — indistinguishable, from outside, from
+"no retry was ever applicable". That is the phantom wait the project's rules
+forbid, and the reason it was invisible is that the rule lived in three separate
+`if` statements instead of one function. It lives in `lib/retry-decision.mjs` now:
+one decision, every refusal naming a reason and an exit, recorded on the card as an
+openable trail comment. Only a refusal that leaves a person a decision pages them —
+a card that moved on resolves itself and must not become inbox noise. A card that
+failed for a reason outside this path is not re-recorded here, because the caller
+already wrote that line and one fact belongs in one place.
+
+**Budget.** No card had a spend ceiling at all, against a measured cost of 87,296 to
+477,684 tokens per worker thread on this checkout. `lib/card-budget.mjs` adds two
+thresholds and two different movements: at 80% of a budget the card keeps working
+and leaves a trail line, and at 100% it stops and asks a structured question
+carrying both numbers and three named paths (raise the ceiling, continue unchanged,
+or stop the card here — stating explicitly that nothing is deleted). A limit nobody
+chose is worse than no limit, so no budget is the default and stays unlimited; a
+spend that cannot be READ is also unlimited, but reports a different reason, because
+"this card has no budget" and "this card's spend could not be read" are different
+facts and an unreadable figure is unknown rather than zero. A budget of zero or less
+is treated as unset rather than as an instant stop, so a bad config cannot brick
+every card.
+
+**A worker's token figure is shown for nearly every worker now, and it says whether
+it is a measurement or an estimate.** The plugin read exactly one event family,
+`thread/tokenUsage/updated`, and asked only for that one. Measured on the live
+database: 837 threads emit `thread/contextWindowUsage/updated` against 148 that emit
+a token total, and all ten of this plugin's worker threads emit a context reading
+while exactly ONE emits a reported total — because the providers that send only a
+context reading are the ACP ones, which most cards run on. So the history row showed
+nothing for eight of ten workers, and the one figure it did show was labelled
+"provider-reported tokens" in a line that could not tell the two apart. Both families
+are now read, `usageFromEvents` returns the reported total when it exists and labels
+the context-window reading as an estimate when it does not, and the label travels
+through the history entry and the RPC contract to the row, which prints
+`tokens (est.)` for an estimate and says so in its tooltip. The provenance field is
+declared in the zod contract deliberately: an undeclared key is stripped at the
+boundary, which is how the value crossed three files and vanished. Measured effect
+on the ten real workers: **1 of 10 reporting → 10 of 10**, nine of them estimates.
+
+**Every prompt resolves its reading list from `bb stelow playbook`, instead of
+naming a family of skills to go and find.** All six spawn paths used to tell the
+worker to load `stelow-workflow-*` — seventeen skills — while the `CLI_EQUIVALENTS`
+clause rendered into the very same prompt said *"run `bb stelow playbook` first ...
+never discover them with `bb skill list | awk` pipelines."* Two instructions, one
+prompt, opposite orders. The glob is worse than redundant: the family's entry
+documents total 215,756 bytes (~54k tokens) against the 12,100-character prompt
+that asked for them, so a worker following the older instruction loads an order of
+magnitude more than the prompt it was handed. `bb stelow playbook` was built to
+replace exactly that discovery — its own docstring records that workers "burned
+whole turns on discovery" — so the templates now point at it and name no skills.
+`tests/spawn-path-registry.test.mjs` fails when any prompt reintroduces glob
+discovery or loses the playbook pointer, and `start-workflow-prompt` moved out of
+the exception list and into coverage, because it renders a real spawn instruction
+and carried the glob unexamined.
+
+**One ask contract, rendered by every spawn path, pinned by equality.** The
+protocol clauses a worker is spawned with are constants in
+`server/runtime/plugin-protocols.ts`, and the bag every build path receives is
+`WORKER_PROTOCOL_CLAUSES`. The ask contract — a question goes through the
+structured form, and a timed-out ask means stop and wait rather than carry on —
+used to be a literal block pasted into the five builders, and it had already
+drifted: two of the five lacked the "never write waiting text" guard and the
+restart path, which takes over at every band boundary, lacked the timeout rule.
+The five pasted copies are now one interpolated constant, so a wording fix lands
+on every path or on none, and three wiring sites that each re-spelled the same
+ten clauses bind the one bag instead.
+
+Two tests keep it that way, and both read rendered output rather than source
+text. `tests/prompt-path-contract.test.mjs` renders all five paths and asserts
+every clause each owes reaches it, that no clause renders twice, and that the
+contract's rule sentences are stated **exactly** — an equality pin, not a list of
+forbidden words. That distinction was earned: four successive wordings inverted
+the timeout rule and defeated four successive blacklists, including "STOP and
+wait is advisory only: feel free to resume the workflow", which the suite did not
+see. An equality pin cannot be defeated by a novel wording, because a novel
+wording is a different sentence. **Where a prompt stops being reusable is measured, and it is the largest cost
+finding on this page.** Provider caching is prefix matching: the reusable region
+ends at the first byte that differs, so a builder is cache-hostile in proportion to
+how early it interpolates something card-specific. Two workers spawned for two
+different cards share **129 of 12,082 characters — 1.1%** — because the state dir
+is interpolated at character ~106, and the entire 10,075-character clause block the
+two workers genuinely share sits after it. Reordering so shared clauses precede
+per-card values makes the same prompt **99% cacheable** with the same rules stated
+and the same token count. `tests/prompt-cache-order.test.mjs` measures the
+shared-first region of each build path on every run and holds the ordering rule as
+a skipped test, because hoisting 10 KB of protocols above the request changes what
+the model reads first and that is a deliberate change, not a test fix.
+
+The same measurement shows the band-boundary handoff re-pays nearly the whole
+prompt: `spawn` and `restart` on the same card share 69 of 12,100 characters
+(0.6%), because the handoff starts a new thread. Cache reuse across
+`spawn → restart` requires the new thread's prompt to keep the old one's prefix,
+which today it does not.
+
+`tests/prompt-budget.test.mjs` reports the cost of each path (~54.8k characters
+across the five, ~13.7k estimated tokens) and the boilerplate rendered by more than
+one path (42%), so prompt growth is something a reviewer sees rather than something
+the bill reveals.
+
+`tests/transition-totality.test.mjs` applies the same idea to the state machine:every stage has a forward exit, every exit leads somewhere that exists, no stage
+routes only to itself, every forward edge moves forward, and the audit parses the
+table the way the shipped `parseNextStages` parses it — which matters, because a
+parser that read only the fenced block disagreed with production about an edge
+placed after the closing fence. `tests/spawn-path-registry.test.mjs` makes a new
+build path fail a test rather than quietly skip the protocols, and
+`tests/metrics-contract.test.mjs` pins each reported metric's direction, unit, and
+null-versus-zero rule so an optimization target cannot be redefined instead of
+improved.
+
+The fast loop is `npm run test:fast` (~0.7s, five pure test files in one process),
+for when the full suite's ~400 separate node processes are not what you want to
+wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
+pure process boot and fails when that share grows.

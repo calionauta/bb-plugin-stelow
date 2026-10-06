@@ -1,3 +1,4 @@
+import { WORKFLOW_INTRO, WORKFLOW_SKILLS } from "./plugin-protocols.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
   ExploreWorkerPromptInput,
@@ -12,9 +13,11 @@ type Protocols = {
   draftProtocol: string;
   turnDiscipline: string;
   commitStyle: string;
+  commandFailureRule: string;
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
+  userInputContract: string;
 };
 type Params = {
   instructions: string;
@@ -89,41 +92,55 @@ function stateDirText(seed: Seed): string {
 
 function buildWorkflowPrompt(input: PromptInput): string {
   const protocols = input.protocols;
+  // Intro, then the shared clauses, then the per-card values — the order that lets a
+  // provider reuse this opening when the next worker runs on a different card. The
+  // state dir used to sit in the third sentence, which put a per-card path inside the
+  // prefix and made everything after it uncacheable. The intro itself is
+  // WORKFLOW_INTRO, the same const the restart path opens with, so the two are byte
+  // identical rather than equal by inspection.
   const intro = [
-    "You are running a Stelow workflow inside the bb-plugin-stelow panel.",
-    "The host re-seeded your per-workflow state, transitions.md, and stelow.json.",
-    `Your workflow owns its own state dir (${stateDirText(input.seed)}) — its state.md holds name, intent, current_stage, status.`,
+    WORKFLOW_INTRO,
     protocols.cardOwnerRules,
     workflowSkillsClause(),
-    `Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${protocols.neverSeed}`,
+    protocols.neverSeed,
     "Preserve every gate (product, interface, tech plan, diff).",
     protocols.cliEquivalents,
     protocols.reconProtocol,
     protocols.draftProtocol,
-  ].join(" ");
-  const work = [
+  ].join("\n\n");
+  // The remaining clauses continue the same canonical order the intro began, so the
+  // shared run is not interrupted by a per-card value. `interfacePick` and
+  // `userInputContract` are rendered through the same clause helper the spawn path
+  // uses, in the same position, because a helper that reorders them per path is the
+  // same divergence one level down.
+  const clauses = [
     protocols.turnDiscipline,
     protocols.commitStyle,
-    `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
-    workOrderClause(),
-    inputContractClause(protocols.interfacePick),
+    protocols.interfacePick,
+    protocols.userInputContract,
+    protocols.commandFailureRule,
     protocols.doneProtocol,
     protocols.splitProtocol,
+  ].join("\n\n");
+  // Everything below differs per card, so it comes last: the cacheable region is
+  // everything before this point.
+  const card = [
+    `This worker was re-seeded. Your state dir is (${stateDirText(input.seed)}) — its state.md holds name, intent, `
+      + `current_stage, status. Use \`bb stelow advance <stage>\` to change stages `
+      + "(do NOT hand-edit current_stage).",
+    `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
+    workOrderClause(),
     presetInstructions(input.params.instructions),
     `Request:\n${input.card.prompt}`,
   ].join("\n\n");
-  return `${intro}\n\n${work}`;
+  return `${intro}\n\n${clauses}\n\n${card}`;
 }
 
 function workflowSkillsClause(): string {
-  return [
-    "The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, " +
-      "stelow-workflow-*) are provided by this plugin — start by loading them " +
-      "(they live under the plugin's skills directory; `bb skill list` shows them).",
-    "The product strategy playbooks (stelow-product-*) are also provided by this " +
-      "plugin — check `bb skill list` first, and only fetch via " +
-      "`npx skills add calionauta/stelow` if one is missing.",
-  ].join(" ");
+  // The shared const, not a second wording of the same rule: F1 gave each path its
+  // own phrasing of the skill pointer, which is the drift shape this file exists to
+  // avoid, and it cost the cache too (the two texts diverged at character 1,015).
+  return WORKFLOW_SKILLS;
 }
 
 function intentClause(intent: string): string {
@@ -139,39 +156,9 @@ function intentClause(intent: string): string {
 function workOrderClause(): string {
   return [
     "Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work.",
-    "If a `bb stelow` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.",
   ].join(" ");
 }
 
-function inputContractClause(interfacePick: string): string {
-  return [
-    "CRITICAL — User input contract:",
-    "ANY time you need user input, you MUST call the structured form:",
-    "",
-    "    bb stelow ask --thread \"$BB_THREAD_ID\" \\",
-    "      --question \"<a single clear question>\" \\",
-    "      --option \"<label 1>\" --option \"<label 2>\" [--option \"<label 3>\" ...] [--multiple]",
-    "",
-    "Batch independent questions into ONE ask call by repeating --question groups " +
-      "(each with its own --option labels). Ask dependent questions (where Q2 " +
-      "needs Q1's answer) one at a time.",
-    "When the human must compare artifacts to decide (interface picks, plan reviews), " +
-      "attach each option's evidence: --desc for trade-offs, --preview for the " +
-      "inline glance, --artifact for the workspace-relative file they can open.",
-    "",
-    "Before asking a question, first summarize what you read (files, plan, codebase) " +
-      "so the user can answer with context — never dump a raw file list as the only " +
-      "content of a question. Do not skip the triage stage.",
-    "Each bb stelow ask call blocks until the user submits; the card stays in its " +
-      "column and signals it is waiting for an answer.",
-    "If an ask returns \"No response after Ns\" (timeout), STOP and wait: do NOT " +
-      "proceed with the workflow. The question stays pending on the card and remains " +
-      "answerable; when the user answers it on the card, the answer is delivered to " +
-      "you as a message and you continue from there. Never re-ask the same question " +
-      "— wait for the card answer.",
-    interfacePick,
-  ].join("\n");
-}
 
 function presetInstructions(instructions?: string): string {
   return instructions ? `Preset instructions:\n${instructions}\n` : "";
