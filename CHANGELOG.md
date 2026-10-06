@@ -14,6 +14,11 @@ and this project adheres to a single-version-per-release tag format
 * the phone board is a second layout, not a narrower first one ([b6226fd](https://github.com/calionauta/bb-plugin-stelow/commit/b6226fd548c24327adcd76933a74dfd64b5bb72c))
 
 
+### Breaking Changes
+
+* **A card is no longer moved by hand.** Dragging a card between columns and clicking a stage chip to change stage are both gone — the workflow is the agent's to drive, and a person asks it in the conversation instead. The board reads as a status report rather than a manual tool.
+* **A card's delete-all moved into its column header.** It used to sit in the flow between the header and the cards, which pushed the Archived column's cards out of line with every other column.
+
 ### Bug Fixes
 
 * a disclosure chevron rotates from state, not from a CSS variant that froze ([9adee91](https://github.com/calionauta/bb-plugin-stelow/commit/9adee9112086095ca38e819aa00707ba81d8af97))
