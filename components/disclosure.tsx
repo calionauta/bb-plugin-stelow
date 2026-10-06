@@ -108,10 +108,25 @@ export function DetailsDisclosure({ summary, children }: { summary: string; chil
 // tech; this mirrors it visually for sighted, low-vision, and lay users.
 export function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
+  // Tracked in state, not left to the `group-open:` variant, and that is a bug fix
+  // rather than a preference. The chevron below was rendered WITHOUT `open`, so its
+  // rotation depended on CSS — and this file's own note records what that cost the last
+  // time it was tried: "never CSS group-open hope, which froze arrows in place before".
+  // `DetailsDisclosure`, eight lines up, has always done it this way.
+  //
+  // 23 callers render this section and only 3 pass `open`, so the other 20 all relied on
+  // the variant. Reported from the live card as "the Machine receipts toggle is not
+  // correct — it needs to rotate when clicked".
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const isOpen = controlled ? open : uncontrolledOpen;
   return (
     <details
-      open={controlled ? open : defaultOpen}
-      onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
+      open={isOpen}
+      onToggle={(event) => {
+        const next = (event.currentTarget as HTMLDetailsElement).open;
+        if (!controlled) setUncontrolledOpen(next);
+        onToggle?.(next);
+      }}
       className={`group ${SECTION_SURFACE}`}
     >
       <summary className={cn(
@@ -119,7 +134,7 @@ export function DisclosureSection({ title, subtitle, hint, action, children, def
         "text-sm font-medium",
         subtitle ? "min-h-12" : "min-h-11",
       )}>
-        <DisclosureChevron className="mr-1.5" />
+        <DisclosureChevron className="mr-1.5" open={isOpen} />
         {/* A subtitle is how a section names its job; the Workflow map uses the
             same two-line shape, so the pair reads as one family. */}
         {subtitle ? (

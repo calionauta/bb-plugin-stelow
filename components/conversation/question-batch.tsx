@@ -67,8 +67,11 @@ function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) 
             : `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed.`}
         {" "}Check the linked document before answering if your choice depends on it.
       </p>
+      {/* `group` is load-bearing: the chevron rotates from the `group-open:` variant when
+          it is not given an explicit `open`, so a <details> without it renders a
+          disclosure whose arrow never moves. This one was missing it. */}
       {paths.length > 0 ? (
-        <details className="mt-1">
+        <details className="group mt-1">
           <summary className={SUMMARY_LINK}>
             <DisclosureChevron />
             {paths.length} file{paths.length === 1 ? "" : "s"} touched
