@@ -12,6 +12,8 @@ import {
   CLI_EQUIVALENTS,
   COMMIT_STYLE,
   DONE_PROTOCOL,
+  WORKFLOW_INTRO,
+  WORKFLOW_SKILLS,
   DRAFT_PROTOCOL,
   INTERFACE_PICK,
   NEVER_SEED,
@@ -22,6 +24,11 @@ import {
 } from "./plugin-protocols.js";
 
 export const WORKER_PROTOCOL_CLAUSES = {
+  // The opening, first in the bag because it must be first in the prompt: a provider
+  // reuses the longest common prefix, so an intro that differs between paths forfeits
+  // everything after it.
+  workflowIntro: WORKFLOW_INTRO,
+  workflowSkills: WORKFLOW_SKILLS,
   cardOwnerRules: CARD_OWNER_RULES,
   neverSeed: NEVER_SEED,
   cliEquivalents: CLI_EQUIVALENTS,

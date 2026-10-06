@@ -1,3 +1,4 @@
+import { WORKFLOW_INTRO, WORKFLOW_SKILLS } from "./plugin-protocols.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
   ExploreWorkerPromptInput,
@@ -90,39 +91,53 @@ function stateDirText(seed: Seed): string {
 
 function buildWorkflowPrompt(input: PromptInput): string {
   const protocols = input.protocols;
+  // Intro, then the shared clauses, then the per-card values — the order that lets a
+  // provider reuse this opening when the next worker runs on a different card. The
+  // state dir used to sit in the third sentence, which put a per-card path inside the
+  // prefix and made everything after it uncacheable. The intro itself is
+  // WORKFLOW_INTRO, the same const the restart path opens with, so the two are byte
+  // identical rather than equal by inspection.
   const intro = [
-    "You are running a Stelow workflow inside the bb-plugin-stelow panel.",
-    "The host re-seeded your per-workflow state, transitions.md, and stelow.json.",
-    `Your workflow owns its own state dir (${stateDirText(input.seed)}) — its state.md holds name, intent, current_stage, status.`,
+    WORKFLOW_INTRO,
     protocols.cardOwnerRules,
     workflowSkillsClause(),
-    `Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${protocols.neverSeed}`,
+    protocols.neverSeed,
     "Preserve every gate (product, interface, tech plan, diff).",
     protocols.cliEquivalents,
     protocols.reconProtocol,
     protocols.draftProtocol,
-  ].join(" ");
-  const work = [
+  ].join("\n\n");
+  // The remaining clauses continue the same canonical order the intro began, so the
+  // shared run is not interrupted by a per-card value. `interfacePick` and
+  // `userInputContract` are rendered through the same clause helper the spawn path
+  // uses, in the same position, because a helper that reorders them per path is the
+  // same divergence one level down.
+  const clauses = [
     protocols.turnDiscipline,
     protocols.commitStyle,
-    `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
-    workOrderClause(),
-    inputContractClause(protocols.interfacePick, protocols.userInputContract),
+    protocols.interfacePick,
+    protocols.userInputContract,
     protocols.doneProtocol,
     protocols.splitProtocol,
+  ].join("\n\n");
+  // Everything below differs per card, so it comes last: the cacheable region is
+  // everything before this point.
+  const card = [
+    `This worker was re-seeded. Your state dir is (${stateDirText(input.seed)}) — its state.md holds name, intent, current_stage, status.`,
+    `Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage).`,
+    `Intent is currently \`${input.intent}\` in the re-seeded state.md. ${intentClause(input.intent)}`,
+    workOrderClause(),
     presetInstructions(input.params.instructions),
     `Request:\n${input.card.prompt}`,
   ].join("\n\n");
-  return `${intro}\n\n${work}`;
+  return `${intro}\n\n${clauses}\n\n${card}`;
 }
 
 function workflowSkillsClause(): string {
-  return [
-    "Read `bb stelow playbook` and load exactly the skills it names, in the order it lists them —",
-    "it is the whole reading list for the re-seeded stage and it resolves the plugin's skill paths.",
-    "Do not search for skills, do not load a stage skill you have not reached, and do not fetch",
-    "anything via `npx skills add` unless the playbook reports a path missing.",
-  ].join(" ");
+  // The shared const, not a second wording of the same rule: F1 gave each path its
+  // own phrasing of the skill pointer, which is the drift shape this file exists to
+  // avoid, and it cost the cache too (the two texts diverged at character 1,015).
+  return WORKFLOW_SKILLS;
 }
 
 function intentClause(intent: string): string {

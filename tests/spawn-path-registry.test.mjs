@@ -92,7 +92,12 @@ for (const file of PROMPT_MODULE_FILES) {
   // instruction, and this file's own history explains it at length.
   const code = source.replace(/^\s*\/\/[^\n]*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   if (/stelow-workflow-\*/.test(code)) globDiscovers.push(file);
-  if (!/bb stelow playbook/.test(code)) missingPointer.push(file);
+  // The pointer may be the literal or the shared const that renders it. Accepting the
+  // const is not a loophole: the const is asserted to contain the pointer once, in
+  // plugin-protocols, and every path that interpolates it gets the same text — which
+  // is strictly stronger than three paths each spelling it out.
+  const namesPointer = /bb stelow playbook/.test(code) || /WORKFLOW_SKILLS/.test(code);
+  if (!namesPointer) missingPointer.push(file);
 }
 assert.deepEqual(
   globDiscovers,
@@ -114,6 +119,8 @@ assert.deepEqual(
 // was moved here — five pasted copies, two of which had drifted.
 const bag = WORKER_PROTOCOL_CLAUSES;
 const EXPECTED_CLAUSES = [
+  "workflowIntro",
+  "workflowSkills",
   "cardOwnerRules",
   "neverSeed",
   "cliEquivalents",

@@ -61,6 +61,12 @@ const SHARED_MARKERS = [
 
 const BUILD_PATHS = ["spawn", "restart", "reseed"];
 
+/** The share of a build prompt two DIFFERENT cards share, which is what a provider
+ * can serve from cache across threads. Measured 0.6% before F2 reordered the three
+ * paths and 94-95% after; the floor sits just under the achieved value so a
+ * regression fails instead of printing a smaller number nobody reads. */
+const CROSS_CARD_CACHE_FLOOR = 0.85;
+
 // --- The detector is guarded, in both directions, unconditionally. ----------
 // A position helper that returned -1 for everything, or a cache report that
 // measured the wrong region, would make every claim in this file meaningless — so
@@ -104,7 +110,11 @@ test("the cache-order detector measures the right region", () => {
 // reordering is worth before anyone spends a review on it.
 test(
   "every build path states its shared clauses before any per-card value",
-  { skip: "prompt order is a deliberate change; see the file header — the measurement is printed on every run" },
+  // No longer skipped: F2 reordered the three build paths, so the rule is green and
+  // the skip that documented the gap is gone. The header above keeps the reason it was
+  // skipped, because the next person to consider hoisting more text should know it was
+  // a decision with a cost rather than an oversight.
+  {},
   () => {
     for (const path of BUILD_PATHS) {
       const rendered = paths[path];
@@ -143,4 +153,33 @@ test("the cross-card and handoff cache measurements are visible", () => {
       + `  handoff spawn -> restart shares ${handoff.prefix} of ${handoff.total} chars `
       + `(${(handoff.ratio * 100).toFixed(1)}%) · divergence: ...${handoff.divergedAt.slice(-60)}`,
   );
+});
+
+// --- The cross-card floor, asserted rather than printed. --------------------
+// The measurement above is the reason F2 existed, and a printed number nobody reads
+// is how it regressed the first time. This compares the two build paths that share
+// the most, so the floor is about the ordering rather than about which pair happens
+// to be closest.
+test("two different cards share most of a build prompt", () => {
+  const pairs = [
+    ["spawn", "restart"],
+    ["spawn", "reseed"],
+    ["restart", "reseed"],
+  ];
+  const ratios = pairs.map(([a, b]) => cacheReport(paths[a], paths[b]).ratio);
+  const best = Math.max(...ratios);
+  assert.ok(
+    best >= CROSS_CARD_CACHE_FLOOR,
+    `the closest build-path pair shares at least ${(CROSS_CARD_CACHE_FLOOR * 100).toFixed(0)}% of its prompt, `
+      + `so a new worker on a different card reuses that prefix instead of re-paying it. `
+      + `Measured: ${pairs.map(([a, b], i) => `${a}/${b}=${(ratios[i] * 100).toFixed(1)}%`).join(", ")}`,
+  );
+  // Every pair, not just the best: one path drifting back to values-first would
+  // otherwise be hidden by the other two still matching.
+  for (let i = 0; i < pairs.length; i += 1) {
+    assert.ok(
+      ratios[i] >= CROSS_CARD_CACHE_FLOOR,
+      `${pairs[i][0]} vs ${pairs[i][1]} shares ${(ratios[i] * 100).toFixed(1)}% — under the floor, so a per-card value moved back into the shared prefix`,
+    );
+  }
 });

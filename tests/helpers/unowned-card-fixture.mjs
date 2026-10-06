@@ -120,6 +120,10 @@ export const protocols = {
   interfacePick: "interface",
   doneProtocol: "done",
   splitProtocol: "split",
+
+  workflowIntro: "WORKFLOW_INTRO_SENTINEL",
+
+  workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
   userInputContract: "user input contract",
 };
 

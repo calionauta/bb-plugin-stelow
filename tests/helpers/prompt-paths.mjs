@@ -59,17 +59,12 @@ export const CARD = {
 };
 
 const RULES = {
-  cardOwnerRules: WORKER_PROTOCOL_CLAUSES.cardOwnerRules,
-  neverSeed: WORKER_PROTOCOL_CLAUSES.neverSeed,
-  cliEquivalents: WORKER_PROTOCOL_CLAUSES.cliEquivalents,
-  reconProtocol: WORKER_PROTOCOL_CLAUSES.reconProtocol,
-  draftProtocol: WORKER_PROTOCOL_CLAUSES.draftProtocol,
-  turnDiscipline: WORKER_PROTOCOL_CLAUSES.turnDiscipline,
-  commitStyle: WORKER_PROTOCOL_CLAUSES.commitStyle,
-  interfacePick: WORKER_PROTOCOL_CLAUSES.interfacePick,
-  doneProtocol: WORKER_PROTOCOL_CLAUSES.doneProtocol,
-  splitProtocol: WORKER_PROTOCOL_CLAUSES.splitProtocol,
-  userInputContract: WORKER_PROTOCOL_CLAUSES.userInputContract,
+  // Spread, not re-listed. This fixture used to name all eleven clauses by hand, and
+  // when the bag gained `workflowIntro` the fixture silently kept passing it as
+  // undefined — so the intro rendered EMPTY and the spawn prompt opened with a blank
+  // line. The registry guard did not catch it either, because it checks that a
+  // fixture declares every clause it names, not that it names every clause there is.
+  ...WORKER_PROTOCOL_CLAUSES,
 };
 
 const RESTART_PROTOCOLS = {

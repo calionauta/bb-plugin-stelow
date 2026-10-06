@@ -167,3 +167,40 @@ marker: never edit it, copy another workflow's state, or use a project-root stat
 into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate \
 structured questions, card state changes, lifecycle commands, or the canonical result. Delegate fresh: package the full task in the call itself \
 (brief plus every file path and fact the delegate needs) — never fork a thread, inherit history, or let siblings talk to each other.";
+
+/**
+ * The opening every build spawn path shares, byte for byte.
+ *
+ * A const rather than a literal per template, because the opening is the most
+ * valuable part of a prompt for caching: a provider reuses the longest common
+ * prefix, so an intro that differs between paths — or carries a per-card value —
+ * forfeits everything after it. Three hand-written intros is how they came to differ
+ * by a sentence, and the difference cost the cache the whole clause block behind it.
+ *
+ * It says nothing about being re-seeded: a first worker and a re-seeded one both
+ * need the same opening, and a sentence true only for one of them is the difference
+ * that breaks the prefix.
+ */
+export const WORKFLOW_INTRO =
+  "You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir, "
+  + "and the host keeps your state.md, transitions.md, and stelow.json in it.";
+
+/**
+ * The skill pointer, stated once.
+ *
+ * A pointer and not a discovery instruction: it used to name the
+ * `stelow-workflow-*` glob and tell the worker to find the skills with
+ * `bb skill list`, which is both the thing `bb stelow playbook` was built to replace
+ * (its docstring records that workers "burned whole turns on discovery") and a
+ * contradiction of the CLI_EQUIVALENTS clause that forbids that discovery. The glob
+ * is 17 skills whose entry documents total 215,756 bytes against a 12,100-character
+ * prompt, so following the older instruction loads an order of magnitude more than
+ * the prompt that asked for it.
+ */
+export const WORKFLOW_SKILLS =
+  "Read `bb stelow playbook` and load exactly the skills it names, in the order it lists them — "
+  + "it is the whole reading list for your current stage, and it already resolves the plugin's skill paths. "
+  + "Do not search for skills, do not load a stage skill you have not reached, and do not fetch anything via "
+  + "`npx skills add` unless the playbook reports a path missing. That report means a broken install: say so "
+  + "instead of working around it.";
+

@@ -1,4 +1,7 @@
 export type CardPromptRules = {
+  /** The opening every build path shares, so the prefix is byte-identical. */
+  workflowIntro: string;
+  workflowSkills: string;
   cardOwnerRules: string;
   neverSeed: string;
   cliEquivalents: string;
@@ -23,41 +26,50 @@ export type BuildPromptContext = {
   prompt: string;
 };
 
-const BUILD_INITIAL_PROMPT = `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir\
-(%STATE_DIR%) — its state.md holds\
-name, intent, current_stage, status. %CARD_OWNER_RULES%
+const BUILD_INITIAL_PROMPT = `%WORKFLOW_INTRO%
 
-%MANAGED_WORKTREE%
+%CARD_OWNER_RULES%
 
-Step 1 — verify intent first: this card starts as intent=\`%INTENT%\` in state.md (pre-seeded when the request already carried one, else\
-\`unknown\`). Read the request, confirm or pick the fitting intent\
-(new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise\
-question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled.\
-Run knobs (quality=\`%QUALITY%\`, supervisor=\`%SUPERVISOR%\`,
-exploration=\`%EXPLORATION%\`) and review gates=\`%REVIEW_GATES%\`
-(%REVIEW_RUNG%) are already recorded in state.md — use them, never re-ask.
+%WORKFLOW_SKILLS%
 
-Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If\
-a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error\
-and move on.
+%NEVER_SEED%
 
-Load only the skills \`bb stelow playbook\` names for your current stage — that ordered list is the whole reading list. Use \`bb stelow advance\
-<stage>\` to change stages (do NOT hand-edit current_stage). %NEVER_SEED% Preserve every gate (product, interface, tech plan, diff).\
-%CLI_EQUIVALENTS% %RECON_PROTOCOL% %DRAFT_PROTOCOL%
+Preserve every gate (product, interface, tech plan, diff).
+
+%CLI_EQUIVALENTS%
+
+%RECON_PROTOCOL%
+
+%DRAFT_PROTOCOL%
 
 %TURN_DISCIPLINE%
 
 %COMMIT_STYLE%
 
-%USER_INPUT_CONTRACT%
+%INTERFACE_PICK%
 
-%INTERFACE_PICK% For unselected gates, write the approval receipt yourself \
-(.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives \
-the card or the workflow reaches \`audit\`.
+%USER_INPUT_CONTRACT%
 
 %DONE_PROTOCOL%
 
 %SPLIT_PROTOCOL%
+
+%MANAGED_WORKTREE%
+
+Your workflow owns its own state dir (%STATE_DIR%) — its state.md holds name, intent, current_stage, status.
+
+Step 1 — verify intent first: this card starts as intent=\`%INTENT%\` in state.md (pre-seeded when the request already carried one, else\
+\`unknown\`). Read the request, confirm or pick the fitting intent\
+(new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise\
+question via the form above only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled.\
+Run knobs (quality=\`%QUALITY%\`, supervisor=\`%SUPERVISOR%\`,
+exploration=\`%EXPLORATION%\`) and review gates=\`%REVIEW_GATES%\`
+(%REVIEW_RUNG%) are already recorded in state.md — use them, never re-ask.
+
+Order of work, always: (1) triage — settle intent and record it in state.md; (2) load only the skills \`bb stelow playbook\` names for your \
+current stage; (3) advance stages and do the work. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). If \
+a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error \
+and move on.
 
 %INSTRUCTIONS%Request:
 %REQUEST%`;
@@ -73,6 +85,8 @@ export function buildBuildPrompt(
   rules: CardPromptRules,
 ): string {
   const values: Record<string, string> = {
+    WORKFLOW_INTRO: rules.workflowIntro,
+    WORKFLOW_SKILLS: rules.workflowSkills,
     STATE_DIR: context.stateDir,
     CARD_OWNER_RULES: rules.cardOwnerRules,
     MANAGED_WORKTREE: context.managedWorktree ? MANAGED_WORKTREE_NOTE : "",
