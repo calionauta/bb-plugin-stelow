@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderSpawnPaths } from "./helpers/prompt-paths.mjs";
+import { clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import {
   CHARS_PER_TOKEN,
   estimateTokens,
@@ -10,6 +10,7 @@ import {
   promptBudget,
   repeatedSentences,
   sharedAcrossPaths,
+  composedBudget,
 } from "../lib/prompt-budget.mjs";
 
 /**
@@ -100,6 +101,7 @@ assert.ok(
 // legitimately shares text should not fail the suite, but a new path that
 // pastes three paragraphs should.
 const shared = sharedAcrossPaths(paths);
+const composed = composedBudget(paths, clauseTexts());
 assert.ok(
   shared.duplicationRatio <= 0.5,
   `shared boilerplate across the five spawn paths stays under half of all rendered text (measured ${(shared.duplicationRatio * 100).toFixed(1)}%)`,
@@ -143,8 +145,14 @@ const pasting = builders.filter((file) =>
 );
 assert.deepEqual(pasting, [], `no builder may paste the ask contract; it interpolates the const. Pasting: ${pasting.join(", ")}`);
 
+// Both figures, labelled. The naive one counts shared clauses rendering into the paths
+// that owe them, so it is context; the composed one is the target. Printing only the
+// naive number — as this line used to — puts the wrong metric in front of whoever reads
+// a test run, which is how a metric gets optimized for the wrong reason.
 console.log(
   `prompt budget ok: ${Object.entries(measured)
     .map(([name, entry]) => `${name}=${entry.chars}c/~${entry.estimatedTokens}t`)
-    .join(" ")} · duplication ${(shared.duplicationRatio * 100).toFixed(1)}%`,
+    .join(" ")} · authored duplication ${(composed.composedDuplicationRatio * 100).toFixed(1)}%`
+    + ` (${composed.composedDuplicatedChars}c of ${composed.composedChars})`
+    + ` · naive ${(shared.duplicationRatio * 100).toFixed(1)}% is mostly the clause bag`,
 );

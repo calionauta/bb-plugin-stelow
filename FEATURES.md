@@ -2938,20 +2938,32 @@ call in flight, and a rule enforced by refusing work is a deadlock with a good e
 message. Measured on this checkout: exactly one skill read across ten workers, which
 is why this is a report rather than a gate.
 
-**Two workers on different cards now share 90–95% of their prompt, where they
-shared 0.6% before.** Provider caching is prefix matching, so the reusable region
-ends at the first byte that differs — and the state dir sat at character ~106, ahead
-of the entire 10 KB clause block that every build path renders identically. Every new
-thread therefore re-paid nearly its whole prompt as fresh input, and so did every
-band-boundary handoff, which starts a new thread by design. All three build paths now
-open with the same `WORKFLOW_INTRO`, state the shared clauses in one canonical order,
-and put every per-card value (state dir, intent, knobs, request) last: measured
-89.7% (spawn/restart), 93.9% (spawn/reseed), 95.1% (restart/reseed). The intro and
-the skill pointer are consts shared by all three, because three hand-written intros
-is how they came to differ by a sentence — and that sentence cost the cache the whole
-clause block behind it. `tests/prompt-cache-order.test.mjs` holds the ordering rule
-and an 85% floor on every pair, so a per-card value drifting back into the prefix
-fails rather than printing a smaller number.
+**A prompt's own prefix is now shared between cards, where it was not.** Provider
+caching is prefix matching, so the reusable region ends at the first byte that differs
+— and the state dir sat at character ~106, ahead of the entire 10 KB clause block that
+every build path renders identically. All three build paths now open with the same
+`WORKFLOW_INTRO`, state the shared clauses in one canonical order, and put every
+per-card value (state dir, intent, knobs, request) last. Measured on rendered fixtures:
+the longest common prefix of two cards' prompts goes from 0.6% to 89.7% (spawn/restart),
+93.9% (spawn/reseed), 95.1% (restart/reseed). The intro and the skill pointer are consts
+shared by all three, because three hand-written intros is how they came to differ by a
+sentence — and that sentence cost the whole clause block behind it.
+`tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
+pair, so a per-card value drifting back into the prefix fails rather than printing a
+smaller number nobody reads.
+
+**The scope of that number matters, and it is narrower than it looks.** It is the shared
+prefix of the STELOW PROMPT, computed from fixtures — not a measured saving on a real
+run. Two things bound it: the prompt is one segment of a request whose system prompt and
+tool definitions are already shared across every thread (confirmed from the database: 73
+of 147 non-stelow threads show cache reads on their first snapshot, so most reused
+context is harness-wide), and no worker has yet run the reordered prompt. What IS
+independently confirmed from the provider's own reports is that cross-thread reuse
+happens at all: one thread shows 2,811,504 cached tokens against 1,940 fresh on its
+first and only usage snapshot, which a single thread cannot have cached by itself. The
+reorder is worth keeping because it costs nothing and moves per-card bytes strictly
+later in the request; its magnitude is unproven, and `.auto/cache-honest.md` records the
+validation that would settle it.
 
 **The prompt-duplication metric was measuring the bag doing its job, and it is
 replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
