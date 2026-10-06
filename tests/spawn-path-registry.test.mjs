@@ -27,16 +27,18 @@ const RENDERED_BUILDERS = new Set([
   "server/runtime/card-reseed-prompt.ts",
   "server/runtime/worker-restart-prompt.ts",
   "server/runtime/track-prompts.ts",
+  "server/runtime/start-workflow-prompt.ts",
 ]);
 
-/** Prompt-named modules that are deliberately not a build spawn path, each with
- * the reason. A module that joins this list has been looked at. */
-const NAMED_EXCEPTIONS = new Map([
-  [
-    "server/runtime/start-workflow-prompt.ts",
-    "the free-text workflow entry prompt — it selects a route, it does not hand a worker the card protocols",
-  ],
-]);
+/** Every module that renders text a worker reads, and therefore every module the
+ * suite must cover or explicitly excuse. `start-workflow-prompt` was previously
+ * excused here on the reasoning that it "selects a route, it does not hand a worker
+ * the card protocols" — and that reasoning was wrong in the way this whole file
+ * exists to catch: it renders a real spawn instruction, it carried the
+ * skill-discovery glob, and nothing checked it. An exception is a decision, and a
+ * wrong decision must be revisable, so the list is empty and the module is covered.
+ */
+const NAMED_EXCEPTIONS = new Map([]);
 
 function promptNamedModules() {
   const found = [];
@@ -65,6 +67,45 @@ assert.deepEqual(staleExceptions, [], `a named exception whose module is gone is
 
 const staleBuilders = [...RENDERED_BUILDERS].filter((file) => !modules.includes(file));
 assert.deepEqual(staleBuilders, [], `a rendered builder that no longer exists means the matrix shrank silently: ${staleBuilders.join(", ")}`);
+
+// --- No path instructs skill discovery by glob. ------------------------------
+// The regression this exists to catch, and it was live in every path: the prompt
+// told the worker to find the skills with `bb skill list` over the
+// `stelow-workflow-*` glob, while the CLI_EQUIVALENTS clause rendered into the
+// SAME prompt said "run `bb stelow playbook` first ... never discover them with
+// `bb skill list | awk` pipelines". Two instructions, one prompt, opposite orders.
+//
+// Why it matters beyond tidiness: the glob is 17 skills whose entry documents total
+// 215,756 bytes (~54k tokens) against a 12,100-character prompt. A worker following
+// the older instruction loads an order of magnitude more than the prompt that
+// asked for it. `bb stelow playbook` exists precisely to replace that discovery —
+// its own docstring says workers "burned whole turns on discovery".
+const PROMPT_MODULE_FILES = [
+  ...RENDERED_BUILDERS,
+  ...NAMED_EXCEPTIONS.keys(),
+];
+const globDiscovers = [];
+const missingPointer = [];
+for (const file of PROMPT_MODULE_FILES) {
+  const source = readFileSync(join(root, file), "utf8");
+  // Comments are stripped: a comment recording WHY the glob was removed is not an
+  // instruction, and this file's own history explains it at length.
+  const code = source.replace(/^\s*\/\/[^\n]*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  if (/stelow-workflow-\*/.test(code)) globDiscovers.push(file);
+  if (!/bb stelow playbook/.test(code)) missingPointer.push(file);
+}
+assert.deepEqual(
+  globDiscovers,
+  [],
+  "no prompt may tell a worker to discover skills by glob — the playbook command resolves the paths "
+    + `and is the whole reading list. Offending: ${globDiscovers.join(", ")}`,
+);
+assert.deepEqual(
+  missingPointer,
+  [],
+  "every prompt that can load a skill must name `bb stelow playbook`, or a worker has no "
+    + `sanctioned way to find its reading list. Missing: ${missingPointer.join(", ")}`,
+);
 
 // --- The clause bag is the one place a build clause can be added. -----------
 // Every clause a *build* worker must carry belongs in the bag, because the bag

@@ -2894,6 +2894,22 @@ an order of magnitude. The pointer is left as it is because narrowing it changes
 which methodology a worker sees, and that is a workflow-authoring decision rather
 than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
 
+**Every prompt resolves its reading list from `bb stelow playbook`, instead of
+naming a family of skills to go and find.** All six spawn paths used to tell the
+worker to load `stelow-workflow-*` — seventeen skills — while the `CLI_EQUIVALENTS`
+clause rendered into the very same prompt said *"run `bb stelow playbook` first ...
+never discover them with `bb skill list | awk` pipelines."* Two instructions, one
+prompt, opposite orders. The glob is worse than redundant: the family's entry
+documents total 215,756 bytes (~54k tokens) against the 12,100-character prompt
+that asked for them, so a worker following the older instruction loads an order of
+magnitude more than the prompt it was handed. `bb stelow playbook` was built to
+replace exactly that discovery — its own docstring records that workers "burned
+whole turns on discovery" — so the templates now point at it and name no skills.
+`tests/spawn-path-registry.test.mjs` fails when any prompt reintroduces glob
+discovery or loses the playbook pointer, and `start-workflow-prompt` moved out of
+the exception list and into coverage, because it renders a real spawn instruction
+and carried the glob unexamined.
+
 **One ask contract, rendered by every spawn path, pinned by equality.** The
 protocol clauses a worker is spawned with are constants in
 `server/runtime/plugin-protocols.ts`, and the bag every build path receives is

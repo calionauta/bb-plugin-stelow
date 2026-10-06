@@ -41,7 +41,7 @@ Order of work, always: (1) triage — settle intent and record it in state.md; (
 a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error\
 and move on.
 
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance\
+Load only the skills \`bb stelow playbook\` names for your current stage — that ordered list is the whole reading list. Use \`bb stelow advance\
 <stage>\` to change stages (do NOT hand-edit current_stage). %NEVER_SEED% Preserve every gate (product, interface, tech plan, diff).\
 %CLI_EQUIVALENTS% %RECON_PROTOCOL% %DRAFT_PROTOCOL%
 

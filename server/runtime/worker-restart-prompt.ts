@@ -22,10 +22,18 @@ type RestartPromptInput = {
   };
 };
 
-const WORKFLOW_SKILLS = `The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — \
-start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks \
-(stelow-product-*) are also provided by this plugin — check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
-if one is missing.`;
+// A pointer, not a discovery instruction. It used to name the `stelow-workflow-*`
+// glob and tell the worker to find them with `bb skill list`, which is both the
+// thing `bb stelow playbook` was built to replace (its own docstring: workers
+// "burned whole turns on discovery") and a contradiction of the CLI_EQUIVALENTS
+// clause that says never to discover skills that way. The glob is 17 skills whose
+// entry documents total 215,756 bytes (~54k tokens) against a 12,100-character
+// prompt, so an eager load is an order of magnitude more expensive than the
+// prompt that asked for it.
+const WORKFLOW_SKILLS = `Read \`bb stelow playbook\` and load exactly the skills it names, in the order it lists \
+them — it is the whole reading list for your current stage, and it already resolves the plugin's skill paths. Do not \
+search for skills, do not load a stage skill you have not reached, and do not fetch anything via \`npx skills add\` unless \
+the playbook reports a path missing. That report means a broken install: say so instead of working around it.`;
 
 
 function stateOwnership(input: RestartPromptInput): string {

@@ -93,8 +93,8 @@ ${researchFlavorLine(input.flavor)}${previousWorkerContext(input.previousThreadI
 
 function researchIndexStep(input: ResearchWorkerPromptInput): string {
   return `Step 1 — load the strategy playbook: the ${input.strategyLabel} method (${input.strategySkill}) is provided by this \
-plugin — use \`bb skill list\` to confirm it (fetch via \`npx skills add calionauta/stelow\` only \
-if missing), then follow that playbook — not the stelow-workflow-* build skills, which do not apply here.
+plugin — \`bb stelow playbook\` names its path (fetch via \`npx skills add calionauta/stelow\` only \
+if the playbook reports it missing), then follow that playbook — none of the build stage skills apply here.
 
 Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects \
 real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. \
@@ -202,7 +202,7 @@ ${previousWorkerContext(input.previousThreadId, "artifact")}`;
 }
 
 function exploreWorkStep(input: ExploreWorkerPromptInput): string {
-  return `Step 1 — load the stage skill: ${input.stage.label} (${input.stage.skill}) is bundled with this plugin (\`bb skill list\` shows it). Load it \
+  return `Step 1 — load the stage skill: ${input.stage.label} (${input.stage.skill}) — \`bb stelow playbook\` names its exact path. Load it \
 and follow its instructions exactly.
 
 Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \

@@ -118,12 +118,10 @@ function buildWorkflowPrompt(input: PromptInput): string {
 
 function workflowSkillsClause(): string {
   return [
-    "The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, " +
-      "stelow-workflow-*) are provided by this plugin — start by loading them " +
-      "(they live under the plugin's skills directory; `bb skill list` shows them).",
-    "The product strategy playbooks (stelow-product-*) are also provided by this " +
-      "plugin — check `bb skill list` first, and only fetch via " +
-      "`npx skills add calionauta/stelow` if one is missing.",
+    "Read `bb stelow playbook` and load exactly the skills it names, in the order it lists them —",
+    "it is the whole reading list for the re-seeded stage and it resolves the plugin's skill paths.",
+    "Do not search for skills, do not load a stage skill you have not reached, and do not fetch",
+    "anything via `npx skills add` unless the playbook reports a path missing.",
   ].join(" ");
 }
 
