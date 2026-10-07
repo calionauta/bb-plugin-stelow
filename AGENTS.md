@@ -233,7 +233,11 @@ docstrings, and deleted.
 
 **Known debt, so it is not rediscovered as a surprise:** `text-[11px]` still
 appears in 102 places doing the same job the scale already names — the size is
-allowed, the test blocks growth, and the migration is owed but not urgent. The
+allowed, the test counts the sites against a ceiling that only ratchets down, and
+the migration is owed but not urgent. The count is measured against
+`components/` + `lib/`, which is why it reads 102 while a `components/`-only grep
+finds 97: both numbers are right and only one is the one this sentence is about.
+The
 `min-h-11` rule above is the one this section is least able to keep: it is
 stated, not tested, and 84 raw buttons are the standing evidence.
 
