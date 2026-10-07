@@ -56,6 +56,10 @@ const inheritedBaseline = [
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 51 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
+  // The drawer shell gained a second edge (`side`), which pushed it to 184 lines; the
+  // focus/close/settle bookkeeping moved to `use-drawer-shell-behavior.ts` and the per-edge
+  // placement to `lib/drawer-side.mjs`. 121 is the measured remainder and 177 is what the
+  // FORK POINT carried, per this list's convention — a split, not a line shaved to fit.
   // dialog.tsx carries a 541-line file plus three oversized functions from the
   // fork point; this card's one-line shell class (overflow-x-hidden) surfaced
   // them as inherited. No growth — file and functions still at/under record.
@@ -63,6 +67,7 @@ const inheritedBaseline = [
   "components/ui/dialog.tsx:Dialog#1: 62 lines (baseline 62)",
   "components/ui/dialog.tsx:callback#4: 57 lines (baseline 76)",
   "components/ui/dialog.tsx:callback#5: 76 lines (baseline 76)",
+  "components/ui/persistent-responsive-drawer-shell.tsx:PersistentResponsiveDrawerShell#1: 121 lines (baseline 177)",
   // The gap row left this function entirely (gapChecksGroup, because the
   // rollup has to make done + open equal total), so the entry is no longer
   // oversized and the gate requires it dropped rather than left as a stale

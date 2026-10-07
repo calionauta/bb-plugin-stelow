@@ -1,12 +1,11 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
-import { blurActiveKeyboardInputWithin } from "./overlay-trigger.js";
 import { usePortalScopeProps } from "../../lib/portal-scope.js";
 import { cn } from "../../lib/utils.js";
-import { resetDrawerKeyboardStyles } from "./drawer-keyboard-styles.js";
-import { registerOpenDrawer } from "./persistent-drawer-focus.js";
 import { usePersistentDrawerDrag } from "./hooks/use-persistent-drawer-drag.js";
+import { useDrawerShellBehavior } from "./hooks/use-drawer-shell-behavior.js";
+import { drawerClosedTransform, drawerHasGrabBar, drawerPanelClass } from "../../lib/drawer-side.mjs";
 
 // ---------------------------------------------------------------------------
 // PersistentResponsiveDrawerShell: a bottom drawer for a large, persistent
@@ -16,9 +15,26 @@ import { usePersistentDrawerDrag } from "./hooks/use-persistent-drawer-drag.js";
 // keyboard focus inside the drawer.
 // ---------------------------------------------------------------------------
 
+/**
+ * Which edge the panel enters from.
+ *
+ * `bottom` is the floating sheet the app already used, and stays the default so every
+ * existing caller is untouched. `right` is a full-height side panel, added for the flow
+ * drawer: a bottom sheet over a board covers the cards it is describing, and the board is
+ * itself a scrolling surface, so the panel has to take the side rather than the floor.
+ *
+ * The two differ in three places and share everything else — the portal, the focus trap,
+ * the drag-to-dismiss gesture and the settle animation are the same mechanism, which is why
+ * this is a prop and not a second component. A copy would drift from the focus handling,
+ * and the focus handling is the part nobody notices breaking.
+ */
+type DrawerSide = "bottom" | "right";
+
 interface PersistentResponsiveDrawerShellProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Which edge to enter from. Defaults to `bottom`. */
+  side?: DrawerSide;
   srLabel?: string;
   labelledBy?: string;
   describedBy?: string;
@@ -33,6 +49,7 @@ const PERSISTENT_DRAWER_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 export function PersistentResponsiveDrawerShell({
   open,
   onOpenChange,
+  side = "bottom",
   srLabel,
   labelledBy,
   describedBy,
@@ -41,83 +58,20 @@ export function PersistentResponsiveDrawerShell({
   onContentAnimationEnd,
   children,
 }: PersistentResponsiveDrawerShellProps) {
-  const panelRef = React.useRef<HTMLDivElement>(null);
-  const backdropRef = React.useRef<HTMLDivElement>(null);
-  const returnFocusRef = React.useRef<HTMLElement | null>(null);
-  const settledStateRef = React.useRef<boolean | null>(null);
   const labelId = React.useId();
   const portalScopeProps = usePortalScopeProps();
   const transition = `transform ${motionDurationMs}ms ${PERSISTENT_DRAWER_EASING}`;
   const backdropTransition = `opacity ${motionDurationMs}ms ${PERSISTENT_DRAWER_EASING}`;
-  const onOpenChangeRef = React.useRef(onOpenChange);
-  React.useLayoutEffect(() => {
-    onOpenChangeRef.current = onOpenChange;
-  }, [onOpenChange]);
-  const requestClose = React.useCallback(() => {
-    blurActiveKeyboardInputWithin(panelRef.current);
-    resetDrawerKeyboardStyles(panelRef.current);
-    onOpenChangeRef.current(false);
-  }, []);
-
-  const reportSettled = React.useCallback(
-    (settledOpen: boolean) => {
-      if (settledStateRef.current === settledOpen) {
-        return;
-      }
-      settledStateRef.current = settledOpen;
-      onContentAnimationEnd?.(settledOpen);
-    },
-    [onContentAnimationEnd],
-  );
-
-  React.useEffect(() => {
-    settledStateRef.current = null;
-    const timeout = window.setTimeout(
-      () => reportSettled(open),
-      motionDurationMs + 50,
-    );
-    return () => window.clearTimeout(timeout);
-  }, [motionDurationMs, open, reportSettled]);
-
-  React.useLayoutEffect(() => {
-    if (!open) {
-      return;
-    }
-    const panel = panelRef.current;
-    if (panel === null) {
-      return;
-    }
-    const ownerDocument = panel.ownerDocument;
-    const previousFocus = ownerDocument.activeElement;
-    returnFocusRef.current =
-      previousFocus instanceof HTMLElement ? previousFocus : null;
-    const unregister = registerOpenDrawer(ownerDocument, {
-      panel: () => panelRef.current,
-      requestClose,
-    });
-    panel.focus({ preventScroll: true });
-
-    return () => {
-      unregister();
-    };
-  }, [open, requestClose]);
-
-  const previousOpenRef = React.useRef(open);
-  React.useLayoutEffect(() => {
-    if (previousOpenRef.current && !open) {
-      blurActiveKeyboardInputWithin(panelRef.current);
-      resetDrawerKeyboardStyles(panelRef.current);
-      const returnFocus = returnFocusRef.current;
-      if (
-        returnFocus?.isConnected &&
-        returnFocus.closest('[aria-hidden="true"], [inert]') === null
-      ) {
-        returnFocus.focus({ preventScroll: true });
-      }
-      returnFocusRef.current = null;
-    }
-    previousOpenRef.current = open;
-  }, [open]);
+  // Focus, close-request and settle bookkeeping live in one hook: they are the parts a
+  // screenshot cannot show and a refactor breaks silently. See its own file for why each
+  // exists. The backdrop ref stays here because only the drag gesture uses it.
+  const { panelRef, requestClose, reportSettled } = useDrawerShellBehavior({
+    open,
+    onOpenChange,
+    motionDurationMs,
+    onContentAnimationEnd,
+  });
+  const backdropRef = React.useRef<HTMLDivElement>(null);
 
   const { handleDragStart, handleDragMove, finishDrag } =
     usePersistentDrawerDrag({
@@ -167,13 +121,14 @@ export function PersistentResponsiveDrawerShell({
         role="dialog"
         tabIndex={-1}
         className={cn(
-          // Floating sheet: visible backdrop margins on every side, not an
-          // edge-to-edge panel. Applies to all compact dialogs/menus at once.
-          "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex max-h-[92dvh] flex-col rounded-2xl border bg-background shadow-xl outline-none",
+          // A bottom sheet is a floating card with visible margins on every side; a right
+          // panel is edge-to-edge on the vertical axis. The class strings live above so the
+          // difference between the two is read in one place.
+          drawerPanelClass(side),
           contentClassName,
         )}
         style={{
-          transform: open ? "translate3d(0, 0, 0)" : "translate3d(0, 100%, 0)",
+          transform: open ? "translate3d(0, 0, 0)" : drawerClosedTransform(side),
           transition,
           willChange: open ? "transform" : undefined,
         }}
@@ -186,6 +141,10 @@ export function PersistentResponsiveDrawerShell({
           }
         }}
       >
+        {/* The grab bar belongs to the bottom sheet, where a downward drag dismisses. A
+            right panel is dismissed by the backdrop or Escape, so it renders no handle —
+            one would advertise a gesture that does nothing. */}
+        {drawerHasGrabBar(side) ? (
         <div
           data-persistent-drawer-handle=""
           className="mx-auto flex h-8 w-16 shrink-0 touch-none cursor-grab items-center justify-center active:cursor-grabbing"
@@ -196,6 +155,7 @@ export function PersistentResponsiveDrawerShell({
         >
           <div className="h-1 w-10 rounded-full bg-muted-foreground/20" />
         </div>
+        ) : null}
         {srLabel === undefined ? null : (
           <h2 id={labelId} className="sr-only">
             {srLabel}

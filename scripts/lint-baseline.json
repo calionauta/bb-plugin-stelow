@@ -1,7 +1,6 @@
 {
   "findings": [
     "components/board/archived-delete-props.ts :: no-useless-fallback-in-spread :: Empty fallbacks in spreads are unnecessa",
-    "components/board/flow-strip.tsx :: no-unused-vars :: Type alias 'FlowCoverage' is declared bu",
     "components/detail/build-publication-body.tsx :: no-unused-vars :: Button",
     "components/detail/build-publication-history.tsx :: no-unused-vars :: copyText",
     "components/detail/option-section.tsx :: no-unused-vars :: useRef",

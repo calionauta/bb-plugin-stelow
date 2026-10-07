@@ -17,6 +17,8 @@ interface ResponsiveDrawerShellProps {
    * Sr-only label announced when the drawer opens. Omit if the caller
    * renders its own labeled heading inside children (e.g. DialogTitle).
    */
+  /** Which edge to enter from. Defaults to `bottom`. */
+  side?: "bottom" | "right";
   srLabel?: string;
   /** Existing visible title used to label a dialog body. */
   labelledBy?: string;
@@ -32,6 +34,7 @@ interface ResponsiveDrawerShellProps {
 export function ResponsiveDrawerShell({
   open,
   onOpenChange,
+  side,
   srLabel,
   labelledBy,
   describedBy,
@@ -49,6 +52,7 @@ export function ResponsiveDrawerShell({
     <PersistentResponsiveDrawerShell
       open={open}
       onOpenChange={onOpenChange}
+      side={side}
       srLabel={srLabel}
       labelledBy={labelledBy}
       describedBy={describedBy}

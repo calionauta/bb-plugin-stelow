@@ -17,6 +17,7 @@ import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
 import { BucketGalleryButton } from "../board/card-gallery";
 import { BulkBarSlot } from "../board/build-bulk-bar";
+import { boardBottomPadding } from "../../lib/bulk-bar-placement.mjs";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
@@ -276,7 +277,9 @@ function BuildBoardKanban({ state, onOpenCard }: {
         // Two layouts, chosen by breakpoint — see lib/kanban-layout.mjs for why a phone
         // needs a second one rather than a narrower first one.
         className={[
-          "flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain pb-1",
+          // The bottom padding reserves the strip the floating bulk bar occupies, and only
+          // while it is present: an unselected board keeps its full height.
+          `flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain ${boardBottomPadding(state.selectedIds.size > 0)}`,
           "md:grid md:snap-none md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden",
         ].join(" ")}
         style={{
