@@ -27,6 +27,10 @@ export type StartContext = {
   intent?: string;
   stage?: string;
   reviewMode?: string;
+  /** Scope ids the run touches; served decision receipts are filtered by these. */
+  scopeIds?: string[];
+  /** Already-loaded decision receipts (approvals-dir reader owns loading). */
+  decisionReceipts?: Array<{ id: string; kind?: string; scopeIds?: string[] }>;
 };
 
 export type StartResult = {
