@@ -280,6 +280,21 @@ generated notes); merging it cuts the `vX.Y.Z` tag and the GitHub
 release. The merge is the release — never tag or `gh release create`
 from a laptop.
 
+**The release PR accumulates. Do not merge it per change.** Land the
+change (branch → PR → squash-merge), and leave the release PR open: the
+next push to `master` refreshes it with the new commit's bump and notes.
+Merge it when you want to cut, not when it first appears. This section
+described the mechanism for a long time and said nothing about cadence,
+which is how one session shipped six releases in a day — v0.74.0 through
+v0.78.1, each technically correct and each a version every install has
+to move through. The mechanism was never the problem; merging on sight
+was. A day of UI work is one minor release, not five.
+
+A `fix:` on top of a `feat:` still bumps minor while both are pending,
+because release-please takes the highest type in the accumulated set —
+which is the second reason to let it accumulate rather than shipping the
+patch first and the feature after it.
+
 **Never push to `master` directly — branch, then PR, always.** Every
 release rule above is written for a merged PR, and a direct push breaks
 them silently: the squash commit's subject is then the *branch's last
