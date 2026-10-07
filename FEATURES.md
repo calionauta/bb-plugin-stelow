@@ -294,18 +294,6 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comment naming winner, losers, and receipt id. Receipts persist in
   `<stateDir>/decision-receipts.json`, which native start loads fail-soft to
   feed `decisionReads`.
-- **Decision enforcement (receipts as permission).** Past decisions ride into
-  new work instead of waiting to be found: native execution start carries a
-  `decisionReads` context field listing the receipts covering the run's scopes
-  (capped at 5 with omitted ids named, empty when nothing covers). Contradicting
-  a live receipt requires a challenge naming it (`requiresChallenge`); stale
-  (version-moved) or superseded receipts route to reconfirmation, never to
-  challenge. Freshness is version-bound (`freshnessOf`: same versions and
-  untouched scopes is `current`, any bump or touched scope is `stale`, missing
-  versions is `unknown` — never invented). Supersession is an explicit chain
-  (`resolveLive`); two live receipts contradicting on overlapping scopes surface
-  as conflicts instead of letting the next agent pick arbitrarily. Legacy
-  receipts without the new fields fail closed: always served, always live.
 - **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
   `stelow-product-scope-mapping` method as one focused technique. It writes the
   readable `explore-scope-map.md` artifact first and may include validated
