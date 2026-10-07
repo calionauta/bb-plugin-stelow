@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.78.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.77.0...v0.78.0) (2026-10-07)
+
+
+### Features
+
+* floating bulk bar, flow detail in a side drawer, and a card that works at 375px ([#346](https://github.com/calionauta/bb-plugin-stelow/issues/346)) ([597528f](https://github.com/calionauta/bb-plugin-stelow/commit/597528ff1cccd970e84474daf014b82c15cd6270))
+
 ## [0.77.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.76.0...v0.77.0) (2026-10-06)
 
 
