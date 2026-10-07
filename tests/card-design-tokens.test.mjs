@@ -203,6 +203,7 @@ test("a type size is on the scale, or listed as a deliberate exception", () => {
     "a type size outside the scale. Use one of the named steps, or add the size to TYPE_EXCEPTIONS with the reason "
     + "it earns its place — a scale is only real if its exceptions are listed",
   );
+
 });
 
 /**
@@ -211,12 +212,17 @@ test("a type size is on the scale, or listed as a deliberate exception", () => {
  * leave this test blessing the old one.
  *
  * This is deliberately a GROWTH gate, not a migration gate. `text-[11px]`
- * appears in 102 places, all of it the same size doing the same job; rewriting
- * 124 files in the same commit as a disclosure fix would bury the change under
- * noise, and a rule nobody can adopt in one sitting is a rule nobody adopts.
- * So the size is allowed, the SCALE names it, and a size that was not already
- * here cannot join. The 102 sites are owed a migration and are now counted
- * rather than invisible — which is the only honest status for a debt this size.
+ * appeared in 95 places, all of it the same size doing the same job; rewriting
+ * every file that carries it in the same commit as a disclosure fix would bury
+ * the change under noise, and a rule nobody can adopt in one sitting is a rule
+ * nobody adopts. So the size is allowed, the SCALE names it, and the sites are
+ * COUNTED against a ceiling that only ratchets down.
+ *
+ * The count was added after this docstring was found to be describing a gate that did not
+ * exist. It said "a size that was not already here cannot join" and "the 102 sites are owed
+ * a migration and are now counted"; neither was true, and a 98th site passed green. The
+ * number was also wrong (102 was the figure when written; 97 raw, 95 in code). A rule whose
+ * enforcement is prose is a preference, and this file is where that lesson keeps landing.
  */
 function sizesBehindTheScale() {
   return TYPE_SCALE.flatMap((step) => step.match(/text-\[\d+px\]/g) ?? []);
