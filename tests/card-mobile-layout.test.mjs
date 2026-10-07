@@ -81,4 +81,20 @@ assert.doesNotMatch(
   "and nothing in the card's shell demands a minimum width a phone cannot give it",
 );
 
+// --- 4. A two-column field grid adapts, rather than holding a fixed label width. --
+// Found in this audit: `execution-run-detail`'s Field used `grid-cols-[7rem_minmax(0,1fr)]`
+// with no breakpoint. 7rem is 19% of a 375px card, and "Failed with" beside a long error code
+// leaves the value about 230px to wrap in.
+const runDetail = codeOf(readFileSync(join(root, "components/detail/execution-run-detail.tsx"), "utf8"));
+assert.match(
+  runDetail,
+  /grid-cols-\[minmax\(0,auto\)_minmax\(0,1fr\)\] gap-x-2 py-0\.5 text-xs sm:grid-cols-\[7rem_minmax\(0,1fr\)\]/,
+  "the field's label column is proportional below sm and fixed at 7rem from sm up",
+);
+assert.doesNotMatch(
+  runDetail,
+  /className="grid grid-cols-\[7rem_minmax\(0,1fr\)\] gap-x-2 py-0\.5 text-xs"/,
+  "and the unqualified fixed column is gone: it was 19% of a phone card",
+);
+
 console.log("card mobile layout ok: the header wraps, the breadcrumb keeps its line, and the gutters adapt");
