@@ -49,7 +49,23 @@ export function FlowDetails({
   onOpenCard,
 }: FlowDetailsProps) {
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-3">
+      {/* The drawer had an `srLabel` and no visible title, so it opened onto tabs with no
+          statement of what they belonged to — a 26rem panel the reader has to infer. The
+          heading names it and carries the scope, which is the one fact that changes what
+          every number below means. The `mt-2` is gone with it: that offset was for when this
+          rendered inside the accordion, under the summary line it belonged to. */}
+      <div className="space-y-0.5">
+        <h2 className="text-sm font-semibold text-foreground">Flow</h2>
+        {/* The window is NOT repeated here: the timing tab's own selector states it, and a
+            second statement of the same fact is how two surfaces start disagreeing. What this
+            line adds is the definition of the two words every number below depends on. */}
+        <p className="text-xs text-muted-foreground">
+          {result.summary.count} finished card{result.summary.count === 1 ? "" : "s"} with a
+          measured trail · <span className="text-foreground/80">lead</span> is request to done,{" "}
+          <span className="text-foreground/80">cycle</span> is first movement to done
+        </p>
+      </div>
       <FlowTabBar
         result={result}
         tab={view.tab}

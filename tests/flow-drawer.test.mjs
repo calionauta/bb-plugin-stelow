@@ -142,4 +142,30 @@ assert.match(
   "the panel is bounded so it never fills the viewport on a phone and never crowds a desktop board",
 );
 
+// --- 7. The panel says what it is. ------------------------------------------
+// Found in this audit: the drawer carried an `srLabel` and no visible title, so it opened
+// onto tabs with no statement of what they belonged to — a 26rem panel the reader has to
+// infer from its contents. The shell's own docstring asks callers to "render their own
+// labeled heading inside children (e.g. DialogTitle)", and nothing enforced it; this is the
+// enforcement, on the one consumer there is.
+assert.match(
+  details,
+  /<h2 className="text-sm font-semibold text-foreground">Flow<\/h2>/,
+  "the drawer renders a visible heading, not only an srLabel",
+);
+// The heading carries the one fact that changes what every number below means. Without it
+// "lead" and "cycle" are two words a reader has to already know.
+assert.match(
+  details,
+  /<span className="text-foreground\/80">lead<\/span> is request to done/,
+  "and the heading states what lead and cycle mean",
+);
+// The window is NOT restated in the heading: the timing tab's selector states it, and two
+// statements of one fact is how two surfaces start disagreeing.
+assert.doesNotMatch(
+  details,
+  /FLOW_WINDOWS\.find\(\(entry\) => entry\.id === view\.window\)/,
+  "and the heading does not repeat the window, which the tab's own selector already shows",
+);
+
 console.log("flow drawer ok: side panel for the detail, summary line still on the board, one shared shell");
