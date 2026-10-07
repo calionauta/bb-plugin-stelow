@@ -9,6 +9,7 @@ import {
   partitionByEligibility,
 } from "../../lib/bulk-eligibility.mjs";
 import { deleteInBatches } from "../../lib/bulk-delete-batch.mjs";
+import { BULK_BAR_SHELL_CLASS, BULK_BAR_SURFACE_CLASS } from "../../lib/bulk-bar-placement.mjs";
 import type { BuildPanelState } from "../panels/build-panel-types";
 
 type Card = {
@@ -122,14 +123,18 @@ async function runBulkDelete(eligible: Card[], skipped: BulkPartition["skipped"]
 }
 
 /**
- * The bulk bar above the kanban, present only while cards are selected. It
- * lives with the bar it renders: the board view only routes view modes to
- * boards, while everything about selection actions stays in this file.
+ * The bulk bar, floating at the bottom of the viewport while cards are selected.
+ *
+ * It used to be a block ABOVE the kanban, in the board's own column, so selecting a card
+ * inserted a row into the layout and pushed the board down. A selection is not a layout
+ * change: the cards stay where they are and only the actions appear. See
+ * lib/bulk-bar-placement.mjs for why it is anchored to the viewport rather than the board,
+ * and for the safe-area handling.
  */
 export function BulkBarSlot({ state }: { state: BuildPanelState }) {
   if (state.selectedIds.size === 0) return null;
   return (
-    <div className="mb-3">
+    <div className={BULK_BAR_SHELL_CLASS} data-bulk-bar>
       <BuildBulkBar
         cards={state.cards as never}
         selectedIds={state.selectedIds}
@@ -199,7 +204,7 @@ export function BuildBulkBar({ cards, selectedIds, onClear, onSuccess, rpc }: Pr
   });
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-2">
+    <div className={BULK_BAR_SURFACE_CLASS} data-bulk-bar-surface>
       <BulkActionButtons
         count={count}
         pending={pending}

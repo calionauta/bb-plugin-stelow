@@ -72,6 +72,10 @@ const explorePanelState = readFileSync(join(root, "components", "panels", "explo
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const storage = readFileSync(join(root, "lib", "panel-storage.mjs"), "utf8");
 const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
+// The drawer's contents live in their own file since the strip crossed its budget, so a pin
+// about how a ROW opens reads there. The strip keeps the summary line and the drawer mount.
+const flowDetails = readFileSync(join(root, "components", "board", "flow-drawer-details.tsx"), "utf8");
+const flowTypes = readFileSync(join(root, "components", "board", "flow-types.ts"), "utf8");
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
@@ -130,8 +134,8 @@ assert.ok(
   "every flow row forwards through the shared navigator",
 );
 assert.match(flowStrip, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
-assert.match(flowStrip, /FLOW_WINDOWS/, "done windows are presets, not free dates");
-assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows open through the shared navigator");
+assert.match(flowDetails, /FLOW_WINDOWS/, "done windows are presets, not free dates");
+assert.match(flowDetails, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows open through the shared navigator");
 
 // Attention rides the same RPC pass: stuck (blocked status or errored
 // worker — explicit signals, never heuristics) and review-awaiting dones,
@@ -139,18 +143,18 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 // from attention; empty attention reads one calm line, never an empty box.
 const attentionContract = /attention: z\s*\.array\([\s\S]*?reason: z\s*\.enum\(\["stuck",\s*"review"\]\)/;
 assert.match(server, attentionContract, "attention items are contracted with a closed reason set");
-assert.match(flowStrip, /type FlowTab = "timing" \| "attention"/, "timing and attention share one closed tab type");
+assert.match(flowTypes, /type FlowTab = "timing" \| "attention"/, "timing and attention share one closed tab type");
 assert.match(flowStrip, /useState<FlowTab>\("timing"\)/, "timing is the default tab, not a second stacked section");
-assert.match(flowStrip, /entry === "timing"\s*\n\s*\? "Timing"/, "tab labels are English, matching the rest of the card UI");
-assert.doesNotMatch(flowStrip, /Tempo|Atenção/, "no non-English UI copy survives in the strip");
-assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
+assert.match(flowDetails, /entry === "timing"\s*\n\s*\? "Timing"/, "tab labels are English, matching the rest of the card UI");
+assert.doesNotMatch(flowDetails, /Tempo|Atenção/, "no non-English UI copy survives in the flow surfaces");
+assert.match(flowDetails, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
 assert.match(
   flowStrip,
   /isStuck \? "animate-pulse bg-amber-500" : "bg-emerald-500"/,
   "only the stuck indicator pulses; the review indicator stays still",
 );
-assert.match(flowStrip, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
-assert.doesNotMatch(flowStrip, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
+assert.match(flowDetails, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
+assert.doesNotMatch(flowDetails, /velocity|throughput per|per worker/, "no efficiency ranking survives in the flow surfaces");
 
 // The header names the component and its count honestly: Flow indicators
 // over finished cards with a measured trail — never a bare "N done" that
@@ -162,9 +166,9 @@ assert.match(
   /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/,
   "the closed header names its window — a filtered count never reads as the column",
 );
-assert.match(flowStrip, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
-assert.match(flowStrip, /9 of 10 finish within/, "slow names what p90 means in words");
-assert.match(flowStrip, /Lead[\s\S]*cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
+assert.match(flowDetails, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
+assert.match(flowDetails, /9 of 10 finish within/, "slow names what p90 means in words");
+assert.match(flowDetails, /Lead[\s\S]*cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
 assert.doesNotMatch(flowStrip, /lead p50 \{/, "no bare p50 readout survives in the header");
 assert.doesNotMatch(flowStrip, /p90 lead \{/, "no bare p90 readout survives in the window row");
 
