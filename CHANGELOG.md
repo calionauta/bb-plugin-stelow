@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.78.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.78.0...v0.78.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* the flow drawer says what it is, and a field grid stops holding a fixed column on a phone ([#348](https://github.com/calionauta/bb-plugin-stelow/issues/348)) ([e93ee87](https://github.com/calionauta/bb-plugin-stelow/commit/e93ee874a9d1623a32f39998ff8cace0db6a4fec))
+
 ## [0.78.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.77.0...v0.78.0) (2026-10-07)
 
 
