@@ -66,6 +66,9 @@ Refusal names the failing check, mirroring `verify` output.
     host rejects findings whose quote is not a character-exact substring
     (fabricated quote = failed review run, not a FAIL verdict).
   - `repair`: objective, re-verifiable fix (feeds "Repair this artifact").
+  - contradiction: a `pass` carrying its own `FAIL` findings is discarded
+    to `human-review` (`isContradictoryApproval`) — an approval that
+    contradicts its quoted evidence never covers anything.
 - The deterministic report is the rubric: the reviewer never re-derives
   counts the code already checked; it judges what code cannot
   (coherence, scope fit, usefulness, request adherence) and cites spans.
