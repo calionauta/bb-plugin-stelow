@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.79.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.78.1...v0.79.0) (2026-10-08)
+
+
+### Features
+
+* decision receipts as permission (decide command, challenge gate, served reads) ([#353](https://github.com/calionauta/bb-plugin-stelow/issues/353)) ([78cf157](https://github.com/calionauta/bb-plugin-stelow/commit/78cf15730e0c93ac57fc66463588da739c0d119a))
+
 ## [0.78.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.78.0...v0.78.1) (2026-10-07)
 
 

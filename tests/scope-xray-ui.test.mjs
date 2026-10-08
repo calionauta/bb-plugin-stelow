@@ -172,3 +172,20 @@ for (const word of ["current", "stale", "blocked", "unknown"]) {
     "draft names who still has to decide",
   );
 }
+
+// Decisions join the header, said once: the projection carries one sentence
+// for the whole card, never a badge per scope, and silence when the card
+// holds no receipts — so cards without decisions draw exactly as before.
+{
+  const withDecisions = scopeXrayPresentation(xray({
+    decisions: { live: 2, stale: 1, unknown: 0, conflicts: [{ a: "r-1", b: "r-9", scopeIds: ["s1"] }] },
+  }));
+  assert.equal(
+    withDecisions.decisions,
+    "2 decisions · 1 stale · contradiction: r-1 vs r-9 (s1)",
+    "the header carries the decisions sentence once",
+  );
+  assert.equal(scopeXrayPresentation(xray()).decisions, null, "no receipts means no sentence");
+  assert.match(body, /view\.decisions/, "the component draws the projection's sentence, it does not derive it");
+  assert.match(body, /Decisions: \{view\.decisions\}/, "the sentence renders once, under the freshness note");
+}

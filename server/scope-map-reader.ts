@@ -15,13 +15,18 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { validateScopeMap, type ScopeMap } from "../lib/scope-map.mjs";
 import { buildScopeDraft, buildScopeXray, parseCurrentShapeVersion } from "../lib/scope-xray.mjs";
+import { parseReceiptFile } from "../lib/decision-receipts.mjs";
+import { summarizeDecisions } from "../lib/decision-xray.mjs";
 
 const SCOPE_MAP_FILE = "scope-map.json";
 const SCOPE_DRAFT_FILE = "scope-map-draft.json";
 const STATE_FILE = "state.md";
 
 /** The X-ray the card draws: the approved map, plus how fresh it is. */
-export type ScopeXray = ReturnType<typeof buildScopeXray>;
+export type ScopeXray = ReturnType<typeof buildScopeXray> & {
+  /** Header-level decisions line; absent when the card holds no receipts. */
+  decisions?: { live: number; stale: number; unknown: number; conflicts: Array<{ a: string; b: string; scopeIds: string[] }> } | null;
+};
 
 /** The draft preview for the gate review: same graph, explicitly not approved. */
 export type ScopeDraft = ReturnType<typeof buildScopeDraft>;
@@ -52,6 +57,19 @@ export type ScopeMapReader = {
   scopeDraft: (stateDir: string | null) => Promise<ScopeDraft | null>;
 };
 
+/** Header-level decisions line, best-effort: an unreadable store draws no
+ * sentence rather than breaking the map. */
+async function readDecisionSummary(
+  bb: Pick<BbPluginApi, "sdk">,
+  stateDir: string,
+  currentShapeVersion: string | null,
+) {
+  const file = await bb.sdk.files.read({ path: join(stateDir, "decision-receipts.json") })
+    .catch(() => null);
+  if (!file) return null;
+  return summarizeDecisions(parseReceiptFile(file.content), { shapeVersion: currentShapeVersion ?? undefined });
+}
+
 export function createScopeMapReader(bb: Pick<BbPluginApi, "sdk">): ScopeMapReader {
   async function readScopeMap(stateDir: string | null): Promise<ScopeMap | null> {
     if (!stateDir) return null;
@@ -67,7 +85,12 @@ export function createScopeMapReader(bb: Pick<BbPluginApi, "sdk">): ScopeMapRead
     const state = await bb.sdk.files.read({ path: join(stateDir, STATE_FILE) })
       .then((file) => file.content)
       .catch(() => null);
-    return buildScopeXray(map, { currentShapeVersion: parseCurrentShapeVersion(state) });
+    const currentShapeVersion = parseCurrentShapeVersion(state);
+    const xray = buildScopeXray(map, { currentShapeVersion });
+    // Decisions ride the same header, best-effort: an unreadable store draws
+    // no sentence rather than breaking the map.
+    const decisions = await readDecisionSummary(bb, stateDir, currentShapeVersion).catch(() => null);
+    return decisions ? { ...xray, decisions } : xray;
   }
   async function scopeDraft(stateDir: string | null): Promise<ScopeDraft | null> {
     if (!stateDir) return null;

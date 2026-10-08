@@ -17,7 +17,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   full controls (real inputs, min-h-11 targets) — no hidden select.
   Quality defaults to production, supervision to high, exploration to 3 +
   hybrid, acceptance tests to Strict (Advisory on experimental cards);
-  a legacy appetite default maps once (rigor always strongest).
+  a legacy appetite default maps once (rigor always strongest). The
+  exploration row discloses which design archetypes each count runs
+  (2→A,D · 3→A,D,E · 4→A,B,D,E · 5→all, plus hybrid; 1 stays
+  model-chosen) behind a closed "Which archetypes" toggle with one-line
+  philosophies per letter.
   Review gates are a pure multi-select (product spec, interface
   direction, build scopes, technical plan, code diff) with Select all /
   Clear and one-click preset templates; nothing picked means Auto and the
@@ -273,6 +277,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   points nowhere. The runtime validator now covers every field the published
   schema declares — including `nextAction`, which a receipt must fill, since a
   receipt with no next move is not evidence.
+- **Decision enforcement (receipts as permission).** Past decisions ride into
+  new work instead of waiting to be found: native execution start carries a
+  `decisionReads` context field listing the receipts covering the run's scopes
+  (capped at 5 with omitted ids named, empty when nothing covers). Contradicting
+  a live receipt requires a challenge naming it (`requiresChallenge`); stale
+  (version-moved) or superseded receipts route to reconfirmation, never to
+  challenge. Freshness is version-bound (`freshnessOf`: same versions and
+  untouched scopes is `current`, any bump or touched scope is `stale`, missing
+  versions is `unknown` — never invented). Supersession is an explicit chain
+  (`resolveLive`); two live receipts contradicting on overlapping scopes surface
+  as conflicts instead of letting the next agent pick arbitrarily. Legacy
+  receipts without the new fields fail closed: always served, always live.
+- **`bb stelow decide` (host-minted decision receipts).** The worker proposes,
+  the host records: `--selected` (required), `--rejected`, `--scopes`,
+  `--reason`, `--supersedes`, `--challenge`. The gate fires at write time —
+  reviving a rejected option or overturning a live pick without `--challenge`
+  naming the receipt refuses with the exact re-run flag. Each receipt stamps the
+  card's current `shape_version` as what it authorizes and leaves a trail
+  comment naming winner, losers, and receipt id. Receipts persist in
+  `<stateDir>/decision-receipts.json`, which native start loads fail-soft to
+  feed `decisionReads`. A fresh contradiction between two live receipts warns
+  on the spot (stdout plus trail comment naming both sides) instead of waiting
+  to be found, and the Scope X-ray header carries one decisions sentence
+  (live/stale counts plus any contradiction) — never a badge per scope.
 - **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
   `stelow-product-scope-mapping` method as one focused technique. It writes the
   readable `explore-scope-map.md` artifact first and may include validated
@@ -3321,3 +3349,22 @@ The fast loop is `npm run test:fast` (~0.7s, five pure test files in one process
 for when the full suite's ~400 separate node processes are not what you want to
 wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
 pure process boot and fails when that share grows.
+
+## Known limitations (decision enforcement)
+
+Assumed deliberately; each names the tripwire that would invalidate it:
+
+- **Concurrent writes race.** Two `decide` writes to the same card can
+  last-write-win (atomic replace, no lock). Tripwire: parallel dispatch
+  deciding on one card — then this needs the `locks/` machinery, not hope.
+- **Staleness is version-only.** Code can move under a decision without a
+  shape bump and the receipt stays `current`. Tripwire: a real incident of
+  silent invalidation — then receipts need baseline HEADs (schema v2).
+- **`--by` is self-asserted.** The host has no caller identity; attribution
+  is decorative. Tripwire: any multi-human install — then approvals need
+  real identity.
+- **Served reads ride inside the task context JSON**, not as a prompt
+  prefix. Tripwire: evidence a worker skipped them — then promote to prefix.
+- **Conflicts warn, they do not block.** A warned contradiction still
+  records. Tripwire: a warned-then-ignored contradiction causing rework —
+  then contradictions refuse pending supersession.

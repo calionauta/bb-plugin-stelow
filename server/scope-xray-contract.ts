@@ -31,6 +31,14 @@ function scopeXrayBase() {
     freshness: z.enum(["current", "stale", "unknown"]),
     nodes: scopeXrayNodes,
     edges: scopeXrayEdges,
+    // Header-level decisions line; absent on cards with no receipts, so old
+    // projections stay valid and the sentence never invents content.
+    decisions: z.object({
+      live: z.number(),
+      stale: z.number(),
+      unknown: z.number(),
+      conflicts: z.array(z.object({ a: z.string(), b: z.string(), scopeIds: z.array(z.string()) })),
+    }).nullable().optional(),
   };
 }
 
