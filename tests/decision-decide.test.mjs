@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createDecideCommand } from "../server/runtime/cli/cli-decide.ts";
-import { parseReceiptFile } from "../lib/decision-receipts.mjs";
+import { parseReceiptFile, parseReceiptStore } from "../lib/decision-receipts.mjs";
 
 function harness() {
   let file = null;
@@ -22,7 +22,7 @@ function harness() {
         },
       },
     },
-    randomId: () => `r-${++n}`,
+    randomId: (prefix) => `${prefix}-${++n}`,
     getCard: () => ({ id: "card1", dir_hash: "abc", worker_thread_id: "t1" }),
     getCardByWorkerThread: () => ({ id: "card1", dir_hash: "abc", worker_thread_id: "t1" }),
     cardWorkspace: async () => ({ path: "/repo", hostId: null }),
@@ -43,41 +43,63 @@ const ctx = { threadId: "t1", projectId: "p1" };
 {
   const h = harness();
   const decide = createDecideCommand(h.deps);
-  const out = await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1"], ctx);
+  const out = await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1", "--by", "ana"], ctx);
   assert.equal(out.exitCode, 0);
   const receipts = parseReceiptFile(h.file);
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0].selectedId, "opt-5");
+  assert.equal(receipts[0].approvedBy, "ana");
   assert.deepEqual(receipts[0].authorizesVersions, { shape_version: "v7" });
   assert.equal(h.comments.length, 1);
   assert.match(h.comments[0].join(" "), /opt-5/);
 }
 
-// Reviving the rejected option without a challenge refuses with the exit.
+// Reviving the rejected option without a challenge refuses with the two verbs.
 {
   const h = harness();
   const decide = createDecideCommand(h.deps);
   await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1"], ctx);
   const out = await decide(["decide", "--selected", "opt-3", "--scopes", "s1"], ctx);
   assert.equal(out.exitCode, 1);
-  assert.match(out.stderr, /--challenge r-1/);
+  assert.match(out.stderr, /--open-challenge --against dec-1/);
   assert.equal(parseReceiptFile(h.file).length, 1);
 }
 
-// Naming the challenge records; supersession retires the old receipt.
+// A claimed-but-unregistered challenge is still a refusal: names, not claims.
 {
   const h = harness();
   const decide = createDecideCommand(h.deps);
   await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1"], ctx);
+  const out = await decide(["decide", "--selected", "opt-3", "--scopes", "s1", "--challenge", "ch-ghost"], ctx);
+  assert.equal(out.exitCode, 1);
+  assert.equal(parseReceiptFile(h.file).length, 1);
+}
+
+// Open the challenge, then the contradicted pick records with the chain.
+{
+  const h = harness();
+  const decide = createDecideCommand(h.deps);
+  await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1"], ctx);
+  const opened = await decide(["decide", "--open-challenge", "--against", "dec-1", "--reason", "cost changed"], ctx);
+  assert.equal(opened.exitCode, 0);
+  assert.match(opened.stdout, /chg-2/);
   const out = await decide(
-    ["decide", "--selected", "opt-3", "--scopes", "s1", "--challenge", "r-1", "--supersedes", "r-1"],
+    ["decide", "--selected", "opt-3", "--scopes", "s1", "--challenge", "chg-2", "--supersedes", "dec-1"],
     ctx,
   );
   assert.equal(out.exitCode, 0);
-  const receipts = parseReceiptFile(h.file);
-  assert.equal(receipts.length, 2);
-  assert.equal(receipts.find((r) => r.id === "r-1").supersededBy, "r-2");
-  assert.equal(receipts.find((r) => r.id === "r-2").challengeId, "r-1");
+  const store = parseReceiptStore(h.file);
+  assert.equal(store.receipts.length, 2);
+  assert.equal(store.receipts.find((r) => r.id === "dec-1").supersededBy, "dec-3");
+  assert.equal(store.receipts.find((r) => r.id === "dec-3").challengeId, "chg-2");
+}
+
+// Challenges against unknown or dead receipts refuse.
+{
+  const h = harness();
+  const decide = createDecideCommand(h.deps);
+  assert.equal((await decide(["decide", "--open-challenge", "--against", "ghost", "--reason", "x"], ctx)).exitCode, 1);
+  assert.equal((await decide(["decide", "--open-challenge", "--against", "dec-1"], ctx)).exitCode, 1);
 }
 
 // Missing --selected fails with usage, not a write.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { loadDecisionReceipts, markSuperseded, saveDecisionReceipt } from "../server/runtime/decision-store.ts";
-import { buildDecisionReceipt } from "../lib/decision-receipts.mjs";
+import { loadDecisions, loadDecisionReceipts, markSuperseded, saveChallenge, saveDecisionReceipt } from "../server/runtime/decision-store.ts";
+import { buildChallenge, buildDecisionReceipt } from "../lib/decision-receipts.mjs";
 
 function fakeFiles(initial = null) {
   let content = initial;
@@ -28,9 +28,12 @@ const root = "/repo";
 const empty = fakeFiles(null);
 assert.deepEqual(await loadDecisionReceipts(empty.files, dir), []);
 
-// Corrupt file reads as empty too.
+// Corrupt file: reads stay best-effort, writes fail closed.
 const corrupt = fakeFiles("{oops");
 assert.deepEqual(await loadDecisionReceipts(corrupt.files, dir), []);
+assert.deepEqual((await loadDecisions(corrupt.files, dir)).corrupt, true);
+const refused = await saveDecisionReceipt(corrupt.files, root, dir, { id: "r-9", selectedId: "a" });
+assert.equal(refused.ok, false);
 
 // Save persists; reload recovers the receipt.
 const store = fakeFiles(null);
@@ -51,5 +54,10 @@ await markSuperseded(store.files, root, dir, ["r-1", "ghost"], "r-2");
 const chained = await loadDecisionReceipts(store.files, dir);
 assert.equal(chained[0].supersededBy, "r-2");
 await markSuperseded(store.files, root, dir, [], "r-3");
+
+// Challenges persist in the registry alongside receipts.
+const challenge = buildChallenge({ receiptId: "r-1", reason: "why" }, { id: "ch-1" });
+assert.deepEqual(await saveChallenge(store.files, root, dir, challenge.challenge), { ok: true });
+assert.equal((await loadDecisions(store.files, dir)).challenges.length, 1);
 
 console.log("decision-store: ok");
