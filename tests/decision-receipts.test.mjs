@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  buildChallenge,
   buildDecisionReceipt,
+  parseChallenge,
   parseReceipt,
   parseReceiptFile,
+  parseReceiptStore,
   serializeReceiptFile,
   validateDecisionReceipt,
 } from "../lib/decision-receipts.mjs";
@@ -41,5 +44,21 @@ assert.equal(parsed[0].id, "r-1");
 assert.deepEqual(parseReceiptFile("not json"), []);
 assert.equal(parseReceipt(null), null);
 assert.ok(validateDecisionReceipt({}).length > 0);
+
+// Challenges: minted with target + reason; unknown shapes skip.
+const challenge = buildChallenge({ receiptId: "r-1", reason: "cost changed" }, { id: "ch-1" });
+assert.equal(challenge.ok, true);
+assert.equal(challenge.challenge.receiptId, "r-1");
+assert.equal(buildChallenge({ receiptId: "r-1" }, { id: "ch-2" }).ok, false);
+assert.equal(buildChallenge({ reason: "x" }, { id: "ch-2" }).ok, false);
+assert.equal(parseChallenge({ id: "x" }), null);
+
+// The store round-trips receipts and challenges; corruption is reported, not thrown.
+const store = parseReceiptStore(serializeReceiptFile([built.receipt], [challenge.challenge]));
+assert.equal(store.receipts.length, 1);
+assert.equal(store.challenges.length, 1);
+assert.equal(store.corrupt, false);
+assert.deepEqual(parseReceiptStore("not json"), { receipts: [], challenges: [], corrupt: true });
+assert.deepEqual(parseReceiptStore(null), { receipts: [], challenges: [], corrupt: false });
 
 console.log("decision-receipts: ok");
