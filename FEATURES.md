@@ -2075,6 +2075,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the current fingerprint (`reviewCoversFingerprint`). Mechanism only:
   enable solely with a reviewer you trust on adversarial spot-checks —
   the refusal says so.
+- **Contradictory approvals are discarded in code**
+  (`isContradictoryApproval`, `parseReviewOutput`). A `pass` carrying its
+  own `FAIL` findings degrades to `human-review` in the shared parser both
+  review paths call, so the record reads `Status: human-review` and never
+  covers the fingerprint gate. Recorded output:
+  `Review verdict: human-review — 1 finding(s), 1 failing. Contradictory pass discarded.`
 - **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
   stricter checkout-bound `audit.md` gate passes, Build completion invokes the
   upstream helper to build and check the deterministic cross-host lineage

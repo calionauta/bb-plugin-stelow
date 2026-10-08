@@ -15,6 +15,7 @@ export interface ParsedReview {
   findings: ReviewFinding[];
   dropped: number;
   raw: boolean;
+  contradictory: boolean;
 }
 
 /** What the reviewer received, and how it was chosen. `selected` is
@@ -39,6 +40,7 @@ export declare function buildReviewPrompt(input: {
   contract?: unknown;
 }): { prompt: string; excerpt: ReviewExcerpt };
 export declare function extractJsonBlock(output: unknown): unknown;
+export declare function isContradictoryApproval(parsed: unknown): boolean;
 export declare function parseReviewOutput(output: unknown, artifactContent: unknown): ParsedReview;
 export declare function reviewSummary(parsed: ParsedReview): string;
 export declare function reviewCoversFingerprint(reviewFiles: Array<{ name: string; content: unknown }>, fingerprint: string | null): boolean;
