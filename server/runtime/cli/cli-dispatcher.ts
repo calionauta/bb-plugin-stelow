@@ -3,6 +3,7 @@ import { createAnswerCommand, type AnswerDoors } from "./cli-answer.js";
 import { createAskCommand } from "./cli-ask.js";
 import { createBundleWriter } from "./cli-bundle-writer.js";
 import { createCriteriaCommand } from "./cli-criteria.js";
+import { createDecideCommand } from "./cli-decide.js";
 import { createDelegatedCommands } from "./cli-draft.js";
 import { createDoneCommand } from "./cli-done.js";
 import { createExportCommand } from "./cli-export.js";
@@ -58,6 +59,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createVerifyDelegationCommand(deps),
     createGapTriageCommand(deps),
     createScopeApproveCommand(deps),
+    createDecideCommand(deps),
     ...createDelegatedCommands(deps),
   ];
 }

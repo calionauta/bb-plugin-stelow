@@ -13,6 +13,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { skippedStages } from "../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../lib/workflow-vocabulary.mjs";
 import { nativeWorkflowAvailable, renderInlineWorkflowScript } from "./bb-workflow-bridge.js";
+import { decisionReadsBlock } from "./runtime/decision-reads.js";
+import { loadDecisionReceipts } from "./runtime/decision-store.js";
 import { workflowContext } from "./execution-native-catalog.js";
 import type {
   PreparedStart,
@@ -63,7 +65,28 @@ export async function prepareStart(
     sequence: STAGE_SEQUENCE,
   }).skipped.some((entry) => entry.stage === stage.id);
   if (skipped) return { error: `Stage ${stage.id} is skipped by the active review route.` };
-  return { prepared: runArguments(staged, card, recipe, stage, context, config) };
+  // Past decisions covering these scopes ride into the run. Fail-soft: a card
+  // without receipts (or an unreadable store) prepares exactly as before.
+  const stored = await loadStoredReceipts(deps, staged.stateDir);
+  const receipts = context.decisionReceipts ?? stored;
+  return { prepared: runArguments(staged, card, recipe, stage, context, config, receipts) };
+}
+
+async function loadStoredReceipts(
+  deps: PrepareDeps,
+  stateDir: string | null,
+): Promise<Array<{ id: string; kind?: string; scopeIds?: string[] }>> {
+  if (!stateDir) return [];
+  try {
+    const stored = await loadDecisionReceipts(deps.bb.sdk.files, stateDir);
+    return stored.map((entry) => ({
+      id: entry.id,
+      kind: typeof entry.kind === "string" ? entry.kind : "selection",
+      scopeIds: Array.isArray(entry.scopeIds) ? entry.scopeIds.filter((id) => typeof id === "string") : [],
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /** The workspace, the host's willingness, the state dir, the staging root, the script. */
@@ -131,7 +154,11 @@ function runArguments(
   stage: WorkflowStage,
   context: StartContext,
   config: WorkflowContext,
+  receipts: Array<{ id: string; kind?: string; scopeIds?: string[] }>,
 ): PreparedStart {
+  // Past decisions covering these scopes ride along as mandatory reads. Empty
+  // by default: cards without receipts prepare exactly as before.
+  const decisionReads = decisionReadsBlock(receipts, context.scopeIds ?? []);
   return {
     recipe,
     stage,
@@ -144,6 +171,7 @@ function runArguments(
       context: {
         ...context,
         ...config,
+        decisionReads,
         uiScopePresent: config.productType === "software",
         intent: card.intent,
         stage: stage.id,

@@ -7,6 +7,8 @@ export type ScopeXrayPresentation = {
   mapVersion: string;
   scopeCount: number;
   freshness: { label: string; tone: "muted" | "warn"; note: string; appliesToAll: boolean };
+  /** Header-level decisions sentence; null when the card holds no receipts. */
+  decisions: string | null;
   nodes: Array<{
     id: string;
     title: string;
