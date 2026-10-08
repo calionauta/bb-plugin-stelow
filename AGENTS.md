@@ -105,7 +105,21 @@ gh api -X POST repos/calionauta/bb-plugin-stelow/dispatches \
 ```
 
 Then confirm the pin actually moved (`data/stelow-source.json` on
-`master`) before calling the two repos consistent.
+`master`) before calling the two repos consistent. The dispatch opens an
+automation PR (`automation/stelow-<sha>`); the pin moves on its merge,
+not on the dispatch. Merge it after CI is green, and close any older
+open sync PR for a previous pin as superseded. Its run can hit the
+`action_required` gate documented under Releases — same remedy there
+(approve the run, never re-run it).
+
+**A required status check must be a check that reports on pull
+requests.** Observed on upstream `main`: a required `build` context
+matched no PR workflow (Pages builds only run on pushes), so every PR
+waited forever on "expected — waiting for status" while
+`required_approving_review_count` was already 0 — reviews were never
+the blocker. Audit with `gh api
+repos/<owner>/<repo>/branches/<branch>/protection/required_status_checks`
+and delete contexts no workflow produces.
 
 **Sync-owned content that disagrees with upstream is a bug in the
 plugin, and it is invisible until the next sync silently reverts it.**
@@ -337,6 +351,7 @@ jobs.** Observed four times, always on the release-please branch and
 always intermittent — the same branch also passed cleanly. It is a
 platform-level approval gate on `pull_request` events, not a test
 failure: the run never starts, so there is nothing to read in the log.
+The same gate hits automation/sync branches too (observed 2026-10-08).
 Approve it and it proceeds:
 
 ```bash
