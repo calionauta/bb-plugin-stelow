@@ -257,6 +257,15 @@ inverting the behavior before trusting it green.
   may not be its test's only author — spawn a fresh subagent with the
   requirement alone to write or red-team the test
   (see `stelow-workflow-testing-ai-code`, anti-patterns).
+- **No agent self-certification in-loop:** the implementing agent never writes
+  unit/integration tests to verify its own change, and no mandated TDD
+  red-green cycle (ProgramBench 2026: −3.6pp at +55% cost; DeepSWE 2026:
+  zero gain from agent-written unit/integration tests). New behavior tests
+  are described by the human or authored/red-teamed by a fresh context —
+  the rule above extended to every path, not just critical ones.
+- **Targeted locally, full in CI:** run the impact subset during work;
+  `npm test` stays a CI gate. In-loop full-suite execution measured ~zero
+  success gain at real token cost.
 - **Batch triage via subagents:** contract-file cleanup is mechanical
   keep/convert/delete classification — delegate per file, decide on the table.
 
