@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron } from "../disclosure";
+import { ExplorationArchetypes } from "./exploration-archetypes";
 
 // Shared creation-form controls: run knobs + review gates (every
 // creation flow), the strategy/technique picker (research, explore,
@@ -186,7 +187,15 @@ function SettingsSection({ title, description, children }: { title: string; desc
 // as a wall of text; a native select would hide the options again. This
 // keeps both virtues: compact like a select, explicit like radio cards,
 // reusing the same ChoiceCards instead of a second option renderer.
-function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
+function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, below }: {
+  label: string;
+  hint?: string;
+  value: T;
+  options: readonly { value: T; label: string; description: string }[];
+  onChange: (value: T) => void;
+  groupName: string;
+  below?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value) ?? options[0];
   return (
@@ -208,6 +217,7 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
       {open ? (
         <div className="border-t px-3 pb-3 pt-2">
           <ChoiceCards label={label} labelHidden hint={hint} value={value} options={options} onChange={onChange} groupName={groupName} />
+          {below}
         </div>
       ) : null}
     </div>
@@ -249,7 +259,8 @@ export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGa
       <CollapsibleChoiceCards label="Supervision" hint={SUPERVISOR_HINT} value={prefs.supervisor} options={SUPERVISOR_OPTIONS}
         onChange={(supervisor) => onPrefsChange({ supervisor })} groupName={`${groupNamePrefix}-supervisor`} />
       <CollapsibleChoiceCards label="Exploration" hint={EXPLORATION_HINT} value={prefs.explorationCount} options={EXPLORATION_OPTIONS}
-        onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`} />
+        onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`}
+        below={<ExplorationArchetypes />} />
       <CollapsibleChoiceCards label="Acceptance tests" hint={RED_FIRST_HINT} value={prefs.redFirst} options={RED_FIRST_OPTIONS}
         onChange={(redFirst) => onPrefsChange({ redFirst })} groupName={`${groupNamePrefix}-red-first`} />
       <ReviewGatePicker label="Pause for my review" hint={REVIEW_HINT} value={reviewGates}
