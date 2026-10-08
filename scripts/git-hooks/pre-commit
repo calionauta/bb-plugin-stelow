@@ -17,7 +17,7 @@ if [ ! -d node_modules ]; then
   exit 0
 fi
 
-echo "pre-commit: lint + source shape"
+echo "pre-commit: lint + source shape + suite wiring"
 # `npm run lint` alone does NOT gate: oxlint exits 0 with warnings, so the hook passed
 # while the tree carried 45 of them, six of which this repository's own work had just
 # created. The baseline check is what makes the sentence above true — it fails on a NEW
@@ -25,3 +25,7 @@ echo "pre-commit: lint + source shape"
 npm run --silent lint
 node scripts/check-lint-baseline.mjs
 npm run --silent quality:shape
+# A test file outside every npm band passes in isolation and never runs in CI —
+# this exact miss reached a PR as a red verify. The check is ~0.05s of pure
+# node:fs, so it earns its place next to the fast pair.
+node tests/suite-wiring.test.mjs
