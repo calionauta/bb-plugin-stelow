@@ -293,7 +293,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card's current `shape_version` as what it authorizes and leaves a trail
   comment naming winner, losers, and receipt id. Receipts persist in
   `<stateDir>/decision-receipts.json`, which native start loads fail-soft to
-  feed `decisionReads`.
+  feed `decisionReads`. A fresh contradiction between two live receipts warns
+  on the spot (stdout plus trail comment naming both sides) instead of waiting
+  to be found, and the Scope X-ray header carries one decisions sentence
+  (live/stale counts plus any contradiction) — never a badge per scope.
 - **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
   `stelow-product-scope-mapping` method as one focused technique. It writes the
   readable `explore-scope-map.md` artifact first and may include validated

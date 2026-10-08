@@ -10,6 +10,12 @@ export type ScopeXrayView = {
   mapId: string;
   mapVersion: string;
   freshness: "current" | "stale" | "unknown";
+  decisions?: {
+    live: number;
+    stale: number;
+    unknown: number;
+    conflicts: Array<{ a: string; b: string; scopeIds: string[] }>;
+  } | null;
   nodes: Array<{
     id: string;
     title: string;
@@ -68,6 +74,9 @@ export function ScopeXray({ xray }: { xray: ScopeXrayView }) {
           ? "Preview for the gate review — the scope stage still has to approve it. Nobody edits this here."
           : view.freshness.note}
       </p>
+      {draft || !view.decisions ? null : (
+        <p className={TEXT_META}>Decisions: {view.decisions}</p>
+      )}
       <ul className="space-y-1.5">
         {view.nodes.map((node) => (
           <li key={node.id} className="space-y-0.5">

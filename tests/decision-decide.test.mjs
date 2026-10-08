@@ -102,6 +102,19 @@ const ctx = { threadId: "t1", projectId: "p1" };
   assert.equal((await decide(["decide", "--open-challenge", "--against", "dec-1"], ctx)).exitCode, 1);
 }
 
+// A contradicting record (challenge opened, old receipt kept live) warns
+// on stdout and trails the conflict where the decision lives.
+{
+  const h = harness();
+  const decide = createDecideCommand(h.deps);
+  await decide(["decide", "--selected", "opt-5", "--rejected", "opt-3", "--scopes", "s1"], ctx);
+  await decide(["decide", "--open-challenge", "--against", "dec-1", "--reason", "cost changed"], ctx);
+  const out = await decide(["decide", "--selected", "opt-3", "--scopes", "s1", "--challenge", "chg-2"], ctx);
+  assert.equal(out.exitCode, 0);
+  assert.match(out.stdout, /contradicts live decision.*dec-1 vs dec-3/);
+  assert.match(h.comments[h.comments.length - 1].join(" "), /Decision conflict: dec-1 vs dec-3/);
+}
+
 // Missing --selected fails with usage, not a write.
 {
   const h = harness();

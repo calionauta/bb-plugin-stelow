@@ -146,7 +146,28 @@ async function runDecide(deps: CliDeps, card: WorkerCard, flags: DecideFlags): P
     await markSuperseded(deps.bb.sdk.files, state.rootPath, state.stateDir, supersedes, receiptId).catch(() => undefined);
   }
   trail(deps, card.id, decisionTrail(built.receipt));
-  return { exitCode: 0, stdout: `Decision recorded: ${receiptId} selects ${built.receipt.selectedId}.\n` };
+  const conflictNote = await conflictTrail(deps, card.id, state, receiptId);
+  return { exitCode: 0, stdout: `Decision recorded: ${receiptId} selects ${built.receipt.selectedId}.\n${conflictNote}` };
+}
+
+/**
+ * A fresh contradiction between two live receipts is a fact the next agent
+ * would otherwise pick through at random. It surfaces where the decision
+ * lives — a trail comment plus the command's own stdout — never as a new
+ * inbox kind the contract does not declare.
+ */
+async function conflictTrail(deps: CliDeps, cardId: string, state: StateRef, receiptId: string): Promise<string> {
+  try {
+    const stored = await loadDecisions(deps.bb.sdk.files, state.stateDir);
+    const { conflicts } = resolveLive(stored.receipts);
+    const mine = conflicts.filter((entry) => entry.a === receiptId || entry.b === receiptId);
+    if (mine.length === 0) return "";
+    const lines = mine.map((entry) => `${entry.a} vs ${entry.b} (${entry.scopeIds.join(", ") || "shared scopes"})`);
+    trail(deps, cardId, `Decision conflict: ${lines.join("; ")}. Resolve by superseding one side.`);
+    return `Warning: this contradicts live decision(s): ${lines.join("; ")}.\n`;
+  } catch {
+    return "";
+  }
 }
 
 /** A claimed challenge counts only when the registry holds it against that receipt. */
