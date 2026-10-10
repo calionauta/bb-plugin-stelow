@@ -1025,6 +1025,34 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
+- **Interface pick options from the contrast** (`contrastPickOptions`,
+  `lib/interface-pick-options.mjs`, unit-tested). The `interface` stage
+  always runs reaction-first Interface Contrast (`interfaces/contrast.json`
+  + readable `interfaces/*.md`); the `interface` review gate decides only
+  who picks. When it must become an `interface-pick` question, receipt
+  options map to ask options with `label` = option id verbatim, a
+  description naming primary value plus served/friction scope coverage (or
+  an explicit no-map statement), a ≤15-row preview built only from receipt
+  fields (never an invented wireframe), and the readable rendering as the
+  shared artifact. Anything else refuses with a named reason: other routes
+  carry their route-table destination (`stop-and-name-decision` → human),
+  `existing-interface-no-comparison` names `adopt-existing`, invalid
+  receipts carry the validator's issues, and an id over the 60-char ask cap
+  fails the whole receipt closed. No recommendation field exists anywhere —
+  authority lives with the decider. The creation dialog says the same out
+  loud now: "Interface direction" reads "You pick from the contrast options
+  (scope coverage in contrast.json). Off: the agent auto-adopts.", the empty
+  state reads "Auto — the agent picks, all receipts still recorded", and the
+  hint discloses mid-run "Waiting for you" stops. The stage playbooks match:
+  `select` reclaimed `stages/selection.md` (item selection, which is what
+  that file describes) and `selection` owns new
+  `stages/interface-selection.md` (upstream `fix-interface-pick-contract`,
+  pinned in `data/stelow-source.json`, zero drift after sync). The quality
+  seal routes build `selected-interface.md` by content: proposal-shaped
+  picks keep the `interface-alternatives` contract, contrast picks meet the
+  new `interface-selection` contract (120-word floor, `selected_by:`
+  authority record) — the old single mapping stamped "missing or thin" on
+  every contrast pick. Contract: `docs/interface-selection-contract.md`.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision. The
   check walks the workflow's whole state dir, so the spec the layout wrote to

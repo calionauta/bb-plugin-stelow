@@ -31,6 +31,7 @@ None pending — all operator guides migrated (see above).
 - `staged-execution-continuity.md`, `restore-dogfood.md` — execution notes.
 - `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md` — plans.
 - `rfc-*.md` — proposals under discussion, not behavior.
+- `interface-selection-contract.md` — owned seam: `contrast.json` → `interface-pick` mapping (`lib/interface-pick-options.mjs`).
 - `runs/` — per-card execution evidence, never linked from user docs.
 
 ## Rules

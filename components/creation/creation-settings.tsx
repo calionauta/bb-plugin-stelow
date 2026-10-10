@@ -63,9 +63,9 @@ const EXPLORATION_OPTIONS = [
 ] as const;
 
 const REVIEW_HINT =
-  "The agent stops at each checkpoint you pick and waits — nothing " +
-  "advances until you answer. Nothing picked means Auto: the agent " +
-  "decides everything itself.";
+  "Checked gates stop and wait for your answer. Unchecked (Auto) means the " +
+  "agent picks and records it — receipts are still written. Separately, a run " +
+  "can still stop mid-run as “Waiting for you” with its own question when it needs input.";
 
 const RED_FIRST_OPTIONS = [
   { value: "strict", label: "Strict", description: "Scope close blocks without red proof, freeze and baseline. Production default." },
@@ -75,7 +75,11 @@ const RED_FIRST_OPTIONS = [
 
 const REVIEW_GATE_OPTIONS = [
   { value: "spec", label: "Product spec", description: "Review the shaped product specification and assumptions." },
-  { value: "interface", label: "Interface direction", description: "Pick the interface proposal after reviewing the alternatives." },
+  {
+    value: "interface",
+    label: "Interface direction",
+    description: "You pick from the contrast options (scope coverage in contrast.json). Off: the agent auto-adopts.",
+  },
   { value: "scope", label: "Build scopes", description: "Confirm the planned build scopes (IN/OUT)." },
   { value: "tech", label: "Technical plan", description: "Review the technical plan before execution." },
   { value: "diff", label: "Code diff", description: "Review the final code diff." },
@@ -116,7 +120,7 @@ export function sanitizeReviewGates(value: unknown): ReviewGates {
 }
 
 function reviewGatesSummary(gates: string[]): string {
-  if (gates.length === 0) return "Auto — the agent decides everything";
+  if (gates.length === 0) return "Auto — the agent picks, all receipts still recorded";
   return gates.map((gate) => REVIEW_GATE_OPTIONS.find((option) => option.value === gate)?.label ?? gate).join(", ");
 }
 
@@ -280,6 +284,14 @@ function ReviewGateBulkActions({ onChange }: { onChange: (value: ReviewGates) =>
   );
 }
 
+// Template tooltips in the option vocabulary: raw gate values
+// (`spec, interface`) mean nothing to a reader, so resolve each to its
+// visible label. Empty stays Auto.
+function presetGateTitle(gates: ReviewGate[]): string {
+  if (gates.length === 0) return "Auto";
+  return gates.map((gate) => REVIEW_GATE_OPTIONS.find((option) => option.value === gate)?.label ?? gate).join(", ");
+}
+
 // One-click templates write into the same multi-select state — they are
 // shortcuts, never a second model.
 function ReviewGateTemplates({ onPick }: { onPick: (gates: ReviewGate[]) => void }) {
@@ -288,7 +300,15 @@ function ReviewGateTemplates({ onPick }: { onPick: (gates: ReviewGate[]) => void
       <p className="text-xs font-medium text-muted-foreground">Start from a template:</p>
       <div className="flex flex-wrap gap-1.5">
         {REVIEW_GATE_PRESETS.map((preset) => (
-          <button key={preset.label} type="button" onClick={() => onPick([...preset.gates])} title={preset.gates.length === 0 ? "Auto" : preset.gates.join(", ")} className="min-h-11 cursor-pointer rounded-md border px-2.5 text-xs font-medium hover:bg-muted">{preset.label}</button>
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => onPick([...preset.gates])}
+            title={presetGateTitle([...preset.gates])}
+            className="min-h-11 cursor-pointer rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
+          >
+            {preset.label}
+          </button>
         ))}
       </div>
     </div>

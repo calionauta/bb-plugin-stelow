@@ -11,9 +11,10 @@ assert.deepEqual(
   [
     "architecture-alternatives", "architecture-contrast",
     "codebase-critique", "execution-critique", "interface-alternatives", "interface-contrast",
+    "interface-selection",
     "plan-critique", "shape-up", "tech-planning", "testing-ai-code", "ux-critique",
   ].sort(),
-  "eleven explore contracts",
+  "twelve explore contracts",
 );
 assert.equal(contractForExplore("nope"), null, "unknown stage is unmigrated");
 
@@ -216,7 +217,31 @@ assert.equal(validateExplore("architecture-contrast", archContrastPass).pass, tr
 // Build matching: filename rules first, title fallback, exclusions never match.
 assert.equal(contractForBuildArtifact("plans/spec-product_v1.md")?.id, "shape-up", "spec-product matches");
 assert.equal(contractForBuildArtifact("plans/spec-tech_v2.md")?.id, "tech-planning", "spec-tech matches");
-assert.equal(contractForBuildArtifact("interfaces/selected-interface.md")?.id, "interface-alternatives", "selected interface matches");
+// Selected-interface routing is content-sniffed: proposal-shaped content stays
+// on alternatives, while a recorded contrast pick routes to selection.
+const routedProposal = contractForBuildArtifact("interfaces/selected-interface.md", ifacePass);
+assert.equal(routedProposal?.id, "interface-alternatives", "proposal-shaped pick routes to alternatives");
+assert.equal(validateExplore(routedProposal.id, ifacePass).pass, true, "routed proposal-shaped pick passes");
+const ifacePick = `## Chosen direction
+Direction B — calm single-column flow ${pad(30)}
+## Scopes served
+Served ${pad(30)}
+## Friction accepted
+Friction ${pad(30)}
+## Record
+selected_by: human
+${pad(50)}`;
+assert.equal(contractForBuildArtifact("interfaces/selected-interface.md", ifacePick)?.id, "interface-selection", "contrast pick routes to selection");
+assert.equal(contractForBuildArtifact("INTERFACES/SELECTED-INTERFACE.MD", ifacePick)?.id, "interface-selection", "uppercase path still routes to selection");
+assert.equal(validateExplore("interface-selection", ifacePick).pass, true, "recorded pick passes selection");
+assert.equal(validateExplore("interface-selection", "## Chosen direction\nDirection B").pass, false, "stub pick fails selection");
+// Long pick without the authority needle: the 120-word floor passes, so the failure must be the missing needle, not length.
+const pickNoNeedle = `## Chosen direction\nDirection B — calm single-column flow ${pad(30)}\n`
+  + `## Scopes served\nServed ${pad(30)}\n## Friction accepted\nFriction ${pad(30)}\n## Record\nRecorded by the decider after review ${pad(50)}`;
+const noNeedleResult = validateExplore("interface-selection", pickNoNeedle);
+assert.equal(noNeedleResult.pass, false, "pick without selected_by fails selection");
+assert.ok(hasCode(noNeedleResult, "missing-content"), "missing needle surfaces as missing-content");
+assert.equal(contractForBuildArtifact("interfaces/selected-interface.md", "")?.id, "interface-selection", "empty pick still resolves to a registered contract");
 assert.equal(contractForBuildArtifact("architecture/selected-architecture.md")?.id, "architecture-alternatives", "selected architecture matches");
 assert.equal(contractForBuildArtifact("plans/testing-strategy.md")?.id, "testing-ai-code", "testing strategy matches");
 assert.equal(contractForBuildArtifact("critiques/critique-report.md")?.id, "plan-critique", "plan critique report matches");
