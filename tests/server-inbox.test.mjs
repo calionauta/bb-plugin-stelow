@@ -281,6 +281,25 @@ assert.equal(
 );
 reviewDb.close();
 
+// Answering resolves the row AND tells the board: without the publish the
+// clearance stays invisible until the next tick, so a resolved answer must refresh.
+db.prepare(`
+  INSERT INTO cards (id, display_name, name, project_id, kind)
+  VALUES ('card_3', 'Third', 'card-three', 'project_1', 'build')
+`).run();
+inbox.syncPendingQuestion("card_3", ["ask_publish"], 70);
+publications = published.length;
+inbox.markAnswered("card_3", ["ask_publish"]);
+assert.equal(published.length, publications + 1, "an answered question publishes its clearance");
+assert.equal(published.at(-1).payload.cardId, "card_3", "an answer refreshes the owning card");
+assert.deepEqual(db.prepare("SELECT resolved_at, resolved_reason FROM inbox_events WHERE card_id = 'card_3'").get(), {
+  resolved_at: 1_000,
+  resolved_reason: "answered",
+}, "markAnswered resolves the open question as answered");
+publications = published.length;
+inbox.markAnswered("card_3", ["unknown_id"]);
+assert.equal(published.length, publications, "a silent answer with unknown ids stays silent");
+
 db.close();
 
 const legacyDb = new Database(":memory:");

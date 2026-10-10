@@ -1,7 +1,7 @@
 import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { cleanOptions } from "../../lib/question-batch.mjs";
-import { isTerminalCardStatus } from "../../lib/card-status.mjs";
+import { readOpenExpiredQuestions } from "../../lib/expired-questions.mjs";
+import { labelDetailQuestions } from "../../lib/scope-labels.mjs";
 import { readFrozenAcceptance } from "./card-detail-frozen.js";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
@@ -115,7 +115,7 @@ async function loadDetailInputs(
 ) {
   const comments = readComments(deps.db, cardId);
   const pending = await deps.fetchPendingQuestions(card.worker_thread_id);
-  const expiredQuestions = await readExpiredQuestions(deps, card);
+  const expiredQuestions = await readOpenExpiredQuestions(deps, card) as Question[];
   const workspace = await readWorkspace(deps, card);
   const mentionedFiles = await readMentionedFiles(deps, card, workspace);
   const attachments = readAttachments(deps, card, workspace);
@@ -144,8 +144,9 @@ async function loadDetailInputs(
   const stageSkips = await readStageSkips(deps, card, workspace.path);
   const scopeXray = await readScopeXray(deps, card, workspace.path);
   const scopeDraft = await readScopeDraft(deps, card, workspace.path);
+  const questions = labelDetailQuestions(pending, expiredQuestions, scopeXray, scopeDraft, scopes);
   return {
-    card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
+    card, workspace, comments, ...questions, mentionedFiles, attachments,
     fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
     workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft,
     frozen: await readFrozenAcceptance(deps, card, workspace.path), hold,
@@ -279,41 +280,6 @@ async function readFileEnvironment(
         .catch(() => null)
     : null;
   return fileEnvironmentId;
-}
-
-async function readExpiredQuestions(
-  deps: CardDetailDeps,
-  card: WorkerCard,
-): Promise<Question[]> {
-  // A finished card's open questions closed with it, so serving them as
-  // answerable forms is a phantom affordance — submitting wakes nothing the
-  // card can still use. The answered ones stay readable through the trail
-  // comments, which is where a person looks for what was decided.
-  if (isTerminalCardStatus(card.status)) return [];
-  const rows = deps.db
-    .prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC")
-    .all(card.id) as Array<Record<string, unknown>>;
-  const questions: Question[] = [];
-  for (const row of rows) {
-    let parsed: unknown = null;
-    try {
-      parsed = JSON.parse(String(row.options));
-    } catch {
-      parsed = null;
-    }
-    questions.push({
-      id: String(row.id),
-      question: String(row.question),
-      multiple: Boolean(row.multiple),
-      kind: row.kind === "split" ? "split" : "standard",
-      options: await deps.resolveAskOptions(
-        card,
-        cleanOptions(parsed),
-      ) as Question["options"],
-      expiredAt: Number(row.expired_at),
-    });
-  }
-  return questions;
 }
 
 /** What the card's lock surfaces need from an enriched scope. Narrow on
