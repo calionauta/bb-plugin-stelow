@@ -1053,6 +1053,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   draft, and the tracking scopes (first title wins, unknown IDs pass
   through untouched). Display only: receipts, contracts, staleness, and
   the answer doors all keep the exact worker text.
+- **Pick composes with note** (`toggleSinglePick`). Option and custom text
+  used to clear each other on single-select, so conditional options
+  ("trim the scope — tell me which") submitted bare were wasted rounds and
+  the note had nowhere to ride. Now the pick toggles without touching the
+  text and both travel in the submitted answers (resume text and trail
+  record them together); split proposals keep their exclusivity, where a
+  keep choice contradicts deliveries. The "Other" box is now a note box:
+  "Note — or your own answer instead".
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision. The
   check walks the workflow's whole state dir, so the spec the layout wrote to

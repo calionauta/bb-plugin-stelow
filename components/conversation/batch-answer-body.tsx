@@ -47,8 +47,9 @@ const INPUT_CLASS =
   "mt-1 min-h-11 w-full cursor-text rounded-md border border-border "
   + "bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground";
 
-// Free-text "Other": an option and a custom text stay mutually exclusive
-// on single-select (the hook clears the other side on each keystroke).
+// Free-text note: composes with a picked option (the note travels with the
+// decision) and doubles as a standalone custom answer when nothing is
+// picked — except on split proposals, where pick and text stay exclusive.
 export function BatchCustomInput({
   copy,
   value,
