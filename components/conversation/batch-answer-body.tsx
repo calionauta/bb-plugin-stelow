@@ -130,6 +130,7 @@ function CustomAndSkip({
 }
 
 export function BatchAnswerBody({
+  cardId,
   sel,
   current,
   copy,
@@ -138,6 +139,7 @@ export function BatchAnswerBody({
   splitNotice,
   onOpenArtifact,
 }: {
+  cardId?: string;
   sel: AnswerBodyState;
   current: BatchItem;
   copy: Copy;
@@ -159,6 +161,7 @@ export function BatchAnswerBody({
         )
         : null}
       <BatchOptionList
+        cardId={cardId}
         current={shown}
         isSplitProposal={sel.isSplitProposal}
         splitKeepLabel={sel.splitKeepLabel}
@@ -166,6 +169,21 @@ export function BatchAnswerBody({
         onPick={sel.pick}
         onOpenArtifact={onOpenArtifact}
       />
+      <CustomAndSkip sel={sel} current={current} copy={copy} allowSkip={allowSkip} />
+      <AnswerStatus splitNotice={splitNotice} error={error} />
+    </>
+  );
+}
+
+/** The split reminder plus any submit error, below the options. Split from
+ * the answer body because status rendering is not answer rendering, and the
+ * body file sits at its size budget. */
+function AnswerStatus({ splitNotice, error }: {
+  splitNotice: { text: string } | null;
+  error: string | null;
+}) {
+  return (
+    <>
       {splitNotice
         ? (
           <p role="status" className="rounded-md border border-primary/40 bg-primary/10 p-2 text-xs leading-5 text-foreground">
@@ -173,7 +191,6 @@ export function BatchAnswerBody({
           </p>
         )
         : null}
-      <CustomAndSkip sel={sel} current={current} copy={copy} allowSkip={allowSkip} />
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </>
   );

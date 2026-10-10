@@ -28,7 +28,7 @@ type EditorTarget = WorkspaceFileTarget | HostFileTarget | null;
 type Draft = { id: number; quote: string; comment: string };
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
-function useArtifactContent(open: boolean, cardId: string, file: ArtifactFile) {
+export function useArtifactContent(open: boolean, cardId: string, file: ArtifactFile) {
   const rpc = useRpc<typeof rpcContract>();
   const [content, setContent] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -143,7 +143,7 @@ function MockupFrame({ html, title }: { html: string; title: string }) {
   );
 }
 
-function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
+export function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
   const path = file?.display ?? file?.path ?? "";
   const kind = artifactRenderKind(path);
   // A truncated page is not the artifact: a mockup cut off mid-document

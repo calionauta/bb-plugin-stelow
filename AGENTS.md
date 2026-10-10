@@ -328,7 +328,10 @@ agent session is how a duplicate or mistyped PR gets opened against the
 wrong base with no human having chosen the title. Push the branch, report
 its name, and stop: the human opens the feature PR, and release-please
 owns the release PR the same way it owns its body — a hand-made PR in its
-place breaks the automation it replaces.
+place breaks the automation it replaces. When the work lands, remind the
+human of the two steps that are theirs: merge to `master` (each push
+refreshes the release PR), then authorize the release itself by merging
+that PR reviewed with green CI — never merge or approve it yourself.
 
 Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
