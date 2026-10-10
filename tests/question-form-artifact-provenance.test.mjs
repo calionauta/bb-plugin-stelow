@@ -57,11 +57,13 @@ console.log("question form artifact provenance test ok: an inherited brief is ma
 // The option row was split out of the stepper into the module that renders the
 // options, so the control is pinned where it now lives.
 const batch = readFileSync(join(root, "components", "conversation", "batch-options.tsx"), "utf8");
+assert.match(batch, /Open: \{artifact\.display\}/, "the control names the document it opens with one verb");
 assert.match(
   batch,
-  /artifactInherited \? "Shared brief" : "Open"\}?: \{artifact\.display\}/,
-  "the control names the document it opens, and says when the document is shared",
+  /artifactInherited \? \([\s\S]*?Shared[\s\S]*?: null/,
+  "an inherited brief adds a Shared chip, an owned document does not",
 );
+assert.match(batch, /The brief shared by every option/, "the Shared chip explains it is not the option's own document");
 assert.match(
   batch,
   /aria-label=\{artifactInherited\s*\n?\s*\? `Open the shared brief/,
