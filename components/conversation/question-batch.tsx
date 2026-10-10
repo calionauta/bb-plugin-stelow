@@ -6,7 +6,7 @@ import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/expired-question-answers.mjs";
 import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/split-question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
-import { preselectedAnswers } from "../../lib/question-batch.mjs";
+import { preselectedAnswers, toggleSinglePick } from "../../lib/question-batch.mjs";
 import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
 import { BoundaryQuestionFrame } from "./boundary-question-frame";
 import type {
@@ -148,14 +148,14 @@ function useBatchSelection(questions: BatchItem[]) {
         return { ...prev, [question.id]: has ? withoutKeep.filter((item) => item !== label) : [...withoutKeep, label] };
       }
       if (question.multiple) return { ...prev, [question.id]: has ? prev[question.id]!.filter((item) => item !== label) : [...(prev[question.id] ?? []), label] };
-      // Single-select: an option and a custom text are mutually exclusive.
-      if (!has) setCustom((c) => ({ ...c, [question.id]: "" }));
-      return { ...prev, [question.id]: has ? [] : [label] };
+      // Single-select: the pick composes with custom text; split
+      // exclusivity lives in its branch above.
+      return { ...prev, [question.id]: toggleSinglePick(prev[question.id], label) };
     });
   };
   const typeCustom = (question: BatchItem, value: string) => {
     setCustom((prev) => ({ ...prev, [question.id]: value }));
-    if (value.trim() && !question.multiple) setSelected((prev) => ({ ...prev, [question.id]: [] }));
+    if (value.trim() && isSplitQuestion(question)) setSelected((prev) => ({ ...prev, [question.id]: [] }));
     if (value.trim()) setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
   };
   const skip = (question: BatchItem) => {

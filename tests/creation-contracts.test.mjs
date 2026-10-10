@@ -46,10 +46,26 @@ assert.match(
   /const shown: BatchItem = \{ \.\.\.current, options: boundaryOptions\(current\) \};/,
   "the boundary decides the option list in one place",
 );
+// Single-select picks compose with custom text (both travel in the merged
+// answers); split proposals keep exclusivity in the pick branch above.
+const pickBody = conversation.slice(
+  conversation.indexOf("const pick = (question: BatchItem"),
+  conversation.indexOf("const typeCustom"),
+);
+assert.match(
+  pickBody,
+  /toggleSinglePick\(prev\[question\.id\], label\)/,
+  "single-select pick toggles without clearing custom text",
+);
+assert.doesNotMatch(
+  codeOf(pickBody),
+  /setCustom/,
+  "single-select pick leaves custom text alone; clearing lives only in typeCustom/skip",
+);
 assert.match(
   conversation,
-  /if \(!has\) setCustom\(\(c\) => \(\{\s*\.\.\.c, \[question\.id\]: ""\s*\}\)\)/,
-  "single-select keeps option and custom text mutually exclusive",
+  /if \(value\.trim\(\) && isSplitQuestion\(question\)\) setSelected/,
+  "typing custom text clears picks only for split questions",
 );
 // Agent thread: one shared conversation component across detail bodies —
 // history plus compose box — never a per-track copy.

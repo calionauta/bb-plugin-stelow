@@ -61,7 +61,7 @@
     "test:status-question-state": "node tests/status-question-state.test.mjs",
     "test:ask-contracts": "node tests/ask-contracts.test.mjs",
     "test:question-state": "node tests/card-question-state.test.mjs",
-    "test:question-batch": "node tests/scope-labels.test.mjs && node tests/question-batch.test.mjs && node tests/question-form.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/option-section-mismatch.test.mjs",
+    "test:question-batch": "node tests/scope-labels.test.mjs && node tests/single-pick-composition.test.mjs && node tests/question-batch.test.mjs && node tests/question-form.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/option-section-mismatch.test.mjs",
     "test:question-presence": "node tests/question-presence.test.mjs",
     "test:question-presentation": "node tests/question-brief-embed.test.mjs && node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs && node tests/question-answer-recording.test.mjs && node tests/question-answer-cli.test.mjs && node tests/question-form-artifact-provenance.test.mjs && node tests/question-decision-surface.test.mjs && node tests/answer-door-contract.test.mjs && node tests/option-anchor.test.mjs && node tests/option-section-wiring.test.mjs && node tests/artifact-viewer-mockup.test.mjs && node tests/question-presentation.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs && node tests/github-issue-create.test.mjs && node tests/github-issue-comments.test.mjs",
