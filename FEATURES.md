@@ -1031,6 +1031,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the rendered DOM — a non-markdown file, a renderer that flattens headings, a
   partial load — the option's section is lifted and shown above the document
   instead, so the reader gets their option by either route.
+- **Conditional options declare themselves** (`--needs-note`). A pick that
+  needs elaboration ("trim the scope — tell me which") marks the option,
+  and submit waits until the note box carries the missing piece — one
+  shared rule (`submitBlockReason`) for the footer gate and the per-note
+  hint, so they can never disagree. The flag travels explicit-true-only
+  like preselection; pick and note compose in the submitted answers
+  (except split proposals).
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.

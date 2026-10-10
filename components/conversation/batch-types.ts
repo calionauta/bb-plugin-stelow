@@ -28,6 +28,10 @@ export type BatchOption = {
   // Preselected by the asker (opt-out confirms). Starts checked; unchecking
   // removes. Absent or false reads as unchecked.
   selected?: boolean;
+  // Conditional option: submit waits until the note box carries the missing
+  // piece ("trim the scope — tell me which"). Set only by an explicit
+  // --needs-note; absence means the option is submittable as shown.
+  needsNote?: boolean;
 };
 
 // A boundary question's framing, decided server-side from the boundary's

@@ -40,6 +40,9 @@ export type AskOption = {
   // cleanOptions only forwards an explicit true, and the renderer reads
   // absence as unchecked — so the intent must not invent a false either.
   selected?: boolean;
+  // Conditional options (--needs-note): submit waits for the note box.
+  // Same sparseness as selected — explicit true travels, absence is off.
+  needsNote?: boolean;
 };
 
 export type AskGroup = {

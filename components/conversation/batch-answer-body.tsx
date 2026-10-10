@@ -9,6 +9,7 @@
 import { Button } from "@/components/ui/button";
 import { BatchOptionList } from "./batch-options";
 import { boundaryOptions } from "./boundary-question-frame";
+import { submitBlockReason } from "../../lib/question-presentation.mjs";
 import type { BatchItem, OpenArtifactHandler } from "./batch-types";
 import type { questionCopy } from "../../lib/question-presentation.mjs";
 
@@ -109,6 +110,11 @@ function CustomAndSkip({
   allowSkip: boolean;
 }) {
   if (sel.isSplitProposal) return null;
+  const missingNote = submitBlockReason(
+    [current],
+    { [current.id]: sel.selected[current.id] ?? [] },
+    { [current.id]: sel.custom[current.id] ?? "" },
+  );
   return (
     <>
       <BatchCustomInput
@@ -116,6 +122,7 @@ function CustomAndSkip({
         value={sel.custom[current.id] ?? ""}
         onType={(value) => sel.typeCustom(current, value)}
       />
+      {missingNote ? <p role="note" className="text-xs text-amber-900/80 dark:text-amber-200/80">{missingNote}</p> : null}
       {allowSkip
         ? (
           <SkipControl
@@ -237,6 +244,7 @@ function FooterButtons({
   copy,
   busy,
   submitLabel,
+  blockReason,
   onSubmit,
 }: {
   sel: AnswerFooterState;
@@ -244,12 +252,14 @@ function FooterButtons({
   copy: Copy;
   busy: boolean;
   submitLabel: string;
+  blockReason: string | null;
   onSubmit: (answers: string[][]) => void;
 }) {
   const multi = questions.length > 1;
   const lastIndex = questions.length - 1;
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {blockReason ? <p role="note" className="w-full text-xs text-amber-900/80 dark:text-amber-200/80">{blockReason}</p> : null}
       {multi
         ? (
           <Button size="sm" variant="outline" disabled={sel.index === 0 || busy} onClick={() => sel.setIndex(Math.max(0, sel.index - 1))}>
@@ -266,7 +276,7 @@ function FooterButtons({
         : null}
       {sel.isLastQuestion
         ? (
-          <Button size="sm" disabled={!sel.complete || busy} onClick={() => onSubmit(questions.map((q) => sel.merged(q.id)))}>
+          <Button size="sm" disabled={!sel.complete || busy || blockReason !== null} onClick={() => onSubmit(questions.map((q) => sel.merged(q.id)))}>
             {busy ? copy.sending : submitLabel}
           </Button>
         )
@@ -294,10 +304,19 @@ export function BatchFooter({
 }) {
   const current = questions[Math.min(sel.index, questions.length - 1)];
   if (!current) return null;
+  const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
   return (
     <>
       <ProgressNotes sel={sel} current={current} copy={copy} questions={questions} allowSkip={allowSkip} />
-      <FooterButtons sel={sel} questions={questions} copy={copy} busy={busy} submitLabel={submitLabel} onSubmit={onSubmit} />
+      <FooterButtons
+        sel={sel}
+        questions={questions}
+        copy={copy}
+        busy={busy}
+        submitLabel={submitLabel}
+        blockReason={blockReason}
+        onSubmit={onSubmit}
+      />
     </>
   );
 }
