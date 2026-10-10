@@ -789,6 +789,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Early question sync** (`kickQuestionSync`, `lib/question-sync-kick.mjs`).
+  `bb stelow ask` blocks inside the host call, so the inbox row used to wait
+  for the 45s reconcile tick while the card already showed the question —
+  Build read 0 behind a visible wait and the notification arrived a tick
+  late. The ask now kicks one sync ~1.5s after it starts (same kick when a
+  timed-out ask persists its rows): idempotent, fire-and-forget, skipped on
+  empty observations so it never resolves open rows as superseded, and the
+  tick stays the backstop. Answering publishes `inbox-changed` when rows
+  actually resolve, so clearance is visible immediately instead of at the
+  next tick — a silent answer (unknown ids) stays silent.
 - **Verify blockage** (`VerifyBlockageNotice`, `verifyBlockage` RPC,
   `lib/verify-blockage.mjs`). A card parked on open questions after a failed
   verify names whether the failure is still the one to act on: the last test
@@ -1025,6 +1035,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
+- **Human titles on question copy** (`applyScopeLabels`,
+  `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
+  to address them at humans ("A5 — checkout", "Serves A5"). Templates now
+  lead with outcomes and titles while IDs stay in artifacts and receipts,
+  and the card maps any straggler at render from the approved map, the
+  draft, and the tracking scopes (first title wins, unknown IDs pass
+  through untouched). Display only: receipts, contracts, staleness, and
+  the answer doors all keep the exact worker text.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision. The
   check walks the workflow's whole state dir, so the spec the layout wrote to

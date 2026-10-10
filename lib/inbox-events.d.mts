@@ -13,6 +13,11 @@ export type InboxResolutionReason = "answered" | "superseded" | "resumed" | "com
 
 export declare const RESOLUTION_REASONS: InboxResolutionReason[];
 
+/** The one sentence every open-question notification carries. Single-sourced
+ * in lib/inbox-events.mjs so the mint path and the early post-ask kick
+ * promise the same wait. */
+export declare const QUESTION_WAITING_SUMMARY: string;
+
 export declare function ensureInboxResolvedReasonColumn(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
 
 export declare function ensureInboxSeverityColumns(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;

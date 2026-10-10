@@ -1,4 +1,5 @@
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/ask-cancel.mjs";
+import { kickQuestionSync } from "../../../lib/question-sync-kick.mjs";
 import {
   persistFailureInboxEvent,
   persistFailureTrailLine,
@@ -84,7 +85,13 @@ async function blockOnAnswer(
     groups.flatMap((group) => group.options),
   );
   const askedAt = deps.now();
+  // The pending interaction exists host-side only once requestInput runs,
+  // so the inbox row cannot be minted synchronously here. Kick one early
+  // sync that observes it: without this the row waits for the 45s tick
+  // while the card already shows the question. Idempotent, fire-and-forget.
+  const cancelSyncKick = kickQuestionSync(deps, { threadId, cardId });
   const requested = await requestAnswer(deps, intent, signal);
+  cancelSyncKick();
   // The ask call ended (answered, cancelled, or torn down): mark the worker
   // running again. Activity only — board position is owned by the sync poll,
   // the answer RPCs, and advance/moveCard, on both tracks.
@@ -315,6 +322,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   })();
   deps.updateCard(cardId, { activity: "awaiting-answer" });
   deps.bb.realtime.publish("card-state", { cardId });
+  // Expired rows are answerable immediately; mint their inbox row now
+  // instead of on the next tick (same kick as the live path).
+  kickQuestionSync(deps, { threadId, cardId });
 }
 
 /** The host records what the human approved on a split proposal — right here
