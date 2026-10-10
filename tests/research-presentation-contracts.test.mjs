@@ -237,6 +237,11 @@ assert.match(
 // file: the same topology, at its current home.
 assert.match(
   answerBody,
-  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy\}/,
+  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy \|\| blockReason !== null\}/,
   "the batch action only renders on the last step and waits for every decision",
+);
+assert.match(
+  answerBody,
+  /const blockReason = submitBlockReason\(questions, sel\.selected, sel\.custom\);/,
+  "the footer gate reads the shared block rule over the batch answers",
 );

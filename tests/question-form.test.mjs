@@ -89,8 +89,13 @@ assert.match(button, /const Comp = asChild \? Slot : "button";/, "the shared but
 // last question, and disabled until every question carries a decision.
 assert.match(
   answerBody,
-  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy\}/,
+  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy \|\| blockReason !== null\}/,
   "submit uses the shared native button after every question is decided",
+);
+assert.match(
+  answerBody,
+  /const blockReason = submitBlockReason\(questions, sel\.selected, sel\.custom\);/,
+  "the footer gate reads the shared block rule over the batch answers",
 );
 assert.equal(
   answerBody.match(/onSubmit\(\{questions\.length > 1 \? copy\.submitAnswers : copy\.submitAnswer\}\)/g)?.length ?? 0,
