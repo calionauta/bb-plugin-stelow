@@ -283,3 +283,31 @@ test("a standard ask at the split point carries the consequence disclosure", asy
     "the disclosure names the repair the human can still take",
   );
 });
+
+test("a submitted standard answer mentioning split points at the formal split now", async () => {
+  const { invoke } = cliHarness({
+    stage: "triage",
+    requestInput: () => ({ outcome: "submitted", value: { answers: ["Split A and B"] } }),
+  });
+  const result = await invoke([
+    "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
+    "--option", "First slice ships first", "--option", "Second slice ships first",
+  ]);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /recorded as STANDARD/, "the base consequence still applies");
+  assert.match(result.stdout, /ask it formally NOW with --tag split/, "a split-direction answer escalates to the formal question");
+});
+
+test("a submitted standard answer without a split mention keeps the base reminder only", async () => {
+  const { invoke } = cliHarness({
+    stage: "triage",
+    requestInput: () => ({ outcome: "submitted", value: { answers: ["First slice ships first"] } }),
+  });
+  const result = await invoke([
+    "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
+    "--option", "First slice ships first", "--option", "Second slice ships first",
+  ]);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /recorded as STANDARD/, "the base consequence still applies");
+  assert.doesNotMatch(result.stdout, /ask it formally NOW/, "no split direction means no direct formal-split sentence");
+});

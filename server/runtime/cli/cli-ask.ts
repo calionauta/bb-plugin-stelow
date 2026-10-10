@@ -7,7 +7,7 @@ import {
 } from "../../../lib/ask-persist-failure.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
 import { askFinishedUpdates } from "../../../lib/card-question-state.mjs";
-import { splitEligibility } from "../../../lib/split-proposal.mjs";
+import { answerMentionsSplit, splitEligibility } from "../../../lib/split-proposal.mjs";
 import { array, record } from "../values.js";
 import {
   askOwningCard,
@@ -374,10 +374,20 @@ async function standardSplitReminder(
   if (!card) return null;
   const gate = splitEligibility({ kind: card.kind, stage });
   if (!gate.ok) return null;
+  // The user picked a split direction in freeform words: point the worker
+  // at the formal question now instead of letting it ask a second
+  // freeform question about the same split. A bare reminder already covers
+  // the general case below; this sentence fires only on the decision.
+  const direct = answerMentionsSplit(result.value)
+    ? " The user chose a split direction above — ask it formally NOW with"
+      + " --tag split --multiple (slices plus exactly one \"Keep as one card\"),"
+      + " then run bb stelow split after the answer. Do not ask another"
+      + " freeform question about this split first."
+    : "";
   return {
     exitCode: 0,
     stdout: `${JSON.stringify(result)}\nSplit check: recorded as STANDARD — its answer is text only and executes nothing. If this question \
 proposes splitting the card, re-ask it now with --tag split --multiple plus exactly one --option "Keep as one card", then run \
-bb stelow split after the answer (still at ${stage}, still in time).`,
+bb stelow split after the answer (still at ${stage}, still in time).${direct}`,
   };
 }
