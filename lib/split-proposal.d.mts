@@ -31,6 +31,7 @@ export declare function matchSplitDecision(
 ): string[];
 export declare const STANDARD_SPLIT_DISCLOSURE: string;
 export declare function withStandardSplitDisclosure(question: unknown): string;
+export declare function answerMentionsSplit(value: unknown): boolean;
 export declare function recordSplitAnswer(
   db: { prepare: (sql: string) => { get: (...params: any[]) => any; run: (...params: any[]) => any } },
   cardId: string,
