@@ -105,6 +105,14 @@ function isQuestionDone(q: BatchItem, skipped: Set<string>, merged: (id: string)
   return skipped.has(q.id) || merged(q.id).length > 0 || (q.multiple && !isSplitQuestion(q));
 }
 
+// Done-derivation for one question by id, shared by the stepper dots.
+// Lives at module scope so the stepper stays a layout function instead of
+// growing closures — the hook owns selection state, this owns the read.
+function isDoneById(questions: BatchItem[], skipped: Set<string>, merged: (id: string) => string[], id: string): boolean {
+  const question = questions.find((entry) => entry.id === id);
+  return question ? isQuestionDone(question, skipped, merged) : false;
+}
+
 function useBatchSelection(questions: BatchItem[]) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Record<string, string[]>>(() => preselectedAnswers(questions));
@@ -223,7 +231,8 @@ function BatchQuestionHeading({ questions, index, showHeading, copy, current, pr
 // skip, and a single atomic submit — one worker resume, one inbox resolution.
 // The controls themselves live in ./batch-answer-body; this owns position,
 // framing, and submission.
-export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
+export function BatchStepper({ cardId, questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
+  cardId?: string;
   questions: BatchItem[];
   allowSkip: boolean;
   busy: boolean;
@@ -239,10 +248,7 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
   const copy = questionCopy();
   const prompt = sel.isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
   const splitNotice = sel.isSplitProposal ? splitSelectionNotice(current.options, sel.selected[current.id] ?? []) : null;
-  const isDone = (id: string): boolean => {
-    const question = questions.find((entry) => entry.id === id);
-    return question ? isQuestionDone(question, sel.skipped, sel.merged) : false;
-  };
+  const isDone = (id: string): boolean => isDoneById(questions, sel.skipped, sel.merged, id);
   return (
     <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">
@@ -250,6 +256,7 @@ export function BatchStepper({ questions, allowSkip, busy, error, submitLabel, s
         <div className="min-w-0 flex-1 space-y-2">
           <BatchQuestionHeading questions={questions} index={sel.index} showHeading={showHeading} copy={copy} current={current} prompt={prompt} onSelectDot={sel.setIndex} isDone={isDone} />
           <BatchAnswerBody
+            cardId={cardId}
             sel={sel}
             current={current}
             copy={copy}
@@ -306,6 +313,7 @@ export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtif
   }
   return (
       <BatchStepper
+        cardId={cardId}
         questions={questions}
         allowSkip={mode === "live"}
         busy={busy}

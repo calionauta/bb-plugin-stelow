@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
-import { splitOptionDescriptionPreview } from "../../lib/question-presentation.mjs";
+import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
+import { splitOptionDescriptionPreview, artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
 import { splitOptionDescription } from "../../lib/split-question-presentation.mjs";
 import type {
   AskArtifact,
-  ArtifactViewerMode,
   BatchItem,
   OpenArtifactHandler,
 } from "./batch-types";
@@ -13,13 +13,6 @@ import type {
 // maps them. Split out of the stepper because the row is the widest thing in
 // the conversation and the stepper's own budget is the conversation's, not the
 // row's.
-
-function artifactViewerModeForOption(label: string): ArtifactViewerMode {
-  // An approval is a decision after reading, not a request to alter the
-  // document. All other choices — especially Request/Review changes — keep
-  // the full quote-and-comment path to communicate precise feedback.
-  return /\b(approve|accept|proceed)\b/i.test(label) ? "review" : "comment";
-}
 
 // Per-option evidence: the document opens from inside the option row
 // (right side), the inline glance expands below. The artifact opens in the
@@ -173,12 +166,13 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
 
 // One option row: the select control, the label, the per-option document,
 // and the inline preview glance.
-function BatchOptionRow({ option, active, multiple, isKeepOption, description, onPick, onOpenArtifact }: {
+function BatchOptionRow({ option, active, multiple, isKeepOption, description, hideDocument, onPick, onOpenArtifact }: {
   option: BatchItem["options"][number];
   active: boolean;
   multiple: boolean;
   isKeepOption: boolean;
   description: string;
+  hideDocument: boolean;
   onPick: () => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
@@ -201,7 +195,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, o
           isKeepOption={isKeepOption}
           onPick={onPick}
         />
-        {artifact ? (
+        {artifact && !hideDocument ? (
           <OptionDocument
             artifact={artifact}
             optionLabel={option.label}
@@ -241,8 +235,11 @@ function OptionFullDetail({ description }: { description: string }) {
 }
 
 // Option list: one row per option of the current question, with split
-// descriptions resolved per row.
-export function BatchOptionList({ current, isSplitProposal, splitKeepLabel, selected, onPick, onOpenArtifact }: {
+// descriptions resolved per row. When every option carries the same
+// document the rows hide their buttons and one embedded reader above them
+// carries the brief instead (see embedded-brief.tsx).
+export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLabel, selected, onPick, onOpenArtifact }: {
+  cardId?: string;
   current: BatchItem;
   isSplitProposal: boolean;
   splitKeepLabel: string;
@@ -250,8 +247,10 @@ export function BatchOptionList({ current, isSplitProposal, splitKeepLabel, sele
   onPick: (question: BatchItem, label: string) => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
+  const brief = cardId ? embeddedBriefFor(current, onOpenArtifact) : null;
   return (
     <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
+      {brief && cardId ? <EmbeddedBrief cardId={cardId} file={brief.file} onExpand={brief.onExpand} /> : null}
       {current.options.map((option) => {
         const active = (selected[current.id] ?? []).includes(option.label);
         const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
@@ -263,6 +262,7 @@ export function BatchOptionList({ current, isSplitProposal, splitKeepLabel, sele
             multiple={current.multiple}
             isKeepOption={isKeepOption}
             description={isSplitProposal ? splitOptionDescription(option.description) : option.description}
+            hideDocument={brief !== null}
             onPick={() => onPick(current, option.label)}
             onOpenArtifact={onOpenArtifact}
           />

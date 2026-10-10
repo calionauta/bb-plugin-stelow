@@ -1036,6 +1036,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
+- **One brief, read inline** (`EmbeddedBrief`, `sharedQuestionArtifact`).
+  Gate approvals attach the same document to every option, so per-row Open
+  buttons repeated one file N times — friction for zero information. When
+  every option carries the same document (resolved path wins, so two
+  spellings still match), the question embeds one capped reader above the
+  rows with an "Open full viewer" exit to quoting and commenting, and the
+  rows hide their buttons; genuinely different documents keep per-row
+  buttons. One decision point renders both halves, so they can never
+  disagree. Threads (no viewer) keep the filename span.
 - **Human titles on question copy** (`applyScopeLabels`,
   `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
   to address them at humans ("A5 — checkout", "Serves A5"). Templates now
