@@ -137,6 +137,64 @@ test("an unanswered ask is persisted as an expired row, never dropped", async ()
   );
 });
 
+test("an answered ask cancels its early sync kick instead of leaking the timer", async () => {
+  // blockOnAnswer schedules kickQuestionSync (1500ms) so the inbox row appears while the card already
+  // shows the question, then must cancel it once requestAnswer settles — otherwise a post-answer sync
+  // fires against resolved state. Timers are stubbed so the 1500ms kick is observable without waiting;
+  // only the kick delay is counted, so unrelated host timers cannot flake the pin.
+  const { invoke } = cliHarness({
+    requestInput: () => ({ outcome: "submitted", value: { answers: [] } }),
+  });
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  const scheduled = [];
+  const cleared = [];
+  globalThis.setTimeout = (cb, ms) => { scheduled.push(ms); return { unref() {}, __cb: cb }; };
+  globalThis.clearTimeout = (timer) => { cleared.push(timer); };
+  try {
+    const result = await invoke([
+      "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
+      "--option", "First slice ships first", "--option", "Second slice ships first",
+    ]);
+    assert.equal(result.exitCode, 0);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    globalThis.clearTimeout = realClearTimeout;
+  }
+  assert.equal(scheduled.filter((ms) => ms === 1500).length, 1, "the live ask schedules exactly one early sync kick");
+  assert.equal(cleared.length, 1, "settling the answer cancels the kick instead of leaking a post-answer sync");
+});
+
+test("a persisted timeout ask kicks an early sync for its expired rows", async () => {
+  // writeExpiredRows mints the expired rows' inbox row through the same kick as the live path. The live
+  // kick was already cancelled when the call ended, so the timeout path schedules twice and clears once.
+  const { invoke, calls } = cliHarness({
+    requestInput: () => ({ outcome: "cancelled", reason: "timeout" }),
+  });
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  const scheduled = [];
+  const cleared = [];
+  globalThis.setTimeout = (cb, ms) => { scheduled.push(ms); return { unref() {}, __cb: cb }; };
+  globalThis.clearTimeout = (timer) => { cleared.push(timer); };
+  try {
+    const result = await invoke([
+      "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
+      "--option", "First slice ships first", "--option", "Second slice ships first",
+    ]);
+    assert.equal(result.exitCode, 1);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    globalThis.clearTimeout = realClearTimeout;
+  }
+  const expired = calls.find(
+    ([entry, sql]) => entry === "run" && sql.includes("expired_questions"),
+  );
+  assert.ok(expired, "the question stays answerable on the card");
+  assert.equal(scheduled.filter((ms) => ms === 1500).length, 2, "the expired-row write schedules its own early sync kick");
+  assert.equal(cleared.length, 1, "only the live-path kick is cancelled; the expired-row kick fires");
+});
+
 test("a submitted ask records the split selection the executor trusts", async () => {
   const { invoke, calls } = cliHarness({
     stage: "triage",

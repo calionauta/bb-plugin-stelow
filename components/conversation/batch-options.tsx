@@ -77,12 +77,15 @@ function OptionPreview({ preview }: { preview: string | null }) {
 // shared outline treatment so it harmonizes with the amber panel and the
 // primary accents instead of introducing a third color.
 //
-// The label names the FILE. "Open document" alone made the reader guess what
-// they were about to open, and a filename buried in a hover-only title is not
-// a label. When the document was inherited from a sibling it says so, because
-// the same brief on four rows otherwise reads as four pieces of evidence about
-// four different options. Where no viewer exists (a thread) it degrades to the
-// bare filename, never to a dead button pretending to open.
+// The label names the FILE with one verb everywhere. "Open document" alone
+// made the reader guess what they were about to open, and a filename buried
+// in a hover-only title is not a label. When the document was inherited from
+// a sibling it carries a small Shared chip instead of a second verb, because
+// the same brief on four rows otherwise reads as four pieces of evidence
+// about four different options — while two verbs ("Open" vs "Shared brief")
+// for one action read as two different actions. Where no viewer exists (a
+// thread) it degrades to the bare filename, never to a dead button
+// pretending to open.
 function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifact }: {
   artifact: AskArtifact;
   optionLabel: string;
@@ -113,8 +116,16 @@ function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifa
       className="mr-2 min-h-11 max-w-[16rem] shrink-0 gap-1 self-center"
     >
       <span className="truncate">
-        {artifactInherited ? "Shared brief" : "Open"}: {artifact.display}
+        Open: {artifact.display}
       </span>
+      {artifactInherited ? (
+        <span
+          className="shrink-0 rounded border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+          title="The brief shared by every option, not this option's own document"
+        >
+          Shared
+        </span>
+      ) : null}
       <span aria-hidden>↗</span>
     </Button>
   );

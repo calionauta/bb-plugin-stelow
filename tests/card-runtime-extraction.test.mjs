@@ -293,3 +293,27 @@ test("a run that will not stop refuses the archive and the delete", async () => 
 // a build card with a frozen snapshot carries test_map + shas beside (never
 // inside) the human receipt; without a snapshot the fields stay null and the
 // row renders nothing. This proves the door the UI opens, not the sentence.
+
+// Scope titles relabel what the person reads, never what the machine matches: staleness evidence is
+// keyed off the worker's exact text, so the staleness call must receive the UNLABELED questions even
+// when a scope title mapping relabels the served copy. The detail reads staleness before labeling, and
+// swapping that order would silently key evidence off display text — this pins the order behaviorally.
+test("question staleness reads worker text while the served copy carries scope titles", async () => {
+  const row = card({ dir_hash: "h1" });
+  const raw = "Should S12 ship first?";
+  let stalenessQuestions = null;
+  const handler = createCardDetailHandler(detailDeps(row, {
+    fetchPendingQuestions: async () => [{
+      id: "q1", title: "Q", question: raw, multiple: false, kind: "standard", options: [], expiresAt: null,
+    }],
+    cardWorkspace: async () => ({ path: "/w", hostId: null }),
+    stateDir: async () => "/w/.stelow/state",
+    scopeXray: async () => ({ nodes: [{ id: "S12", title: "Checkout" }] }),
+    scopeDraft: async () => null,
+    stalenessForQuestions: async (_cardId, questions) => { stalenessQuestions = questions; return new Map(); },
+  }));
+  const result = await handler({ cardId: row.id });
+  assert.equal(stalenessQuestions?.[0]?.question, raw, "staleness matches the exact worker text with the raw scope id");
+  assert.match(result.pendingQuestions[0].question, /Checkout/, "the served copy relabels the id for the human");
+  assert.doesNotMatch(result.pendingQuestions[0].question, /S12/, "no raw scope id leaks into the served copy");
+});

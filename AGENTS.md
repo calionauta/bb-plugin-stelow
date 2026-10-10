@@ -36,6 +36,11 @@ are the ones that come back as a red CI five minutes later.
 - After any failed `edit`, verify the file before continuing (`wc -l` + `git diff --stat`): a failed match has truncated files before.
 - Never `read`-then-`edit` from memory on large regions — reproduce `oldString` from a fresh `read`, or the match silently targets the wrong text.
 - Before writing or updating a test pin, `grep -c` the pattern first: generic shapes match other tracks (research/explore submits share the build shape). Anchor pins on track-specific identifiers (RPC names), and declare test-file reads before their first use.
+- Untracked files do not survive a worktree branch switch: changing branches
+  can wipe files that were never committed, with no error anywhere. Commit
+  early (WIP commits are cheap; squash discipline applies at PR time, not
+  during work), and after every checkout/switch verify the untracked files
+  you depend on still exist (`git status --short`) before continuing.
 
 ## Source shape: LoC is a safety limit, never a formatting target
 
@@ -317,6 +322,13 @@ absent from the notes. It also leaves no review point, which is the one
 thing the release process is built on. Pushing and then reverting with
 `--force-with-lease` works, but it publishes a wrong master first —
 avoid it rather than repairing it.
+
+**Agents push branches; they never open PRs.** `gh pr create` from an
+agent session is how a duplicate or mistyped PR gets opened against the
+wrong base with no human having chosen the title. Push the branch, report
+its name, and stop: the human opens the feature PR, and release-please
+owns the release PR the same way it owns its body — a hand-made PR in its
+place breaks the automation it replaces.
 
 Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
