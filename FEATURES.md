@@ -1064,6 +1064,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   draft, and the tracking scopes (first title wins, unknown IDs pass
   through untouched). Display only: receipts, contracts, staleness, and
   the answer doors all keep the exact worker text.
+- **Decider language on questions** (ask-patterns rule 11, `decider-language`
+  test). card_g89gtmwt asked a strategy question that read like a recon
+  log: no recommendation, a three-sentence Context dump, and the
+  methodology brand quoted from the template. Question text is now short
+  plain words (who gains what) — no stage slugs, file handles, recon
+  counts, or brand names; documents are named only to open or approve,
+  and evidence travels in preview/artifact. Pattern 1 requires a
+  recommendation and two sentences of context max. The user-facing
+  vocabulary is stelow's own (`shaping`, not the method's brand); skill
+  names, track prompts, and the Explore picker keep theirs (a migration,
+  not a wording fix).
 - **Pick composes with note** (`toggleSinglePick`). Option and custom text
   used to clear each other on single-select, so conditional options
   ("trim the scope — tell me which") submitted bare were wasted rounds and
