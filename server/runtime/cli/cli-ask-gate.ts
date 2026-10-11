@@ -10,6 +10,7 @@ import { englishQuestionContentError } from "../../../lib/question-presentation.
 import {
   SPLIT_KEEP_LABEL,
   splitEligibility,
+  validateSplitAskOptions,
   validateSplitSlices,
   withStandardSplitDisclosure,
 } from "../../../lib/split-proposal.mjs";
@@ -340,14 +341,8 @@ function persistSplitProposal(
   group: AskGroup,
 ): Refusal | null {
   const options = group.options;
-  const keepCount = options.filter(
-    (option) => option.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase(),
-  ).length;
-  if (keepCount !== 1)
-    return refuse({
-      exitCode: 2,
-      stderr: `A split ask needs exactly one "${SPLIT_KEEP_LABEL}" option (exact label) so the user can veto.`,
-    });
+  const invalidOptions = validateSplitAskOptions(options);
+  if (invalidOptions) return refuse({ exitCode: 2, stderr: invalidOptions });
   const slices = proposedSlices(options);
   const invalid = validateSplitSlices(slices);
   if (invalid) return refuse({ exitCode: 2, stderr: invalid });

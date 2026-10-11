@@ -127,12 +127,13 @@ function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifa
 // The select control: the mark, the label, and the description. It is the
 // left half of a row and the whole decision — the document sits beside it, not
 // inside it, so picking never opens anything by accident.
-function OptionPickControl({ label, description, active, multiple, isKeepOption, onPick }: {
+function OptionPickControl({ label, description, active, multiple, isKeepOption, needsNote, onPick }: {
   label: string;
   description: string;
   active: boolean;
   multiple: boolean;
   isKeepOption: boolean;
+  needsNote: boolean;
   onPick: () => void;
 }) {
   const pickShape = multiple && !isKeepOption ? "rounded-sm" : "rounded-full";
@@ -153,7 +154,17 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
         {active ? "✓" : ""}
       </span>
       <span className="min-w-0">
-        <span className="block font-medium">{label}</span>
+        <span className="block font-medium">
+          {label}
+          {needsNote ? (
+            <span
+              className="ml-2 rounded border border-amber-500/40 px-1 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300"
+              title="This pick needs a note — say what should change in the note box below, then submit"
+            >
+              Needs a note
+            </span>
+          ) : null}
+        </span>
         {description ? (
           <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">
             {description}
@@ -166,13 +177,14 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
 
 // One option row: the select control, the label, the per-option document,
 // and the inline preview glance.
-function BatchOptionRow({ option, active, multiple, isKeepOption, description, hideDocument, onPick, onOpenArtifact }: {
+function BatchOptionRow({ option, active, multiple, isKeepOption, description, hideDocument, needsNote, onPick, onOpenArtifact }: {
   option: BatchItem["options"][number];
   active: boolean;
   multiple: boolean;
   isKeepOption: boolean;
   description: string;
   hideDocument: boolean;
+  needsNote: boolean;
   onPick: () => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
@@ -193,6 +205,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
           active={active}
           multiple={multiple}
           isKeepOption={isKeepOption}
+          needsNote={needsNote}
           onPick={onPick}
         />
         {artifact && !hideDocument ? (
@@ -254,6 +267,10 @@ export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLab
       {current.options.map((option) => {
         const active = (selected[current.id] ?? []).includes(option.label);
         const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
+        // Split proposals render no note box, so a conditional marker there
+        // would advertise a requirement with nowhere to satisfy it — the
+        // gate refuses --needs-note on split asks, and the row stays quiet.
+        const showNeedsNote = !isSplitProposal && option.needsNote === true;
         return (
           <BatchOptionRow
             key={option.label}
@@ -263,6 +280,7 @@ export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLab
             isKeepOption={isKeepOption}
             description={isSplitProposal ? splitOptionDescription(option.description) : option.description}
             hideDocument={brief !== null}
+            needsNote={showNeedsNote}
             onPick={() => onPick(current, option.label)}
             onOpenArtifact={onOpenArtifact}
           />

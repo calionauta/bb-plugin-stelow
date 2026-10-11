@@ -5,6 +5,8 @@ export declare const SPLIT_PROPOSAL_TTL_MS: number;
 export declare const SPLIT_STAGES: string[];
 export declare const SPLIT_NON_BUILD_ERROR: string;
 export declare type SplitSlice = { title?: string; label?: string; desc?: string; description?: string };
+export declare type SplitAskOption = { label?: unknown; needsNote?: unknown; selected?: unknown };
+export declare function validateSplitAskOptions(options: unknown): string | null;
 export declare function validateSplitSlices(slices: unknown): string | null;
 export declare function splitOutcome(
   slices: unknown,

@@ -260,6 +260,62 @@ test("a split ask needs exactly one keep option", async () => {
   assert.deepEqual(callsNamed(calls, "requestInput"), []);
 });
 
+test("a split ask refuses --needs-note: proposals have no note box", async () => {
+  const { invoke, calls } = cliHarness({ stage: "triage" });
+  const result = await invoke([
+    "ask",
+    "--thread",
+    "thr_worker",
+    "--tag",
+    "split",
+    "--question",
+    "Split?",
+    "--option",
+    "First slice",
+    "--desc",
+    "Ship the retry path",
+    "--needs-note",
+    "--option",
+    "Second slice",
+    "--desc",
+    "Ship the receipt",
+    "--option",
+    "Keep as one card",
+    "--multiple",
+  ]);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr, /no note box/, "the refusal names the missing satisfier");
+  assert.deepEqual(callsNamed(calls, "requestInput"), [], "a conditional slice never reaches the human as an unsatisfiable block");
+});
+
+test("a split ask refuses a preselected keep: the veto stays the human's call", async () => {
+  const { invoke, calls } = cliHarness({ stage: "triage" });
+  const result = await invoke([
+    "ask",
+    "--thread",
+    "thr_worker",
+    "--tag",
+    "split",
+    "--question",
+    "Split?",
+    "--option",
+    "First slice",
+    "--desc",
+    "Ship the retry path",
+    "--option",
+    "Second slice",
+    "--desc",
+    "Ship the receipt",
+    "--option",
+    "Keep as one card",
+    "--selected",
+    "--multiple",
+  ]);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr, /starts unchecked/, "the refusal names the required initial state");
+  assert.deepEqual(callsNamed(calls, "requestInput"), [], "a self-answered veto never reaches the human pre-checked");
+});
+
 test("a standard ask at the split point carries the consequence disclosure", async () => {
   const { invoke, calls } = cliHarness({ stage: "triage" });
   await invoke([
@@ -296,6 +352,8 @@ test("a submitted standard answer mentioning split points at the formal split no
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /recorded as STANDARD/, "the base consequence still applies");
   assert.match(result.stdout, /ask it formally NOW with --tag split/, "a split-direction answer escalates to the formal question");
+  assert.match(result.stdout, /Following your call to split/, "the escalation opens with the acknowledgment, not a repetition");
+  assert.match(result.stdout, /preselect the named slices with --selected/, "the escalation confirms instead of re-picking");
 });
 
 test("a submitted standard answer without a split mention keeps the base reminder only", async () => {

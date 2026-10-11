@@ -90,3 +90,39 @@ assert.equal(screen.queryByRole("note"), null, "no hint element renders when not
 cleanup();
 
 console.log("question-needs-note-ui: ok");
+
+// --- Row-level conditional chip, rendered — not grepped. ---
+// The footer gate fires only AFTER a conditional pick; the row chip is what
+// tells the reader BEFORE picking that this option needs a note. Without it
+// the requirement lives only in worker-authored descriptions, which is the
+// copy that already failed to say it on card_t804npi7.
+const { BatchOptionList } = await import("../components/conversation/batch-options.tsx");
+
+function showRows({ options, isSplitProposal = false }) {
+  const current = { id: "q1", title: "Approve the plan?", prompt: "Pick one.", multiple: false, options };
+  return render(h(BatchOptionList, {
+    current,
+    isSplitProposal,
+    splitKeepLabel: "Keep as one card",
+    selected: {},
+    onPick: () => {},
+  }));
+}
+
+// (e) Conditional row carries the chip; plain sibling does not.
+showRows({ options: mixed });
+assert.equal(screen.getAllByText("Needs a note").length, 1, "exactly the conditional row is marked");
+cleanup();
+
+// (f) No conditional options: no chip anywhere.
+showRows({ options: allPlain });
+assert.equal(screen.queryByText("Needs a note"), null, "plain rows carry no marker");
+cleanup();
+
+// (g) Split proposals render no note box, so the row stays quiet even if a
+// stale proposal carries the flag — the gate refuses new ones.
+showRows({ options: mixed, isSplitProposal: true });
+assert.equal(screen.queryByText("Needs a note"), null, "no unsatisfiable requirement is advertised on split rows");
+cleanup();
+
+console.log("question-needs-note-row-chip: ok");

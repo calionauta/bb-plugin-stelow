@@ -1039,7 +1039,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   like preselection; pick and note compose in the submitted answers
   (except split proposals). The note box is per question — each
   sub-question in a batch carries its own — while `--needs-note` is per
-  option, so only the picks that need elaboration block submit.
+  option, so only the picks that need elaboration block submit. The row
+  itself carries a "Needs a note" chip, so the requirement is visible
+  before picking and never depends on worker-authored descriptions.
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
@@ -2308,11 +2310,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   parent, partial approval keeps it narrowed to the remainder. Never
   unilateral, never by worker claim. A standard ask answered at the split
   point warns that its answer executes nothing, with the exact re-ask
-  repair. The open card offers Propose split at triage/select once a worker
+  repair — including the acknowledgment opening and slice preselection
+  that make the formal question read as confirmation. The open card offers
+  Propose split at triage/select once a worker
   exists to propose from — parked Inbox cards show no trigger, and the
   trigger RPC refuses threadless cards outright. One click
   drives the worker into the --tag split protocol (refused past the split
-  point or while a proposal awaits an answer). One shared gate
+  point or while a proposal awaits an answer). The protocol refuses
+  unsatisfiable shapes up front: --needs-note on slices (proposals render
+  no note box) and a preselected Keep (the veto starts unchecked). One shared gate
   (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,
   `recordSplitAnswer`) decides for the worker ask, the executor, the
   trigger, and the card flag on state.md truth — the UI reads the flag,

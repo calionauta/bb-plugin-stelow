@@ -381,8 +381,9 @@ async function standardSplitReminder(
   const direct = answerMentionsSplit(result.value)
     ? " The user chose a split direction above — ask it formally NOW with"
       + " --tag split --multiple (slices plus exactly one \"Keep as one card\"),"
-      + " then run bb stelow split after the answer. Do not ask another"
-      + " freeform question about this split first."
+      + " then run bb stelow split after the answer. Open with Following your call"
+      + " to split and preselect the named slices with --selected (Keep stays"
+      + " unchecked). Do not ask another freeform question about this split first."
     : "";
   return {
     exitCode: 0,
