@@ -46,6 +46,40 @@ assert.equal(items[0].options[0].artifact.absolutePath, null, "thread questions 
 assert.equal(items[1].options[1].label, "B2", "object options preserve their submitted labels");
 assert.equal(items[1].multiple, true, "batch selection flags survive normalization");
 
+// The thread mapping rebuilt options with four fields and dropped both
+// boolean flags on the floor — the same seam --selected fell through in
+// cli-ask-gate (ask-intent-selected) and --needs-note fell through in
+// parseAskIntent (ask-intent-needs-note). A conditional pick or an opt-out
+// confirm then rendered as a plain pick in the thread: no chip, no gate,
+// no checked rows.
+const flagged = questionFormItems({
+  id: "ask_2",
+  title: "Stelow question",
+  payload: {
+    question: "Pick?",
+    multiple: true,
+    options: [
+      { label: "A", selected: true },
+      { label: "B", needsNote: true },
+      { label: "C" },
+    ],
+  },
+});
+assert.deepEqual(
+  flagged[0].options.map((option) => option.selected === true),
+  [true, false, false],
+  "preselected options travel checked to the thread stepper",
+);
+assert.deepEqual(
+  flagged[0].options.map((option) => option.needsNote === true),
+  [false, true, false],
+  "conditional options travel conditional to the thread stepper",
+);
+for (const option of flagged[0].options) {
+  if (option.label !== "A") assert.ok(!("selected" in option), "absence reads as unchecked — never invent a false");
+  if (option.label !== "B") assert.ok(!("needsNote" in option), "absence reads as submittable — never invent a requirement");
+}
+
 assert.deepEqual(questionFormSubmission([["A"]], false), { answers: ["A"] }, "one question keeps the host's flat answer contract");
 assert.deepEqual(questionFormSubmission([["A"], ["B1", "B2"]], true), { answers: [["A"], ["B1", "B2"]] }, "a batch keeps one dense answer list per question");
 assert.deepEqual(questionFormSubmission([], false), { answers: [] }, "an empty single submission never invents an answer");
