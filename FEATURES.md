@@ -1037,7 +1037,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   shared rule (`submitBlockReason`) for the footer gate and the per-note
   hint, so they can never disagree. The flag travels explicit-true-only
   like preselection; pick and note compose in the submitted answers
-  (except split proposals).
+  (except split proposals). The note box is per question — each
+  sub-question in a batch carries its own — while `--needs-note` is per
+  option, so only the picks that need elaboration block submit.
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.

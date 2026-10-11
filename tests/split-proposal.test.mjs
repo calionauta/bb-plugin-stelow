@@ -109,6 +109,16 @@ assert.ok(!serverSource.includes("SELECT question FROM split_proposals"), "no in
 // or kept as one card — a validating standard question is never a middle.
 assert.match(serverSource, /Never hedge with a standard question/, "the spawn prompt names hedging as the failure mode");
 
+// A formal split after an already-chosen split must read as a confirmation,
+// not a repetition: acknowledge the call, preselect the named slices, and
+// frame Keep as the reversal it is — otherwise the second question repeats
+// the human's own words with the veto listed first, which reads as ignored
+// input plus a contradiction.
+assert.match(serverSource, /Following your call to split/, "the split protocol opens the formal question with the acknowledgment");
+assert.match(serverSource, /preselect the named slices/, "the split protocol confirms with --selected instead of re-picking");
+assert.match(serverSource, /Keep stays unchecked/, "preselection never answers the veto for the human");
+assert.match(serverSource, /keeping together is a reversal, never a contradiction/, "the protocol frames Keep as the stronger decision it is");
+
 // Human trigger: one button drives the worker into the protocol. Decided
 // by the shared splitActionState (lib) on slug truth — the same rule the
 // card UI reads — so the button can never promise what `split` refuses.

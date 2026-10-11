@@ -22,7 +22,7 @@ import type { WorkerCard } from "../../workers-types.js";
 
 export const ASK_USAGE =
   "Usage: bb stelow ask --thread <thr_id> [--tag split|scope-adjust] --question <text> [--multiple] "
-  + "--option <label> [--selected] [--desc <text>] [--preview <text>] [--artifact <path>]...";
+  + "--option <label> [--selected] [--needs-note] [--desc <text>] [--preview <text>] [--artifact <path>]...";
 
 /** Machine tags a worker ask can carry. `split` owns split mechanics;
  * `scope-adjust` marks scope IN/OUT confirms for the shape gate. */
@@ -86,6 +86,7 @@ export function parseAskIntent(
       preview: option.preview,
       artifact: option.artifact,
       ...(option.selected === true ? { selected: true as const } : {}),
+      ...(option.needsNote === true ? { needsNote: true as const } : {}),
     })),
     contract: group.contract ?? null,
   }));
