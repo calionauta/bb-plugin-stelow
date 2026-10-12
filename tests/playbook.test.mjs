@@ -18,7 +18,8 @@ const STAGES = [
 assert.deepEqual(knownStages().sort(), STAGES.slice().sort(), "every machine stage has a playbook row");
 assert.equal(stagePlaybookRelPath("shape"), "SKILL.md", "skill-owned stages point at the skill's entry file");
 assert.equal(stagePlaybookRelPath("context"), "stages/context.md", "file-owned stages point at the file");
-assert.equal(stagePlaybookRelPath("select"), null, "stages without a dedicated file fall back to the orchestrator");
+assert.equal(stagePlaybookRelPath("select"), "stages/selection.md", "upstream #69: select reclaims the selection file");
+assert.equal(stagePlaybookRelPath("selection"), "stages/interface-selection.md", "upstream #69: selection owns the interface-pick file");
 assert.equal(stagePlaybookRelPath("nope"), null, "unknown stages fall back instead of inventing a path");
 
 // Real I/O: entries resolve against a real directory tree, never a mock.
