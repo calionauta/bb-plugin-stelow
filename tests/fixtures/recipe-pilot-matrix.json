@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-10-12T13:34:05Z",
+  "validated_at": "2026-10-12T17:17:33Z",
   "host": {
     "name": "bb",
     "version": "0.45.0",
@@ -17,7 +17,7 @@
     },
     {
       "path": "server/bb-workflow-bridge.ts",
-      "sha256": "3b42d2828dcd65cc2098284362efcddbe01e3ef3482875600514a1a9733ad4fd"
+      "sha256": "ca1ae727b75de9acfb8290c7c1a728d02c9e195ef4330831828ffbef241a2c6d"
     },
     {
       "path": "lib/execution-artifacts.mjs",

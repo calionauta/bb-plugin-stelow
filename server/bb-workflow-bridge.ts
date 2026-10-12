@@ -312,7 +312,8 @@ export function renderInlineWorkflowScript(
   context: Record<string, unknown>,
 ): string {
   const tasks = (recipe.tasks ?? []).map(toWorkflowTask);
-  const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
+  const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, `
+    + `description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
 const recipeTasks = ${JSON.stringify(tasks)};
 const input = { ...args, tasks: recipeTasks };
 if (!input || !input.localRunId) return { state: "failed", error: "missing execution identity" };
