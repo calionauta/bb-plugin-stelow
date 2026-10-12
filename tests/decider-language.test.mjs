@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const surfaces = [
   "skills/stelow-workflow-orchestrator/stages/ask-patterns.md",
+  "skills/stelow-workflow-orchestrator/stages/interface-selection.md",
   "skills/stelow-workflow-orchestrator/stages/setup.md",
   "skills/stelow-workflow-orchestrator/stages/context.md",
   "skills/stelow-workflow-orchestrator/stages/selection.md",
