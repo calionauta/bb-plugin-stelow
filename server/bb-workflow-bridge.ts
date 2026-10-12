@@ -261,13 +261,32 @@ const condition = (task) => {
   throw new Error("Unknown recipe condition: " + task.when);
 };`;
 
+/** Embedded wave driver, shared by every rendered script. Runs ready waves
+ * until every task completed or skipped, then answers succeeded with the
+ * collected outputs. Same self-containment reason as the consts above. */
+const DRIVE_WAVES_FN_SOURCE = `while (completed.size + skipped.size < input.tasks.length) {
+  const ready = input.tasks.filter((task) => !completed.has(task.id) && !skipped.has(task.id)
+    && task.dependsOn.every((id) => completed.has(id) || skipped.has(id)));
+  if (ready.length === 0) throw new Error("Recipe dependency cycle or unresolved task");
+  const results = await parallel(ready.map((task) => () => executeTask(task)));
+  for (let index = 0; index < ready.length; index += 1) {
+    const result = results[index];
+    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
+    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
+      + " (the host call returned nothing — read the run history for the rejected call)");
+    completed.add(ready[index].id);
+  }
+}
+return { state: "succeeded", recipe: input.recipeId, outputs };`;
+
 /** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
 export function renderInlineWorkflowScript(
   recipe: { id: string; tasks?: CatalogTask[] },
   context: Record<string, unknown>,
 ): string {
   const tasks = (recipe.tasks ?? []).map(toWorkflowTask);
-  const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
+  const source = `export const meta = { name: ${JSON.stringify(`stelow-${recipe.id}`)}, `
+    + `description: ${JSON.stringify(`Stelow recipe ${recipe.id}`)}, phases: [{ title: "Execute" }] }
 const recipeTasks = ${JSON.stringify(tasks)};
 const input = { ...args, tasks: recipeTasks };
 if (!input || !input.localRunId) return { state: "failed", error: "missing execution identity" };
@@ -283,9 +302,15 @@ const executeTask = async (task) => {
   if (!condition(task)) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "condition-false" }; return; }
   if (task.dependsOn.some((id) => skipped.has(id))) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "dependency-skipped" }; return; }
   const dependencies = Object.fromEntries(task.dependsOn.map((id) => [id, outputs[id]]));
-  const result = await agent("Execute this Stelow task in the origin workspace. Read the named skill and inputs, write the required task output at input.context.artifactRoot + '/' + task.output, and return structured evidence. Do not edit state.md, gates, or completion state. Task: " + JSON.stringify({ recipe: input.recipeId, task, dependencies, context: input.context }), { phase: "Execute", schema: task.outputSchema });
+  const result = await agent("Execute this Stelow task in the origin workspace. Read the named skill and inputs, write the required task output at "
+    + "input.context.artifactRoot + '/' + task.output, and return structured evidence. Do not edit state.md, gates, or completion state. Task: "
+    + JSON.stringify({ recipe: input.recipeId, task, dependencies, context: input.context }), { phase: "Execute", schema: task.outputSchema });
   if (result && (result.state === "failed" || result.state === "error")) {
-    if (task.failurePolicy === "skip-with-reason") { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: result.error ?? "task-failed" }; return; }
+    if (task.failurePolicy === "skip-with-reason") {
+      skipped.add(task.id);
+      outputs[task.id] = { skipped: true, reason: result.error ?? "task-failed" };
+      return;
+    }
     throw new Error("Task failed: " + task.id);
   }
   if (result && (result.state === "needs_input" || result.needs_input)) {
@@ -294,19 +319,7 @@ const executeTask = async (task) => {
   }
   outputs[task.id] = result;
 };
-while (completed.size + skipped.size < input.tasks.length) {
-  const ready = input.tasks.filter((task) => !completed.has(task.id) && !skipped.has(task.id) && task.dependsOn.every((id) => completed.has(id) || skipped.has(id)));
-  if (ready.length === 0) throw new Error("Recipe dependency cycle or unresolved task");
-  const results = await parallel(ready.map((task) => () => executeTask(task)));
-  for (let index = 0; index < ready.length; index += 1) {
-    const result = results[index];
-    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
-    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
-      + " (the host call returned nothing — read the run history for the rejected call)");
-    completed.add(ready[index].id);
-  }
-}
-return { state: "succeeded", recipe: input.recipeId, outputs };
+${DRIVE_WAVES_FN_SOURCE}
 `;
   if (Buffer.byteLength(source, "utf8") > 512 * 1024) throw new Error("BB Workflows source exceeds 512 KiB");
   return source;

@@ -28,16 +28,34 @@ mkdirSync(join(skills, "stelow-workflow-entry"), { recursive: true });
 mkdirSync(join(skills, "stelow-workflow-router"), { recursive: true });
 mkdirSync(join(skills, "stelow-workflow-orchestrator", "stages"), { recursive: true });
 mkdirSync(join(skills, "stelow-workflow-shape-up"), { recursive: true });
-for (const file of ["stelow-workflow-entry/SKILL.md", "stelow-workflow-router/SKILL.md", "stelow-workflow-orchestrator/SKILL.md", "stelow-workflow-orchestrator/stages/context.md", "stelow-workflow-shape-up/SKILL.md"]) {
+for (const file of [
+  "stelow-workflow-entry/SKILL.md",
+  "stelow-workflow-router/SKILL.md",
+  "stelow-workflow-orchestrator/SKILL.md",
+  "stelow-workflow-orchestrator/stages/context.md",
+  "stelow-workflow-shape-up/SKILL.md",
+]) {
   writeFileSync(join(skills, file), "# playbook\n");
 }
 const { existsSync } = await import("node:fs");
 
-const build = playbookEntries({ kind: "build", stage: "shape", statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills }, existsSync);
+const build = playbookEntries({
+  kind: "build",
+  stage: "shape",
+  statePath: join(root, "state.md"),
+  transitionsPath: join(root, "transitions.md"),
+  skillsDir: skills,
+}, existsSync);
 assert.deepEqual(build.map((entry) => entry.label), ["state", "transitions", "entry", "router", "orchestrator", "stage(shape)"], "build order is fixed: state, transitions, core skills, stage");
 assert.ok(build.every((entry) => entry.missing === false || entry.label === "state" || entry.label === "transitions"), "vendored skill files resolve; workspace files report honestly");
 
-const fallback = playbookEntries({ kind: "build", stage: "int-gate", statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills }, existsSync);
+const fallback = playbookEntries({
+  kind: "build",
+  stage: "int-gate",
+  statePath: join(root, "state.md"),
+  transitionsPath: join(root, "transitions.md"),
+  skillsDir: skills,
+}, existsSync);
 assert.ok(fallback.every((entry) => entry.label !== "stage(int-gate)"), "a stage without a file lists no stage row");
 
 const research = playbookEntries({ kind: "research", stage: null, statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills, strategySkill: "stelow-product-discovery", researchIndexPath: join(root, "research-index.md") }, existsSync);
