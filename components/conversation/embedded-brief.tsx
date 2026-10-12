@@ -1,4 +1,5 @@
 import { ArtifactContent, useArtifactContent } from "../detail/artifact-viewer-dialog";
+import { Button } from "@/components/ui/button";
 import { artifactViewerModeForOption, sharedQuestionArtifact } from "../../lib/question-presentation.mjs";
 import type { AskArtifact, BatchItem, OpenArtifactHandler } from "./batch-types";
 
@@ -22,13 +23,14 @@ export function EmbeddedBrief({ cardId, file, onExpand }: {
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
           Brief for this question: {file.display}
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={onExpand}
-          className="shrink-0 cursor-pointer text-xs font-medium text-primary hover:underline"
+          className="shrink-0 text-xs font-medium"
         >
           Open full viewer ↗
-        </button>
+        </Button>
       </div>
       <div className="px-3 pb-3">
         <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
