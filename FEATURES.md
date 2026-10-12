@@ -598,6 +598,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   as the page ages. The section header reports outcomes ("1 failed · 2
   succeeded") rather than an active count that reads "0 active" on a card whose
   four runs all finished.
+- **Empty agent dispatches get one retry, then a named cause.** card_g89gtmwt
+  lost three plan-critique runs with the host's agent call resolving empty
+  — twice instantly with zero calls recorded, once after review succeeded —
+  and the same signature appears on other recipes across threads and days:
+  flaky dispatch, not recipe content. An empty resolution now re-dispatches
+  once (a full re-run costs far more); a rejection is recorded per task and
+  folded into the thrown error, so the worker reads the cause instead of
+  the generic suffix. The established suffix survives only when no failure
+  was captured (a settled explicit failure), keeping the run-history
+  pointer.
 - **Every fact on the card has exactly one home.** A summary strip was added to
   the top of the open card and then removed again, and the reason is the rule
   worth keeping. Its four fields were the blocker, the stage, the file count and
