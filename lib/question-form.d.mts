@@ -3,8 +3,6 @@ export interface QuestionFormOption {
   description: string;
   preview: string | null;
   artifact: { path: string; display: string; absolutePath: null; hostId: null } | null;
-  selected?: boolean;
-  needsNote?: boolean;
 }
 
 export interface QuestionFormItem {

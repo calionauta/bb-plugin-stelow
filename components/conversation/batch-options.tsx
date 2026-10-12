@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
-import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
-import { splitOptionDescriptionPreview, artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
+import { splitOptionDescriptionPreview } from "../../lib/question-presentation.mjs";
 import { splitOptionDescription } from "../../lib/split-question-presentation.mjs";
 import type {
   AskArtifact,
+  ArtifactViewerMode,
   BatchItem,
   OpenArtifactHandler,
 } from "./batch-types";
@@ -13,6 +13,13 @@ import type {
 // maps them. Split out of the stepper because the row is the widest thing in
 // the conversation and the stepper's own budget is the conversation's, not the
 // row's.
+
+function artifactViewerModeForOption(label: string): ArtifactViewerMode {
+  // An approval is a decision after reading, not a request to alter the
+  // document. All other choices — especially Request/Review changes — keep
+  // the full quote-and-comment path to communicate precise feedback.
+  return /\b(approve|accept|proceed)\b/i.test(label) ? "review" : "comment";
+}
 
 // Per-option evidence: the document opens from inside the option row
 // (right side), the inline glance expands below. The artifact opens in the
@@ -70,15 +77,12 @@ function OptionPreview({ preview }: { preview: string | null }) {
 // shared outline treatment so it harmonizes with the amber panel and the
 // primary accents instead of introducing a third color.
 //
-// The label names the FILE with one verb everywhere. "Open document" alone
-// made the reader guess what they were about to open, and a filename buried
-// in a hover-only title is not a label. When the document was inherited from
-// a sibling it carries a small Shared chip instead of a second verb, because
-// the same brief on four rows otherwise reads as four pieces of evidence
-// about four different options — while two verbs ("Open" vs "Shared brief")
-// for one action read as two different actions. Where no viewer exists (a
-// thread) it degrades to the bare filename, never to a dead button
-// pretending to open.
+// The label names the FILE. "Open document" alone made the reader guess what
+// they were about to open, and a filename buried in a hover-only title is not
+// a label. When the document was inherited from a sibling it says so, because
+// the same brief on four rows otherwise reads as four pieces of evidence about
+// four different options. Where no viewer exists (a thread) it degrades to the
+// bare filename, never to a dead button pretending to open.
 function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifact }: {
   artifact: AskArtifact;
   optionLabel: string;
@@ -109,16 +113,8 @@ function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifa
       className="mr-2 min-h-11 max-w-[16rem] shrink-0 gap-1 self-center"
     >
       <span className="truncate">
-        Open: {artifact.display}
+        {artifactInherited ? "Shared brief" : "Open"}: {artifact.display}
       </span>
-      {artifactInherited ? (
-        <span
-          className="shrink-0 rounded border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-          title="The brief shared by every option, not this option's own document"
-        >
-          Shared
-        </span>
-      ) : null}
       <span aria-hidden>↗</span>
     </Button>
   );
@@ -127,13 +123,12 @@ function OptionDocument({ artifact, optionLabel, artifactInherited, onOpenArtifa
 // The select control: the mark, the label, and the description. It is the
 // left half of a row and the whole decision — the document sits beside it, not
 // inside it, so picking never opens anything by accident.
-function OptionPickControl({ label, description, active, multiple, isKeepOption, needsNote, onPick }: {
+function OptionPickControl({ label, description, active, multiple, isKeepOption, onPick }: {
   label: string;
   description: string;
   active: boolean;
   multiple: boolean;
   isKeepOption: boolean;
-  needsNote: boolean;
   onPick: () => void;
 }) {
   const pickShape = multiple && !isKeepOption ? "rounded-sm" : "rounded-full";
@@ -154,17 +149,7 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
         {active ? "✓" : ""}
       </span>
       <span className="min-w-0">
-        <span className="block font-medium">
-          {label}
-          {needsNote ? (
-            <span
-              className="ml-2 rounded border border-amber-500/40 px-1 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300"
-              title="This pick needs a note — say what should change in the note box below, then submit"
-            >
-              Needs a note
-            </span>
-          ) : null}
-        </span>
+        <span className="block font-medium">{label}</span>
         {description ? (
           <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">
             {description}
@@ -177,14 +162,12 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
 
 // One option row: the select control, the label, the per-option document,
 // and the inline preview glance.
-function BatchOptionRow({ option, active, multiple, isKeepOption, description, hideDocument, needsNote, onPick, onOpenArtifact }: {
+function BatchOptionRow({ option, active, multiple, isKeepOption, description, onPick, onOpenArtifact }: {
   option: BatchItem["options"][number];
   active: boolean;
   multiple: boolean;
   isKeepOption: boolean;
   description: string;
-  hideDocument: boolean;
-  needsNote: boolean;
   onPick: () => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
@@ -205,10 +188,9 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
           active={active}
           multiple={multiple}
           isKeepOption={isKeepOption}
-          needsNote={needsNote}
           onPick={onPick}
         />
-        {artifact && !hideDocument ? (
+        {artifact ? (
           <OptionDocument
             artifact={artifact}
             optionLabel={option.label}
@@ -248,11 +230,8 @@ function OptionFullDetail({ description }: { description: string }) {
 }
 
 // Option list: one row per option of the current question, with split
-// descriptions resolved per row. When every option carries the same
-// document the rows hide their buttons and one embedded reader above them
-// carries the brief instead (see embedded-brief.tsx).
-export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLabel, selected, onPick, onOpenArtifact }: {
-  cardId?: string;
+// descriptions resolved per row.
+export function BatchOptionList({ current, isSplitProposal, splitKeepLabel, selected, onPick, onOpenArtifact }: {
   current: BatchItem;
   isSplitProposal: boolean;
   splitKeepLabel: string;
@@ -260,17 +239,11 @@ export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLab
   onPick: (question: BatchItem, label: string) => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
-  const brief = cardId ? embeddedBriefFor(current, onOpenArtifact) : null;
   return (
     <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
-      {brief && cardId ? <EmbeddedBrief cardId={cardId} file={brief.file} onExpand={brief.onExpand} /> : null}
       {current.options.map((option) => {
         const active = (selected[current.id] ?? []).includes(option.label);
         const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
-        // Split proposals render no note box, so a conditional marker there
-        // would advertise a requirement with nowhere to satisfy it — the
-        // gate refuses --needs-note on split asks, and the row stays quiet.
-        const showNeedsNote = !isSplitProposal && option.needsNote === true;
         return (
           <BatchOptionRow
             key={option.label}
@@ -279,8 +252,6 @@ export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLab
             multiple={current.multiple}
             isKeepOption={isKeepOption}
             description={isSplitProposal ? splitOptionDescription(option.description) : option.description}
-            hideDocument={brief !== null}
-            needsNote={showNeedsNote}
             onPick={() => onPick(current, option.label)}
             onOpenArtifact={onOpenArtifact}
           />

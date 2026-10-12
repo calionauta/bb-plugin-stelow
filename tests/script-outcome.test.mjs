@@ -121,15 +121,15 @@ assert.match(fieldNamed, /"pattern":\{"type":"string"/, "a field named pattern s
 // stubbed host calls: parallel resolving undefined with no outputs entry
 // must throw naming the task; a condition-skipped task (outputs entry
 // written, undefined returned) must complete quietly with its skip record.
-async function runRendered(recipe, { agentImpl, parallelImpl, context = {} }) {
+async function runRendered(recipe, { agentImpl, context = {} }) {
   const source = renderInlineWorkflowScript(recipe, { localRunId: "exec_probe", ...context });
   const body = source.replace(/^export const meta = .*$/m, "");
   const run = new Function("agent", "parallel", "args", `return (async () => {${body}})();`);
-  const parallel = parallelImpl ?? (async (thunks) => {
+  const parallel = async (thunks) => {
     const out = [];
     for (const thunk of thunks) out.push(await thunk());
     return out;
-  });
+  };
   return run(agentImpl, parallel, { localRunId: "exec_probe", recipeId: recipe.id, ...context });
 }
 
@@ -149,70 +149,6 @@ await assert.rejects(
   runRendered({ id: "r", tasks: [stubTask()] }, { agentImpl: async () => undefined }),
   /Task produced no result: t1/,
   "a swallowed host call throws naming the task instead of succeeding empty",
-);
-
-// card_g89gtmwt: three plan-critique runs died with the host's agent
-// dispatch resolving empty — twice instantly with zero calls recorded,
-// once after review succeeded. Same signature on setup-recon and
-// context-analysis across threads and days. The recipe and the spec were
-// never the cause; the dispatch is flaky. So an empty resolution gets one
-// bounded retry (a full re-run costs far more), and a recorded failure
-// travels in the error instead of the generic suffix.
-let emptyDispatches = 0;
-await assert.rejects(
-  runRendered({ id: "r", tasks: [stubTask()] }, {
-    agentImpl: async () => { emptyDispatches += 1; return undefined; },
-  }),
-  /Task produced no result: t1 — agent call failed: agent call resolved empty twice/,
-  "a persistently empty dispatch names the task and reports the exhausted retry",
-);
-assert.equal(emptyDispatches, 2, "exactly one retry fires before the empty dispatch fails");
-
-await assert.rejects(
-  runRendered({ id: "r", tasks: [stubTask()] }, {
-    agentImpl: async () => { throw new Error("engine refused the call"); },
-  }),
-  /Task produced no result: t1 — agent call failed: engine refused the call/,
-  "a rejected dispatch names the task and folds in the cause",
-);
-
-let flakyDispatches = 0;
-const recovered = await runRendered({ id: "r", tasks: [stubTask()] }, {
-  agentImpl: async () => {
-    flakyDispatches += 1;
-    return flakyDispatches === 1 ? undefined : { findings: [] };
-  },
-});
-assert.equal(flakyDispatches, 2, "the retry re-dispatches once");
-assert.deepEqual(
-  recovered.outputs,
-  { t1: { findings: [] } },
-  "a retry that resolves carries the batch instead of failing it",
-);
-
-// The live host settles per-call rejections into undefined results instead
-// of rejecting the batch — that is the card_g89gtmwt shape (zero calls
-// recorded, "produced no result"). An explicit task failure swallowed that
-// way carries no captured agent failure, so the established suffix survives
-// and the worker still gets the run-history pointer.
-const settling = async (thunks) => {
-  const out = [];
-  for (const thunk of thunks) {
-    try {
-      out.push(await thunk());
-    } catch {
-      out.push(undefined);
-    }
-  }
-  return out;
-};
-await assert.rejects(
-  runRendered({ id: "r", tasks: [stubTask()] }, {
-    agentImpl: async () => ({ state: "failed", error: "model refused" }),
-    parallelImpl: settling,
-  }),
-  /Task produced no result: t1 \(the host call returned nothing/,
-  "a settled task failure with no captured dispatch failure keeps the established suffix",
 );
 
 let dispatched = 0;

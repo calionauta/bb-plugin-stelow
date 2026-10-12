@@ -9,7 +9,6 @@
 import { Button } from "@/components/ui/button";
 import { BatchOptionList } from "./batch-options";
 import { boundaryOptions } from "./boundary-question-frame";
-import { submitBlockReason } from "../../lib/question-presentation.mjs";
 import type { BatchItem, OpenArtifactHandler } from "./batch-types";
 import type { questionCopy } from "../../lib/question-presentation.mjs";
 
@@ -48,9 +47,8 @@ const INPUT_CLASS =
   "mt-1 min-h-11 w-full cursor-text rounded-md border border-border "
   + "bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground";
 
-// Free-text note: composes with a picked option (the note travels with the
-// decision) and doubles as a standalone custom answer when nothing is
-// picked — except on split proposals, where pick and text stay exclusive.
+// Free-text "Other": an option and a custom text stay mutually exclusive
+// on single-select (the hook clears the other side on each keystroke).
 export function BatchCustomInput({
   copy,
   value,
@@ -110,11 +108,6 @@ function CustomAndSkip({
   allowSkip: boolean;
 }) {
   if (sel.isSplitProposal) return null;
-  const missingNote = submitBlockReason(
-    [current],
-    { [current.id]: sel.selected[current.id] ?? [] },
-    { [current.id]: sel.custom[current.id] ?? "" },
-  );
   return (
     <>
       <BatchCustomInput
@@ -122,7 +115,6 @@ function CustomAndSkip({
         value={sel.custom[current.id] ?? ""}
         onType={(value) => sel.typeCustom(current, value)}
       />
-      {missingNote ? <p role="note" className="text-xs text-amber-900/80 dark:text-amber-200/80">{missingNote}</p> : null}
       {allowSkip
         ? (
           <SkipControl
@@ -138,7 +130,6 @@ function CustomAndSkip({
 }
 
 export function BatchAnswerBody({
-  cardId,
   sel,
   current,
   copy,
@@ -147,7 +138,6 @@ export function BatchAnswerBody({
   splitNotice,
   onOpenArtifact,
 }: {
-  cardId?: string;
   sel: AnswerBodyState;
   current: BatchItem;
   copy: Copy;
@@ -169,7 +159,6 @@ export function BatchAnswerBody({
         )
         : null}
       <BatchOptionList
-        cardId={cardId}
         current={shown}
         isSplitProposal={sel.isSplitProposal}
         splitKeepLabel={sel.splitKeepLabel}
@@ -177,21 +166,6 @@ export function BatchAnswerBody({
         onPick={sel.pick}
         onOpenArtifact={onOpenArtifact}
       />
-      <CustomAndSkip sel={sel} current={current} copy={copy} allowSkip={allowSkip} />
-      <AnswerStatus splitNotice={splitNotice} error={error} />
-    </>
-  );
-}
-
-/** The split reminder plus any submit error, below the options. Split from
- * the answer body because status rendering is not answer rendering, and the
- * body file sits at its size budget. */
-function AnswerStatus({ splitNotice, error }: {
-  splitNotice: { text: string } | null;
-  error: string | null;
-}) {
-  return (
-    <>
       {splitNotice
         ? (
           <p role="status" className="rounded-md border border-primary/40 bg-primary/10 p-2 text-xs leading-5 text-foreground">
@@ -199,6 +173,7 @@ function AnswerStatus({ splitNotice, error }: {
           </p>
         )
         : null}
+      <CustomAndSkip sel={sel} current={current} copy={copy} allowSkip={allowSkip} />
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </>
   );
@@ -244,7 +219,6 @@ function FooterButtons({
   copy,
   busy,
   submitLabel,
-  blockReason,
   onSubmit,
 }: {
   sel: AnswerFooterState;
@@ -252,14 +226,12 @@ function FooterButtons({
   copy: Copy;
   busy: boolean;
   submitLabel: string;
-  blockReason: string | null;
   onSubmit: (answers: string[][]) => void;
 }) {
   const multi = questions.length > 1;
   const lastIndex = questions.length - 1;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {blockReason ? <p role="note" className="w-full text-xs text-amber-900/80 dark:text-amber-200/80">{blockReason}</p> : null}
       {multi
         ? (
           <Button size="sm" variant="outline" disabled={sel.index === 0 || busy} onClick={() => sel.setIndex(Math.max(0, sel.index - 1))}>
@@ -276,7 +248,7 @@ function FooterButtons({
         : null}
       {sel.isLastQuestion
         ? (
-          <Button size="sm" disabled={!sel.complete || busy || blockReason !== null} onClick={() => onSubmit(questions.map((q) => sel.merged(q.id)))}>
+          <Button size="sm" disabled={!sel.complete || busy} onClick={() => onSubmit(questions.map((q) => sel.merged(q.id)))}>
             {busy ? copy.sending : submitLabel}
           </Button>
         )
@@ -304,19 +276,10 @@ export function BatchFooter({
 }) {
   const current = questions[Math.min(sel.index, questions.length - 1)];
   if (!current) return null;
-  const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
   return (
     <>
       <ProgressNotes sel={sel} current={current} copy={copy} questions={questions} allowSkip={allowSkip} />
-      <FooterButtons
-        sel={sel}
-        questions={questions}
-        copy={copy}
-        busy={busy}
-        submitLabel={submitLabel}
-        blockReason={blockReason}
-        onSubmit={onSubmit}
-      />
+      <FooterButtons sel={sel} questions={questions} copy={copy} busy={busy} submitLabel={submitLabel} onSubmit={onSubmit} />
     </>
   );
 }

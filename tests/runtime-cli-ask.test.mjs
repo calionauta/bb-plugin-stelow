@@ -137,64 +137,6 @@ test("an unanswered ask is persisted as an expired row, never dropped", async ()
   );
 });
 
-test("an answered ask cancels its early sync kick instead of leaking the timer", async () => {
-  // blockOnAnswer schedules kickQuestionSync (1500ms) so the inbox row appears while the card already
-  // shows the question, then must cancel it once requestAnswer settles — otherwise a post-answer sync
-  // fires against resolved state. Timers are stubbed so the 1500ms kick is observable without waiting;
-  // only the kick delay is counted, so unrelated host timers cannot flake the pin.
-  const { invoke } = cliHarness({
-    requestInput: () => ({ outcome: "submitted", value: { answers: [] } }),
-  });
-  const realSetTimeout = globalThis.setTimeout;
-  const realClearTimeout = globalThis.clearTimeout;
-  const scheduled = [];
-  const cleared = [];
-  globalThis.setTimeout = (cb, ms) => { scheduled.push(ms); return { unref() {}, __cb: cb }; };
-  globalThis.clearTimeout = (timer) => { cleared.push(timer); };
-  try {
-    const result = await invoke([
-      "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
-      "--option", "First slice ships first", "--option", "Second slice ships first",
-    ]);
-    assert.equal(result.exitCode, 0);
-  } finally {
-    globalThis.setTimeout = realSetTimeout;
-    globalThis.clearTimeout = realClearTimeout;
-  }
-  assert.equal(scheduled.filter((ms) => ms === 1500).length, 1, "the live ask schedules exactly one early sync kick");
-  assert.equal(cleared.length, 1, "settling the answer cancels the kick instead of leaking a post-answer sync");
-});
-
-test("a persisted timeout ask kicks an early sync for its expired rows", async () => {
-  // writeExpiredRows mints the expired rows' inbox row through the same kick as the live path. The live
-  // kick was already cancelled when the call ended, so the timeout path schedules twice and clears once.
-  const { invoke, calls } = cliHarness({
-    requestInput: () => ({ outcome: "cancelled", reason: "timeout" }),
-  });
-  const realSetTimeout = globalThis.setTimeout;
-  const realClearTimeout = globalThis.clearTimeout;
-  const scheduled = [];
-  const cleared = [];
-  globalThis.setTimeout = (cb, ms) => { scheduled.push(ms); return { unref() {}, __cb: cb }; };
-  globalThis.clearTimeout = (timer) => { cleared.push(timer); };
-  try {
-    const result = await invoke([
-      "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
-      "--option", "First slice ships first", "--option", "Second slice ships first",
-    ]);
-    assert.equal(result.exitCode, 1);
-  } finally {
-    globalThis.setTimeout = realSetTimeout;
-    globalThis.clearTimeout = realClearTimeout;
-  }
-  const expired = calls.find(
-    ([entry, sql]) => entry === "run" && sql.includes("expired_questions"),
-  );
-  assert.ok(expired, "the question stays answerable on the card");
-  assert.equal(scheduled.filter((ms) => ms === 1500).length, 2, "the expired-row write schedules its own early sync kick");
-  assert.equal(cleared.length, 1, "only the live-path kick is cancelled; the expired-row kick fires");
-});
-
 test("a submitted ask records the split selection the executor trusts", async () => {
   const { invoke, calls } = cliHarness({
     stage: "triage",
@@ -260,62 +202,6 @@ test("a split ask needs exactly one keep option", async () => {
   assert.deepEqual(callsNamed(calls, "requestInput"), []);
 });
 
-test("a split ask refuses --needs-note: proposals have no note box", async () => {
-  const { invoke, calls } = cliHarness({ stage: "triage" });
-  const result = await invoke([
-    "ask",
-    "--thread",
-    "thr_worker",
-    "--tag",
-    "split",
-    "--question",
-    "Split?",
-    "--option",
-    "First slice",
-    "--desc",
-    "Ship the retry path",
-    "--needs-note",
-    "--option",
-    "Second slice",
-    "--desc",
-    "Ship the receipt",
-    "--option",
-    "Keep as one card",
-    "--multiple",
-  ]);
-  assert.equal(result.exitCode, 2);
-  assert.match(result.stderr, /no note box/, "the refusal names the missing satisfier");
-  assert.deepEqual(callsNamed(calls, "requestInput"), [], "a conditional slice never reaches the human as an unsatisfiable block");
-});
-
-test("a split ask refuses a preselected keep: the veto stays the human's call", async () => {
-  const { invoke, calls } = cliHarness({ stage: "triage" });
-  const result = await invoke([
-    "ask",
-    "--thread",
-    "thr_worker",
-    "--tag",
-    "split",
-    "--question",
-    "Split?",
-    "--option",
-    "First slice",
-    "--desc",
-    "Ship the retry path",
-    "--option",
-    "Second slice",
-    "--desc",
-    "Ship the receipt",
-    "--option",
-    "Keep as one card",
-    "--selected",
-    "--multiple",
-  ]);
-  assert.equal(result.exitCode, 2);
-  assert.match(result.stderr, /starts unchecked/, "the refusal names the required initial state");
-  assert.deepEqual(callsNamed(calls, "requestInput"), [], "a self-answered veto never reaches the human pre-checked");
-});
-
 test("a standard ask at the split point carries the consequence disclosure", async () => {
   const { invoke, calls } = cliHarness({ stage: "triage" });
   await invoke([
@@ -338,34 +224,4 @@ test("a standard ask at the split point carries the consequence disclosure", asy
     /Propose split/,
     "the disclosure names the repair the human can still take",
   );
-});
-
-test("a submitted standard answer mentioning split points at the formal split now", async () => {
-  const { invoke } = cliHarness({
-    stage: "triage",
-    requestInput: () => ({ outcome: "submitted", value: { answers: ["Split A and B"] } }),
-  });
-  const result = await invoke([
-    "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
-    "--option", "First slice ships first", "--option", "Second slice ships first",
-  ]);
-  assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /recorded as STANDARD/, "the base consequence still applies");
-  assert.match(result.stdout, /ask it formally NOW with --tag split/, "a split-direction answer escalates to the formal question");
-  assert.match(result.stdout, /Following your call to split/, "the escalation opens with the acknowledgment, not a repetition");
-  assert.match(result.stdout, /preselect the named slices with --selected/, "the escalation confirms instead of re-picking");
-});
-
-test("a submitted standard answer without a split mention keeps the base reminder only", async () => {
-  const { invoke } = cliHarness({
-    stage: "triage",
-    requestInput: () => ({ outcome: "submitted", value: { answers: ["First slice ships first"] } }),
-  });
-  const result = await invoke([
-    "ask", "--thread", "thr_worker", "--question", "Which slice ships first?",
-    "--option", "First slice ships first", "--option", "Second slice ships first",
-  ]);
-  assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /recorded as STANDARD/, "the base consequence still applies");
-  assert.doesNotMatch(result.stdout, /ask it formally NOW/, "no split direction means no direct formal-split sentence");
 });

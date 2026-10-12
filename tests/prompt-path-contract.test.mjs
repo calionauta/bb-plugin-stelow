@@ -113,11 +113,6 @@ const PINNED_ASK_RULES = [
   "Ask dependent questions (where Q2 needs Q1's answer) one at a time.",
   "When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: "
     + "--desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.",
-  "Write every question for the decider: short, plain words, no stage slugs, "
-    + "recon counts, file handles, or methodology brand names — name a document only to open or approve it, and put details in "
-    + "--preview/--artifact, never inline.",
-  "Mark an option that needs the human's which or what with --needs-note right after "
-    + "its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.",
   "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context "
     + "— never dump a raw file list as the only content of a question.",
   "Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer.",
