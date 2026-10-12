@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_SPLIT_CHILDREN, MIN_SPLIT_CHILDREN, SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "../lib/split-proposal.mjs";
+import {
+  MAX_SPLIT_CHILDREN,
+  MIN_SPLIT_CHILDREN,
+  SPLIT_KEEP_LABEL,
+  SPLIT_PROPOSAL_TTL_MS,
+  splitOutcome,
+  splitRemainder,
+  validateSplitAskOptions,
+  validateSplitSlices,
+} from "../lib/split-proposal.mjs";
 
 // Regression: triage in a single-card flow cannot split — one card is one
 // workflow by rule. The split path below is the only exit: a recorded,
@@ -49,6 +58,46 @@ assert.equal(partial.archiveParent, false, "a remainder keeps the parent alive")
 assert.deepEqual(partial.remaining.map((s) => s.title), ["Desktop layout", "Sound toggle"], "the remainder is exactly the unpicked");
 const total = splitRemainder(slices, slices);
 assert.equal(total.archiveParent, true, "full approval archives the parent");
+
+// Ask-time option shape: answerable and unanswered-for before the human is
+// pinged. A conditional slice would block submit with no note box to
+// satisfy it; a preselected veto would answer for the human.
+const askOptions = [
+  { label: "Slice A" },
+  { label: "Slice B" },
+  { label: SPLIT_KEEP_LABEL },
+];
+assert.equal(validateSplitAskOptions(askOptions), null, "slices plus one unchecked keep validate");
+assert.match(
+  validateSplitAskOptions([{ label: "Slice A" }, { label: "Slice B" }]),
+  /exactly one "Keep as one card"/,
+  "the veto is mandatory",
+);
+assert.match(
+  validateSplitAskOptions([{ label: "Slice A" }, { label: "Slice B" }, { label: SPLIT_KEEP_LABEL }, { label: SPLIT_KEEP_LABEL }]),
+  /exactly one "Keep as one card"/,
+  "a doubled veto refuses rather than reading as emphasis",
+);
+assert.match(
+  validateSplitAskOptions([{ label: "Slice A" }, { label: "Slice B", needsNote: true }, { label: SPLIT_KEEP_LABEL }]),
+  /no note box/,
+  "a conditional slice refuses with the missing satisfier named",
+);
+assert.equal(
+  validateSplitAskOptions([{ label: "Slice A" }, { label: "Slice B", needsNote: false }, { label: SPLIT_KEEP_LABEL }]),
+  null,
+  "an explicit false is absence, never a requirement",
+);
+assert.match(
+  validateSplitAskOptions([{ label: "Slice A" }, { label: "Slice B" }, { label: SPLIT_KEEP_LABEL, selected: true }]),
+  /starts unchecked/,
+  "a preselected veto refuses instead of answering for the human",
+);
+assert.equal(
+  validateSplitAskOptions([{ label: "Slice A", selected: true }, { label: "Slice B" }, { label: SPLIT_KEEP_LABEL }]),
+  null,
+  "preselected slices stay legal — confirming beats re-picking",
+);
 
 // Point-of-use guard: a STANDARD ask at triage/select records
 // an answer that executes nothing, so the host reminds the worker once —
@@ -108,6 +157,16 @@ assert.ok(!serverSource.includes("SELECT question FROM split_proposals"), "no in
 // The protocol forbids hedging: a grouping is either proposed with the tag
 // or kept as one card — a validating standard question is never a middle.
 assert.match(serverSource, /Never hedge with a standard question/, "the spawn prompt names hedging as the failure mode");
+
+// A formal split after an already-chosen split must read as a confirmation,
+// not a repetition: acknowledge the call, preselect the named slices, and
+// frame Keep as the reversal it is — otherwise the second question repeats
+// the human's own words with the veto listed first, which reads as ignored
+// input plus a contradiction.
+assert.match(serverSource, /Following your call to split/, "the split protocol opens the formal question with the acknowledgment");
+assert.match(serverSource, /the human confirms instead of re-picking/, "the split protocol confirms with --selected instead of re-picking");
+assert.match(serverSource, /preselect slices the human already named/, "the request nudge carries the preselection delta, not just a pointer");
+assert.match(serverSource, /keeping together is a reversal, never a contradiction/, "the protocol frames Keep as the stronger decision it is");
 
 // Human trigger: one button drives the worker into the protocol. Decided
 // by the shared splitActionState (lib) on slug truth — the same rule the

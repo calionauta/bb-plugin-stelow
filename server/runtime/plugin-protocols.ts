@@ -50,7 +50,10 @@ export const USER_INPUT_CONTRACT =
   "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them " +
   "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare " +
   "artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, " +
-  "--artifact for the workspace-relative file they can open.\n" +
+  "--artifact for the workspace-relative file they can open. Write every question for the decider: short, plain words, no stage slugs, " +
+  "recon counts, file handles, or methodology brand names — name a document only to open or approve it, and put details in " +
+  "--preview/--artifact, never inline. Mark an option that needs the human's which or what with --needs-note right after " +
+  "its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.\n" +
   "\n" +
   "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file " +
   "list as the only content of a question.\n" +
@@ -135,8 +138,11 @@ OR the Keep as one card option — never both. Then STOP and wait for the answer
 question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same \
 ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point \
 until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived \
-parent means stop. Never hedge with a standard question that merely validates a grouping (“looks good?”) — either the bar above is met (ask --tag \
-split) or it isn\'t (keep one card and advance). A standard answer executes nothing and can never become a split later.';
+parent means stop. When the human already chose split, open the formal question with Following your call to split and preselect the named slices \
+with --selected (split is --multiple, so this is legal; Keep stays unchecked): the human confirms instead of re-picking. Keep as one card stays \
+as the exclusive veto even then — with concrete slices in front of them, keeping together is a reversal, never a contradiction. \
+Never hedge with a standard question that merely validates a grouping (“looks good?”) — either the bar above is met \
+(ask --tag split) or it isn\'t (keep one card and advance). A standard answer executes nothing and can never become a split later.';
 
 // One-shot trigger for the human "Propose split" action. A pointer, not a
 // second protocol copy: the full syntax lives once in SPLIT_PROTOCOL above
@@ -144,7 +150,8 @@ split) or it isn\'t (keep one card and advance). A standard answer executes noth
 export const SPLIT_REQUEST_NUDGE =
   'Split requested: the user explicitly asked for a split proposal. Follow SPLIT_PROTOCOL in your system prompt: ask with --tag split --multiple \
 (one --option per delivery plus exactly one --option \\"Keep as one card\\"), then STOP and wait; after the answer, execute the recorded approval \
-with `bb stelow split`. Do not ask a standard question about splitting instead — only a --tag split proposal is executable.';
+with `bb stelow split`. Open with Following your call to split and preselect slices the human already named with --selected (Keep stays unchecked). \
+Do not ask a standard question about splitting instead — only a --tag split proposal is executable.';
 
 // Optional paid review, always explicit: after `bb stelow verify` PASSes you
 // may OFFER `bb stelow review` through `bb stelow ask` — never run it
