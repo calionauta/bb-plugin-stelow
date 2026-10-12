@@ -11,7 +11,6 @@ export declare interface AskOption {
   preview: string | null;
   artifact: { path: string; display?: string } | null;
   selected?: boolean;
-  needsNote?: boolean;
 }
 export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[]; contract: string | null }>; error?: undefined } | { groups?: undefined; error: string };
 export declare function cleanOptions(raw: unknown): AskOption[];
@@ -21,7 +20,5 @@ export declare function isBatchPayload(data: unknown): boolean;
 export declare function expandInteractionQuestions(interaction: { id: string; title?: string; payload?: unknown }): Array<{ questionId: string; interactionId: string; index: number; title: string; question: string; multiple: boolean; kind: "standard" | "split"; options: AskOption[] }>;
 export declare function splitQuestionId(questionId: string): { interactionId: string; index: number };
 export declare function preselectedAnswers(questions: unknown): Record<string, string[]>;
-export declare function toggleSinglePick(selected: unknown, label: string): string[];
-export declare function attachOptionFlag(groups: unknown, arg: string): string | null;
 export declare function groupBatchAnswers(items: Array<{ questionId: string; answers: string[] }>): Map<string, { kind: "single"; answers: string[] } | { kind: "batch"; answers: string[][] }>;
 export declare function formatBatchContinuation(decisions: Array<{ question: string; answers: string[] }>): string;

@@ -6,7 +6,6 @@ import {
   insertInboxEvent,
   listInboxEvents,
   markQuestionsAnswered,
-  QUESTION_WAITING_SUMMARY,
   resolveActionInboxEvents,
   resolveAllInboxEvents,
   upsertPausedEvent,
@@ -201,7 +200,7 @@ function createQuestionSync(ctx: InboxContext) {
       interactionIds,
       occurredAt,
       createId: () => ctx.randomId("evt"),
-      summary: QUESTION_WAITING_SUMMARY,
+      summary: "The agent is waiting for your answer to continue.",
     });
     const fields = ["inserted", "resolved", "reopened", "pausedSuperseded"] as const;
     if (fields.some((field) => result[field] > 0)) ctx.changed({ cardId });
@@ -209,15 +208,12 @@ function createQuestionSync(ctx: InboxContext) {
 }
 
 function createAnswerMarker(ctx: InboxContext) {
-  return (cardId: string, interactionIds: string[]) => {
-    // The answer door resolved the rows; without a publish the clearance is
-    // invisible until the next 45s tick or thread event mints something else.
-    // Publish only when rows actually resolved — a silent answer (unknown
-    // ids) stays silent instead of churning every badge on the board.
-    if (markQuestionsAnswered(ctx.db, { cardId, interactionIds, occurredAt: ctx.now() }) > 0) {
-      ctx.changed({ cardId });
-    }
-  };
+  return (cardId: string, interactionIds: string[]) =>
+    markQuestionsAnswered(ctx.db, {
+      cardId,
+      interactionIds,
+      occurredAt: ctx.now(),
+    });
 }
 
 function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {

@@ -201,7 +201,7 @@ assert.equal(manifest.schema_version, 1, "matrix schema version is pinned");
 assert.match(manifest.validated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "validation time is explicit");
 assert.deepEqual(
   manifest.host,
-  { name: "bb", version: "0.45.0", command: "bb workflows validate --script <rendered-recipe-source> --json" },
+  { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" },
   "real host probe is explicit",
 );
 for (const identity of manifest.evidence) {

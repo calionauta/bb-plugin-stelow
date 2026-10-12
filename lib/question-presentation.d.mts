@@ -34,18 +34,3 @@ export declare function splitOptionDescriptionPreview(description: unknown, limi
   head: string;
   tail: string | null;
 };
-export declare function submitBlockReason(
-  questions: unknown,
-  selected: unknown,
-  custom: unknown,
-): string | null;
-// An approval is a decision after reading, not a request to alter the
-// document. All other choices — especially Request/Review changes — keep
-// the full quote-and-comment path to communicate precise feedback.
-export declare function artifactViewerModeForOption(label: unknown): "review" | "comment";
-export declare function sharedQuestionArtifact(options: unknown): {
-  path: string;
-  display: string;
-  absolutePath: string | null;
-  hostId: string | null;
-} | null;

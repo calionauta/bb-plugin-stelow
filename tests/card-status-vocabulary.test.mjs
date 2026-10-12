@@ -11,7 +11,6 @@ import {
   isKnownCardStatus,
   isTerminalCardStatus,
 } from "../lib/card-status.mjs";
-import { readOpenExpiredQuestions } from "../lib/expired-questions.mjs";
 import { createCardUpdater } from "../server/runtime/card-state.ts";
 
 /**
@@ -150,7 +149,7 @@ test("every card write refuses a status that is not one of the five", async () =
   assert.equal(db.prepare("SELECT status FROM cards WHERE id = 'card_1'").get().status, "completed");
 });
 
-test("a finished card is past answering", async () => {
+test("a finished card is past answering", () => {
   // A Done card kept showing its expired question as an answerable form: the
   // completion resolves the inbox rows but the expired row stays
   // unanswered=0, and the detail served it back. Submitting wakes nothing the
@@ -161,22 +160,10 @@ test("a finished card is past answering", async () => {
   for (const status of ["draft", "pending", "in-progress", null, undefined, "bogus"]) {
     assert.equal(isTerminalCardStatus(status), false, `${String(status)} can still be asked`);
   }
-  // The guard moved out of the size-capped detail module into lib/expired-questions.mjs untouched.
-  const expiredRead = readFileSync(join(root, "lib/expired-questions.mjs"), "utf8");
+  const detail = readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8");
   assert.match(
-    expiredRead,
+    detail,
     /if \(isTerminalCardStatus\(card\.status\)\) return \[\];/,
     "the expired-question read stops at terminal cards instead of serving phantom forms",
-  );
-  // Behavioral: the guard short-circuits before any I/O — prepare itself throws, so reaching the
-  // database at all fails the test, and the option resolver must never run either.
-  const mustNotTouch = () => { throw new Error("must not read"); };
-  assert.deepEqual(
-    await readOpenExpiredQuestions({
-      db: { prepare: mustNotTouch },
-      resolveAskOptions: mustNotTouch,
-    }, { id: "card_1", status: "completed" }),
-    [],
-    "a terminal card serves no expired questions without touching storage",
   );
 });
