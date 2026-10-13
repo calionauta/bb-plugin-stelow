@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_SPLIT_CHILDREN, MIN_SPLIT_CHILDREN, SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "../lib/split-proposal.mjs";
+import {
+  MAX_SPLIT_CHILDREN,
+  MIN_SPLIT_CHILDREN,
+  SPLIT_KEEP_LABEL,
+  SPLIT_PROPOSAL_TTL_MS,
+  splitOutcome,
+  splitRemainder,
+  validateSplitSlices,
+} from "../lib/split-proposal.mjs";
 
 // Regression: triage in a single-card flow cannot split — one card is one
 // workflow by rule. The split path below is the only exit: a recorded,
