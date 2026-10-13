@@ -82,8 +82,11 @@ const inheritedBaseline = [
   "lib/execution-run-ledger.mjs:ensureExecutionRunTable#1: 51 lines (recorded 51)",
   // The --selected flag and its validation moved into validateAskGroups,
   // and per-flag details into applyOptionDetail, so the argv loop stays a
-  // dispatcher — 80 lines at the fork point, 68 now.
-  "lib/question-batch.mjs:parseAskGroups#1: 68 lines (baseline 80)",
+  // dispatcher — 80 lines at the fork point, 68 now. The --needs-note flag
+  // then folded into the same path via attachOptionFlag (one shape for both
+  // boolean flags, deleting the lastOption closure and the per-flag
+  // branch) — 60 now, same dispatcher rationale.
+  "lib/question-batch.mjs:parseAskGroups#1: 60 lines (baseline 80)",
   // Paid in the evidence/expiry slice: the per-row checks moved to
   // validateGapRow plus dimension validators, so validateGapRegistry is a
   // loop again and the gate requires the entry dropped rather than left as

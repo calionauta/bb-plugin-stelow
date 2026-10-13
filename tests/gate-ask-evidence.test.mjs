@@ -149,8 +149,11 @@ assert.match(
   /artifactInherited: own === null && artifact !== null/,
   "the thread path applies the same rule, so the card and a live question never disagree",
 );
+assert.match(conversationSource, /Open: \{artifact\.display\}/, "the control names the document it opens with one verb");
 assert.match(
   conversationSource,
-  /artifactInherited \? "Shared brief" : "Open"/,
-  "the control names the document and whether it is shared",
+  /artifactInherited \? \([\s\S]*?Shared[\s\S]*?: null/,
+  "an inherited brief adds a Shared chip, an owned document does not",
 );
+assert.match(conversationSource, /The brief shared by every option/, "the Shared chip explains it is not the option's own document");
+assert.doesNotMatch(conversationSource, /artifactInherited \? "Shared brief" : "Open"/, "the two-verb label is gone");

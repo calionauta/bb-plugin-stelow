@@ -386,6 +386,17 @@ feature as a patch. PR #157 mixed the design-ref feature with three
 fixes and a sync, and release-please computed 0.56.5 for work that
 had to ship as 0.57.0.
 
+Observed the other way on #361: a 15-commit branch merged with the PR
+title (`Bb/fix question copy realtime`) as the squash subject, carrying
+no conventional type at all — release-please saw nothing to release and
+no release PR opened, which is how a whole batch ships silently. **Name
+the PR title for the highest change type the branch carries, exactly as
+if it were the squash subject — because it may become exactly that.**
+The `pr-title` workflow fails PRs whose title carries no conventional
+type (or `Revert`) before merge. When a batch already shipped untyped,
+recover with a revert plus a conventionally titled re-PR, never by
+editing history on `master`.
+
 Two consequences, both now rules: the **last commit** on a branch that
 carries a feature is `feat:` even when it also carries fixes, and a
 feature never shares a branch with unrelated fixes. When a bump is

@@ -261,23 +261,50 @@ const condition = (task) => {
   throw new Error("Unknown recipe condition: " + task.when);
 };`;
 
-/** Embedded wave driver, shared by every rendered script. Runs ready waves
- * until every task completed or skipped, then answers succeeded with the
- * collected outputs. Same self-containment reason as the consts above. */
-const DRIVE_WAVES_FN_SOURCE = `while (completed.size + skipped.size < input.tasks.length) {
-  const ready = input.tasks.filter((task) => !completed.has(task.id) && !skipped.has(task.id)
-    && task.dependsOn.every((id) => completed.has(id) || skipped.has(id)));
-  if (ready.length === 0) throw new Error("Recipe dependency cycle or unresolved task");
-  const results = await parallel(ready.map((task) => () => executeTask(task)));
-  for (let index = 0; index < ready.length; index += 1) {
-    const result = results[index];
-    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
-    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
-      + " (the host call returned nothing — read the run history for the rejected call)");
-    completed.add(ready[index].id);
+/** Embedded task executor, shared by every rendered script. An empty agent
+ * resolution gets one bounded retry (a full re-run costs far more); a
+ * rejection is recorded per task so the final check can name the cause
+ * instead of the generic suffix. Kept as a source string for the same
+ * reason as the condition evaluator above: the rendered script must be
+ * self-contained. */
+const EXECUTE_TASK_FN_SOURCE = `const executeTask = async (task) => {
+  if (!condition(task)) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "condition-false" }; return; }
+  if (task.dependsOn.some((id) => skipped.has(id))) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "dependency-skipped" }; return; }
+  const dependencies = Object.fromEntries(task.dependsOn.map((id) => [id, outputs[id]]));
+  const callAgent = () => agent("Execute this Stelow task in the origin workspace. Read the named skill and inputs, write the required task output at "
+    + "input.context.artifactRoot + '/' + task.output, and return structured evidence. Do not edit state.md, gates, or completion state. Task: "
+    + JSON.stringify({ recipe: input.recipeId, task, dependencies, context: input.context }), { phase: "Execute", schema: task.outputSchema });
+  const recordFailure = (error) => { failures[task.id] = error && error.message ? error.message : String(error); };
+  let result;
+  try {
+    result = await callAgent();
+  } catch (error) {
+    recordFailure(error);
+    return;
   }
-}
-return { state: "succeeded", recipe: input.recipeId, outputs };`;
+  if (result === undefined || result === null) {
+    try {
+      result = await callAgent();
+    } catch (error) {
+      recordFailure(error);
+      return;
+    }
+    if (result === undefined || result === null) { failures[task.id] = "agent call resolved empty twice"; return; }
+  }
+  if (result && (result.state === "failed" || result.state === "error")) {
+    if (task.failurePolicy === "skip-with-reason") {
+      skipped.add(task.id);
+      outputs[task.id] = { skipped: true, reason: result.error ?? "task-failed" };
+      return;
+    }
+    throw new Error("Task failed: " + task.id);
+  }
+  if (result && (result.state === "needs_input" || result.needs_input)) {
+    if (task.humanBoundary !== "coordinator") throw new Error("Task requested input without a human boundary: " + task.id);
+    return { needsInput: result };
+  }
+  outputs[task.id] = result;
+};`;
 
 /** Source is inline because plugin-bundled script paths are not origin-workspace paths. */
 export function renderInlineWorkflowScript(
@@ -293,33 +320,29 @@ if (!input || !input.localRunId) return { state: "failed", error: "missing execu
 const outputs = {};
 const completed = new Set();
 const skipped = new Set();
+const failures = {};
 const DEFAULT_QUESTION = "The workflow needs a human decision.";
 const BOUNDARY_FIELDS = ["questionId", "contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
 const boundaryContract = (n) => ({ question: n.question ?? n.prompt ?? DEFAULT_QUESTION,
   ...Object.fromEntries(BOUNDARY_FIELDS.map((f) => [f, n[f] ?? null])) });
 ${CONDITION_FN_SOURCE}
-const executeTask = async (task) => {
-  if (!condition(task)) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "condition-false" }; return; }
-  if (task.dependsOn.some((id) => skipped.has(id))) { skipped.add(task.id); outputs[task.id] = { skipped: true, reason: "dependency-skipped" }; return; }
-  const dependencies = Object.fromEntries(task.dependsOn.map((id) => [id, outputs[id]]));
-  const result = await agent("Execute this Stelow task in the origin workspace. Read the named skill and inputs, write the required task output at "
-    + "input.context.artifactRoot + '/' + task.output, and return structured evidence. Do not edit state.md, gates, or completion state. Task: "
-    + JSON.stringify({ recipe: input.recipeId, task, dependencies, context: input.context }), { phase: "Execute", schema: task.outputSchema });
-  if (result && (result.state === "failed" || result.state === "error")) {
-    if (task.failurePolicy === "skip-with-reason") {
-      skipped.add(task.id);
-      outputs[task.id] = { skipped: true, reason: result.error ?? "task-failed" };
-      return;
-    }
-    throw new Error("Task failed: " + task.id);
+${EXECUTE_TASK_FN_SOURCE}
+while (completed.size + skipped.size < input.tasks.length) {
+  const ready = input.tasks.filter((task) => !completed.has(task.id) && !skipped.has(task.id)
+    && task.dependsOn.every((id) => completed.has(id) || skipped.has(id)));
+  if (ready.length === 0) throw new Error("Recipe dependency cycle or unresolved task");
+  const results = await parallel(ready.map((task) => () => executeTask(task)));
+  for (let index = 0; index < ready.length; index += 1) {
+    const result = results[index];
+    if (result?.needsInput) return { state: "needs_input", recipe: input.recipeId, ...boundaryContract(result.needsInput) };
+    if (outputs[ready[index].id] === undefined) throw new Error("Task produced no result: " + ready[index].id
+      + (failures[ready[index].id]
+        ? " — agent call failed: " + failures[ready[index].id]
+        : " (the host call returned nothing — read the run history for the rejected call)"));
+    completed.add(ready[index].id);
   }
-  if (result && (result.state === "needs_input" || result.needs_input)) {
-    if (task.humanBoundary !== "coordinator") throw new Error("Task requested input without a human boundary: " + task.id);
-    return { needsInput: result };
-  }
-  outputs[task.id] = result;
-};
-${DRIVE_WAVES_FN_SOURCE}
+}
+return { state: "succeeded", recipe: input.recipeId, outputs };
 `;
   if (Buffer.byteLength(source, "utf8") > 512 * 1024) throw new Error("BB Workflows source exceeds 512 KiB");
   return source;
