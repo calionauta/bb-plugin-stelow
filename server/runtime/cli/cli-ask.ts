@@ -1,4 +1,5 @@
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/ask-cancel.mjs";
+import { kickQuestionSync } from "../../../lib/question-sync-kick.mjs";
 import {
   persistFailureInboxEvent,
   persistFailureTrailLine,
@@ -6,7 +7,7 @@ import {
 } from "../../../lib/ask-persist-failure.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
 import { askFinishedUpdates } from "../../../lib/card-question-state.mjs";
-import { splitEligibility } from "../../../lib/split-proposal.mjs";
+import { answerMentionsSplit, splitEligibility } from "../../../lib/split-proposal.mjs";
 import { array, record } from "../values.js";
 import {
   askOwningCard,
@@ -84,7 +85,13 @@ async function blockOnAnswer(
     groups.flatMap((group) => group.options),
   );
   const askedAt = deps.now();
+  // The pending interaction exists host-side only once requestInput runs,
+  // so the inbox row cannot be minted synchronously here. Kick one early
+  // sync that observes it: without this the row waits for the 45s tick
+  // while the card already shows the question. Idempotent, fire-and-forget.
+  const cancelSyncKick = kickQuestionSync(deps, { threadId, cardId });
   const requested = await requestAnswer(deps, intent, signal);
+  cancelSyncKick();
   // The ask call ended (answered, cancelled, or torn down): mark the worker
   // running again. Activity only — board position is owned by the sync poll,
   // the answer RPCs, and advance/moveCard, on both tracks.
@@ -315,6 +322,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   })();
   deps.updateCard(cardId, { activity: "awaiting-answer" });
   deps.bb.realtime.publish("card-state", { cardId });
+  // Expired rows are answerable immediately; mint their inbox row now
+  // instead of on the next tick (same kick as the live path).
+  kickQuestionSync(deps, { threadId, cardId });
 }
 
 /** The host records what the human approved on a split proposal — right here
@@ -364,10 +374,21 @@ async function standardSplitReminder(
   if (!card) return null;
   const gate = splitEligibility({ kind: card.kind, stage });
   if (!gate.ok) return null;
+  // The user picked a split direction in freeform words: point the worker
+  // at the formal question now instead of letting it ask a second
+  // freeform question about the same split. A bare reminder already covers
+  // the general case below; this sentence fires only on the decision.
+  const direct = answerMentionsSplit(result.value)
+    ? " The user chose a split direction above — ask it formally NOW with"
+      + " --tag split --multiple (slices plus exactly one \"Keep as one card\"),"
+      + " then run bb stelow split after the answer. Open with Following your call"
+      + " to split and preselect the named slices with --selected (Keep stays"
+      + " unchecked). Do not ask another freeform question about this split first."
+    : "";
   return {
     exitCode: 0,
     stdout: `${JSON.stringify(result)}\nSplit check: recorded as STANDARD — its answer is text only and executes nothing. If this question \
 proposes splitting the card, re-ask it now with --tag split --multiple plus exactly one --option "Keep as one card", then run \
-bb stelow split after the answer (still at ${stage}, still in time).`,
+bb stelow split after the answer (still at ${stage}, still in time).${direct}`,
   };
 }

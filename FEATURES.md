@@ -598,6 +598,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   as the page ages. The section header reports outcomes ("1 failed · 2
   succeeded") rather than an active count that reads "0 active" on a card whose
   four runs all finished.
+- **Empty agent dispatches get one retry, then a named cause.** card_g89gtmwt
+  lost three plan-critique runs with the host's agent call resolving empty
+  — twice instantly with zero calls recorded, once after review succeeded —
+  and the same signature appears on other recipes across threads and days:
+  flaky dispatch, not recipe content. An empty resolution now re-dispatches
+  once (a full re-run costs far more); a rejection is recorded per task and
+  folded into the thrown error, so the worker reads the cause instead of
+  the generic suffix. The established suffix survives only when no failure
+  was captured (a settled explicit failure), keeping the run-history
+  pointer.
 - **Every fact on the card has exactly one home.** A summary strip was added to
   the top of the open card and then removed again, and the reason is the rule
   worth keeping. Its four fields were the blocker, the stage, the file count and
@@ -789,6 +799,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Early question sync** (`kickQuestionSync`, `lib/question-sync-kick.mjs`).
+  `bb stelow ask` blocks inside the host call, so the inbox row used to wait
+  for the 45s reconcile tick while the card already showed the question —
+  Build read 0 behind a visible wait and the notification arrived a tick
+  late. The ask now kicks one sync ~1.5s after it starts (same kick when a
+  timed-out ask persists its rows): idempotent, fire-and-forget, skipped on
+  empty observations so it never resolves open rows as superseded, and the
+  tick stays the backstop. Answering publishes `inbox-changed` when rows
+  actually resolve, so clearance is visible immediately instead of at the
+  next tick — a silent answer (unknown ids) stays silent.
 - **Verify blockage** (`VerifyBlockageNotice`, `verifyBlockage` RPC,
   `lib/verify-blockage.mjs`). A card parked on open questions after a failed
   verify names whether the failure is still the one to act on: the last test
@@ -992,8 +1012,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   sibling, so the approval option is never the only one blind to the
   document under decision (`inheritAskArtifact`, unit-tested); options
   with their own documents — competing proposals — keep them. An inherited
-  document is LABELLED as such: the control reads "Shared brief: <file>"
-  rather than "Open document", because a filename hidden in a hover-only
+  document carries a small Shared chip beside the uniform "Open: <file>"
+  control (one verb everywhere — two verbs for one action read as two
+  different actions), because a filename hidden in a hover-only
   tooltip is not a label, and the same brief on four rows reads as four
   pieces of evidence about four different options. Options that brought their
   own document say so instead. The same marking covers BOTH ways a document
@@ -1020,11 +1041,58 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the rendered DOM — a non-markdown file, a renderer that flattens headings, a
   partial load — the option's section is lifted and shown above the document
   instead, so the reader gets their option by either route.
+- **Conditional options declare themselves** (`--needs-note`). A pick that
+  needs elaboration ("trim the scope — tell me which") marks the option,
+  and submit waits until the note box carries the missing piece — one
+  shared rule (`submitBlockReason`) for the footer gate and the per-note
+  hint, so they can never disagree. The flag travels explicit-true-only
+  like preselection; pick and note compose in the submitted answers
+  (except split proposals). The note box is per question — each
+  sub-question in a batch carries its own — while `--needs-note` is per
+  option, so only the picks that need elaboration block submit. The row
+  itself carries a "Needs a note" chip, so the requirement is visible
+  before picking and never depends on worker-authored descriptions.
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
+- **One brief, read inline** (`EmbeddedBrief`, `sharedQuestionArtifact`).
+  Gate approvals attach the same document to every option, so per-row Open
+  buttons repeated one file N times — friction for zero information. When
+  every option carries the same document (resolved path wins, so two
+  spellings still match), the question embeds one capped reader above the
+  rows with an "Open full viewer" exit to quoting and commenting, and the
+  rows hide their buttons; genuinely different documents keep per-row
+  buttons. One decision point renders both halves, so they can never
+  disagree. Threads (no viewer) keep the filename span.
+- **Human titles on question copy** (`applyScopeLabels`,
+  `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
+  to address them at humans ("A5 — checkout", "Serves A5"). Templates now
+  lead with outcomes and titles while IDs stay in artifacts and receipts,
+  and the card maps any straggler at render from the approved map, the
+  draft, and the tracking scopes (first title wins, unknown IDs pass
+  through untouched). Display only: receipts, contracts, staleness, and
+  the answer doors all keep the exact worker text.
+- **Decider language on questions** (ask-patterns rule 11, `decider-language`
+  test). card_g89gtmwt asked a strategy question that read like a recon
+  log: no recommendation, a three-sentence Context dump, and the
+  methodology brand quoted from the template. Question text is now short
+  plain words (who gains what) — no stage slugs, file handles, recon
+  counts, or brand names; documents are named only to open or approve,
+  and evidence travels in preview/artifact. Pattern 1 requires a
+  recommendation and two sentences of context max. The user-facing
+  vocabulary is stelow's own (`shaping`, not the method's brand); skill
+  names, track prompts, and the Explore picker keep theirs (a migration,
+  not a wording fix).
+- **Pick composes with note** (`toggleSinglePick`). Option and custom text
+  used to clear each other on single-select, so conditional options
+  ("trim the scope — tell me which") submitted bare were wasted rounds and
+  the note had nowhere to ride. Now the pick toggles without touching the
+  text and both travel in the submitted answers (resume text and trail
+  record them together); split proposals keep their exclusivity, where a
+  keep choice contradicts deliveries. The "Other" box is now a note box:
+  "Note — or your own answer instead".
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision. The
   check walks the workflow's whole state dir, so the spec the layout wrote to
@@ -2263,11 +2331,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   parent, partial approval keeps it narrowed to the remainder. Never
   unilateral, never by worker claim. A standard ask answered at the split
   point warns that its answer executes nothing, with the exact re-ask
-  repair. The open card offers Propose split at triage/select once a worker
+  repair — including the acknowledgment opening and slice preselection
+  that make the formal question read as confirmation. The open card offers
+  Propose split at triage/select once a worker
   exists to propose from — parked Inbox cards show no trigger, and the
   trigger RPC refuses threadless cards outright. One click
   drives the worker into the --tag split protocol (refused past the split
-  point or while a proposal awaits an answer). One shared gate
+  point or while a proposal awaits an answer). The protocol refuses
+  unsatisfiable shapes up front: --needs-note on slices (proposals render
+  no note box) and a preselected Keep (the veto starts unchecked). One shared gate
   (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,
   `recordSplitAnswer`) decides for the worker ask, the executor, the
   trigger, and the card flag on state.md truth — the UI reads the flag,
