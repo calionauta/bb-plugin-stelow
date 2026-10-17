@@ -123,7 +123,7 @@
     "test:bucket": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-naming-start.test.mjs tests/card-prompt-edit.test.mjs && node --test tests/bucket-topology.test.mjs",
     "test:spawn-freshness": "node tests/spawn-freshness.test.mjs",
     "test:worktree-storage": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/worktree-storage.test.mjs",
-    "pretest": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/plugin-startup.test.mjs tests/runtime-composition.test.mjs tests/runtime-reconciler.test.mjs tests/runtime-flow-metrics.test.mjs tests/runtime-plugin-update.test.mjs tests/runtime-cli-registry.test.mjs tests/runtime-cli-inspection.test.mjs tests/runtime-card-preview.test.mjs tests/build-thread-sync.test.mjs tests/build-thread-terminal.test.mjs tests/native-run-sync.test.mjs tests/native-run-unreachable.test.mjs tests/thread-hold-sync.test.mjs",
+    "pretest": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/plugin-startup.test.mjs tests/runtime-composition.test.mjs tests/runtime-reconciler.test.mjs tests/runtime-flow-metrics.test.mjs tests/runtime-plugin-update.test.mjs tests/runtime-cli-registry.test.mjs tests/runtime-cli-inspection.test.mjs tests/runtime-card-preview.test.mjs tests/build-thread-sync.test.mjs tests/build-thread-terminal.test.mjs tests/park-observation-once.test.mjs tests/native-run-sync.test.mjs tests/native-run-unreachable.test.mjs tests/thread-hold-sync.test.mjs",
     "test:integration-pending": "node tests/integration-pending.test.mjs",
     "test:publish-relevance": "node tests/publish-relevance.test.mjs",
     "test:error-activity": "node tests/error-activity.test.mjs",

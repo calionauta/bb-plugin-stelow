@@ -1,6 +1,9 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { projectIdleTimestamp, projectNoProgress } from "./thread-state-projection.js";
 import { recordPausedAfter } from "./paused-inbox.js";
 import type { WorkerCard } from "../workers-types.js";
+
+type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 /**
  * What a card is written as when it parks with unfinished work.
@@ -22,7 +25,9 @@ export type ParkSnapshot = {
 };
 
 /** Everything persistStandardIdle needs, and nothing else. */
+/** Everything persistStandardIdle needs, and nothing else. */
 export type ParkDeps = {
+  db: Db;
   now: () => number;
   getCard: (cardId: string) => WorkerCard | undefined;
   logComment: (cardId: string, body: string) => void;
@@ -37,6 +42,30 @@ export type ParkDeps = {
   idleAttentionMs: number;
 };
 
+const NO_PROGRESS_COMMENT =
+  "Worker stopped with no new output — treated as paused. If this repeats, inspect "
+  + "the thread before retrying: a silent stop usually means the worker is waiting on "
+  + "input it never asked for.";
+
+/** Whether the card already carries this exact sentence.
+ *
+ * The park is decided by more than one trigger (a thread lifecycle event, the
+ * startup reconcile, and a card-detail read all reach the sync), and two of them
+ * can see the same running→idle transition inside one tick. Without this the
+ * trail gets the same line twice — observed on a real card, both at 09:54:11 —
+ * and the trail is a record only while each line is a distinct fact.
+ *
+ * A dead handle or a missing table answers "no": an advisory sentence must not
+ * end the pass.
+ */
+function alreadySaid(db: Db, cardId: string, body: string): boolean {
+  try {
+    return db.prepare("SELECT 1 FROM comments WHERE card_id = ? AND body = ? LIMIT 1").get(cardId, body) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 export function persistStandardIdle(
   deps: ParkDeps,
   snapshot: ParkSnapshot,
@@ -48,13 +77,8 @@ export function persistStandardIdle(
     transitioning,
     snapshot.lastOutput,
   );
-  if (noProgress) {
-    deps.logComment(
-      snapshot.card.id,
-      "Worker stopped with no new output — treated as paused. If this repeats, inspect " +
-      "the thread before retrying: a silent stop usually means the worker is waiting on " +
-      "input it never asked for.",
-    );
+  if (noProgress && !alreadySaid(deps.db, snapshot.card.id, NO_PROGRESS_COMMENT)) {
+    deps.logComment(snapshot.card.id, NO_PROGRESS_COMMENT);
   }
   const idleAt = projectIdleTimestamp(
     snapshot.card,
