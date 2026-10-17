@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.81.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.80.0...v0.81.0) (2026-10-17)
+
+
+### Features
+
+* one lean machine — single track panel, single spawn path, gated ledger repair ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the migration-ledger repair is gated behind `STELOW_HEAL_LEDGER` — setting it to `0` leaves the host's refusal on the card for the operator instead of rewriting state — and "preset judge" no longer spawns a hidden thread per decision point, so a decision resolves deterministically through the built-in rules or the Decision API ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+
+
+### Bug Fixes
+
+* give the gate receipt one writer ([#368](https://github.com/calionauta/bb-plugin-stelow/issues/368)) ([00c09ae](https://github.com/calionauta/bb-plugin-stelow/commit/00c09aeedf7882516b7a9fa7d093f49f5b1a95d6))
+* no-argument RPCs accept a caller that sends nothing, so `bb plugin list` stops reporting a failed `listNotifications` ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the reconcile sweep records a standing observation once, not once per tick ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the silent-stop sentence is written once per park, not once per trigger ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the resume rule measures new output against the last idle edge, so reading a card no longer decides whether its worker resumes ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* a card-detail read no longer consumes the resume signal, and the pin ratchet counts only tests that read source text ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+
 ## [0.80.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.79.1...v0.80.0) (2026-10-13)
 
 
