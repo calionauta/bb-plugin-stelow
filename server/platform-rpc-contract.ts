@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NO_INPUT } from "./rpc-input.js";
+import { HOST_TOOL_IDS } from "../lib/host-tools.mjs";
 import { PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
 import { PREVIEW_STATES } from "../lib/preview-session.mjs";
 import { githubReleaseSchema, pluginUpdateSchema } from "./contracts.js";
@@ -267,7 +268,7 @@ export const platformRpcContract = {
     output: z.object({ dataUri: z.string().nullable() }),
   },
   toolStatus: {
-    experimental_description: "Host binaries the workflow can use: sem, cymbal, ripwire, ast-grep",
+    experimental_description: "Host binaries the workflow can use: the optional tools the About panel lists",
     input: NO_INPUT,
     output: z.object({
       tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })),
@@ -295,7 +296,7 @@ export const platformRpcContract = {
   },
   installTool: {
     experimental_description: "Install one optional host tool with the official installer",
-    input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
+    input: z.object({ id: z.enum(HOST_TOOL_IDS) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
   uiDesignMcpStatus: {

@@ -3,7 +3,9 @@ import test from "node:test";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPlatformHandlers, defaultRun } from "../server/runtime/platform.ts";
+import { createPlatformHandlers } from "../server/runtime/platform.ts";
+import { SCRIPT_INSTALLERS, defaultRun, scriptInstallerEnv } from "../server/runtime/tool-installers.ts";
+import { HOST_TOOL_IDS } from "../lib/host-tools.mjs";
 
 function previewHandler(calls, method) {
   return async (cardId, appOrigin) => {
@@ -76,13 +78,14 @@ test("platform status falls through alternate binaries and reports honest misses
   const { handlers, calls } = harness();
   const result = await handlers.toolStatus();
   assert.deepEqual(result.tools, [
-    { id: "sem", present: false, version: null },
     { id: "ast-grep", present: true, version: "sg 1.0" },
     { id: "cymbal", present: false, version: null },
     { id: "ripwire", present: false, version: null },
-  ]);
+    { id: "sem", present: false, version: null },
+    { id: "xerj", present: false, version: null },
+  ], "the probe reports the vocabulary in the panel's order");
   const probes = calls.filter(([name]) => name === "probe").map(([, bin]) => bin);
-  assert.equal(new Set(probes).size, 5, "each tool candidate is probed once per available binary");
+  assert.equal(new Set(probes).size, 6, "each tool candidate is probed once per available binary");
   assert.ok(probes.includes("/home/test/.local/bin/sg"), "the ast-grep fallback binary is probed");
   assert.ok(probes.includes("/home/test/.local/bin/ast-grep"), "the primary ast-grep binary is probed");
 });
@@ -124,6 +127,7 @@ test("tool install dispatch preserves installer-specific failure evidence", asyn
   const cases = [
     { id: "sem", command: "curl", failure: "Download failed." },
     { id: "ripwire", command: "curl", failure: "Download failed." },
+    { id: "xerj", command: "curl", failure: "Download failed." },
     { id: "ast-grep", command: "npm", failure: "npm install failed." },
     { id: "cymbal", command: "go", failure: "go install failed." },
   ];
@@ -165,35 +169,81 @@ test("script and binary verification failures remain distinguishable", async () 
   });
 });
 
-test("installer provenance refuses modified scripts before execution and pins package versions", async () => {
-  for (const id of ["sem", "ripwire"]) {
-    const commands = [];
-    const { handlers } = harness({
-      runTool: async (command, args) => {
-        commands.push([command, args]);
-        if (command === "curl") writeFileSync(args.at(-1), "malicious script");
-        return { code: 0, out: "" };
-      },
-    });
-    assert.equal((await handlers.installTool({ id })).ok, false);
-    assert.deepEqual(commands.map(([command]) => command), ["curl"]);
-    assert.match(commands[0][1][3], /\/v\d+\.\d+\.\d+\//);
-  }
+/**
+ * How each installable tool is pinned. This table is the gate, not decoration:
+ * the coverage assertion below requires an entry per probed tool, so a tool
+ * added to the vocabulary cannot ship without a provenanced install path. The
+ * previous version enumerated two ids by hand and a new tool walked past it.
+ */
+const INSTALL_MECHANISM = {
+  sem: {
+    kind: "script",
+    url: /raw\.githubusercontent\.com\/Ataraxy-Labs\/sem\/v\d+\.\d+\.\d+\//,
+  },
+  ripwire: {
+    kind: "script",
+    url: /raw\.githubusercontent\.com\/redhat-et\/ripwire\/v\d+\.\d+\.\d+\//,
+  },
+  xerj: {
+    // No published checksum for the script, so the script's own bytes are the
+    // pin — the URL is deliberately unversioned and must stay asserted as such.
+    kind: "script",
+    url: /^https:\/\/xerj\.org\/get$/,
+  },
+  "ast-grep": { kind: "package", command: "npm", pinned: "@ast-grep/cli@0.45.3" },
+  cymbal: { kind: "package", command: "go", pinned: "github.com/1broseidon/cymbal@v0.17.0" },
+};
 
-  for (const [id, command, version] of [
-    ["ast-grep", "npm", "@ast-grep/cli@0.45.3"],
-    ["cymbal", "go", "github.com/1broseidon/cymbal@v0.17.0"],
-  ]) {
+test("every probed tool declares its install mechanism, and the pin is enforced", async () => {
+  const probed = (await harness().handlers.toolStatus()).tools.map((tool) => tool.id);
+  assert.deepEqual(
+    Object.keys(INSTALL_MECHANISM).sort(),
+    [...probed].sort(),
+    "the probe set and the provenanced install set are the same set",
+  );
+
+  for (const [id, spec] of Object.entries(INSTALL_MECHANISM)) {
     const commands = [];
-    const { handlers } = harness({
-      runTool: async (name, args) => {
-        commands.push([name, args]);
-        return { code: 1, out: "" };
+    const installer = harness({
+      runTool: async (command, args) => {
+        commands.push({ command, args });
+        if (command === "curl") writeFileSync(args.at(-1), "malicious script");
+        return { code: spec.kind === "package" && command === spec.command ? 1 : 0, out: "" };
       },
     });
-    await handlers.installTool({ id });
-    assert.equal(commands[0][0], command);
-    assert.ok(commands[0][1].includes(version));
+    const result = await installer.handlers.installTool({ id });
+
+    if (spec.kind === "script") {
+      assert.equal(result.ok, false, `${id} refuses bytes that do not match its pin`);
+      assert.equal(result.log, "Installer SHA-256 mismatch.", `${id} names the refusal`);
+      assert.deepEqual(
+        commands.map(({ command }) => command),
+        ["curl"],
+        `${id} never executes an unverified script`,
+      );
+      assert.match(commands[0].args[3], spec.url, `${id} downloads the pinned script`);
+      continue;
+    }
+
+    assert.equal(commands[0].command, spec.command, `${id} installs through ${spec.command}`);
+    assert.ok(
+      commands[0].args.includes(spec.pinned),
+      `${id} pins ${spec.pinned} rather than the latest`,
+    );
+  }
+});
+
+test("a pinned script runs with its version, its install directory and a throwaway HOME", () => {
+  for (const id of Object.keys(SCRIPT_INSTALLERS)) {
+    const env = scriptInstallerEnv(id, { homeDir: "/home/test", localBinDir: "/home/test/.local/bin" }, "/tmp/throwaway");
+    const [versionKey] = Object.keys(env).filter((key) => key.endsWith("VERSION"));
+    assert.match(versionKey ?? "", /VERSION$/, `${id} names the version it pins`);
+    assert.match(env[versionKey], /^v\d+\.\d+\.\d+/, `${id} pins ${versionKey} rather than the latest`);
+    assert.ok(
+      Object.values(env).some((value) => value.startsWith("/home/test/")),
+      `${id} installs where the probe looks, not into the throwaway HOME`,
+    );
+    assert.equal(env.HOME, "/tmp/throwaway", `${id} runs with a HOME it cannot keep`);
   }
 });
 
@@ -230,7 +280,7 @@ test("tool status probes cannot read daemon credentials", async () => {
     chmodSync(binary, 0o700);
     const { handlers } = harness({ resolveLocalBin: () => binary, probeTool: undefined });
     const result = await handlers.toolStatus();
-    assert.equal(result.tools.length, 4);
+    assert.equal(result.tools.length, HOST_TOOL_IDS.length, "the probe reports the whole vocabulary");
     assert.ok(result.tools.every((tool) => tool.version === "probe 1.0"));
   } finally {
     if (previous === undefined) delete process.env.STELOW_INSTALL_TEST_SECRET;
