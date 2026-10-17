@@ -28,6 +28,11 @@ export type WorkerCard = {
   explore_stage: string | null;
   last_error: string | null;
   last_assistant_text: string | null;
+  /** The running turn's text at the last idle edge. The resume rule's baseline:
+   * written only when the card parks or resumes, never by a running sync, so a
+   * card-detail read cannot consume the "this turn produced something new"
+   * signal. See lib/auto-continue.mjs. */
+  last_idle_text: string | null;
   last_idle_at: number | null;
   /** When the host stopped answering this card's state read, or null. The
    * measurement itself lives in the streak table; this is the latch the reader

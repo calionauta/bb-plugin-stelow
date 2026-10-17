@@ -1389,7 +1389,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   output or stage progress, no question is pending, and the per-stage
   budget (10 consecutive resumes without a stage advance) remains, the
   host resumes the worker in place with the same nudge a manual Retry
-  sends — no human click per stage. A silent stop or an exhausted budget
+  sends — no human click per stage. *Fresh* is measured against the text
+  recorded at the last idle edge (`last_idle_text`), never against the live
+  text: a card-detail read runs the same sync, so a reader could otherwise
+  decide whether the worker resumes. A silent stop or an exhausted budget
   still surfaces as paused with exactly one inbox event per idle period;
   manual Retry/Restart reseeds the budget. With the Auto-continue router
   in Decision API mode, a confident "no real progress" judgment vetoes the
@@ -1912,12 +1915,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Decision API or the point's built-in rules) — plus the shared typed client
   (`lib/decision-api.mjs`, fail-soft result objects, never throws). The
   endpoint, key, and model live once in the Decision API section above;
-  routers only pick a mode, a confidence floor, or a judge preset — any
-  provider preset, including one no stage uses — via the strict-JSON verdict
-  contract (`lib/preset-judge.mjs`); failures fall
-  back to built-in rules. Preset judging is offered only on low-frequency
-  points (triage intent, artifact criteria); hot paths stay on rules/api
-  so judgments never burn worker turns. Mode selection stages locally and
+  routers only pick a mode, a confidence floor, or a preset. The preset
+  mode is offered only on low-frequency points (triage intent, artifact
+  criteria) and resolves through the deterministic preset-judge stub
+  (`server/decisions/preset-judge-runner.ts`) against the strict-JSON verdict
+  contract (`lib/preset-judge.mjs`) — no thread is spawned for a judgment,
+  so a preset never burns a worker turn; hot paths stay on rules/api. Mode selection stages locally and
   saves explicitly; saves refresh only the routers section, never the
   board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.

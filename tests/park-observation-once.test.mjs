@@ -41,7 +41,13 @@ function deps(db) {
   };
 }
 
-const row = card({ status: "in-progress", stage: "shape", activity: "running", last_assistant_text: "same output" });
+const row = card({
+  status: "in-progress",
+  stage: "shape",
+  activity: "running",
+  last_assistant_text: "same output",
+  last_idle_text: "same output",
+});
 const snapshot = { card: row, lastOutput: "same output" };
 
 function countParks(db) {

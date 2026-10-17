@@ -97,9 +97,9 @@ export function projectNoProgress(
 ): boolean {
   return Boolean(
     transitioningIntoIdle &&
-    card.last_assistant_text != null &&
+    card.last_idle_text != null &&
     lastOutput != null &&
-    lastOutput === card.last_assistant_text,
+    lastOutput === card.last_idle_text,
   );
 }
 

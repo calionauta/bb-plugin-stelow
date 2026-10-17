@@ -343,7 +343,11 @@ async function resumeWithProgress(
  * failure this repo keeps refusing.
  */
 function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
-  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
+  // Compared against the last IDLE edge, not against `last_assistant_text`:
+  // a running sync (which a card-detail read also triggers) rewrites that field
+  // with the live turn text, so comparing there made "new text" depend on
+  // whether the reader looked mid-turn.
+  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_idle_text) {
     return true;
   }
   return calls?.advanced ?? false;

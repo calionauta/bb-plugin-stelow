@@ -48,7 +48,7 @@ assert.deepEqual(
   ensureAutoContinueColumns(cards);
   assert.deepEqual(
     cards.prepare("PRAGMA table_info(cards)").all().map((column) => column.name),
-    ["id", "auto_continue_count", "auto_continue_stage"],
+    ["id", "auto_continue_count", "auto_continue_stage", "last_idle_text"],
     "auto-continue installs its columns through the shared helper",
   );
   cards.close();

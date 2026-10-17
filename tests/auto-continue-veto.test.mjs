@@ -89,6 +89,7 @@ test("a confident halt vetoes the resume and parks the card", async () => {
       stage: "shape",
       activity: "running",
       last_assistant_text: "same output",
+      last_idle_text: "same output",
     }),
     {
       status: "idle",
@@ -134,6 +135,7 @@ test("a heuristic refusal never reaches the model veto", async () => {
       stage: "shape",
       activity: "running",
       last_assistant_text: "same output",
+      last_idle_text: "same output",
     }),
     { status: "idle", output: "same output", state: "name: Useful\ncurrent_stage: shape\n" },
   );

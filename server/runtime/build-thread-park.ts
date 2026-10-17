@@ -90,6 +90,7 @@ export function persistStandardIdle(
   deps.updateCard(snapshot.card.id, {
     activity: "idle",
     last_assistant_text: snapshot.lastOutput,
+    last_idle_text: snapshot.lastOutput,
     last_error: null,
     last_idle_at: idleAt,
   });

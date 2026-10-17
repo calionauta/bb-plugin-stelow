@@ -29,8 +29,9 @@ const QUALITY_HINT =
   "Experimental runs lighter and only for probes — never ship as-is.";
 
 const SUPERVISOR_HINT =
-  "How closely the supervisor watches execution. " +
-  "High catches drift early; low only for trivial, reversible work.";
+  "How often the worker re-checks its own work against each scope's " +
+  "definition of done while executing. High catches drift early; low only " +
+  "for trivial, reversible work.";
 
 const EXPLORATION_HINT =
   "How many directions divergence compares, for interaction and for " +
@@ -49,9 +50,9 @@ const QUALITY_OPTIONS = [
 ] as const;
 
 const SUPERVISOR_OPTIONS = [
-  { value: "high", label: "High", description: "Tight checkpoints, frequent progress checks." },
-  { value: "med", label: "Medium", description: "Standard checkpoints during execution." },
-  { value: "low", label: "Low", description: "Minimal checkpoints. Trivial, reversible work only." },
+  { value: "high", label: "High", description: "Frequent self-checks; drift is caught early." },
+  { value: "med", label: "Medium", description: "Standard self-check cadence during execution." },
+  { value: "low", label: "Low", description: "Minimal self-checks. Trivial, reversible work only." },
 ] as const;
 
 const EXPLORATION_OPTIONS = [

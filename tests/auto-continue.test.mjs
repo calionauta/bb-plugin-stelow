@@ -102,8 +102,9 @@ ensureAutoContinueColumns(db);
 const columns = db.prepare("PRAGMA table_info(cards)").all().map((column) => column.name);
 assert.ok(columns.includes("auto_continue_count"), "the count column is added");
 assert.ok(columns.includes("auto_continue_stage"), "the stage column is added");
+assert.ok(columns.includes("last_idle_text"), "the idle baseline column is added");
 ensureAutoContinueColumns(db);
-db.prepare("INSERT INTO cards VALUES (?, ?, 0, NULL)").run("card_1", "shape");
+db.prepare("INSERT INTO cards (id, stage, auto_continue_count, auto_continue_stage) VALUES (?, ?, 0, NULL)").run("card_1", "shape");
 assert.equal(db.prepare("SELECT auto_continue_count FROM cards WHERE id = ?").get("card_1").auto_continue_count, 0, "old rows default to zero budget used");
 db.close();
 
