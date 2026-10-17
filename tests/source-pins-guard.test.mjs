@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifySourcePin } from "../scripts/source-pin-classify.mjs";
 
 // SCOPE7 ratchet: no NEW source-text pins on the composition entrypoints.
 //
@@ -37,41 +38,12 @@ const ENTRYPOINT_ALLOWLIST = new Set([
   "workspace-recovery.test.mjs",
 ]);
 
-// 31 test files read source text (server.ts/app.tsx or anything under
+// 28 test files read source text (server.ts/app.tsx or anything under
 // server/, components/, hooks/, lib/). That count must not grow: convert pins
 // to behavioral imports instead of adding text reads. Fixture/data readers
 // (state.md fixtures, package.json, skills mirrors like the transition table)
 // are outside this count by construction, not by exception.
-const SOURCE_PIN_CEILING = 31;
-
-const ENTRYPOINT_PATTERN = /(server\.ts|app\.tsx)/;
-const SOURCE_PATTERN = /(server\.ts|app\.tsx|server\/|components\/|hooks\/|lib\/)/;
-// Fixture/data reads are outside the pin count by construction (see header):
-// state.md fixtures, package.json, skills mirrors (transitions.md), data/
-// snapshots, binary assets. Only a source-text read counts.
-const FIXTURE_PATTERN = /(\.state\.md|package\.json|skills\/|data\/|stelow\.json|\.png|\.jpg|\.svg|tests\/fixtures)/;
-
-function readCallWindows(text) {
-  const windows = [];
-  let from = 0;
-  while (true) {
-    const at = text.indexOf("readFileSync(", from);
-    if (at < 0) break;
-    // Balanced-paren slice so multiline join()/URL forms stay inside one window.
-    let depth = 0;
-    let end = at;
-    for (; end < text.length && end < at + 4000; end++) {
-      if (text[end] === "(") depth++;
-      else if (text[end] === ")") {
-        depth--;
-        if (depth === 0) break;
-      }
-    }
-    windows.push(text.slice(at, Math.min(end + 1, at + 4000)));
-    from = at + 1;
-  }
-  return windows;
-}
+const SOURCE_PIN_CEILING = 28;
 
 const files = readdirSync(join(root, "tests"))
   .filter((file) => file.endsWith(".test.mjs") && file !== SELF)
@@ -82,14 +54,9 @@ const entrypointPins = [];
 const sourcePinFiles = [];
 for (const file of files) {
   const text = readFileSync(join(root, "tests", file), "utf8");
-  const windows = readCallWindows(text).filter((window) => !FIXTURE_PATTERN.test(window));
-  // Dynamic-dir reads (readdirSync + readFileSync(join(dir, name))) carry no
-  // literal in the call window; the dir literal lives nearby. Count the file
-  // when it lists a source dir and also reads files.
-  const dynamicDirPin = /readdirSync/.test(text) && windows.length > 0 && SOURCE_PATTERN.test(text);
-  if (windows.length === 0) continue;
-  if (windows.some((window) => ENTRYPOINT_PATTERN.test(window))) entrypointPins.push(file);
-  if (windows.some((window) => SOURCE_PATTERN.test(window)) || dynamicDirPin) sourcePinFiles.push(file);
+  const { sourcePin, entrypointPin } = classifySourcePin(text);
+  if (entrypointPin) entrypointPins.push(file);
+  if (sourcePin) sourcePinFiles.push(file);
 }
 
 const freshEntrypointPins = entrypointPins.filter((file) => !ENTRYPOINT_ALLOWLIST.has(file));

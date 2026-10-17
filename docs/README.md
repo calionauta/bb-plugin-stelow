@@ -29,7 +29,11 @@ None pending — all operator guides migrated (see above).
 - `remaining-debt-audit.md` — measured size debt with repair list.
 - `artifact-quality-plan.md`, `rendered-ui-audit.md` — quality audits.
 - `staged-execution-continuity.md`, `restore-dogfood.md` — execution notes.
-- `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md` — plans.
+- `legacy-compat.md` — every backward-compatibility branch in the boot path,
+  tracked for the v1 cleanup.
+- `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md`,
+  `width1-sequential-pilot.md`, `research-architecture-implementation-plan.md`
+  — plans and pilot records, kept for their measurements, not as behaviour.
 - `rfc-*.md` — proposals under discussion, not behavior.
 - `runs/` — per-card execution evidence, never linked from user docs.
 
