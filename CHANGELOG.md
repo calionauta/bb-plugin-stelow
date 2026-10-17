@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.82.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.81.0...v0.82.0) (2026-10-17)
+
+
+### Features
+
+* xerj joins the optional tools, with its install path provenanced ([#373](https://github.com/calionauta/bb-plugin-stelow/issues/373)) ([95bf71f](https://github.com/calionauta/bb-plugin-stelow/commit/95bf71f7b164ce5bc2de73211cefefecb1d9dbbe))
+
 ## [0.81.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.80.0...v0.81.0) (2026-10-17)
 
 
