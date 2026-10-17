@@ -1,4 +1,14 @@
-export type HostToolId = "ast-grep" | "cymbal" | "ripwire" | "sem";
+export declare const HOST_TOOL_IDS: readonly ["ast-grep", "cymbal", "ripwire", "sem", "xerj"];
+export type HostToolId = (typeof HOST_TOOL_IDS)[number];
+export interface HostToolMeta {
+  id: HostToolId;
+  name: string;
+  repo: string;
+  plain: string;
+  tech: string;
+  install: string;
+}
+export declare const HOST_TOOLS: readonly HostToolMeta[];
 export interface HostToolStatus {
   id: HostToolId;
   present: boolean;

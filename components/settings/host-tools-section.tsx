@@ -1,53 +1,10 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
-import type { HostToolId, HostToolStatus } from "../../lib/host-tools.mjs";
+import { HOST_TOOLS } from "../../lib/host-tools.mjs";
+import type { HostToolId, HostToolMeta, HostToolStatus } from "../../lib/host-tools.mjs";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Icon } from "../ui/icon";
-
-type HostToolMeta = {
-  id: HostToolId;
-  name: string;
-  repo: string;
-  plain: string;
-  tech: string;
-  install: string;
-};
-
-const HOST_TOOLS: HostToolMeta[] = [
-  {
-    id: "ast-grep",
-    name: "ast-grep",
-    repo: "https://github.com/ast-grep/ast-grep",
-    plain: "Find code patterns and rename across files without touching text inside strings — when refactoring.",
-    tech: "Structural AST search with safe rewrite; used for refactors that change signatures.",
-    install: "npm install -g @ast-grep/cli",
-  },
-  {
-    id: "cymbal",
-    name: "cymbal",
-    repo: "https://github.com/1broseidon/cymbal",
-    plain: "See who calls each function and what breaks if you change it — before touching code.",
-    tech: "Symbol graph (refs, impact, trace); used in Tech Preview, Feature Recon and Alignment Check.",
-    install: "brew install 1broseidon/tap/cymbal",
-  },
-  {
-    id: "ripwire",
-    name: "ripwire",
-    repo: "https://github.com/redhat-et/ripwire",
-    plain: "First read of an unfamiliar codebase: what matters, where to enter, what to test.",
-    tech: "Token-budgeted symbol map (symbols, callers, blast radius).",
-    install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"",
-  },
-  {
-    id: "sem",
-    name: "sem",
-    repo: "https://github.com/Ataraxy-Labs/sem",
-    plain: "Tell which functions and types changed — not just which lines — including renames.",
-    tech: "Entity-level diff via tree-sitter; powers the Diff summary and agent audits.",
-    install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh",
-  },
-];
 
 const NPX_TOOLS = [
   {

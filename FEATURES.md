@@ -1307,12 +1307,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   sharing hints are real buttons (pairing dashboard, port-share retry),
   never highlighted dead text.
 - **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
-  for the host binaries the workflow can use (sem, cymbal, ripwire,
-  ast-grep) with per-tool purpose and install command —
+  for the host binaries the workflow can use (ast-grep, cymbal, ripwire, sem,
+  xerj) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
-  also offers one-click install (explicit consent, SHA-256 verified versioned installers,
-  pinned npm/Go versions, an isolated installer environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
-  one-click reinstall-as-update for installed tools. A separate "Ready via
+  also offers one-click install (explicit consent, an isolated installer
+  environment, `~/.local/bin`, verified by re-probe) with per-row error + log, plus
+  one-click reinstall-as-update for installed tools. Every install path is pinned
+  by the plugin and the pin is enforced: a versioned script URL plus the script's
+  own SHA-256 (sem, ripwire), a named npm or Go version (ast-grep, cymbal), or —
+  where upstream publishes no checksum for the script — the script's SHA-256 with
+  the release it resolves pinned in the environment (xerj, which also verifies
+  its binary against the checksum published beside the asset). `tests/runtime-platform.test.mjs`
+  requires every installable tool to declare how it installs, so a new tool
+  cannot ship unprovenanced. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
   no commands shown, no buttons. When `sem` is installed on the host, a one-line
