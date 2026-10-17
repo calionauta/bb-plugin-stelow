@@ -48,22 +48,27 @@ assert.match(
 
 // Focused-card keyboard: Enter/Space opens the card, W opens its worker
 // thread. Guarded to the card surface so typing elsewhere never navigates.
+// Both tiles share one shell, so the pins read the shell — not each tile.
+const cardShell = boardCards.slice(
+  boardCards.indexOf("function CardShell"),
+  boardCards.indexOf("function CardResumeFooter"),
+);
 const boardCard = boardCards.slice(
   boardCards.indexOf("export function BoardCard"),
   boardCards.indexOf("export function LightweightTrackCard"),
 );
 assert.match(
-  boardCard,
+  cardShell,
   /event\.target !== event\.currentTarget/,
   "card keys ignore events from nested controls",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /event\.key === "w" \|\| event\.key === "W"/,
   "W opens the worker thread from a focused build card",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /navigate\.toThread\(card\.workerThreadId\)/,
   "W navigates to the card's own worker thread",
 );
@@ -72,7 +77,7 @@ const lightweightCard = boardCards.slice(
   boardCards.indexOf("export function ResearchCard"),
 );
 assert.match(
-  lightweightCard,
+  cardShell,
   /event\.key === "w" \|\| event\.key === "W"/,
   "W opens the worker thread from a focused research/explore card",
 );
@@ -110,7 +115,7 @@ assert.match(
   "opening a card remembers it for focus return",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /useReturnFocus<HTMLDivElement>\(card\.id\)/,
   "build board cards restore focus on return",
 );
@@ -149,13 +154,17 @@ assert.match(
   /<BuildStatusPills card=\{card\} statusTone=\{statusTone\} intentLabel=\{intentLabel\} \/>/,
   "open Build cards use the same state presentation as Kanban tiles",
 );
+const resumeFooter = boardCards.slice(
+  boardCards.indexOf("function CardResumeFooter"),
+  boardCards.indexOf("export function BoardCard"),
+);
 assert.match(
-  boardCard,
+  resumeFooter,
   /cardCanResume\(card\) && card\.activity !== "error"/,
   "build tiles offer heading recovery for idle stalls only, never for failures",
 );
 assert.match(
-  lightweightCard,
+  resumeFooter,
   /cardCanResume\(card\) && card\.activity !== "error"/,
   "research/explore tiles match: heading recovery is idle-only",
 );
@@ -170,7 +179,7 @@ assert.doesNotMatch(
   "research/explore tiles render no failure body either",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /liveBorderClass\(card\)/,
   "a Build card needing attention uses its shared live attention border",
 );

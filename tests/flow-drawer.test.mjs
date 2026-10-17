@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { codeOf } from "./helpers/source-code.mjs";
+import { createElement as h } from "react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { drawerClosedTransform, drawerHasGrabBar, drawerPanelClass } from "../lib/drawer-side.mjs";
+import { FlowStrip } from "../components/board/flow-strip.tsx";
+import { PersistentResponsiveDrawerShell } from "../components/ui/persistent-responsive-drawer-shell.tsx";
+import { ResponsiveDrawerShell } from "../components/ui/responsive-drawer-shell.tsx";
 
 /**
  * The flow detail is a side drawer, not an accordion in the board's column.
@@ -22,150 +24,135 @@ import { codeOf } from "./helpers/source-code.mjs";
  * uses, because the portal, the focus trap, the dismiss gesture and the settle animation are
  * the same mechanism on both edges, and the focus handling is the part nobody notices
  * breaking.
+ *
+ * Read RENDERED, not as source text: the drawer is a DOM tree, so "the detail is in a
+ * right-side drawer and the summary is on the board" is a claim about what mounts and what
+ * does not. The per-edge placement rule lives in `lib/drawer-side.mjs` and is called here,
+ * so a reworded class cannot fail a test about placement.
  */
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const strip = codeOf(readFileSync(join(root, "components/board/flow-strip.tsx"), "utf8"));
-const shell = codeOf(readFileSync(join(root, "components/ui/persistent-responsive-drawer-shell.tsx"), "utf8"));
-// The per-edge strings live in lib/drawer-side.mjs: they are a placement rule, and the
-// shell crossed its function budget holding them. The pins read the owner.
-const sides = codeOf(readFileSync(join(root, "lib/drawer-side.mjs"), "utf8"));
-// The drawer's contents moved to their own file when the strip crossed its budget, so the
-// clamp pin reads where the lists actually render.
-const details = codeOf(readFileSync(join(root, "components/board/flow-drawer-details.tsx"), "utf8"));
-const wrapper = codeOf(readFileSync(join(root, "components/ui/responsive-drawer-shell.tsx"), "utf8"));
+const metrics = {
+  summary: { count: 3, leadP50Ms: 1_000, cycleP50Ms: 500, leadP90Ms: 2_000, cycleP90Ms: 900 },
+  items: [
+    { cardId: "card_a", kind: "build", name: "Alpha", leadMs: 1_000, cycleMs: 500 },
+    { cardId: "card_b", kind: "build", name: "Beta", leadMs: 900, cycleMs: 400 },
+  ],
+  attention: [],
+  wait: { totalMs: 0, humanMs: 0, systemMs: 0, unattributedMs: 0 },
+  coverage: { reworkLine: "", coverageLine: "" },
+};
 
-// --- 1. The detail renders in a drawer, not in the board's column. ----------
-assert.match(
-  strip,
-  /<ResponsiveDrawerShell[\s\S]*?side="right"/,
-  "the flow detail renders in a right-side drawer",
-);
-assert.match(strip, /srLabel="Flow indicators"/, "the drawer is labelled for assistive tech, since its title is visual");
-assert.match(
-  strip,
-  /setOpen\(false\);\s*\n\s*onOpenCard\(kind, cardId\);/,
-  "opening a card from the drawer closes it first, so the card is not hidden behind the panel that opened it",
-);
+const panelOf = () => document.querySelector("[data-persistent-drawer-content]");
 
-// --- 2. The summary line survives on the board. -----------------------------
-// A drawer-only flow reading would be worse than the accordion: the point of the line is to
-// be visible without an interaction.
-// Rendered unconditionally: a guard around it is how the line disappears from the board
-// while a test that greps for the name stays green.
-assert.match(
-  strip,
-  /<div className="rounded-md border bg-muted\/20 px-3 py-2">\s*\n\s*<FlowSummaryHeader/,
-  "the one-line summary renders on the board with no condition between the column and it",
-);
-// The board column holds the summary and nothing else. Asserted by POSITION rather than by
-// presence: `FlowSummaryHeader` appearing anywhere satisfies a presence check, and the defect
-// is a detail block in the wrong container. The column's div must close before the drawer
-// opens, and the detail component must sit after that close.
-const summaryColumn = strip.slice(strip.indexOf('<div className="rounded-md border bg-muted/20'), strip.indexOf("</div>", strip.indexOf("<FlowSummaryHeader")));
-assert.ok(summaryColumn.includes("<FlowSummaryHeader"), "the summary renders inside the board's column");
-assert.ok(
-  !summaryColumn.includes("<FlowDetails"),
-  "and the detail does not: it belongs to the drawer, not to the column that holds the board",
-);
-assert.ok(
-  strip.indexOf("<ResponsiveDrawerShell") > strip.indexOf("<FlowSummaryHeader"),
-  "the drawer opens after the summary, so the two are siblings rather than nested",
-);
+/** Every class the owner's rule puts on a side's panel must be on the rendered panel. */
+function assertOwnerPanelClass(panel, side) {
+  for (const cls of drawerPanelClass(side).split(" ")) {
+    assert.ok(panel.className.includes(cls), `the panel carries the owner's ${side} class ${cls}`);
+  }
+}
 
-// --- 3. The clamps are gone: one scroll surface, not two. -------------------
-assert.doesNotMatch(
-  details,
-  /max-h-56/,
-  "the inner lists no longer clamp: the drawer scrolls as a whole, and a scroll box inside a full-height panel is two scrollbars for one list",
-);
-assert.match(
-  strip,
-  /contentClassName="overflow-y-auto p-4"/,
-  "the drawer's own body is the scroll surface instead",
-);
+// --- 1/2/4/7. FlowStrip: summary on the board, detail in a right drawer. -----
+{
+  const fired = [];
+  render(h(FlowStrip, {
+    rpc: { call: async () => metrics },
+    projectId: "proj_1",
+    onOpenCard: (kind, cardId) => fired.push(`${kind}:${cardId}`),
+  }));
 
-// --- 4. `side` is a prop on the shared shell, never a second component. ----
-// The regression to fear is a copy: a second drawer would re-implement the focus trap, and
-// the focus trap is what breaks silently.
-assert.match(
-  shell,
-  /type DrawerSide = "bottom" \| "right";/,
-  "the shell names its two sides in one place",
-);
-assert.match(shell, /side = "bottom"/, "and defaults to bottom, so every existing caller is untouched");
-// Delegation, not a second copy of the placement rules: a shell that spelled the classes out
-// again is how the two edges would drift apart.
-assert.match(shell, /drawerPanelClass\(side\)/, "the shell asks the owner for the panel's box");
-assert.match(shell, /drawerClosedTransform\(side\)/, "and for the transform that hides it");
-assert.match(shell, /side\?: DrawerSide;/, "the prop is optional, which is what keeps the default meaningful");
-assert.match(
-  wrapper,
-  /side\?: "bottom" \| "right";/,
-  "the responsive wrapper forwards it rather than swallowing it",
-);
-assert.match(wrapper, /side=\{side\}/, "and passes it through to the shell");
+  const summary = await screen.findByRole("button", { name: /Flow indicators:/ });
+  assert.match(summary.getAttribute("aria-label") ?? "", /3 finished/, "the summary states how many cards finished");
+  assert.equal(
+    screen.queryByRole("heading", { name: "Flow" }),
+    null,
+    "the detail is not on the board before the drawer opens: it belongs to the panel, not the column",
+  );
+
+  fireEvent.click(summary);
+  const heading = await screen.findByRole("heading", { name: "Flow" });
+  const panel = panelOf();
+  assert.ok(panel, "the detail renders inside the shared drawer shell");
+  assert.ok(heading.closest("[data-persistent-drawer-content]"), "the detail heading sits inside the drawer, not the board's column");
+  assert.equal(panel.contains(summary), false, "the summary stays on the board, outside the drawer");
+  assertOwnerPanelClass(panel, "right");
+  assert.match(panel.className, /border-l/, "edge-to-edge on the left, so the board stays visible beside it");
+  assert.match(panel.className, /overflow-y-auto/, "the drawer's own body is the scroll surface");
+  assert.equal(panel.querySelector(".max-h-56"), null, "the inner lists no longer clamp: one scroll surface, not two");
+  assert.ok(screen.getByText("Flow indicators"), "the drawer is labelled for assistive tech, since its title is visual");
+  assert.equal(heading.textContent, "Flow", "the drawer renders a visible heading and does not repeat the window the tab already shows");
+  assert.match(panel.textContent ?? "", /lead is request to done/, "the heading states what lead and cycle mean");
+
+  fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+  assert.deepEqual(fired, ["build:card_a"], "opening a card from the drawer reports the exact card");
+  await waitFor(
+    () => assert.equal(panel.getAttribute("data-state"), "closed", "opening a card closes the drawer first"),
+  );
+  cleanup();
+}
+
+// --- 5/6/8. The shell: `side` is a prop, and the two edges differ only in
+// axis. Rendered both ways and compared against the owner's rules. ----------
+{
+  render(h(PersistentResponsiveDrawerShell, { open: false, onOpenChange: () => {} }, h("p", null, "board body")));
+  const panel = panelOf();
+  assert.ok(panel, "the persistent shell renders a panel");
+  assertOwnerPanelClass(panel, "bottom");
+  assert.equal(panel.style.transform, drawerClosedTransform("bottom"), "the default hides from the floor like every existing caller");
+  assert.equal(
+    Boolean(panel.querySelector("[data-persistent-drawer-handle]")),
+    drawerHasGrabBar("bottom"),
+    "the bottom sheet keeps its drag handle",
+  );
+  cleanup();
+}
+{
+  render(h(PersistentResponsiveDrawerShell, { open: false, onOpenChange: () => {}, side: "right" }, h("p", null, "board body")));
+  const panel = panelOf();
+  assertOwnerPanelClass(panel, "right");
+  assert.ok(panel.className.includes("w-[min(92vw,26rem)]"), "the panel is bounded so it never fills a phone or crowds a desktop board");
+  assert.equal(panel.style.transform, drawerClosedTransform("right"), "a right panel enters from the right, not from the floor");
+  assert.equal(
+    Boolean(panel.querySelector("[data-persistent-drawer-handle]")),
+    drawerHasGrabBar("right"),
+    "the right panel has no grab bar: it has no drag-to-dismiss, so a handle would promise a gesture that does nothing",
+  );
+  cleanup();
+}
+{
+  // The responsive wrapper forwards `side` rather than swallowing it; `open`
+  // forces the wrapper past its realize gate so the forwarded panel is mounted.
+  render(h(ResponsiveDrawerShell, { open: true, onOpenChange: () => {}, side: "right" }, h("p", null, "forwarded")));
+  const panel = panelOf();
+  assert.ok(panel, "the responsive wrapper mounts the shared shell");
+  assertOwnerPanelClass(panel, "right");
+  cleanup();
+}
 
 // --- 5. The two sides differ in axis, and only in axis. --------------------
-assert.match(
-  sides,
-  /fixed inset-y-0 right-0[\s\S]*?border-l/,
-  "a right panel is full height and edge-to-edge on the left, so the board stays visible beside it",
-);
-assert.match(
-  sides,
-  /translate3d\(100%, 0, 0\)/,
+const rightPanel = drawerPanelClass("right");
+assert.ok(rightPanel.includes("fixed inset-y-0 right-0"), "a right panel is anchored full height to the right edge");
+assert.ok(rightPanel.includes("border-l"), "and edge-to-edge on the left, so the board stays visible beside it");
+assert.equal(
+  drawerClosedTransform("right"),
+  "translate3d(100%, 0, 0)",
   "and it enters from the right, not from the floor",
 );
-assert.match(
-  sides,
-  /translate3d\(0, 100%, 0\)/,
+assert.equal(
+  drawerClosedTransform("bottom"),
+  "translate3d(0, 100%, 0)",
   "while the bottom sheet still rises, so the existing behaviour is unchanged",
 );
-// A grab bar advertises a drag-to-dismiss. A right panel dismisses by backdrop or Escape, so
-// rendering the handle there would advertise a gesture that does nothing.
-assert.match(
-  shell,
-  /drawerHasGrabBar\(side\)/,
-  "the shell asks the owner whether this edge has a grab bar, rather than testing the side inline",
+assert.equal(
+  drawerHasGrabBar("right"),
+  false,
+  "the right panel has none: it has no drag-to-dismiss, so a handle would promise a gesture that does nothing",
 );
-assert.match(
-  sides,
-  /export function drawerHasGrabBar\(side\) \{\s*\n\s*return side !== "right";/,
-  "and the right panel has none: it has no drag-to-dismiss, so a handle would promise a gesture that does nothing",
-);
+assert.equal(drawerHasGrabBar("bottom"), true, "and the bottom sheet keeps its drag handle");
 
 // --- 6. The drawer's width leaves the board usable. ------------------------
-assert.match(
-  sides,
-  /w-\[min\(92vw,26rem\)\]/,
+assert.ok(
+  rightPanel.includes("w-[min(92vw,26rem)]"),
   "the panel is bounded so it never fills the viewport on a phone and never crowds a desktop board",
-);
-
-// --- 7. The panel says what it is. ------------------------------------------
-// Found in this audit: the drawer carried an `srLabel` and no visible title, so it opened
-// onto tabs with no statement of what they belonged to — a 26rem panel the reader has to
-// infer from its contents. The shell's own docstring asks callers to "render their own
-// labeled heading inside children (e.g. DialogTitle)", and nothing enforced it; this is the
-// enforcement, on the one consumer there is.
-assert.match(
-  details,
-  /<h2 className="text-sm font-semibold text-foreground">Flow<\/h2>/,
-  "the drawer renders a visible heading, not only an srLabel",
-);
-// The heading carries the one fact that changes what every number below means. Without it
-// "lead" and "cycle" are two words a reader has to already know.
-assert.match(
-  details,
-  /<span className="text-foreground\/80">lead<\/span> is request to done/,
-  "and the heading states what lead and cycle mean",
-);
-// The window is NOT restated in the heading: the timing tab's selector states it, and two
-// statements of one fact is how two surfaces start disagreeing.
-assert.doesNotMatch(
-  details,
-  /FLOW_WINDOWS\.find\(\(entry\) => entry\.id === view\.window\)/,
-  "and the heading does not repeat the window, which the tab's own selector already shows",
 );
 
 console.log("flow drawer ok: side panel for the detail, summary line still on the board, one shared shell");

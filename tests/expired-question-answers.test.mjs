@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { expiredAnswerPayload, cleanAnswerList } from "../lib/expired-question-answers.mjs";
+import { expiredAnswerPayload, cleanAnswerList } from "../lib/question-store.mjs";
 
 assert.deepEqual(expiredAnswerPayload([{ id: "one" }, { id: "two" }], [["A", "B", "C"], []]), [], "an incomplete timed-out batch never creates a partial submit payload");
 assert.deepEqual(

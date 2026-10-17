@@ -5,12 +5,14 @@
  * A project can hold several workflows (one per card), so state.md is never
  * found by name: it is resolved through the ownership records in
  * stelow.json, and a state file is only trusted when it names the same
- * owner. The transitions table is read from the same vendored copy the
- * seeder installs, so the stage vocabulary a worker sees and the one the
- * host validates can never come from two different files.
+ * owner. Stage vocabulary comes from the canonical JSON catalog
+ * (data/stelow-stage-catalog.json via lib/workflow-catalog.mjs) — the
+ * advance path never parses the vendored prose mirror. That mirror remains
+ * for workers to read, and lib/transition-facts.mjs audits offline that it
+ * matches the catalog.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, sep } from "node:path";
+import { existsSync } from "node:fs";
+import { sep } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import {
@@ -18,14 +20,10 @@ import {
   workflowEntryForOwner,
   workflowStateRelativeDir,
 } from "../../lib/workflow-state-identity.mjs";
-import { TRANSITIONS_REF } from "../plugin-paths.js";
+import { STAGE_TRANSITIONS } from "../../lib/workflow-catalog.mjs";
 import { array } from "./values.js";
 import type { WorkerCard } from "../workers-types.js";
-import { join, readJson } from "./root-paths.js";
-
-/** The transitions table as installed inside a workspace. */
-const WORKSPACE_TRANSITIONS =
-  "skills/stelow-workflow-orchestrator/references/transitions.md";
+import { join } from "./root-paths.js";
 
 /**
  * What a state-directory lookup learned, kept apart because "the records
@@ -160,59 +158,35 @@ export function stateRootOf(stateDir: string | null): string | null {
 }
 
 /**
- * Every stage the installed transitions table routes the current one to.
- * Used to offer the human the moves the workflow actually allows, so the
- * panel never advertises a stage the vendored table rejects.
+ * Every stage the canonical catalog routes the current one to. Used to
+ * offer the human the moves the workflow actually allows, so the panel
+ * never advertises a stage the catalog rejects.
+ *
+ * Pure projection of STAGE_TRANSITIONS: no workspace reads, no markdown
+ * parsing. `rootPath` is retained (unused) so existing callers keep their
+ * shape; a null root still offers no moves.
  */
 export function parseNextStages(
-  rootPath: string | null,
+  _rootPath: string | null,
   currentStage: string,
 ): string[] {
-  if (!rootPath) return [];
-  const transitionsPath = join(rootPath, WORKSPACE_TRANSITIONS);
-  if (!existsSync(transitionsPath)) return [];
-  let content: string;
-  try {
-    content = readFileSync(transitionsPath, "utf8");
-  } catch {
-    return [];
-  }
-  // NOTE: do not use a `(?=^### |\Z)`-style regex here — `\Z` is an
-  // end-of-string anchor in Python but a literal "Z" in JavaScript, which
-  // silently broke parsing of the last stage block (`audit`). Splitting on
-  // headers avoids the dialect trap and any regex injection via stage names.
-  const sections = content.split(/^### /m);
-  const section = sections.find(
-    (entry) =>
-      entry === currentStage ||
-      entry.startsWith(`${currentStage}\n`) ||
-      entry.startsWith(`${currentStage} `),
-  );
-  if (!section) return [];
-  const stages = new Set<string>();
-  for (const raw of section.split("\n")) {
-    const line = raw.trim();
-    for (const key of ["next", "accept", "reject", "rework"] as const) {
-      const match = line.match(new RegExp(`^${key}:\\s*(.*)$`));
-      if (!match) continue;
-      // Trailing "(...)" segments are human comments ("(none — stays at
-      // triage)", "shape (shape rework — same stage)"), not stages. Without
-      // stripping, a comment either leaks words (comma split keeps them) or
-      // hides a real target (the whole token contains "(" and is dropped).
-      const value = match[1].split("(")[0];
-      for (const token of value.split(",")) {
-        const stage = token.replace(/[[\]\s"']/g, "");
-        if (stage && /^[a-z][a-z0-9-]*$/.test(stage)) stages.add(stage);
-      }
+  const row = (STAGE_TRANSITIONS as Record<string, { next: string[]; accept: string[]; reject: string[]; rework: string[] }>)[currentStage];
+  if (!row) return [];
+  const seen = new Set<string>();
+  for (const key of ["next", "accept", "reject", "rework"] as const) {
+    for (const target of row[key] ?? []) {
+      if (typeof target === "string" && target) seen.add(target);
     }
   }
-  return Array.from(stages);
+  return Array.from(seen);
 }
 
 /**
  * The workspace is advanceable when its state and tracking files are both
- * present and its transitions copy is installed from the vendored upstream
- * contract. Returns the refusal to show, or null when the move may proceed.
+ * present. The transitions mirror is worker reading material, not an
+ * advance precondition: the host validates against the canonical catalog,
+ * so a missing mirror never blocks a move. Returns the refusal to show,
+ * or null when the move may proceed.
  *
  * `requireOwnedState` is the card-worker guard: a worker whose state dir
  * cannot be verified must reseed rather than fall back to the project-root
@@ -225,7 +199,6 @@ export async function ensureProjectArtifacts(
   requireOwnedState = false,
 ): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
-  const transitions = join(rootPath, WORKSPACE_TRANSITIONS);
   // The card-worker guard, and the same verdict every other surface reaches, so
   // it reads the shared sentence: a reader who got it from `stelow advance` and
   // a reader who got it from the card's Failed chip were being told two
@@ -235,10 +208,6 @@ export async function ensureProjectArtifacts(
   const state = stateDir
     ? join(stateDir, "state.md")
     : join(rootPath, "state.md");
-  if (!existsSync(transitions)) {
-    mkdirSync(dirname(transitions), { recursive: true });
-    writeFileSync(transitions, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
-  }
   if (
     !existsSync(state) ||
     !(await bb.sdk.files

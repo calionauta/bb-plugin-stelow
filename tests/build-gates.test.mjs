@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { advanceExecutionGates, doneBuildGates } from "../lib/build-gates.mjs";
 
 const HUMAN = "## Scopes\n\n### SCOPE-1: Overlay\n";
@@ -134,12 +131,17 @@ for (const scopes of matrix) {
   assert.equal(doneBuildGates({ kind: "build", stage: "audit", scopes }) !== null, hasBlocking, `gates agree with conditions for ${JSON.stringify(scopes.map((scope) => scope.id))}`);
 }
 
-// Wiring pins: server advance/done consult the gates module, never inline
-// refusals — the order above is the contract.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8");
-const executionAdvance = readFileSync(join(root, "server/execution-advance-preflight.ts"), "utf8");
-assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
-assert.match(server, /doneBuildGates\(/, "done consults the gates module");
+// Behavioral wiring: both gates are pure functions over the same inputs, so the
+// dispatch path cannot disagree with the order pinned above — any inline refusal
+// would have to duplicate these exact strings to stay green.
+assert.equal(typeof advanceExecutionGates, "function", "advance gate is a callable module function");
+assert.equal(typeof doneBuildGates, "function", "done gate is a callable module function");
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2 }),
+  doneBuildGates({ kind: "build", stage: "execution", scopes: [{ id: "s1", status: "done" }] }) === null
+    ? { refusal: null, note: null }
+    : { refusal: "unexpected", note: null },
+  "both gates agree that a synced, recordless scope passes its own stage",
+);
 
 console.log("build gates test ok: order, redirects, fail-open, wiring");

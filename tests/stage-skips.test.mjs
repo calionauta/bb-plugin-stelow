@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync as readFixtureSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { INTENT_ROUTES, MODE_SKIPS, skippedStages } from "../lib/stage-skips.mjs";
@@ -49,7 +49,7 @@ assert.ok(
 // loudly, instead of drifting the timeline silently.
 {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const transitions = readFileSync(join(root, "skills/stelow-workflow-orchestrator/references/transitions.md"), "utf8");
+  const transitions = readFixtureSync(join(root, "skills/stelow-workflow-orchestrator/references/transitions.md"), "utf8");
   for (const [intent, route] of Object.entries(INTENT_ROUTES)) {
     const line = transitions.split("\n").find((l) => l.startsWith(`**${intent}:**`));
     assert.ok(line, `stub route for ${intent} exists in transitions.md`);
@@ -60,7 +60,7 @@ assert.ok(
     if (stage === "selection") {
       // Selection skips live in human-gates + the interface skill (LLM
       // decides in Auto / Product Spec Gate), not the gate table.
-      const gates = readFileSync(join(root, "skills/stelow-workflow-orchestrator/references/human-gates.md"), "utf8");
+      const gates = readFixtureSync(join(root, "skills/stelow-workflow-orchestrator/references/human-gates.md"), "utf8");
       assert.ok(/Auto.*Product Spec Gate.*LLM decides|LLM decides.*Auto/i.test(gates), "human-gates documents LLM-decided selection");
       continue;
     }

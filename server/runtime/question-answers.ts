@@ -1,12 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { consumeAskContract } from "../../lib/ask-contracts.mjs";
-import { cleanAnswerList } from "../../lib/expired-question-answers.mjs";
+import { consumeAskContract } from "../../lib/question-contracts.mjs";
+import { cleanAnswerList } from "../../lib/question-store.mjs";
 import {
   answerCommentBody,
   answeredCardPatch,
   EXPIRED_QUESTION_ID_PREFIX,
   expiredQuestionId,
-} from "../../lib/question-answer-recording.mjs";
+} from "../../lib/question-evidence.mjs";
 import { expandInteractionQuestions, formatBatchContinuation, groupBatchAnswers } from "../../lib/question-batch.mjs";
 import { recordSplitAnswer } from "../../lib/split-proposal.mjs";
 import type { ExecutionRun } from "../../lib/execution-run-ledger.mjs";
@@ -133,7 +133,7 @@ function recordContractAnswers(
   cardId: string,
   decisions: Decision[],
 ): void {
-  // One recording rule for both doors (lib/question-answer-recording): every
+  // One recording rule for both doors (lib/question-evidence): every
   // answer leaves a trail, and a declared contract is named in it so a grep for
   // a satisfied contract cannot miss it.
   const trail = answerCommentBody(
@@ -319,7 +319,7 @@ async function answerExpiredQuestions(
     rows.map((row) => expiredQuestionId(row.id)),
   );
   const openQuestionIds = await deps.syncOpenQuestionInbox(card);
-  // One recording rule for both doors (lib/question-answer-recording): this door
+  // One recording rule for both doors (lib/question-evidence): this door
   // used to write a differently-spelled comment per question, so a grep for a
   // satisfied contract could miss it.
   recordContractAnswers(deps, input.cardId, decisions);

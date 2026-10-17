@@ -24,12 +24,15 @@ const workerBackend = readdirSync(join(root, "server"))
 const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
 const spawnSources = `${server}\n${disposableSpawn}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${reviewCli}\n${workerBackend}`;
 
-// One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
-// the disposable helper remain. All card-worker paths use the worker seam.
+// One SDK spawn lives in the worker seam (workers-spawn.ts spawnThread) and
+// every other birth — worker or disposable — rides it, so the helper holds
+// no literal of its own (the hidden preset-judge spawn is removed: decisions
+// resolve via the deterministic Decision API). All card-worker paths use the
+// worker seam.
 assert.equal(
   (spawnSources.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
-  4,
-  "the worker seam, preset judge, and two disposable-helper calls are pinned",
+  1,
+  "the worker seam owns the only SDK spawn (no hidden judge spawn)",
 );
 assert.equal(
   (workerBackend.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
@@ -58,8 +61,9 @@ for (const match of spawnSources.matchAll(/workers\.spawn\(\{|bb\.sdk\.threads\.
   }
 }
 // Disposable blocks route through the helper: same history bans. The helper
-// itself owns the only other spawn calls (with-owner, then the strict-host
-// fallback without) — lifecycle ownership travels there, never history.
+// itself owns no SDK literal — both births (with-owner, then the strict-host
+// fallback without) ride the worker seam's spawnThread — lifecycle ownership
+// travels there, never history.
 for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\s*\{/g)) {
   const block = spawnSources.slice(match.index, match.index + 900);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {

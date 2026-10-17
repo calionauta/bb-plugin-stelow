@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { consumeAskContract, normalizeQuestionText, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
+import { consumeAskContract, normalizeQuestionText, recordAskContracts, validateAskContracts } from "../lib/question-contracts.mjs";
 
 // Normalization is shared by writers and matchers: cosmetic whitespace
 // differences never break the link.

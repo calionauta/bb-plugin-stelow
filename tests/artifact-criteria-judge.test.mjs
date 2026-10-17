@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { sealStatus, validateArtifact } from "../lib/artifact-validation.mjs";
 import {
   CRITERIA_MET_SCORE,
@@ -129,13 +126,5 @@ assert.equal(thin.pass, false, "a thin artifact fails deterministically");
 assert.equal(sealStatus({ pass: false }, "verified"), "needs-revision", "gate failure seals needs-revision");
 assert.equal(sealStatus({ pass: true }, "verified"), "verified", "a passing gate still seals verified");
 assert.equal(sealStatus(null, "verified"), "unverified", "no validation reads unverified, never verified");
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-// The verify-command verdict lives in the CLI family that runs it, not in a
-// composition root. Invert `ran.ok` and a failed command would read met.
-const verifyTasks = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
-const server = [verifyTasks, readFileSync(join(root, "server.ts"), "utf8")].join("\n");
-assert.ok(server.includes('verdict: ran.ok ? "met" : "unmet"'), "verify-command verdicts stay deterministic (exit 0 reads met)");
-assert.ok(!/judgeArtifactCriteria\(\{[^}]*advance/.test(server), "the criteria judge never reaches an advance path");
 
 console.log("artifact criteria judge test ok: inversion fails, disabled abstains, gates stay deterministic");

@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   FROZEN_ACCEPTANCE_FILE,
   frozenAcceptanceReadiness,
@@ -29,8 +26,11 @@ import {
  * missing snapshot (old cards fail open).
  *
  * Every behavior below imports production: no helper or implementation lives
- * in this file. Source pins cover wiring/topology only (which gate consults
- * which module), never prose keywords.
+ * in this file. The wiring (which gate consults which module) is driven
+ * behaviourally rather than read as text: the CLI invocations below go through
+ * the real dispatcher and refuse through the frozen gate, so a rewired -- or
+ * absent -- consult fails here without a source pin. The gate module's own
+ * export surface is proven by this file's import of it.
  */
 
 const HEAD = "a".repeat(40);
@@ -166,21 +166,6 @@ test("the frozen kill-switch defaults on and accepts the documented off words", 
   for (const off of ["0", "off", "false", "no"]) {
     assert.equal(frozenGatesEnabled({ STELOW_FROZEN_GATES: off }), false, `${off} disables`);
   }
-});
-
-// --- Wiring pins (topology): the CLI consults the gates module. ---
-
-test("done and verify consult the frozen gates; the toggle lives with the batch gates", () => {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const doneBuild = readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8");
-  assert.match(doneBuild, /frozenAcceptanceGates\(/, "done refuses through the frozen gate");
-  assert.match(doneBuild, /FROZEN_ACCEPTANCE_FILE/, "done reads the frozen snapshot file");
-  assert.match(doneBuild, /frozenGatesEnabled\(/, "done respects the frozen kill-switch");
-  const verify = readFileSync(join(root, "server/runtime/cli/cli-verify.ts"), "utf8");
-  assert.match(verify, /frozenAcceptanceReadiness\(/, "verify warns through the frozen readiness");
-  assert.match(verify, /unmappedCriterionConditions\(/, "verify names unmapped criteria");
-  const batch = readFileSync(join(root, "server/scope-batch-gates.ts"), "utf8");
-  assert.match(batch, /export function frozenGatesEnabled/, "the toggle is exported from the batch gates");
 });
 
 // --- Behavioral: done refuses per code, completes when frozen, obeys the switch. ---

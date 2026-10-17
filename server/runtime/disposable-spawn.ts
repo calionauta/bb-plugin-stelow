@@ -8,6 +8,7 @@
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { assertDisposableSpawn } from "../../lib/delegation-map.mjs";
+import { spawnThread } from "../workers-spawn.js";
 
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 
@@ -20,7 +21,7 @@ export function createDisposableSpawner(bb: BbPluginApi) {
     // visible spawns, and full permission refuse here, not mid-flight.
     assertDisposableSpawn({ site, args });
     try {
-      return await bb.sdk.threads.spawn(args);
+      return await spawnThread(bb, args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
@@ -29,7 +30,7 @@ export function createDisposableSpawner(bb: BbPluginApi) {
       ) {
         const { lifecycleOwnerThreadId: _dropped, ...rest } =
           args as SpawnArgs & Record<string, unknown>;
-        return await bb.sdk.threads.spawn(rest as SpawnArgs);
+        return await spawnThread(bb, rest as SpawnArgs);
       }
       throw error;
     }

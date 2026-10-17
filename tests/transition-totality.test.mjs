@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync as readFixtureSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STAGE_SEQUENCE } from "../lib/artifact-groups.mjs";
-import { approvalGates, auditTransitionTable, parseTransitionRows } from "../lib/transition-facts.mjs";
+import { STAGE_CATALOG } from "../lib/workflow-catalog.mjs";
+import { approvalGates, auditStageCatalog, auditTransitionTable, catalogApprovalGates, parseTransitionRows } from "../lib/transition-facts.mjs";
 
 /**
  * The transition table is a state machine, not prose: every stage has a way
@@ -24,7 +25,28 @@ import { approvalGates, auditTransitionTable, parseTransitionRows } from "../lib
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const transitionsPath = join(root, "skills/stelow-workflow-orchestrator/references/transitions.md");
-const content = readFileSync(transitionsPath, "utf8");
+const content = readFixtureSync(transitionsPath, "utf8");
+
+// --- 0. The canonical catalog is the validated machine. --------------------
+// lib/transition-facts.mjs audits the JSON catalog offline; the advance path
+// reads the same catalog and never parses markdown. The markdown table below
+// is the vendored mirror, cross-checked against the catalog further down.
+const catalogAudit = auditStageCatalog(STAGE_CATALOG, { terminal: "audit" });
+{
+  const rendered = catalogAudit.findings.map((finding) => `${finding.stage}: ${finding.rule} (${finding.value})`).join("; ");
+  assert.deepEqual(catalogAudit.findings, [], `the stage catalog strands no card: ${rendered || "clean"}`);
+  assert.equal(catalogAudit.ok, true, "the catalog audit reports itself clean");
+  assert.deepEqual(
+    [...catalogAudit.declared].sort(),
+    [...STAGE_SEQUENCE].sort(),
+    "the catalog declares every stage the vocabulary sequences",
+  );
+  assert.deepEqual(
+    [...catalogApprovalGates(STAGE_CATALOG)].sort(),
+    ["diff-gate", "gate", "int-gate", "plan-gate"],
+    "catalog approval gates are the four human gates",
+  );
+}
 
 // The terminal stage is the last of the canonical sequence, injected rather than
 // baked into the parser: which stage ends the workflow is a vocabulary fact, and
@@ -53,6 +75,20 @@ assert.deepEqual(
 assert.ok(audit.declared.length === 18, `the table declares 18 stages (got ${audit.declared.length})`);
 for (const stage of audit.declared) {
   assert.ok(audit.rows[stage].present, `${stage} has a parseable body, not just a header`);
+}
+
+// --- 2b. The mirror matches the catalog. ------------------------------------
+// The markdown table is offline reading material; the runtime never parses
+// it. Every transition the catalog declares must appear in the mirror, so a
+// worker reading prose and the host reading JSON agree on every move.
+for (const stage of catalogAudit.declared) {
+  for (const kind of ["next", "accept", "reject", "rework"]) {
+    assert.deepEqual(
+      [...(audit.rows[stage]?.targets[kind] ?? [])].sort(),
+      [...(catalogAudit.rows[stage]?.targets[kind] ?? [])].sort(),
+      `mirror matches catalog for ${stage}:${kind}`,
+    );
+  }
 }
 
 // --- 3. `next` is the forward door, and every non-terminal stage has one. ---

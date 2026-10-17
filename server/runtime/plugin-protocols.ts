@@ -205,9 +205,10 @@ export const WORKFLOW_INTRO =
  * the prompt that asked for it.
  */
 export const WORKFLOW_SKILLS =
-  "Read `bb stelow playbook` and load exactly the skills it names, in the order it lists them — "
-  + "it is the whole reading list for your current stage, and it already resolves the plugin's skill paths. "
-  + "Do not search for skills, do not load a stage skill you have not reached, and do not fetch anything via "
+  "Skills load lazily: run `bb stelow playbook` to list your state.md, transitions.md, and stage paths. "
+  + "Load stelow-workflow-entry and stelow-workflow-router now — they are the lazy front. "
+  + "Do not load the stage skill or the orchestrator until you advance; the router hands the next stage skill "
+  + "over on advance. Do not search for skills, do not load a stage skill you have not reached, and do not fetch anything via "
   + "`npx skills add` unless the playbook reports a path missing. That report means a broken install: say so "
   + "instead of working around it.";
 

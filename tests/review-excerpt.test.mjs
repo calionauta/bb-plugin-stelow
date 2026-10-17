@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   MAX_REVIEW_CHARS,
   contractHeadings,
@@ -10,6 +7,8 @@ import {
   selectReviewExcerpt,
 } from "../lib/review-excerpt.mjs";
 import { buildReviewPrompt } from "../lib/review-verdict.mjs";
+import { createGatePreReview } from "../server/review-preflight.ts";
+import { cliHarness, commentBodies } from "./helpers/cli-harness.mjs";
 
 /**
  * The reviewer used to get the first 12k chars of the artifact and a note that
@@ -137,16 +136,170 @@ test("the excerpt never exceeds the cap, even when one section is enormous", () 
   assert.match(excerpt.text, /section truncated at \d+ chars/, "a section cut mid-way says so inside the excerpt");
 });
 
-test("the reviewer's excerpt is reported to the card, not merely applied", () => {
+/**
+ * A tech plan that passes its real `spec-tech` contract AND pushes its required
+ * sections past the cost cap — the shape a text pin could describe but not
+ * exercise: a document long enough that the contract, not a head slice, is what
+ * decides which sections the reviewer sees.
+ */
+function longTechPlan() {
+  const intro = `# Tech plan\n\n${"Background context that is long and largely irrelevant to the gate. ".repeat(220)}\n`;
+  return [
+    intro,
+    "## Identified Scopes\n- Retry path\n- Receipt renderer\n",
+    "## Sequence\nRetry first, then the receipt.\n",
+    "| Task | Done Criterion | Dependencies |",
+    "| --- | --- | --- |",
+    "| Retry path | Retry test passes | none |",
+    "| Receipt | Receipt renders the retry | Retry path |",
+    "",
+  ].join("\n");
+}
+
+const WORKSPACE = "/w";
+const STATE = `${WORKSPACE}/.stelow/state`;
+
+test("the reviewer's excerpt is reported to the card, and the report names the selection", async () => {
   // A review of the contract's sections and a review of the opening are
   // different reviews; the reader of the verdict is who has to tell them apart.
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
-  const preflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
-  assert.match(reviewCli, /const \{ prompt, excerpt \} = buildReviewPrompt\(/, "the CLI takes the excerpt report");
-  assert.match(reviewCli, /excerptNote\(excerpt\)/, "and writes it to the card");
-  assert.match(reviewCli, /the contract's sections.*the document's opening/, "the note distinguishes the two selections");
-  assert.match(preflight, /contract: contractForBuildArtifact\(/, "the gate pre-review resolves the artifact's contract too");
+  // The card comment the CLI writes is where they tell them apart, so drive the
+  // real review command for both selections and read the comment it leaves.
+  const [contract, head] = await withCollapsedClock(() =>
+    Promise.all([contractExcerptComment(), headExcerptComment()]),
+  );
+  assert.match(
+    contract,
+    /Excerpt: the contract's sections/,
+    "the CLI records the excerpt report on the card, naming the contract-driven selection",
+  );
+  assert.match(
+    head,
+    /Excerpt: the document's opening/,
+    "and the report distinguishes the head slice from a contract-aware excerpt",
+  );
 });
+
+/** The reviewer poll waits ten seconds between reads; a test about the excerpt
+ * note collapses the clock rather than paying it. */
+async function withCollapsedClock(run) {
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return { unref() {} };
+  };
+  try {
+    return await run();
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+}
+
+/** A long build document whose contract names sections past the cap: the
+ * contract, not a head slice, decides what the reviewer sees. */
+async function contractExcerptComment() {
+  const { invoke, calls } = cliHarness({
+    reviewPresetId: "preset_rev",
+    reviewerOutput: "Verdict: pass",
+    files: {
+      [`${STATE}/state.md`]: "artifacts:\n  - stage: plan\n    kind: document\n    label: tech plan\n    path: spec-tech.md\n",
+      [`${WORKSPACE}/spec-tech.md`]: longTechPlan(),
+    },
+  });
+  const result = await invoke(["review", "--artifact", "spec-tech.md"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  return commentBodies(calls).join("\n");
+}
+
+/** A research deliverable has no depth contract, so the head slice is used and
+ * the report must say so instead of claiming contract awareness. */
+async function headExcerptComment() {
+  const { invoke, calls } = cliHarness({
+    reviewPresetId: "preset_rev",
+    reviewerOutput: "Verdict: pass",
+    card: { ...cliHarnessCard(), kind: "research" },
+    readiness: { ready: true, invalid: [], evidence: "verified", fingerprint: "fp" },
+    strategyRounds: [{ id: "round-a", file: "round.md" }],
+    researchIndex: { ok: true, content: "research index" },
+    files: { [`${WORKSPACE}/round.md`]: "Round body. ".repeat(MAX_REVIEW_CHARS / 6) },
+  });
+  const result = await invoke(["review"]);
+  assert.equal(result.exitCode, 0, result.stderr);
+  return commentBodies(calls).join("\n");
+}
+
+/**
+ * The gate pre-review resolves the artifact's contract too, or a pre-review of a
+ * long plan would judge a head slice. Injecting `sleep` collapses the poll and
+ * `reviewable` skips the depth gate, so the only thing under test is the prompt
+ * the reviewer is actually spawned with.
+ */
+test("the gate pre-review asks the contract for the sections it reviews", async () => {
+  const body = longTechPlan();
+  const spawned = [];
+  const runner = createGatePreReview({
+    bb: {
+      sdk: {
+        files: { read: async () => ({ content: body }) },
+        threads: {
+          get: async () => ({ status: "idle" }),
+          output: async () => ({ output: "" }),
+        },
+      },
+      realtime: { publish: () => {} },
+    },
+    getCard: () => cliHarnessCard(),
+    getReviewPresetId: () => "preset_rev",
+    getPresetById: () => ({ id: "preset_rev", name: "Reviewer" }),
+    presetAttachmentParams: () => ({
+      providerId: "pi",
+      modelId: "m",
+      reasoningLevel: "low",
+      permissionMode: "full",
+    }),
+    cardWorkspace: async () => ({ path: WORKSPACE }),
+    boardFromRoot: async () => ({
+      workflows: [{ id: "hash1", artifacts: [{ kind: "tech-plan", path: "spec-tech.md" }] }],
+    }),
+    spawnDisposable: async (args, site) => {
+      spawned.push([args, site]);
+      return { id: "thr_pre" };
+    },
+    stopThread: async () => {},
+    logCardComment: () => "cmt_1",
+    sleep: async () => {},
+    reviewable: () => true,
+  });
+
+  await runner("card_1", "plan-gate");
+
+  assert.equal(spawned.length, 1, "a reviewable artifact spawns exactly one pre-reviewer");
+  const prompt = spawned[0][0].prompt;
+  assert.match(prompt, /## Identified Scopes/, "the pre-review carries the contract's required section");
+  assert.match(prompt, /the contract's own sections/, "and says the contract drove the excerpt");
+});
+
+/** The card the CLI and preflight read; the fields both paths touch. */
+function cliHarnessCard() {
+  return {
+    id: "card_1",
+    name: "checkout",
+    display_name: "Checkout",
+    kind: "build",
+    status: "in-progress",
+    activity: "running",
+    project_id: "proj_1",
+    workspace_kind: "project",
+    dir_hash: "hash1",
+    worker_thread_id: "thr_worker",
+    prompt: "Make checkout work",
+    intent: "feature",
+    stage: "execution",
+    created_at: 1_700_000_000_000,
+    attachments: null,
+    research_strategies: [],
+    research_strategy: null,
+    explore_stage: null,
+  };
+}
 
 console.log("review excerpt test ok: contract-aware selection, honest fallback, reported excerpt");

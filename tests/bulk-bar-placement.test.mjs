@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { codeOf } from "./helpers/source-code.mjs";
 import {
   BULK_BAR_SHELL_CLASS,
   BULK_BAR_SURFACE_CLASS,
   boardBottomPadding,
 } from "../lib/bulk-bar-placement.mjs";
+import { loadComponent, renderTree, walk } from "./helpers/render-component.mjs";
+import * as bulkEligibility from "../lib/bulk-eligibility.mjs";
+import * as bulkDeleteBatch from "../lib/bulk-delete-batch.mjs";
+import * as kanban from "../lib/kanban-layout.mjs";
+import * as vocabulary from "../lib/workflow-vocabulary.mjs";
 
 /**
  * The bulk bar floats, so selecting a card does not move the board.
@@ -20,26 +21,65 @@ import {
  * the layout. A selection is not a layout change — the cards do not move, only the actions
  * appear — and the fix is to take the bar out of the flow entirely.
  *
- * The pins below hold the three things that make a floating bar correct rather than merely
- * detached: it is fixed to the viewport (not to a scrolling board), it clears the phone's
- * home indicator, and it does not cover the last row of cards.
+ * The claims below are asked of the rendered components, not of their source text: the bar
+ * is compiled and walked to a tree, and the board is rendered with a selection so the
+ * reserved strip can be read off the grid itself.
  */
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const bar = codeOf(readFileSync(join(root, "components/board/build-bulk-bar.tsx"), "utf8"));
-const panelView = codeOf(readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8"));
+const hooks = {
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+  useEffect: () => {},
+  useMemo: (fn) => fn(),
+  useCallback: (fn) => fn,
+};
+const marker = (name) => {
+  const fn = () => null;
+  fn.displayName = name;
+  return fn;
+};
 
 // --- 1. It is out of the board's flow. --------------------------------------
-// The regression is a wrapper with margin in the same column as the board, which is what
-// pushed it down. `mb-3` was that wrapper's class.
-assert.doesNotMatch(
-  bar,
-  /className="mb-3"/,
-  "the bar is not a block above the board: that wrapper was what pushed the board down",
-);
-assert.match(bar, /BULK_BAR_SHELL_CLASS/, "and it renders inside the floating shell");
+// The regression was a wrapper with margin in the same column as the board. The
+// rendered bar must sit directly in the floating shell, with no margin element
+// between the shell and the board.
+const BulkBarSlot = loadComponent("components/board/build-bulk-bar.tsx", "BulkBarSlot", {
+  react: hooks,
+  "@/components/ui/button": { Button: marker("Button") },
+  "@/components/confirm-action-dialog": { ConfirmActionDialog: marker("ConfirmActionDialog") },
+  sonner: { toast: { error() {}, success() {}, message() {} } },
+  "../../lib/bulk-eligibility.mjs": bulkEligibility,
+  "../../lib/bulk-delete-batch.mjs": bulkDeleteBatch,
+  "../../lib/bulk-bar-placement.mjs": { BULK_BAR_SHELL_CLASS, BULK_BAR_SURFACE_CLASS },
+});
 
-// --- 2. Floating means fixed to the viewport, centred, and click-through. ---
+const selectedState = (ids) => ({
+  cards: [...ids].map((id) => ({
+    id, displayName: id, status: "in-progress", activity: "running", workerThreadId: null,
+  })),
+  selectedIds: new Set(ids),
+  clearSelection: () => {},
+  rpc: { call: async () => ({}) },
+});
+
+assert.equal(BulkBarSlot({ state: selectedState([]) }), null, "no selection renders no bar");
+const shell = BulkBarSlot({ state: selectedState(["card_1"]) });
+assert.equal(
+  shell.props.className,
+  BULK_BAR_SHELL_CLASS,
+  "the bar's root is the floating shell itself — not a block above the board: a wrapper was what pushed the board down",
+);
+const barNodes = [];
+walk(renderTree(shell), (node) => barNodes.push(node));
+assert.ok(
+  barNodes.some((node) => node.props?.className === BULK_BAR_SURFACE_CLASS),
+  "and the bar surface renders inside that shell",
+);
+assert.ok(
+  !barNodes.some((node) => typeof node.props?.className === "string" && /(^|\s)mb-\d/.test(node.props.className)),
+  "nothing in the bar carries a bottom margin, which is the shape of the original defect",
+);
+
+// --- 2. The class strings themselves name the placement. --------------------
 assert.match(BULK_BAR_SHELL_CLASS, /\bfixed\b/, "the shell is fixed, not absolute or static");
 assert.match(
   BULK_BAR_SHELL_CLASS,
@@ -77,27 +117,89 @@ assert.match(BULK_BAR_SURFACE_CLASS, /max-sm:rounded-2xl/, "with a squarer corne
 assert.equal(boardBottomPadding(false), "pb-1", "an unselected board keeps its full height");
 assert.equal(boardBottomPadding(true), "pb-24", "a selected board reserves the strip the bar floats over");
 assert.notEqual(boardBottomPadding(true), boardBottomPadding(false), "the two states differ, so the reservation is real");
-assert.match(
-  panelView,
-  /boardBottomPadding\(state\.selectedIds\.size > 0\)/,
-  "the board asks for that padding from the selection, not from a constant",
-);
-assert.match(
-  panelView,
-  /<BulkBarSlot state=\{state\} \/>/,
-  "and the slot still renders once, in the board view",
-);
 
-// --- 5. The bar is not a sibling the board is laid out against. ------------
-// The board's own column must contain the board and nothing else: a sibling element above it
-// is the shape of the original defect, however it is styled.
-const boardIndex = panelView.indexOf("data-testid=\"kanban-board\"");
-const slotIndex = panelView.indexOf("<BulkBarSlot");
-assert.ok(slotIndex >= 0 && boardIndex > slotIndex, "the slot renders before the board in source order");
-assert.doesNotMatch(
-  panelView.slice(slotIndex, boardIndex),
-  /className="mb-\d/,
-  "and nothing between them carries a bottom margin, which would push the board down again",
+let slotCalls = 0;
+const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "BuildPanelView", {
+  react: hooks,
+  "@get-bb/plugin-sdk/app": { UrlLink: marker("UrlLink") },
+  "../detail/card-detail-route": { INTENT_LABEL: {} },
+  "../../lib/kanban-layout.mjs": kanban,
+  "../../lib/workflow-vocabulary.mjs": vocabulary,
+  "../../lib/bulk-bar-placement.mjs": { boardBottomPadding },
+  "../board/board-filters": { FiltersBar: marker("FiltersBar") },
+  "../board/board-view-toggle": { ViewToggle: marker("ViewToggle") },
+  "../board/track-lists": { BuildList: marker("BuildList") },
+  "../board/board-column": { BoardColumn: marker("BoardColumn") },
+  "../board/archived-delete-props": { archivedDeleteProps: () => undefined },
+  "../board/use-delete-archived-cards": { useDeleteArchivedCards: () => async () => {} },
+  "../board/board-cards": { BoardCard: marker("BoardCard") },
+  "../board/flow-strip": { FlowStrip: marker("FlowStrip") },
+  "../board/hill-board": { HillBoard: marker("HillBoard") },
+  "../board/card-gallery": { BucketGalleryButton: marker("BucketGalleryButton") },
+  "../board/build-bulk-bar": { BulkBarSlot: (props) => { slotCalls += 1; return { bulkBar: props.state }; } },
+  "../ui/button": { Button: marker("Button") },
+  "../ui/icon": { Icon: marker("Icon") },
+  "../../lib/utils": { cn: (...values) => values.filter(Boolean).join(" ") },
+});
+
+const boardFor = (selectedIds) => {
+  slotCalls = 0;
+  const state = {
+    cards: [],
+    grouped: Object.fromEntries(vocabulary.BUILD_BOARD_VISIBLE_COLUMNS.map((column) => [column, []])),
+    githubAutomationEnabled: false,
+    githubAuthMissing: false,
+    loading: false,
+    viewMode: "board",
+    projectIds: [],
+    stageOptions: [],
+    stages: [],
+    intents: [],
+    statuses: [],
+    activities: [],
+    collapsedColumns: {},
+    collapsedListGroups: {},
+    selectedIds: new Set(selectedIds),
+    attention: false,
+    rpc: {},
+    projects: [],
+    setAttention() {},
+    toggleProject() {},
+    toggleStage() {},
+    toggleIntent() {},
+    toggleStatus() {},
+    toggleActivity() {},
+    reset() {},
+    toggleColumn() {},
+    toggleListGroup() {},
+    setViewMode() {},
+  };
+  const tree = renderTree(BuildPanelView({
+    state,
+    dialogs: null,
+    onNewIssue() {},
+    onOpenPresets() {},
+    onOpenGithub() {},
+    onOpenCard() {},
+    onOpenThread() {},
+  }));
+  let board = null;
+  walk({ type: "root", props: {}, children: [tree] }, (node) => {
+    if (!board && node.props?.["data-testid"] === "kanban-board") board = node;
+  });
+  return { className: board?.props?.className ?? "", slots: slotCalls };
+};
+
+const withSelection = boardFor(["card_1"]);
+assert.ok(
+  withSelection.className.includes(boardBottomPadding(true)),
+  "the board asks for its bottom padding from the selection, not from a constant",
 );
+assert.ok(!withSelection.className.includes(boardBottomPadding(false)), "and only the selected state reserves the strip");
+assert.equal(withSelection.slots, 1, "the bar slot still renders once, in the board view");
+
+const empty = boardFor([]);
+assert.ok(empty.className.includes(boardBottomPadding(false)), "an unselected board reserves nothing");
+assert.ok(!empty.className.includes(boardBottomPadding(true)), "so the floating strip is not left as a permanent gap");
 
 console.log("bulk bar placement ok: floating, centred, safe-area aware, and out of the board's flow");

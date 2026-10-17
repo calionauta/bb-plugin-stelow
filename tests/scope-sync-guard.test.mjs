@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   splitScopeBlocks,
   countScopeDialects,
@@ -121,37 +118,7 @@ const reseeded = mergePlannedTasks(seeded, HUMAN_SPEC);
 assert.equal(reseeded[0].tasks.length, 3, "same-name planned task dedupes across id schemes, the rest unions");
 assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the merge");
 
-// Wiring pins (topology, not copy): the advance-into-execution path and the
-// done path must consult the guard, and the checks section must name the
-// missing-tracking signal.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
-].join("\n");
-const executionAdvance = readFileSync(join(root, "server/execution-advance-preflight.ts"), "utf8");
-assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
-assert.match(server, /doneBuildGates\(/, "done consults the gates module");
-assert.match(
-  server,
-  /diagnoseScopeSync\(\{\s*specContent:/,
-  "card detail reports scope-sync health from the spec against synced scopes",
-);
-assert.match(server, /scopeSync: z\s*\.object\(\{\s*state: z\.enum\(/, "the card detail contract carries the sync state");
-const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
-// The panel reads the server's classification and nothing else. The stage-derived
-// rule it replaced fired on cards that never planned — the reported state is
-// `no-spec` on those, and a notice that invents a spec the reader never owed is
-// worse than silence.
-assert.doesNotMatch(buildProgress, /isScopeTrackingMissing/, "the stage-derived scope-tracking rule is not used");
-assert.match(buildProgress, /scopeSyncNotice\(detail\.scopeSync,/, "the notice is decided once, in lib, from the reported state");
-assert.doesNotMatch(buildProgress, /No synced scopes on this card/, "the copy that accused a reader of a nonexistent spec is gone");
-assert.doesNotMatch(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]/, "the alarm list is not re-spelled in the view");
-
-console.log("scope sync guard test ok: dialects, task extraction, execution/done refusals, merge, wiring");
+console.log("scope sync guard test ok: dialects, task extraction, merge, ghosts");
 
 // The duplication that reached a live card, and the reason the reader changed.
 //

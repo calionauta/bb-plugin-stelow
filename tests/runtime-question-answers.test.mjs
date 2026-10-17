@@ -223,7 +223,7 @@ test("expired answers remain all-or-nothing and use the current worker", async (
   assert.equal(accepted.ok, true);
   assert.equal(calls.sends[0].threadId, "current_thread");
   // One trail comment for the batch, not one per question: the two doors share
-  // a single recording rule (lib/question-answer-recording), so a grep for a
+  // a single recording rule (lib/question-evidence), so a grep for a
   // satisfied contract cannot miss one spelling and find the other.
   assert.equal(calls.comments.length, 1);
   assert.match(calls.comments[0][4], /Q1\?/);

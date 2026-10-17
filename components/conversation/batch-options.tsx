@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
 import { splitOptionDescriptionPreview, artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
-import { splitOptionDescription } from "../../lib/split-question-presentation.mjs";
+import { splitOptionDescription } from "../../lib/question-presentation.mjs";
 import type {
   AskArtifact,
   BatchItem,

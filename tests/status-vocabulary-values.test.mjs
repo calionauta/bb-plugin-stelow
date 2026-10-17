@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import Database from "better-sqlite3";
 import {
   TRACKABLE_STATUSES,
   TRACKABLE_STATUS_LABELS,
@@ -9,6 +8,7 @@ import {
 } from "../lib/trackables.mjs";
 import {
   BLOCKING_RUN_STATUS,
+  ensureExecutionRunTable,
   RUN_STATUSES,
   RUN_STATUS_LABELS,
   runStatusLabel,
@@ -33,16 +33,20 @@ import { isDoneStatus } from "../lib/trackables.mjs";
  * names is exactly the kind of pair that drifts while both halves stay green.
  */
 
-const root = new URL("..", import.meta.url).pathname;
-
 test("RUN_STATUSES is exactly what the SQL CHECK admits", () => {
-  // Parsed from the schema, not restated. If someone adds a status to the CHECK
-  // and forgets the list — or the reverse — this fails and says which side moved.
-  const ledger = readFileSync(join(root, "lib/execution-run-ledger.mjs"), "utf8");
-  const match = ledger.match(
+  // Parsed from the table the ledger actually creates, not restated. If someone
+  // adds a status to the CHECK and forgets the list — or the reverse — this
+  // fails and says which side moved. Driving the real DDL also proves the CHECK
+  // lands on the table rather than living only in a string the module returns.
+  const db = new Database(":memory:");
+  ensureExecutionRunTable(db);
+  const created = db
+    .prepare("SELECT sql FROM sqlite_master WHERE name = ?")
+    .get("execution_runs").sql;
+  const match = created.match(
     /normalized_status TEXT NOT NULL CHECK \(normalized_status IN \(([^)]*)\)\)/,
   );
-  assert.ok(match, "the normalized_status CHECK constraint is still present and readable");
+  assert.ok(match, "the normalized_status CHECK constraint is created on the real table");
 
   const fromSql = [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(
@@ -55,6 +59,7 @@ test("RUN_STATUSES is exactly what the SQL CHECK admits", () => {
     fromSql,
     "and every one the constraint admits has a name",
   );
+  db.close();
 });
 
 test("a trackable's name is a word, and it covers every status", () => {

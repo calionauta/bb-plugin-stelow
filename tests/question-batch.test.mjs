@@ -238,21 +238,29 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.deepEqual(inheritAskArtifact([{ label: "A", artifact: { path: "x".repeat(501) } }, { label: "B", artifact: null }]), [null, null], "over-cap paths are never inherited");
 }
 
-// UI wiring: the batch hook seeds its selection state from the resolved
-// preselected answers, so checked rows are checked on first paint — not
-// after an effect, and never from a second source. If the initializer stops
-// reading preselectedAnswers, opt-out confirms silently become opt-in.
+// Selection seeding contract (behavioral): the batch hook seeds its
+// selection state from preselectedAnswers(questions), so opt-out confirms
+// start checked on first paint. Prove the seam end to end: cleaned options
+// keep the explicit flag through expansion, and the resolver returns the
+// checked map the hook uses as its initial state.
 {
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
-  const { dirname, join } = await import("node:path");
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const hook = readFileSync(join(root, "components/conversation/question-batch.tsx"), "utf8");
-  assert.match(
-    hook,
-    /useState<Record<string, string\[\]>>\(\(\) => preselectedAnswers\(questions\)\)/,
-    "batch selection initializes from preselected answers",
-  );
+  const expanded = expandInteractionQuestions({
+    id: "i7",
+    title: "T",
+    payload: {
+      questions: [
+        { question: "Keep?", multiple: true, options: [{ label: "A", selected: true }, { label: "B" }] },
+        { question: "Pick?", multiple: false, options: [{ label: "C", selected: true }, { label: "D" }] },
+      ],
+    },
+  });
+  const hookQuestions = expanded.map((entry, index) => ({
+    id: `q${index}`,
+    multiple: entry.multiple,
+    options: entry.options,
+  }));
+  assert.deepEqual(preselectedAnswers(hookQuestions), { q0: ["A"] }, "only the multiple-choice checked option seeds initial selection");
+  assert.deepEqual(preselectedAnswers([]), {}, "an empty batch seeds empty selection");
 }
 
 console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation, per-option evidence inheritance");

@@ -44,7 +44,6 @@ export type AdvanceDeps = {
   recordExecutionEntry: (cardId: string, evidence: string, transition: "execution-refused" | "execution-entered") => void;
   getReliablePreset: (band: string, cardId: string) => { id: string } | null;
   getCardPresetId: (cardId: string) => string;
-  respawn: (cardId: string, presetId: string) => Promise<unknown>;
   scheduleRespawn: (cardId: string, presetId: string) => void;
   /** Tier shadow, shadow-only: records hint agreement, never changes the swap. */
   suggestTier?: (card: WorkerCard, stage: string) => Promise<TierSuggestion | null>;

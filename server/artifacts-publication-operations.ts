@@ -3,7 +3,7 @@ import {
   parseSquashOutput,
   squashExitMessage,
 } from "../lib/squash-merge.mjs";
-import type { ArtifactsPublicationDeps } from "./artifacts-publication.js";
+import type { ArtifactsPublicationDeps } from "./artifacts-publication-types.js";
 import {
   publicationCommit,
   publicationCommitDiff,

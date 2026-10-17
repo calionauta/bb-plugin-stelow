@@ -1,68 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGateHandlers, createCardAdvance } from "../server/runtime/card-gates.ts";
+import { createGateHandlers } from "../server/runtime/card-gates.ts";
+import { createCardAdvance } from "../server/execution-advance-card.ts";
 import { createCardDiff } from "../server/runtime/card-diff.ts";
 import { createAuditTrailStatus } from "../server/runtime/card-audit-trail.ts";
 import { createCardReseed } from "../server/runtime/card-reseed.ts";
-
-function card(overrides = {}) {
-  return {
-    id: "card_1",
-    project_id: "proj_1",
-    name: "Card",
-    display_name: "Card",
-    prompt: "Build it",
-    intent: "feature",
-    status: "in-progress",
-    stage: "planning",
-    activity: "running",
-    kind: "build",
-    dir_hash: "hash_1",
-    worker_thread_id: "thread_1",
-    worker_preset_id: "preset_old",
-    workspace_kind: "exploratory",
-    workspace_path: "/project",
-    workspace_host_id: "host_1",
-    attachments: "[]",
-    last_error: null,
-    ...overrides,
-  };
-}
-
-function preset(id = "preset_1") {
-  return {
-    id,
-    name: id,
-    provider_id: "pi",
-    model_id: "model",
-    reasoning_level: "high",
-    permission_mode: "auto",
-    environment_kind: "host",
-    base_branch: null,
-    machine_id: null,
-    instructions: "",
-  };
-}
-
-const reseedProtocols = {
-  cardOwnerRules: "owner", neverSeed: "never seed", cliEquivalents: "cli",
-  reconProtocol: "recon", draftProtocol: "draft", turnDiscipline: "turn",
-  commitStyle: "commit", interfacePick: "pick", doneProtocol: "done", splitProtocol: "split",
- workflowIntro: "WORKFLOW_INTRO_SENTINEL",
- workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
-
- commandFailureRule: "command failure rule",
-  // The fixture must carry the phrases this test asserts on, and it must be a real
-  // ask contract rather than a label: the reseed builder renders it verbatim, so a
-  // placeholder here would pass the assertion while shipping a worker that cannot
-  // read the rule. The two phrases are the ones the surrounding assertions pin.
-  userInputContract:
-    "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels). ",
-};
-const reseedErrors = {
-  cardNotFound: "missing", cardArchived: "archived",
-  workspaceUnavailable: "workspace", presetNotFound: "preset missing",
-};
+import { auditDeps, card, reseedDeps } from "./card-handler-fixtures.mjs";
 
 test("gate approval keeps artifact refusal and conflict publication behavior", async () => {
   const calls = [];
@@ -111,50 +54,62 @@ test("gate approval keeps artifact refusal and conflict publication behavior", a
 
 test("card advance preserves refusal, helper, respawn, update, publish order", async () => {
   const calls = [];
+  const services = {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async (card, stage, deferred) => {
+      calls.push(["respawn-via-band", card.id, stage, deferred]);
+    },
+  };
   const advance = createCardAdvance({
     getCard: () => card(),
+    isArchivedCard: (value) => value.status === "archived",
     cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
+    stateDir: async () => "/project/state",
     ensureArtifacts: async () => null,
     questionGate: async () => null,
     runHelper: async (args) => {
       calls.push(["helper", args]);
       return { code: 0, stdout: "advanced", stderr: "" };
     },
-    getReliablePreset: () => preset("preset_2"),
-    getCardPreset: () => preset("preset_old"),
-    respawn: async (...args) => calls.push(["respawn", ...args]),
     updateCard: (...args) => calls.push(["update", ...args]),
+    recordStageEvent: (...args) => calls.push(["stage", ...args]),
     publishCard: (cardId) => calls.push(["publish", cardId]),
+    requestGatePreReview: async () => undefined,
     errors: { cardNotFound: "missing", cardArchived: "archived", workspaceUnavailable: "workspace" },
-  });
+  }, services).advanceCard;
   assert.deepEqual(await advance({ cardId: "card_1", stage: "execution" }), {
     ok: true,
     stdout: "advanced",
     error: null,
   });
-  assert.deepEqual(calls.map(([name]) => name), ["helper", "respawn", "update", "publish"]);
+  assert.deepEqual(calls.map(([name]) => name), ["helper", "respawn-via-band", "update", "stage", "publish"]);
 });
 
 test("card advance question refusal is a negative control", async () => {
   let helperRan = false;
+  const services = {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async () => undefined,
+  };
   const advance = createCardAdvance({
     getCard: () => card(),
+    isArchivedCard: (value) => value.status === "archived",
     cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
+    stateDir: async () => "/project/state",
     ensureArtifacts: async () => null,
     questionGate: async () => "Answer the open question first.",
     runHelper: async () => {
       helperRan = true;
       return { code: 0, stdout: "", stderr: "" };
     },
-    getReliablePreset: () => null,
-    getCardPreset: () => preset(),
-    respawn: async () => undefined,
     updateCard: () => undefined,
+    recordStageEvent: () => undefined,
     publishCard: () => undefined,
+    requestGatePreReview: async () => undefined,
     errors: { cardNotFound: "missing", cardArchived: "archived", workspaceUnavailable: "workspace" },
-  });
+  }, services).advanceCard;
   assert.equal((await advance({ cardId: "card_1", stage: "execution" })).error,
     "Answer the open question first.");
   assert.equal(helperRan, false);
@@ -282,17 +237,6 @@ test("audit trail status delegates classification and refuses unowned state", as
   assert.match((await unowned({ cardId: "card_1" })).detail, /ownership cannot be verified/);
 });
 
-function auditDeps() {
-  return {
-    bb: { sdk: { files: { read: async () => ({ content: "" }) } } },
-    getCard: () => card(),
-    cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
-    runHelper: async () => ({ code: 1, stdout: "", stderr: "failed" }),
-    errors: { cardNotFound: "missing", workspaceUnavailable: "workspace" },
-  };
-}
-
 test("reseed preserves archived refusal and reclassified intent ordering", async () => {
   let seeded = false;
   const reseed = createCardReseed(reseedDeps({
@@ -343,50 +287,3 @@ test("reseed preserves archived refusal and reclassified intent ordering", async
   assert.match(calls[3][1].input[0].text, /each with its own --option labels/);
   assert.equal(calls[4][2], "bugfix");
 });
-
-function reseedDeps(overrides = {}) {
-  const noSql = { prepare: () => ({ run: () => undefined }) };
-  return {
-    db: noSql,
-    bb: { sdk: { files: {} }, realtime: { publish: () => undefined } },
-    now: () => 10,
-    getCard: () => card(),
-    cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/state",
-    readStateConfig: async () => ({ appetite: "Lean", reviewGates: ["diff"] }),
-    seedWorkflow: async () => ({ error: null, dirHash: "new", stateDir: "/state" }),
-    getPresetById: () => preset(),
-    pinCardPreset: () => true,
-    getReliablePreset: () => preset(),
-    presetParams: (value) => ({
-      providerId: value.provider_id,
-      modelId: value.model_id,
-      reasoningLevel: value.reasoning_level,
-      permissionMode: value.permission_mode,
-      environmentKind: value.environment_kind,
-      baseBranch: value.base_branch,
-      machineId: value.machine_id,
-      instructions: value.instructions,
-    }),
-    strategyList: () => [],
-    strategyRounds: () => [],
-    roundFile: () => "round.md",
-    roundStamp: () => "stamp",
-    roundRelativePath: (_state, _root, file) => file,
-    ensureArtifactParent: async () => undefined,
-    researchPrompt: () => "research",
-    explorePrompt: () => "explore",
-    attachments: () => [],
-    continuingEnvironment: async (_value, environment) => environment,
-    workerEnvironment: () => ({ type: "host" }),
-    replacePrepared: async () => ({ id: "thread_2" }),
-    resetAutoContinue: () => ({ count: 0, stage: null }),
-    updateCard: () => undefined,
-    recordThread: () => undefined,
-    lineage: async () => undefined,
-    publishCard: () => undefined,
-    protocols: reseedProtocols,
-    errors: reseedErrors,
-    ...overrides,
-  };
-}

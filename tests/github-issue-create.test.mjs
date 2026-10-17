@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 import { buildCreateIssueArgs, buildDoneCommentBrief, CREATE_OUTCOME_UNCERTAIN_MARKER, issueBodyForCard, issueKey, issueMarker, parseCreateIssueResponse, resolveGhPath, resolveTargetRepo, validatePostBody } from "../lib/github-issue-create.mjs";
+import { githubRpcContract } from "../server/github-rpc-contract.ts";
+import { cardRpcContract } from "../server/card-rpc-contract.ts";
+import { githubIssueFlowHandlers } from "../server/github-issue-flow.ts";
+import { findElementByType, loadComponent } from "./helpers/render-component.mjs";
 
 // Card-birth issue creation: the card always exists first, so every failure
 // below must leave a retryable state, never a silent half-link. The uncertain
@@ -70,30 +73,142 @@ assert.equal(await resolveGhPath(async () => true), "gh", "PATH gh wins when pre
 await assert.rejects(resolveGhPath(async () => { throw new Error("nope"); }), /not available/, "a throwing probe counts as a miss");
 await assert.rejects(resolveGhPath(async () => false), /not available/, "no working gh refuses with the redirect");
 
-// Submit guard: the modular Build start sets a busy ref before createCard and
-// clears it on every terminal path, so a double-click cannot create two cards
-// (and two issues). Order is the contract — a guard after the call guards
-// nothing.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const contract = readFileSync(join(root, "server/github-rpc-contract.ts"), "utf8");
-const issueFlow = readFileSync(join(root, "server/github-issue-flow.ts"), "utf8");
-const createDialog = readFileSync(join(root, "components/creation/create-build-dialog.tsx"), "utf8");
-const doneDraft = readFileSync(join(root, "components/github/github-done-draft-dialog.tsx"), "utf8");
-const buildStart = createDialog.slice(createDialog.indexOf("async function start(request: NewThreadRequest)"), createDialog.indexOf("function resetOnOpen()"));
-assert.ok(buildStart.indexOf("if (!submission.trim() || submitBusyRef.current) return;") < buildStart.indexOf('rpc.call("createCard"'), "the busy guard precedes the card write");
-assert.ok(buildStart.indexOf("submitBusyRef.current = false") > buildStart.indexOf('rpc.call("createCard"'), "the flag clears after the write paths");
-assert.match(contract, /createLinkedGithubIssue: \{/, "the RPC is contracted");
-assert.match(
-  issueFlow,
-  /createLinkedGithubIssue: \(input: \{ cardId: string; repo\?: string \| null \}\) => createLinkedGithubIssue\(ctx, client, input\)/,
-  "the RPC is wired to the flow slice, not declared and forgotten",
-);
-assert.match(createDialog, /rpc\.call\("createLinkedGithubIssue"/, "the creation dialog calls it after the card exists");
-assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Also create issue\{/, "the opt-in checkbox names the destination");
-assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Pick a repository/, "several mapped repos force an explicit pick, never a silent default");
-assert.match(createDialog, /const \[createGithubIssue, setCreateGithubIssue\] = useState\(false\)/, "creation stays off by default");
-assert.match(readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"), /draftDoneComment: \{/, "the draft RPC is contracted");
-assert.match(doneDraft, /rpc\.call\("draftDoneComment"/, "the Done dialog drafts through the RPC");
-assert.match(doneDraft, /Draft GitHub comment\?/, "the dialog names the action");
+// Contract presence is asked of the imported contracts, and the opt-in row is
+// rendered — both prove the wiring by what it exposes, not by what the file says.
+assert.ok(githubRpcContract.createLinkedGithubIssue, "the RPC is contracted");
+assert.equal(typeof githubRpcContract.createLinkedGithubIssue.experimental_description, "string", "and discoverable");
+assert.ok(cardRpcContract.draftDoneComment, "the draft RPC is contracted");
 
-console.log("github issue create test ok: marker, args, strict parse, gh resolution, wiring");
+function allText(node) {
+  const parts = [];
+  const visit = (current) => {
+    if (typeof current === "string") { parts.push(current); return; }
+    if (!current || typeof current !== "object") return;
+    for (const child of current.children ?? []) visit(child);
+  };
+  visit(node);
+  return parts.join(" ");
+}
+
+{
+  const Row = loadComponent("components/github/github-create-row.tsx", "GithubCreateRow", {});
+  const props = { checked: false, onCheckedChange: () => {}, repo: null, onRepoChange: () => {} };
+  const single = Row({ ...props, repos: ["octo/a"] });
+  assert.match(allText(single), /Also create issue\s+in octo\/a/, "the opt-in checkbox names the destination");
+
+  const several = Row({ ...props, repos: ["octo/a", "octo/b"] });
+  assert.ok(findElementByType(several, "select"), "several mapped repos force an explicit picker");
+  assert.match(allText(several), /Pick a repository/, "with a placeholder, never a silent default");
+  assert.equal(Row({ ...props, repos: [] }), null, "no mapped repo renders no control at all");
+}
+
+// The RPC is wired to the flow slice, driven: a card that already carries a
+// link returns that link instead of creating a second issue, so a handler
+// declared and forgotten behind the contract fails here rather than passing.
+const linkedCard = { id: "card-1", display_name: "Fix login", name: "Fix login", prompt: "It 500s on submit.", project_id: "project-1", status: "active" };
+const linkDb = {
+  prepare(sql) {
+    return { get: () => sql.includes("FROM cards") ? linkedCard : { repo: "octo/a", number: 7 } };
+  },
+};
+const flowHandlers = githubIssueFlowHandlers(
+  { db: linkDb, bb: { realtime: { publish() {} } }, cards: { cardStatusOf: () => "active" } },
+  {},
+);
+assert.deepEqual(
+  await flowHandlers.createLinkedGithubIssue({ cardId: "card-1" }),
+  { ok: true, url: "https://github.com/octo/a/issues/7", number: 7, error: null },
+  "the wired flow slice answers with the card's existing link",
+);
+
+// The two dialogs are React hook components: the busy guard lives inside the
+// submit closure and the draft RPC inside an effect, so neither exists without
+// a runtime to mount. They are mounted and driven — the click is the assertion,
+// and a guard that never ran fails here instead of matching its own source.
+const dialogCalls = [];
+const dialogRpc = {
+  call: async (method, payload) => {
+    dialogCalls.push({ method, payload });
+    if (method === "createCard") return { cardId: "card-1", threadId: "thread-1" };
+    if (method === "createLinkedGithubIssue") return { ok: true, url: "https://github.com/octo/a/issues/7", number: 7 };
+    if (method === "draftDoneComment") return { ok: true, draft: "Drafted completion note." };
+    return { ok: true };
+  },
+};
+function TestComposer({ onSubmit }) {
+  return h("button", { type: "button", onClick: () => void onSubmit({
+    projectId: "project-1",
+    input: [{ type: "text", text: "Build the thing." }],
+    environment: null,
+    providerId: "provider-a",
+    model: "model-a",
+    reasoningLevel: "high",
+    permissionMode: "full",
+  }) }, "Start build");
+}
+globalThis.__bbPluginRuntime = {
+  pluginSdkApp: {
+    useRpc: () => dialogRpc,
+    useBbNavigate: () => ({ openThreadPanel: () => {} }),
+    experimental_NewThreadComposer: TestComposer,
+  },
+};
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
+const { createElement: h } = await import("react");
+const { render, screen, fireEvent, act, cleanup } = await import("@testing-library/react");
+const { CreateBuildDialog } = await import("../components/creation/create-build-dialog.tsx");
+const { GithubDoneDraftDialog } = await import("../components/github/github-done-draft-dialog.tsx");
+
+function buildDialogProps() {
+  return {
+    open: true,
+    onOpenChange: () => {},
+    activeProjectId: "project-1",
+    validProjectIds: ["project-1"],
+    analysisPreset: null,
+    prefs: { quality: "production", supervisor: "high", explorationCount: "3", redFirst: "strict" },
+    reviewGates: [],
+    githubRepos: ["octo/a"],
+    onPrefsChange: () => {},
+    onReviewGatesChange: () => {},
+    bucketGallery: { openBucketGallery: () => {}, bucketGallery: null },
+    onOpenPresets: () => {},
+  };
+}
+
+render(h(CreateBuildDialog, buildDialogProps()));
+const optIn = screen.getByRole("checkbox", { name: /Also create issue/ });
+assert.equal(optIn.checked, false, "creation stays off by default");
+const submit = screen.getByRole("button", { name: "Start build" });
+await act(async () => {
+  fireEvent.click(submit);
+  fireEvent.click(submit);
+});
+assert.deepEqual(
+  dialogCalls.map((call) => call.method),
+  ["createCard"],
+  "a double click creates one card, not two — the flag is set before the write",
+);
+
+dialogCalls.length = 0;
+fireEvent.click(optIn);
+assert.equal(optIn.checked, true, "the opt-in is what turns issue creation on");
+await act(async () => { fireEvent.click(submit); });
+assert.deepEqual(
+  dialogCalls,
+  [
+    { method: "createCard", payload: dialogCalls[0].payload },
+    { method: "createLinkedGithubIssue", payload: { cardId: "card-1", repo: null } },
+  ],
+  "the dialog asks for the issue only after the card exists, and the cleared flag lets a second submit through",
+);
+cleanup();
+
+render(h(GithubDoneDraftDialog, { open: true, onOpenChange: () => {}, cardId: "card-1", artifacts: [], issueRef: { repo: "octo/a", number: 7 } }));
+await act(async () => {});
+assert.deepEqual(dialogCalls.slice(-1), [{ method: "draftDoneComment", payload: { cardId: "card-1" } }], "the Done dialog drafts through the RPC");
+assert.ok(screen.getByText("Draft GitHub comment?"), "the dialog names the action");
+cleanup();
+
+console.log("github issue create test ok: marker, args, strict parse, gh resolution, wired flow slice, and both dialogs mounted");

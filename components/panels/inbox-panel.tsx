@@ -14,24 +14,9 @@ import {
 } from "../../lib/inbox-event-presentation.mjs";
 import { inboxAction, inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
-export type InboxNotification = {
-  id: string;
-  cardId: string;
-  cardName: string;
-  projectName: string;
-  cardKind: "build" | "research" | "explore";
-  kind: "question" | "error" | "paused" | "completed";
-  summary: string;
-  occurredAt: number;
-  readAt: number | null;
-  resolvedAt: number | null;
-  archivedAt: number | null;
-  severity: number;
-  severityReasons: string[];
-  /** The card holding a file this one waits on. Identity, not prose. */
-  holderCardId: string | null;
-  holderFile: string | null;
-};
+import type { InboxNotification } from "./inbox-types";
+
+export type { InboxNotification };
 
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
   question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },

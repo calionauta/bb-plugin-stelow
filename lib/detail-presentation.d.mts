@@ -1,6 +1,6 @@
 export function joinStrategyLabels(
   ids: Array<string | null | undefined>,
-  byId: Map<string, string>,
+  byId: ReadonlyMap<string, string>,
 ): string | null;
 
 export function statusTone(status: string): string;

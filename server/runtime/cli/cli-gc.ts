@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
 import { formatBytes, threadIdFromWorktreePath } from "../../../lib/worktree-storage.mjs";
+import { duBytes } from "./du-bytes.js";
 import { cleanupIntegrationGate } from "../../../lib/discard-policy.mjs";
 import { treeMatchesBase } from "../../integration-proof.js";
 import { scanFlags, type CliCommandFn, type CliResult } from "./cli-contract.js";
@@ -173,16 +173,6 @@ async function collectCandidates(
   }
   candidates.sort((a, b) => (b.bytes ?? -1) - (a.bytes ?? -1));
   return candidates;
-}
-
-function duBytes(path: string): Promise<number | null> {
-  return new Promise((resolveDu) => {
-    execFile("du", ["-sb", path], { timeout: 8000 }, (error, stdout) => {
-      if (error) return resolveDu(null);
-      const match = /^\d+/.exec(String(stdout ?? ""));
-      resolveDu(match ? Number.parseInt(match[0], 10) : null);
-    });
-  });
 }
 
 /**

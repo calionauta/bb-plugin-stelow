@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CARD_STATUSES, readCardStatus } from "../lib/card-status.mjs";
+import * as cardStatus from "../lib/card-status.mjs";
 import { TRACKABLE_STATUSES } from "../lib/trackables.mjs";
 import { cardStatusSchema, trackableStatusSchema } from "../server/contracts.ts";
 import { normalizeStatus } from "../server/scopes.ts";
-import { readFileSync } from "node:fs";
+import { loadComponent } from "./helpers/render-component.mjs";
 
 /**
  * The three lists that describe the same two axes, pinned to the two machines.
@@ -127,26 +128,63 @@ test("a card's status reads through the card reader, so archive still works", ()
   assert.equal(readCardStatus(null), "draft");
 });
 
+/** Any property at any depth resolves to a callable no-op, so `createHostSurfaces`
+ * can destructure a fake core without a forty-field fixture. The stubs below
+ * record the deps object the wiring builds and never call back into it, so the
+ * core is only read, never exercised. */
+function anySurface() {
+  const surface = function () { return anySurface(); };
+  return new Proxy(surface, {
+    get: () => anySurface(),
+    apply: () => anySurface(),
+  });
+}
+
 test("the production wiring hands out the card reader, not the scope one", () => {
-  // A topology pin, and deliberately so. Every harness in this repo builds its
-  // deps directly instead of going through `host-surfaces.ts`, which is the right
-  // way to keep a fake small and the wrong way to notice that the PRODUCER of
-  // `cardStatusOf` was rewired: an adversarial pass changed the provider to the
-  // scope normalizer and every harness-backed suite stayed green, because none of
-  // them ever asked the provider.
-  //
-  // So this asserts the wiring, not the behaviour: the reader the provider hands
-  // out has to be the card one. It cannot prove the provider is ever called, and
-  // it does not pretend to — what it can do is stop the two readers being swapped
-  // at the one place they are named, which is the mistake this work exists to end.
-  const wiring = readFileSync(
-    new URL("../server/runtime/wiring/host-surfaces.ts", import.meta.url).pathname,
-    "utf8",
+  // EXECUTED through the composition seam, not read out of it. Every harness in
+  // this repo builds its deps directly instead of going through
+  // `host-surfaces.ts`, which is the right way to keep a fake small and the
+  // wrong way to notice that the PRODUCER of `cardStatusOf` was rewired: an
+  // adversarial pass changed the provider to the scope normalizer and every
+  // harness-backed suite stayed green, because none of them ever asked the
+  // provider. So this calls the composition function with the two consumers
+  // stubbed to record the deps they are handed, then asks each wired provider
+  // what a card status reads back as. A provider swapped to `normalizeStatus`
+  // answers `pending` for `draft` and `archived`, and fails here.
+  let issueDeps = null;
+  let publicationDeps = null;
+  const createHostSurfaces = loadComponent(
+    "server/runtime/wiring/host-surfaces.ts",
+    "createHostSurfaces",
+    {
+      "../../github-issues.js": {
+        createGithubAutomation: (deps) => { issueDeps = deps; return {}; },
+      },
+      "../../artifacts-publication.js": {
+        createArtifactsPublication: (deps) => { publicationDeps = deps; return {}; },
+      },
+      "../platform.js": { createPlatformHandlers: () => ({}) },
+      "../composition.js": { registerAutomationSchedule: () => {}, registerWorkerSkills: () => {} },
+      "../mentions.js": { registerMentionProviders: () => {} },
+      "../../scopes.js": { loadCardScopes: () => [], normalizeStatus },
+      "../../../lib/card-status.mjs": cardStatus,
+      "../../../lib/trackables.mjs": { trackableStatusLabel: (status) => status },
+      "../../plugin-paths.js": {
+        BUILD_INFO: {},
+        PLUGIN_SKILLS_DIR: "",
+        pluginDir: "",
+        readPinnedStelowVersion: () => null,
+      },
+    },
   );
-  const providers = wiring.match(/cardStatusOf:[^,\n]*/g) ?? [];
-  assert.ok(providers.length >= 1, "the provider is named at all");
-  for (const line of providers) {
-    assert.match(line, /readCardStatus/, `provider must be the card reader: ${line}`);
-    assert.doesNotMatch(line, /normalizeStatus/, `provider must not be the scope reader: ${line}`);
+  createHostSurfaces({ core: anySurface(), cards: anySurface(), github: () => {} });
+
+  const providers = [issueDeps?.cards?.cardStatusOf, publicationDeps?.cardStatusOf];
+  for (const provider of providers) {
+    assert.equal(typeof provider, "function", "the wiring hands out a status provider");
+    for (const status of CARD_STATUSES) {
+      assert.equal(provider(status), status, `${status} reads back through the wired provider`);
+    }
+    assert.equal(provider("archived"), "archived", "an archived card still reads as archived, so its guards still guard");
   }
 });

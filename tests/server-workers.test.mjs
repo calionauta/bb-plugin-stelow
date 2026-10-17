@@ -99,6 +99,9 @@ function harness({
   const db = workerTestDb();
   const calls = [];
   const current = card({ worker_thread_id: workerThreadId });
+  // The slot claim arbitrates against the stored pointer, so the row mirrors
+  // the card the test drives — exactly what production's getCard would read.
+  db.prepare("UPDATE cards SET worker_thread_id = ? WHERE id = ?").run(workerThreadId, "card-1");
   const bb = workerHost(calls, spawnError, environment);
   // presetParams is identity here, so the resolved preset row is what the
   // spawn receives — which is what makes the level under test observable.

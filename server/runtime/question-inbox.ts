@@ -9,8 +9,8 @@
  * hiccuped.
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
-import type { QuestionCount } from "../../lib/status-question-state.mjs";
-import { expiredQuestionId } from "../../lib/question-answer-recording.mjs";
+import type { QuestionCount } from "../../lib/question-store.mjs";
+import { expiredQuestionId } from "../../lib/question-evidence.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;

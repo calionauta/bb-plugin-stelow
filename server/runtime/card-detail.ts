@@ -1,6 +1,6 @@
 import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { readOpenExpiredQuestions } from "../../lib/expired-questions.mjs";
+import { readOpenExpiredQuestions } from "../../lib/question-store.mjs";
 import { labelDetailQuestions } from "../../lib/scope-labels.mjs";
 import { readFrozenAcceptance } from "./card-detail-frozen.js";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
@@ -23,70 +23,22 @@ import { readHostHold } from "./worker-hold.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];
-export type Attachment = { path: string; type: "localFile" | "localImage" };
-type AskOption = {
-  label: string;
-  description: string;
-  preview: string | null;
-  artifact: { path: string } | null;
-};
-type OptionArtifact = { artifact: { absolutePath: string | null } | null };
-export type Workspace = { path: string; hostId: string | null };
-export type Staleness = {
-  docRevised: boolean;
-  docRemoved: boolean;
-  checkoutMoved: boolean;
-  commitCount: number;
-  touchedPaths: string[];
-};
-export type Question = { id: string; options: OptionArtifact[] } & Record<string, unknown>;
-export type Preset = {
-  id: string;
-  name: string;
-  provider_id: string | null;
-  model_id: string | null;
-};
+import type {
+  Attachment,
+  CardDetailDeps,
+  Preset,
+  Question,
+  Staleness,
+  Workspace,
+} from "./card-detail-types.js";
 
-export type CardDetailDeps = {
-  db: Db;
-  bb: BbPluginApi;
-  now: () => number;
-  idleAttentionMs: number;
-  getCard: (cardId: string) => WorkerCard | undefined;
-  cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
-  syncThreadState: (cardId: string) => Promise<unknown>;
-  fetchPendingQuestions: (threadId: string | null) => Promise<Question[]>;
-  resolveAskOptions: (card: WorkerCard, options: AskOption[]) => Promise<AskOption[]>;
-  cardAttachments: (raw: string | null) => Attachment[];
-  detectMentionedFiles: (
-    bb: BbPluginApi,
-    sourcePath: string | null,
-    prompt: string,
-  ) => Promise<Array<{ path: string; display: string; absolutePath: string }>>;
-  workspaceRelative: (rootPath: string, path: string) => string | null;
-  parseNextStages: (sourcePath: string | null, stage: string) => string[];
-  getReliablePreset: (band: string, cardId: string) => Preset;
-  strategyList: (card: WorkerCard) => string[];
-  flowTimes: (card: WorkerCard) => { leadMs: number | null; cycleMs: number | null };
-  verifiedHeadSha: (cardId: string) => string | null;
-  workers: { history: (cardId: string) => Promise<unknown[]> };
-  executionLifecycle: { detailList: (cardId: string) => unknown[] };
-  stalenessForQuestions: (
-    cardId: string,
-    questions: Question[],
-  ) => Promise<Map<string, Staleness>>;
-  stateDir: (
-    sourcePath: string,
-    card: WorkerCard,
-  ) => Promise<string | null>;
-  scopeXray: (stateDir: string | null) => Promise<ScopeXray | null>;
-  scopeDraft: (stateDir: string | null) => Promise<ScopeDraft | null>;
-  fileTimestamp: (
-    file: { modifiedAtMs?: unknown } | null,
-    fallback: string,
-  ) => string;
-  auditReceiptNote: (path: string) => string | null;
-  cardNotFound: string;
+export type {
+  Attachment,
+  CardDetailDeps,
+  Preset,
+  Question,
+  Staleness,
+  Workspace,
 };
 
 export function createCardDetailHandler(deps: CardDetailDeps) {
@@ -335,18 +287,39 @@ async function readStageSkips(
  * read one from, projects null — the panel says there is no map instead of
  * rendering an empty graph that looks like an empty plan.
  */
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeXray",
+): Promise<ScopeXray | null>;
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeDraft",
+): Promise<ScopeDraft | null>;
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeXray" | "scopeDraft",
+): Promise<ScopeXray | ScopeDraft | null> {
+  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
+  try {
+    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
+    return await deps[reader](stateDir);
+  } catch {
+    return null;
+  }
+}
+
 async function readScopeXray(
   deps: CardDetailDeps,
   card: WorkerCard,
   sourcePath: string | null,
 ) {
-  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
-  try {
-    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
-    return await deps.scopeXray(stateDir);
-  } catch {
-    return null;
-  }
+  return readScopeMap(deps, card, sourcePath, "scopeXray");
 }
 
 /** The gate-review preview: the draft map drawn only while no approved map
@@ -356,11 +329,5 @@ async function readScopeDraft(
   card: WorkerCard,
   sourcePath: string | null,
 ) {
-  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
-  try {
-    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
-    return await deps.scopeDraft(stateDir);
-  } catch {
-    return null;
-  }
+  return readScopeMap(deps, card, sourcePath, "scopeDraft");
 }

@@ -8,7 +8,7 @@ import {
   publicationBlocker,
 } from "../lib/vcs-publication.mjs";
 import { publishRelevanceNote } from "../lib/publish-relevance.mjs";
-import type { ArtifactsPublicationDeps, PublicationCard, PublicationSnapshot } from "./artifacts-publication.js";
+import type { ArtifactsPublicationDeps, PublicationCard, PublicationSnapshot } from "./artifacts-publication-types.js";
 
 type EnvironmentStatus = Awaited<
   ReturnType<BbPluginApi["sdk"]["environments"]["status"]>

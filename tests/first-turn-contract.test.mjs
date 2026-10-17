@@ -157,12 +157,29 @@ assert.equal(
 );
 
 // --- 7. Malformed events do not throw. --------------------------------------
-// This runs over whatever the host recorded, and a throw would take down the pass
-// that reads it.
 for (const bad of [null, undefined, [null], [{}], [{ data: null }], [{ data: { item: null } }], [{ data: { item: { type: "toolCall" } } }]]) {
   assert.doesNotThrow(() => firstTurnVerdict(bad), `malformed events do not throw: ${JSON.stringify(bad)}`);
 }
 assert.deepEqual(skillReads([{ data: { item: { type: "toolCall", arguments: null } } }]), [], "a tool call with no arguments is not a read");
+
+// --- 8. The lazy front loads before any advance by design. -----------------
+// Entry classifies intent and the router moves stages, so reading them before
+// the first advance is orientation, not work. Every other skill still counts.
+const ENTRY = "/cache/skills/stelow-workflow-entry/SKILL.md";
+const ROUTER = "/cache/skills/stelow-workflow-router/SKILL.md";
+const lazyFront = firstTurnVerdict([skillCall(ENTRY), skillCall(ROUTER)]);
+assert.equal(lazyFront.violated, false, "entry + router before advance are the lazy front, not a violation");
+assert.deepEqual(lazyFront.readsBeforeAdvance, [], "and none of it is reported as read-to-orient");
+assert.equal(lazyFront.readsTotal, 2, "but both reads are still counted in the total");
+const mixed = firstTurnVerdict([skillCall(ENTRY), skillCall(SKILL_A)]);
+assert.equal(mixed.violated, true, "entry alongside a stage skill still violates for the stage skill");
+assert.deepEqual(
+  mixed.readsBeforeAdvance.map((read) => read.skill),
+  ["stelow-workflow-orchestrator"],
+  "and only the non-front skill is named",
+);
+// This runs over whatever the host recorded, and a throw would take down the pass
+// that reads it.
 
 console.log(
   "first-turn contract ok: skill reads are recognised by argument, order decides the verdict, "

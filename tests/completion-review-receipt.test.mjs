@@ -157,7 +157,9 @@ test("the review is cleared by a read, and a read never resolves what it read", 
   // ONE row's `read_at`. Spending the receipt moves read state only — the
   // completion keeps its own lifecycle, so "reviewed" never reads downstream as
   // "closed", and an archived card's row is refused the stamp entirely.
-  const inbox = read("server/inbox.ts");
+  // The read/archive handlers were extracted out of server/inbox.ts into
+  // server/inbox-notification-handlers.ts; the receipt's SQL lives with them.
+  const inbox = read("server/inbox-notification-handlers.ts");
   assert.match(
     inbox,
     /UPDATE inbox_events SET read_at = \?\s+WHERE card_id = \? AND kind = 'completed'\s+AND read_at IS NULL AND archived_at IS NULL/,

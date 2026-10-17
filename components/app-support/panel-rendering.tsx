@@ -1,7 +1,18 @@
 import type { ReactNode } from "react";
 import { BuildPanel } from "../panels/build-panel";
-import { ResearchPanel } from "../panels/research-panel";
-import { ExplorePanel } from "../panels/explore-panel";
+import { TrackPanelForKind } from "../panels/track-panel";
+import {
+  EXPLORE_PANEL_CONFIG,
+  RESEARCH_PANEL_CONFIG,
+} from "../panels/track-panel-state";
+import {
+  EXPLORE_VIEW_CONFIG,
+  RESEARCH_VIEW_CONFIG,
+} from "../panels/track-panel-view";
+import {
+  EXPLORE_DIALOGS_CONFIG,
+  RESEARCH_DIALOGS_CONFIG,
+} from "../panels/track-panel-dialogs";
 import { InboxPanel } from "../panels/inbox-panel";
 import { AboutPanel } from "../settings/about-panel";
 import { PresetOnboardingDialog } from "../settings/preset-onboarding";
@@ -29,19 +40,25 @@ export function renderTrackPanel(tab: StelowTrack, active: boolean) {
   }
   if (tab === "research") {
     return (
-      <ResearchPanel
+      <TrackPanelForKind
         active={active}
         renderOnboarding={(props) => <PresetOnboardingDialog {...props} />}
         renderPresetManager={(props) => <PresetManagerDialog {...props} />}
+        panelConfig={RESEARCH_PANEL_CONFIG}
+        viewConfig={RESEARCH_VIEW_CONFIG}
+        dialogsConfig={RESEARCH_DIALOGS_CONFIG}
       />
     );
   }
   if (tab === "explore") {
     return (
-      <ExplorePanel
+      <TrackPanelForKind
         active={active}
         renderOnboarding={(props) => <PresetOnboardingDialog {...props} />}
         renderPresetManager={(props) => <PresetManagerDialog {...props} />}
+        panelConfig={EXPLORE_PANEL_CONFIG}
+        viewConfig={EXPLORE_VIEW_CONFIG}
+        dialogsConfig={EXPLORE_DIALOGS_CONFIG}
       />
     );
   }

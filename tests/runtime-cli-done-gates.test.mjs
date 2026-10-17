@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { FROZEN_ACCEPTANCE_FILE } from "../lib/audit-verification.mjs";
 import {
@@ -252,23 +249,34 @@ test("a refused done leaves the refusal on the card, and a completing one does n
 });
 
 // `done` reads the card's OWN state and never asks who else is in the
-// directory. This is a refusal to add such a gate, pinned as a test because the
-// idea is reasonable: a card completing work in a checkout another agent is
-// using sounds like a collision worth blocking. It is not — the card that
-// would wait has nothing to answer the wait with, no way to know when the
-// stranger leaves, and a done gate is the last place a card should acquire a
-// dependency on a fact outside its own state. If this ever needs to change,
-// the change is a product decision about what completion owes a shared tree,
-// not an edit to this file.
-test("the done path never consults who else is in the checkout", () => {
-  const source = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-build.ts"),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    source,
-    /sharedCheckout|threadsSharingCheckout|listBbThreads|thread list/,
-    "done completes a card from its own state; a stranger's presence is not a done gate",
+// directory. This is a refusal to add such a gate, exercised rather than
+// grepped, because the idea is reasonable: a card completing work in a checkout
+// another agent is using sounds like a collision worth blocking. It is not —
+// the card that would wait has nothing to answer the wait with, no way to know
+// when the stranger leaves, and a done gate is the last place a card should
+// acquire a dependency on a fact outside its own state. If this ever needs to
+// change, the change is a product decision about what completion owes a shared
+// tree, not an edit to this file.
+//
+// The forbidden consultation is offered the way production would actually reach
+// it — a thread-list dep that returns a stranger sitting in the card's own
+// checkout — and the run must (a) not touch it and (b) still complete. A gate
+// wired through a differently named dep throws against this harness and fails
+// the completion assertion; a gate wired here trips the spy.
+test("the done path never consults who else is in the checkout", async () => {
+  const { invoke, calls, deps } = cliHarness(auditableBuildDone());
+  let consultations = 0;
+  deps.listThreads = () => {
+    consultations += 1;
+    return [{ threadId: "thr_other", checkoutPath: WORKSPACE, status: "active" }];
+  };
+  const result = await invoke(["done"]);
+  assert.equal(consultations, 0, "done completes a card from its own state; a stranger's presence is not a done gate");
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(
+    callsNamed(calls, "updateCard").map(([, , fields]) => fields.status),
+    ["completed"],
+    "a stranger sharing the checkout never keeps the card open",
   );
 });
 

@@ -11,7 +11,7 @@ import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { parseStrategyList } from "../../lib/research-strategies.mjs";
 import { normalizeHistory } from "../../lib/research-rounds.mjs";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import { stripMessageDirectives } from "./message-text.js";
 import { join } from "./root-paths.js";

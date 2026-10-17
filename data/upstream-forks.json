@@ -1,0 +1,65 @@
+{
+  "$comment": "Versioned upstream-first allowlist. Every vendored path that differs from the pinned upstream commit must be named here with its reason, or scripts/check-upstream-drift.mjs (CI) fails. Behavioral entries document standing host policy divergences from upstream playbook defaults. A fork healed by an upstream sync goes stale (warned, then dropped) — never widened silently.",
+  "pin": "9eb8a1431a9c3a18897d5fe0b2df006f0f34b776",
+  "upstream_version": "0.73.0-alpha",
+  "forks": [
+    {
+      "path": "skills/stelow-workflow-orchestrator/stages/ask-patterns.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature; includes a committed em/en-dash to hyphen normalization. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "skills/stelow-workflow-orchestrator/stages/selection.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "skills/stelow-workflow-orchestrator/stages/setup.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "skills/stelow-workflow-orchestrator/stages/context.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "skills/stelow-workflow-orchestrator/references/strategic-exploration.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "skills/stelow-workflow-orchestrator/references/cli-tools/stage-status.md",
+      "ref": "abc51fbc508dd80d7d8cb52a9565972adca67f18",
+      "reason": "Question-copy realtime wording vendored from upstream branch fix-question-copy-verify for the conditional-notes feature. Reverts to pin content on the next full upstream sync unless re-declared.",
+      "status": "pending-upstream-merge"
+    },
+    {
+      "path": "scripts/stelow",
+      "local": "data/stelow",
+      "ref": "local",
+      "reason": "Catalog-first advance path (JSON stage catalog canonical, markdown transitions mirror as fallback) added locally for catalog-driven stages; upstream scripts/stelow at the pin has no catalog support. The vendored copy is data/stelow. Propose upstream; until then this entry owns the divergence.",
+      "status": "proposed-local"
+    },
+    {
+      "area": "fail-observed-vs-tdd",
+      "reason": "Upstream testing guidance prescribes fail-observed guards and in-loop TDD red-green; the host forbids agent self-certification in-loop (measured harm: ProgramBench 2026 -3.6pp at +55% cost, DeepSWE 2026 zero gain). New-behavior tests are human-described or fresh-context authored/red-teamed instead. Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    },
+    {
+      "area": "blocked-terminal",
+      "reason": "Upstream terminality settles cards; the host keeps archiving terminal to every automated path (poll, event, drag) while reversible by exactly one human-initiated restore behind confirmation. Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    },
+    {
+      "area": "fail-open",
+      "reason": "Upstream ask gates read strict; the host fails open on unreadable sources and checklists, and every refusal names a valid redirect (a refusal without an exit is a deadlock). Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    }
+  ]
+}

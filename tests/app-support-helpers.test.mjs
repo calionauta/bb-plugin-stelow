@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { accessoryTone, activeCardCount } from "../lib/app-support-state.mjs";
 
 // The tab count has to match the board it labels. A card in the Bucket is
@@ -50,19 +49,4 @@ assert.equal(
   "an empty accessory uses the quiet tone",
 );
 
-const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
-for (const helper of [
-  "goToTrack",
-  "goToCard",
-  "usePluginUpdateSignal",
-  "useBuildAccessory",
-  "useResearchAccessory",
-  "renderTrackPanel",
-  "renderCardRoute",
-]) {
-  assert.doesNotMatch(app, new RegExp(`function ${helper}\\b`), `${helper} is owned by an app-support module`);
-}
-assert.match(app, /StelowPanelRoute/, "the app entry mounts the extracted panel route");
-assert.match(app, /StelowInboxSidebarAccessory/, "the app entry mounts the extracted sidebar accessory");
-
-console.log("app support helpers test ok: counts, ownership, and shell wiring");
+console.log("app support helpers test ok: counts and tones");

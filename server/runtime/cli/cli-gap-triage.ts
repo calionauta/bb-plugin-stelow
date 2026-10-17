@@ -1,5 +1,5 @@
 import { buildGapTriageState, gapsToTriageBatch } from "../../../lib/gap-triage.mjs";
-import { TASK_EVIDENCE_DIFF_CHARS } from "../../../lib/task-evidence.mjs";
+import { TASK_EVIDENCE_DIFF_CHARS } from "../../../lib/question-evidence.mjs";
 import {
   ERR_WORKSPACE_UNAVAILABLE,
   noCardInContext,

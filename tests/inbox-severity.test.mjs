@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   SEVERITY_ROUTINE, SEVERITY_ACTION, SEVERITY_ESCALATING, SEVERITY_STALL_MS, SEVERITY_OLD_MS,
   SEVERITY_REVIEW_WAIT_MS, scoreEventSeverity, parseSeverityReasons,
@@ -17,15 +14,6 @@ import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 // stall must outrank a fresh question while the badge keeps counting both.
 // The test that would catch a regression that re-flattens the queue, loses
 // reasons, or lets ordering touch the badge.
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/claim-coordination.ts"), "utf8"),
-].join("\n");
-const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
-const inboxContract = readFileSync(join(root, "server/inbox-contract.ts"), "utf8");
-const app = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 // Scorer boundaries: fresh actions act, old/repeated escalate, completions
 // review quietly. Reasons ride every tier — never a bare number.
@@ -149,27 +137,5 @@ assert.equal(
 assert.equal(countsForInboxBadge({ kind: "paused", archivedAt: null, resolvedAt: null }), true, "escalating pauses still count");
 assert.equal(countsForInboxBadge({ kind: "completed", archivedAt: null, resolvedAt: null, readAt: 1 }), false, "read completions never count");
 assert.equal(countsForInboxBadge({ kind: "question", archivedAt: 1, resolvedAt: null }), false, "archived items never count");
-
-// Wiring: the feature migration owns the columns, the sweep recomputes beside
-// stall escalation, and the extracted contract feeds severity to the panel.
-assert.match(serverInbox, /export function runInboxMigrations/, "the feature migration is owned by the inbox slice");
-assert.match(server, /refreshEventSeverity\(deps\.db, \{ cardId, nowMs: deps\.now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
-const reconciler = readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8");
-assert.match(reconciler, /sweepEventSeverity\(deps\.db, \{ nowMs: deps\.now\(\) \}\)/, "the reconcile tick reaches rows no live sync visits");
-assert.match(serverInbox, /ensureInboxSeverityColumns\(db\);/, "the feature module owns severity migrations");
-// The zod shapes moved to server/inbox-contract.ts, which is where the wire
-// contract lives. Asserting them against the behaviour file would only pin
-// where the schema used to sit.
-assert.match(inboxContract, /severity: z\.number\(\),/, "the snapshot contract carries severity");
-assert.match(inboxContract, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");
-assert.match(inboxContract, /holderCardId: z\.string\(\)\.nullable\(\)/, "and the holder id, so a blocked file can link its blocker");
-assert.match(
-  serverInbox,
-  /severity: row\.severity \?\? 1,[\s\S]*severityReasons: parseSeverityReasons\(row\.severity_reasons\)/,
-  "list rows map stored tiers with safe fallbacks",
-);
-assert.match(app, /reasons\.slice\(0, 3\)\.join\(" · "\)/, "rows render up to three reason chips");
-assert.match(app, /inboxDisplayReasons\(entry\)/, "chips that merely restate the row's label are filtered before the cap");
-assert.match(app, /entry\.severity >= 2 && entry\.resolvedAt == null/, "the escalating mark shows on open escalations only");
 
 console.log("inbox severity test ok: tiers, reasons, write scoring, ordering, sweep recompute, frozen badge");

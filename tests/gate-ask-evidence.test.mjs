@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { GATE_EVIDENCE_STAGES, PER_OPTION_EVIDENCE_STAGES, gateEvidenceGate } from "../lib/gate-ask-evidence.mjs";
+import { GATE_EVIDENCE_STAGES, PER_OPTION_EVIDENCE_STAGES, gateEvidenceGate } from "../lib/question-evidence.mjs";
+import { decideAskGate } from "../lib/question-gate.mjs";
+import { validateAskContracts } from "../lib/question-contracts.mjs";
+import { inheritAskArtifact } from "../lib/question-batch.mjs";
+import {
+  artifactViewerModeForOption,
+  questionFormItems,
+  sharedQuestionArtifact,
+} from "../lib/question-presentation.mjs";
+import { selectBuildReviewArtifact } from "../lib/build-review-target.mjs";
+import { optionSectionExcerpt } from "../lib/option-anchor.mjs";
 
 // A review gate with nothing to review is refused deterministically:
 // "approve the plan" must carry the plan. Label-only options keep working
@@ -42,51 +49,99 @@ assert.equal(gateEvidenceGate({ ...bareAtPlanGate, stage: "triage" }).allowed, t
 assert.equal(gateEvidenceGate({ ...bareAtPlanGate, kind: "research" }).allowed, true, "other tracks are untouched");
 assert.equal(gateEvidenceGate({ ...bareAtPlanGate, groups: [] }).allowed, false, "empty groups at a gate are still gateless");
 
-// Host wiring: refused before anything persists, on slug truth — decided
-// inside the shared dispatcher (precedence pinned in ask-gate.test.mjs).
-const serverSource = [
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/ask-artifacts.ts"), "utf8"),
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
-].join("\n");
-assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (evidence gate inside)");
-assert.match(serverSource, /stage: gateCard \? await deps\.cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
-assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate asks recover their manifest evidence for per-option review");
-// Every option resolves through one path, so an approval can never render
-// without the document its siblings were given. The old ".every(option =>
-// !option.artifact)" fallback only covered all-label-only asks, which is
-// exactly how the 2026-09-15 plan gate shipped an unreadable "Approve plan".
-assert.match(serverSource, /async function resolveAskOptions/, "one resolver owns per-option artifacts");
-assert.match(serverSource, /async function resolveAskArtifact/, "ask attachments use one guarded resolver");
-assert.match(serverSource, /!artifact \|\| !isPublishableArtifactContent\(artifact\.content\)/, "empty ask attachments do not render as evidence");
-assert.match(serverSource, /inheritAskArtifact/, "per-option artifacts inherit the ask's document");
-assert.match(serverSource, /const inherited = inheritAskArtifact\(options\)/, "the resolver inherits before resolving");
-assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifact\)/, "the all-or-nothing fallback is gone");
+// Host wiring (behavioral): refused before anything persists, on slug truth —
+// decided inside the shared dispatcher (precedence pinned in
+// ask-gate.test.mjs). The dispatcher runs duplicate first, so a second form
+// while one is answerable refuses as transient even when gateless; --force
+// bypasses evidence but never the duplicate guard.
+{
+  const gateless = {
+    liveCount: 0,
+    expiredCount: 0,
+    kind: "build",
+    stage: "plan-gate",
+    tag: "standard",
+    forced: false,
+    groups: [{ question: "Approve the plan?", options: [{ label: "Approve", description: "go", preview: null, artifact: null }] }],
+  };
+  const refused = decideAskGate(gateless);
+  assert.equal(refused.allowed, false, "the ask handler decides through the shared dispatcher (evidence gate inside)");
+  assert.match(refused.reason, /nothing to review/, "the gate reads slug truth: plan-gate refuses");
+  assert.equal(decideAskGate({ ...gateless, forced: true }).allowed, true, "--force opts out through the dispatcher");
+  assert.equal(decideAskGate({ ...gateless, stage: "planning" }).allowed, true, "planning questions are untouched");
+  const duplicate = decideAskGate({ ...gateless, liveCount: 1 });
+  assert.equal(duplicate.allowed, false, "a second form while one is answerable refuses first");
+  assert.equal(duplicate.code, 1, "the duplicate refusal is transient — retry the same ask once");
+}
+// Every option resolves through one inheritance rule, so an approval can never
+// render without the document its siblings were given. The old all-or-nothing
+// fallback only covered all-label-only asks, which is exactly how the
+// 2026-09-15 plan gate shipped an unreadable "Approve plan".
+{
+  const inherited = inheritAskArtifact([
+    { label: "Approve plan", artifact: null },
+    { label: "Request changes", artifact: { path: "plans/spec.md" } },
+  ]);
+  assert.equal(inherited[0]?.path, "plans/spec.md", "the approval inherits the document the ask attached to its sibling");
+  assert.equal(
+    inheritAskArtifact([{ label: "A" }, { label: "B" }]).every((entry) => entry === null),
+    true,
+    "nothing attached yields no affordance, so manifest recovery still applies",
+  );
+  // Optional contract declarations are validated, never enforced here:
+  // unknown ids with a readable checklist refuse with the valid list, and
+  // without one the ask records raw (fail-open).
+  const bad = validateAskContracts([{ contractId: "nope" }], [{ id: "interface-pick", kind: "human-ask" }]);
+  assert.equal(bad.ok, false, "an unknown contract with a readable checklist refuses");
+  assert.match(bad.error, /interface-pick/, "the refusal names the valid ids");
+  assert.equal(validateAskContracts([{ contractId: "nope" }], null).ok, true, "without a checklist the ask records raw");
+  assert.equal(validateAskContracts([], [{ id: "interface-pick", kind: "human-ask" }]).ok, true, "no declarations, no validation");
+}
 
-// Hero entry: the document under decision wins over a manifest guess. Board
-// position deliberately stays behind while a question waits, so the pending
-// question's own option artifact must come first; manifest stage match is
-// second, newest artifact only the last resort.
-const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
-const questionFormSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/question-form.mjs"), "utf8");
-const reviewTargetSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/build-review-target.mjs"), "utf8");
-// The option rows and their per-option document control were split out of the
-// stepper, so the conversation surface is the stepper plus that module.
-const conversationSource = [
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/question-batch.tsx"), "utf8"),
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/batch-options.tsx"), "utf8"),
-].join("\n");
-const viewerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/artifact-viewer-dialog.tsx"), "utf8");
-assert.match(reviewTargetSource, /function questionArtifact/, "the hero reads question-attached evidence");
-assert.match(reviewTargetSource, /questionArtifact\(detail\) \?\? stageArtifact\(detail, card\)/, "the pending document wins over the manifest guess");
-assert.match(reviewTargetSource, /filter\(\(artifact\) => artifact\.role !== "evidence"\)/, "evidence never serves as the review document");
-assert.match(conversationSource, /artifactViewerModeForOption/, "approval and change options select their appropriate viewer mode");
-assert.match(viewerSource, /const canComment = mode === "comment"/, "the review-only viewer hides comment and editor controls");
-assert.match(questionFormSource, /inheritAskArtifact\(list\)/, "thread questions inherit per-option evidence too");
-// The option's document affordance is the shared outline Button, so it can
-// never drift back into a hand-rolled third color beside the amber panel.
-assert.match(conversationSource, /variant="outline"\s+size="sm"\s+onClick=\{\(\) => onOpenArtifact\(/, "the document control uses the shared outline treatment");
-assert.doesNotMatch(appSource, /border-emerald-500\/40 bg-emerald-500\/10 px-3/, "the emerald slab beside the amber options is gone");
+// Hero entry (behavioral): the document under decision wins over a manifest
+// guess. Board position deliberately stays behind while a question waits, so
+// the pending question's own option artifact must come first; manifest stage
+// match is second, newest artifact only the last resort. The recovery scores
+// candidates by which document actually NAMES the options.
+{
+  const card = { stage: "plan-gate" };
+  const manifest = { role: "plan", stage: "planning", path: "plans/spec.md" };
+  const questionDoc = { path: "plans/asked.md" };
+  const detailWithQuestion = {
+    pendingQuestions: [{ options: [{ label: "Approve", artifact: questionDoc }, { label: "Changes", artifact: null }] }],
+    expiredQuestions: [],
+    artifacts: [manifest],
+  };
+  assert.deepEqual(
+    selectBuildReviewArtifact({ detail: detailWithQuestion, card, heroKind: "decision" }),
+    questionDoc,
+    "the pending document wins over the manifest guess",
+  );
+  const detailManifestOnly = { pendingQuestions: [], expiredQuestions: [], artifacts: [manifest] };
+  assert.deepEqual(
+    selectBuildReviewArtifact({ detail: detailManifestOnly, card, heroKind: "decision" }),
+    manifest,
+    "without a pending document the stage match serves",
+  );
+  const detailEvidenceOnly = { pendingQuestions: [], expiredQuestions: [], artifacts: [{ role: "evidence", stage: "planning", path: "ev.md" }] };
+  assert.equal(
+    selectBuildReviewArtifact({ detail: detailEvidenceOnly, card, heroKind: "decision" }),
+    null,
+    "evidence never serves as the review document",
+  );
+  assert.equal(
+    selectBuildReviewArtifact({ detail: detailManifestOnly, card, heroKind: "other" }),
+    null,
+    "without a pending question only the decision hero reads the manifest",
+  );
+  const doc = "# Interface\n\n## Stacked blocks\n\nA layout.\n\n## Compact table\n\nAnother layout.\n";
+  assert.ok(optionSectionExcerpt(doc, "Stacked blocks"), "the document naming the option resolves to its section");
+  assert.equal(optionSectionExcerpt(doc, "Nonexistent direction"), null, "a document without the option scores nothing, so it loses recovery");
+  // Approval and change options select their viewer mode: approvals read,
+  // everything else keeps the quote-and-comment path.
+  assert.equal(artifactViewerModeForOption("Approve plan"), "review", "the approval reads");
+  assert.equal(artifactViewerModeForOption("Request changes"), "comment", "the change request keeps the comment path");
+}
 
 // Selection compares proposals: one evidenced option must not launder
 // blind siblings (upstream Pattern 2 fills every option). Other gates
@@ -128,32 +183,27 @@ assert.equal(gateEvidenceGate(mixedPlanGate).allowed, true, "label-only approval
 
 console.log("gate ask evidence test ok: gates require evidence, everything else untouched");
 
-// Provenance of a per-option document. Two paths put a document on an option
-// that never attached one: the inheritance rule, and the manifest recovery
-// that fires when the ask carried nothing at all. A real card hit the SECOND
-// one — the worker attached nothing, the host injected `interfaces.md`, and
-// all four options rendered "Open: interfaces.md" as if it were each option's
-// own evidence. Marking only inheritance (the first path) fixed nothing.
-assert.match(
-  serverSource,
-  /out\.push\(\{ \.\.\.option, artifact: manifestArtifact, artifactInherited: manifestArtifact !== null \}\)/,
-  "a manifest-recovered document is marked as not the option's own",
-);
-assert.match(
-  serverSource,
-  /artifactInherited: own === null/,
-  "an option that borrowed its document is marked, and one that attached its own is not",
-);
-assert.match(
-  questionFormSource,
-  /artifactInherited: own === null && artifact !== null/,
-  "the thread path applies the same rule, so the card and a live question never disagree",
-);
-assert.match(conversationSource, /Open: \{artifact\.display\}/, "the control names the document it opens with one verb");
-assert.match(
-  conversationSource,
-  /artifactInherited \? \([\s\S]*?Shared[\s\S]*?: null/,
-  "an inherited brief adds a Shared chip, an owned document does not",
-);
-assert.match(conversationSource, /The brief shared by every option/, "the Shared chip explains it is not the option's own document");
-assert.doesNotMatch(conversationSource, /artifactInherited \? "Shared brief" : "Open"/, "the two-verb label is gone");
+// Provenance of a per-option document (behavioral). Two paths put a document
+// on an option that never attached one: the inheritance rule, and the manifest
+// recovery that fires when the ask carried nothing at all. A real card hit the
+// SECOND one — the worker attached nothing, the host injected `interfaces.md`,
+// and all four options rendered one shared file as if it were each option's
+// own evidence. The thread path applies the same rule as the server, so the
+// card and a live question never disagree.
+{
+  const thread = questionFormItems({
+    id: "ask_1",
+    title: "Which direction?",
+    payload: {
+      question: "Pick one.",
+      options: [
+        { label: "Hybrid", artifact: "interfaces/interfaces.md" },
+        { label: "Stacked", artifact: null },
+      ],
+    },
+  })[0];
+  assert.equal(thread.options[0].artifactInherited, false, "an option that attached its own document owns it");
+  assert.equal(thread.options[1].artifactInherited, true, "an option that borrowed its document is marked, and one that attached its own is not");
+  assert.equal(thread.options[1].artifact?.path, "interfaces/interfaces.md", "the borrowed document still opens");
+  assert.equal(sharedQuestionArtifact(thread.options)?.path, "interfaces/interfaces.md", "one shared brief resolves to one reader, not per-row copies");
+}

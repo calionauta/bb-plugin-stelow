@@ -32,6 +32,8 @@ export type LaunchDeps = {
   bb: BbPluginApi;
   adapterFor: (run: PreparedRun) => { run: (recipe: unknown, context: unknown) => Promise<NativeOutcome> };
   prepareStart: (card: WorkerCard, recipe: Recipe, stage: WorkflowStage, context: StartContext) => Promise<PreparedOrError>;
+  /** Receipt for the coordinator pause-note when the send itself fails. */
+  noteSendFailure?: (cardId: string, targetId: string, body: string) => void;
 };
 
 type PreparedRun = Pick<
@@ -134,19 +136,7 @@ async function launchNativeRun(
       workflowArgs: prepared.args,
     });
     const launched = recordRunIdentity(deps, run.id, native);
-    void deps.bb.sdk.threads.send({
-      threadId: card.worker_thread_id!,
-      mode: "auto",
-      input: [{
-        type: "text",
-        text: [
-          `Native Stelow execution ${record(native).runId} now owns the ${prepared.stage.id} stage workspace.`,
-          "Pause stage work and wait for its result; do not edit state.md or gates while it runs.",
-        ].join(" "),
-        mentions: [],
-        visibility: "agent-only",
-      }],
-    }).catch(() => undefined);
+    noteRunOwnership(deps, card, prepared, native, run);
     return { ok: true, run: launched, error: null };
   } catch (error) {
     const failed = transitionExecutionRun(deps.db, run.id, "failed", { errorCode: "native-start-failed" });
@@ -156,6 +146,48 @@ async function launchNativeRun(
       error: error instanceof Error ? error.message : "Unable to start the native workflow.",
     };
   }
+}
+
+/**
+ * Tell the card's coordinator that the run now owns its stage workspace.
+ *
+ * The pause-note is advisory, but its failure is not silent: when the
+ * coordinator cannot be told to stand down it keeps editing a workspace the run
+ * now owns, so the card records the miss as a receipt.
+ */
+function noteRunOwnership(
+  deps: LaunchDeps,
+  card: WorkerCard,
+  prepared: PreparedStart,
+  native: NativeOutcome,
+  run: ExecutionRun,
+): void {
+  const originThreadId = card.worker_thread_id!;
+  void deps.bb.sdk.threads.send({
+    threadId: originThreadId,
+    mode: "auto",
+    input: [{
+      type: "text",
+      text: [
+        `Native Stelow execution ${record(native).runId} now owns the ${prepared.stage.id} stage workspace.`,
+        "Pause stage work and wait for its result; do not edit state.md or gates while it runs.",
+      ].join(" "),
+      mentions: [],
+      visibility: "agent-only",
+    }],
+  }).catch((error: unknown) => {
+    try {
+      deps.noteSendFailure?.(
+        card.id,
+        run.id,
+        `The coordinator could not be told to pause for native run ${record(native).runId ?? run.id} (${
+          error instanceof Error ? error.message : "send failed"
+        }). It may keep editing the stage workspace the run now owns; tell it to pause explicitly.`,
+      );
+    } catch {
+      /* the receipt is owed, never load-bearing */
+    }
+  });
 }
 
 /**

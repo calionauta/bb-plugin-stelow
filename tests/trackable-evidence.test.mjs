@@ -10,6 +10,7 @@ import {
   enrichEntriesForDetail,
 } from "../lib/trackable-evidence.mjs";
 import { buildRegistry } from "../lib/trackable-relations.mjs";
+import { doneBuildGates } from "../lib/build-gates.mjs";
 
 // Sidecar paths resolve per kind from the contracts table — one resolver
 // for every kind, never a per-kind function. Kinds without a sidecar
@@ -213,8 +214,19 @@ assert.match(
 );
 assert.match(server, /enrichEntriesForDetail\(/, "card detail enriches through one composition");
 assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never touching TTL");
-const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
-assert.match(gates, /unverified Record — complete every verification checklist/, "done refuses unverified Records with the checklist redirect");
+// The gate is called, not read: a done scope carrying an unverified Record
+// gets the checklist redirect in its refusal, from the same function the CLI
+// runs. `lib/build-gates.mjs` derives blocking from evidenceConditions, so this
+// also pins that the two machines agree on what blocks a close.
+assert.match(
+  String(doneBuildGates({
+    kind: "build",
+    stage: "audit",
+    scopes: [{ id: "scope-1", kind: "scope", name: "Overlay", status: "done", record: { verified: false } }],
+  })),
+  /unverified Record — complete every verification checklist/,
+  "done refuses unverified Records with the checklist redirect",
+);
 assert.match(server, /recordTrackableEvent\(/, "decisions trail into the event log");
 const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 assert.match(scopesList, /scope\.conditions/, "scopes render their conditions");

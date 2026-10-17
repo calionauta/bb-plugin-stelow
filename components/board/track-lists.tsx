@@ -38,7 +38,7 @@ type ScopeSummary = {
   elapsedMs?: number | null;
 };
 
-type ListCard = {
+export type ListCard = {
   id: string;
   kind: "build" | "research" | "explore";
   displayName: string;
@@ -267,6 +267,25 @@ export function BuildList(props: ListProps) {
   );
 }
 
+export function TrackList({ metaFor, ...props }: ListProps & {
+  metaFor: (card: ListCard) => string | null;
+}) {
+  const columns = (props as { columns?: readonly string[] }).columns as readonly string[] | undefined;
+  const labels = (props as { labels?: Record<string, string> }).labels as Record<string, string> | undefined;
+  return (
+    <TrackGroupList
+      groups={props.groups}
+      collapsed={props.collapsed}
+      onToggle={props.onToggle}
+      onOpenCard={props.onOpenCard}
+      onOpenThread={props.onOpenThread}
+      columns={columns ?? LIGHTWEIGHT_COLUMNS}
+      labels={labels ?? LIGHTWEIGHT_LABELS}
+      metaFor={metaFor}
+    />
+  );
+}
+
 type LightweightListProps = Omit<ListProps, "groups"> & {
   groups: Record<string, ListCard[]>;
 };
@@ -274,25 +293,11 @@ type LightweightListProps = Omit<ListProps, "groups"> & {
 export function ResearchList({ strategyLabelById, ...props }: LightweightListProps & {
   strategyLabelById: ReadonlyMap<string, string>;
 }) {
-  return (
-    <TrackGroupList
-      {...props}
-      columns={LIGHTWEIGHT_COLUMNS}
-      labels={LIGHTWEIGHT_LABELS}
-      metaFor={(card) => researchListMeta(card, strategyLabelById)}
-    />
-  );
+  return <TrackList {...props} metaFor={(card) => researchListMeta(card, strategyLabelById)} />;
 }
 
 export function ExploreList({ stageLabelById, ...props }: LightweightListProps & {
   stageLabelById: ReadonlyMap<string, string>;
 }) {
-  return (
-    <TrackGroupList
-      {...props}
-      columns={LIGHTWEIGHT_COLUMNS}
-      labels={LIGHTWEIGHT_LABELS}
-      metaFor={(card) => exploreListMeta(card, stageLabelById)}
-    />
-  );
+  return <TrackList {...props} metaFor={(card) => exploreListMeta(card, stageLabelById)} />;
 }

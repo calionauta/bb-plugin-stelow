@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { ResearchStrategyOption } from "../creation/creation-settings";
 import { useDetailComment } from "../conversation/use-detail-comment";
 import { useDetailRecoveryActions } from "../manage/detail-recovery-actions";
+import { runTrackRestart, runTrackStart } from "./use-track-worker-actions";
 import type { ResearchIndexState } from "./research-detail-dialogs";
 import type { ViewerFile } from "./research-detail-types";
 import type { rpcContract } from "../../server";
@@ -42,15 +42,7 @@ function useWorkerActions(cardId: string, onChanged: () => void) {
   });
 
   async function start() {
-    setStarting(true);
-    try {
-      const result = await rpc.call("startWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the research is now Doing.");
-      onChanged();
-    } finally {
-      setStarting(false);
-    }
+    return runTrackStart(rpc, cardId, onChanged, "research", setStarting);
   }
 
   return { starting, restarting, retrying, repairing, start, doRetry, doQualityRepair, setRestarting };
@@ -74,15 +66,7 @@ export function useResearchDetailState(cardId: string, cardStatus: string | unde
 
   async function restartWorker() {
     setRestartWorkerOpen(false);
-    actions.setRestarting(true);
-    try {
-      const result = await rpc.call("restartWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Restart failed.");
-      else toast.success("Worker restarted — continuing the research.");
-      onChanged();
-    } finally {
-      actions.setRestarting(false);
-    }
+    return runTrackRestart(rpc, cardId, onChanged, "research", actions.setRestarting);
   }
 
   const onQuestionsChanged = () => { onChanged(); void loadIndex(); };

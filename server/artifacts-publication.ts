@@ -1,101 +1,25 @@
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { createPublicationOperations } from "./artifacts-publication-operations.js";
+import {
+  snapshotSchema,
+  type ArtifactsPublicationDeps,
+  type Db,
+  type PublicationCard,
+  type PublicationCheckout,
+  type PublicationEnvironment,
+  type PublicationSnapshot,
+} from "./artifacts-publication-types.js";
 
-type Db = ReturnType<BbPluginApi["storage"]["database"]>;
-
-export interface PublicationCard {
-  id: string;
-  status: string;
-  workspace_kind: "project" | "exploratory";
-  workspace_host_id: string | null;
-  /** Which track owns the card. Decides whether delivery actions apply. */
-  kind: string;
-  /** What the user asked for. A finding is not a change. */
-  intent: string;
-}
-
-export interface PublicationEnvironment {
-  id?: string | null;
-  path?: string | null;
-  hostId?: string | null;
-  isWorktree?: boolean;
-}
-
-export interface PublicationCheckout {
-  path: string;
-  hostId: string | null;
-  environmentId: string | null;
-  environment: PublicationEnvironment | null;
-  source: string;
-}
-
-export interface ArtifactsPublicationDeps {
-  db: Db;
-  bb: BbPluginApi;
-  now: () => number;
-  randomId: (prefix: string) => string;
-  cardNotFound: string;
-  cards: {
-    get: (cardId: string) => PublicationCard | undefined;
-    checkout: (card: PublicationCard) => Promise<PublicationCheckout | null>;
-  };
-  cardStatusOf: (value: unknown) => string;
-}
-
-const capabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });
-
-const snapshotSchema = z.object({
-  available: z.boolean(),
-  message: z.string().nullable(),
-  source: z.string().nullable(),
-  environmentId: z.string().nullable(),
-  isWorktree: z.boolean(),
-  branch: z.object({
-    current: z.string().nullable(),
-    default: z.string().nullable(),
-    headSha: z.string().nullable(),
-  }).nullable(),
-  workingTree: z.object({
-    state: z.string(),
-    hasUncommittedChanges: z.boolean(),
-    files: z.number(),
-  }).nullable(),
-  mergeBase: z.object({
-    branch: z.string(),
-    ahead: z.number(),
-    behind: z.number(),
-    hasCommittedUnmergedChanges: z.boolean(),
-  }).nullable(),
-  pullRequest: z.object({
-    number: z.number(),
-    title: z.string(),
-    url: z.string(),
-    state: z.string(),
-    attention: z.string(),
-    review: z.string(),
-    checks: z.string(),
-    mergeability: z.string(),
-  }).nullable(),
-  pullRequestMessage: z.string().nullable(),
-  capabilities: z.object({
-    commit: capabilitySchema,
-    squashMerge: capabilitySchema,
-    markReady: capabilitySchema,
-    markDraft: capabilitySchema,
-    mergePullRequest: capabilitySchema,
-  }),
-  /** Why the delivery actions are limited, or null when they are not. */
-  relevanceNote: z.string().nullable(),
-  events: z.array(z.object({
-    id: z.string(),
-    action: z.string(),
-    message: z.string(),
-    commitSha: z.string().nullable(),
-    pullRequestUrl: z.string().nullable(),
-    createdAt: z.number(),
-  })),
-});
+export type {
+  ArtifactsPublicationDeps,
+  Db,
+  PublicationCard,
+  PublicationCheckout,
+  PublicationEnvironment,
+  PublicationSnapshot,
+};
+export { snapshotSchema };
 
 const commitDiffSchema = z.object({
   found: z.boolean(),
@@ -115,8 +39,6 @@ const commitDiffSchema = z.object({
   truncated: z.boolean(),
   error: z.string().nullable(),
 });
-
-export type PublicationSnapshot = z.infer<typeof snapshotSchema>;
 
 export const publicationRpcContract = defineRpcContract({
   publicationStatus: {

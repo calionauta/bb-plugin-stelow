@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import Database from "better-sqlite3";
+import { runPluginMigrations } from "../server/core-migrations.ts";
+import { fetchTreeBlobs } from "../lib/skills-sync-fetch.mjs";
 
 // Fresh-install contract: a brand-new user installs from the marketplace
 // (git semver tag) and bb builds with `bb plugin build` only — postbuild
@@ -42,18 +45,49 @@ for (const file of ["server.ts", "app.tsx", "skills/", "data/", "assets/", "lib/
 
 // Migrations must be fresh-safe and upgrade-safe: conditional creates plus
 // guarded ALTERs only — never a bare CREATE TABLE that crashes reinstalls.
-// Slices live under server/*.ts (github-issues.ts precedent), so the pins
-// scan the whole server surface, not just the entry file.
-const serverSources = ["server.ts", ...readdirSync(new URL("server/", root)).filter((file) => file.endsWith(".ts")).map((file) => `server/${file}`)];
-const server = serverSources.map((file) => readFileSync(new URL(file, root), "utf8")).join("\n");
-assert.doesNotMatch(server, /"CREATE TABLE (?!IF NOT EXISTS)/, "migrations never crash a fresh database");
-assert.match(server, /CREATE TABLE IF NOT EXISTS cards/, "first boot creates the cards table");
-assert.match(server, /CREATE TABLE IF NOT EXISTS presets/, "first boot creates the presets table");
+// Driven against a real database, not read as text: a fresh boot runs the
+// whole migrator and the tables the first boot reads must exist, and a second
+// boot on the same database must add nothing and throw nothing.
+{
+  const db = new Database(":memory:");
+  const host = {
+    storage: {
+      migrate: (_database, statements) => {
+        for (const statement of statements) db.exec(statement);
+      },
+    },
+  };
+  runPluginMigrations(host, db, () => 1);
+  const tables = new Set(
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name),
+  );
+  assert.ok(tables.has("cards"), "first boot creates the cards table");
+  assert.ok(tables.has("presets"), "first boot creates the presets table");
+  runPluginMigrations(host, db, () => 2);
+  db.close();
+}
 
 // Sync safety: a truncated GitHub tree must refuse the whole sync instead
-// of pruning valid local skills as "retired".
-const syncLib = readFileSync(new URL("lib/workflow-skills-sync.mjs", root), "utf8");
-assert.match(syncLib, /if \(data\.truncated\) throw/, "truncated upstream tree refuses the sync");
+// of pruning valid local skills as "retired". Driven through the fetch phase,
+// against a stubbed GitHub response, so the refusal is the behaviour and not a
+// string in the file that produces it.
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ tree: [], truncated: true }) });
+  await assert.rejects(
+    () => fetchTreeBlobs("fresh-install-truncated-ref"),
+    /truncated/,
+    "truncated upstream tree refuses the sync",
+  );
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ tree: [{ type: "blob", path: "skills/x", sha: "sha1" }] }) });
+  assert.deepEqual(
+    await fetchTreeBlobs("fresh-install-complete-ref"),
+    [{ path: "skills/x", sha: "sha1" }],
+    "a complete tree is read through",
+  );
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 // Engine floors must stay satisfiable: the marketplace entry resolves only
 // compatible tags, and managed installs validate these ranges.

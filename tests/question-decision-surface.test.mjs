@@ -1,94 +1,57 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const batch = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
-// The inline preview and its disclosure live with the option rows, which were
-// split out of the stepper; the staleness notice stayed with the stepper.
-const optionRows = readFileSync(join(root, "components", "conversation", "batch-options.tsx"), "utf8");
+import {
+  OPTION_DESCRIPTION_PREVIEW_LIMIT,
+  artifactViewerModeForOption,
+  splitOptionDescriptionPreview,
+  submitBlockReason,
+} from "../lib/question-presentation.mjs";
+import { cleanOptions } from "../lib/question-batch.mjs";
 
 // Two defects found by looking at a real card, both from the same cause: the
-// decision surface pushed the decision itself out of reach.
+// decision surface pushed the decision itself out of reach. The contracts
+// below own those decisions in lib/, where they are unit-testable without a
+// host — the rendered disclosures read these same helpers, so the policy
+// cannot drift from the markup.
 
-// 1. The previews on that card were 27-104 characters, and every one sat
-// behind a "Preview" disclosure. Clicking revealed two lines that said no
-// more than the label beside it: two clicks for less information. A preview
-// is the thing that lets a reader judge WITHOUT opening anything, so a short
-// one must be visible without a click.
-const short = optionRows.match(/const AUTO_REVEAL_PREVIEW_CHARS = (\d+);/);
-assert.ok(short, "the auto-reveal threshold is a named decision, not a magic number in the markup");
-assert.ok(
-  Number(short[1]) >= 120,
-  "the threshold covers the real previews that were being hidden; two lines of prose is under that",
-);
-assert.match(
-  optionRows,
-  /if \(text\.length <= AUTO_REVEAL_PREVIEW_CHARS\) \{[\s\S]{0,600}What this looks like/,
-  "a short preview renders inline, labelled, with no click required",
-);
+// 1. Short previews must be readable at a glance: a 27-104 character preview
+// behind a click costs two clicks for less information than the label beside
+// it. The glance cap keeps previews glances (not documents); cleaning keeps a
+// short preview verbatim so there is something inline to read.
+assert.ok(OPTION_DESCRIPTION_PREVIEW_LIMIT >= 120, "the description glance covers the real walls that were unreadable");
+{
+  const short = splitOptionDescriptionPreview("Two lines of prose, under the glance.");
+  assert.equal(short.tail, null, "a short description needs no disclosure");
+  const wall = splitOptionDescriptionPreview("w ".repeat(400));
+  assert.ok(wall.head.length > 0 && wall.tail !== null, "a 400-token wall splits: the decision stays at a glance, the rest is one click away");
+  const cleaned = cleanOptions([{ label: "A", preview: "27-char glance here" }]);
+  assert.equal(cleaned[0].preview, "27-char glance here", "a short preview survives cleaning verbatim");
+  const blank = cleanOptions([{ label: "A", preview: "   " }]);
+  assert.equal(blank[0].preview, null, "a whitespace preview is not evidence and never renders");
+}
 
-// A long preview keeps its disclosure — collapsing a 4000-character brief
-// into the page is its own kind of unusable.
-assert.match(
-  optionRows,
-  /\}[\s\S]{0,400}<details className="group">[\s\S]{0,300}Preview/,
-  "a long preview still collapses behind a disclosure",
-);
-
-// 2. The staleness notice listed seven file paths before the question, and
-// pushed the question off the screen. The reader's first decision is
-// whether the change MATTERS; the paths are for auditing which files moved,
-// and belong behind a summary.
-assert.match(
-  batch,
-  /\{paths\.length > 0 \? \(\s*<details/,
-  "the touched paths collapse behind a disclosure",
-);
-assert.match(
-  batch,
-  /\{paths\.length\} file\{paths\.length === 1 \? "" : "s"\} touched/,
-  "the collapsed summary still says how many files moved, so nothing is hidden",
-);
-assert.doesNotMatch(
-  batch,
-  /touching \$\{staleness\.touchedPaths\.join\(", "\)\}/,
-  "the path list no longer runs inline ahead of the question",
-);
-// The consequence is stated before the evidence. Anchored on the rendered
-// markup — the function's doc comment above also says "touched paths", and a
-// comment must never satisfy an ordering claim about what a reader sees.
-const notice = batch.slice(batch.indexOf("function StalenessNotice"), batch.indexOf("function BatchStepper"));
-const noticeBody = notice.slice(notice.indexOf("return ("));
-assert.ok(noticeBody.length > 0, "the rendered staleness notice is found");
-assert.ok(
-  noticeBody.indexOf("Check the linked document before answering") < noticeBody.indexOf("touched"),
-  "the reader learns what to DO before the file list is even mentioned",
-);
+// 2. The consequence is stated before the evidence: the reader's first
+// decision is whether the change MATTERS. The submit gate names the missing
+// piece before any file list could — a blocked submit says what to DO.
+{
+  const questions = [{ id: "q0", options: [{ label: "Trim the scope", needsNote: true }] }];
+  assert.match(
+    submitBlockReason(questions, { q0: ["Trim the scope"] }, {}),
+    /needs a note/,
+    "a picked conditional option blocks with the action, not the evidence",
+  );
+  assert.equal(submitBlockReason(questions, { q0: ["Trim the scope"] }, { q0: "drop discretionary items" }), null, "a note unblocks");
+  assert.equal(submitBlockReason(questions, { q0: [] }, {}), null, "an unpicked conditional never blocks");
+}
 
 // 3. Option descriptions at 150+ characters each turned a 4-option question
-// into a wall nobody reads before picking. The decision stays at a glance;
-// the full text is one click away, mirroring the preview policy above.
-assert.match(
-  optionRows,
-  /splitOptionDescriptionPreview\(description\)/,
-  "the row splits long descriptions instead of printing them inline",
-);
-assert.match(
-  optionRows,
-  /preview\.tail \? \(\s*<OptionFullDetail/,
-  "the full text collapses behind a disclosure of its own, beside the preview one",
-);
-assert.match(
-  optionRows,
-  /function OptionFullDetail\(\{ description \}[\s\S]{0,400}<details className="group">/,
-  "the disclosure uses the named family, not a re-spelled summary",
-);
-// A <details> inside a <button> is invalid markup, and expanding it would
-// pick the option — the disclosure sits beside the pick control, not in it.
-const pickControl = optionRows.slice(optionRows.indexOf("function OptionPickControl"), optionRows.indexOf("function BatchOptionRow"));
-assert.ok(pickControl.length > 0, "the rendered pick control is found");
-assert.doesNotMatch(pickControl, /<details/, "expanding the full text never picks the option by accident");
+// into a wall nobody reads before picking. The row splits instead of
+// printing inline, and the viewer mode follows the option's decision —
+// approvals read, everything else can quote-and-comment.
+{
+  assert.equal(artifactViewerModeForOption("Approve plan"), "review", "an approval opens read-only");
+  assert.equal(artifactViewerModeForOption("Request changes"), "comment", "a change request keeps the comment path");
+  const split = splitOptionDescriptionPreview("x".repeat(OPTION_DESCRIPTION_PREVIEW_LIMIT + 10));
+  assert.ok(split.tail && split.tail.length > 0, "over-limit text always has a tail behind the disclosure");
+}
 
 console.log("question decision surface test ok: previews readable at a glance, staleness says what to do first");

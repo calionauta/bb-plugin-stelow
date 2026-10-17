@@ -95,8 +95,11 @@ for (const file of PROMPT_MODULE_FILES) {
   // The pointer may be the literal or the shared const that renders it. Accepting the
   // const is not a loophole: the const is asserted to contain the pointer once, in
   // plugin-protocols, and every path that interpolates it gets the same text — which
-  // is strictly stronger than three paths each spelling it out.
-  const namesPointer = /bb stelow playbook/.test(code) || /WORKFLOW_SKILLS/.test(code);
+  // is strictly stronger than three paths each spelling it out. Delegation to the
+  // single shared builder counts too: spawn/restart/reseed render the pointer
+  // through workflow-shared, so a wrapper that imports it names the pointer once,
+  // in the builder, rather than pasting it three times.
+  const namesPointer = /bb stelow playbook/.test(code) || /WORKFLOW_SKILLS/.test(code) || /workflow-shared/.test(code);
   if (!namesPointer) missingPointer.push(file);
 }
 assert.deepEqual(

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { scopeEmptyState, scopeXrayPresentation } from "../lib/scope-xray-presentation.mjs";
+import { loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 /**
  * The Scope X-ray used to contradict the tracker four lines below it.
@@ -129,63 +129,67 @@ test("an archived card's own copy wins", () => {
   assert.equal(copy, "Archived work.");
 });
 
-// The card renders the projection rather than re-deriving it: a component that
-// computed its own labels is how the raw enum reached the screen in the first
-// place.
-//
-// The pin is scoped to the rendered body, because the four contract words
-// legitimately appear in the View TYPE above it — narrowing to the body is what
-// makes "the enum was printed again" a failure rather than a re-spelling that
-// passes.
-//
-// It deliberately does NOT forbid reading a projected `node.state`: the
-// projection's node state is the labelled `{label, tone}`, which is exactly
-// what should be rendered. What is forbidden is reading the RAW view after the
-// projection. Re-spelling a raw field under a new name is caught by the TYPE,
-// not by a regex — `ScopeXrayPresentation` has no such field, so it does not
-// compile. A regex pretending otherwise would be a copy pin that passes on
-// broken logic.
-const component = readFileSync(new URL("../components/detail/scope-xray.tsx", import.meta.url), "utf8");
-const body = component.slice(component.indexOf("export function"));
-assert.match(body, /scopeXrayPresentation\(xray\)/, "the component draws the projection, it does not derive it");
-assert.doesNotMatch(
-  body,
-  /\bxray\.(?!draft\b)/,
-  "the raw view is never read after the projection",
+// The card renders the projection rather than re-deriving it, so the claims
+// below are asked of the RENDERED component: if it read the raw view after the
+// projection, the raw contract words would reach the output and these fail.
+// Only the presentational imports are stubbed; the projection is the real one.
+const ScopeXray = loadComponent("components/detail/scope-xray.tsx", "ScopeXray", {
+  "../../lib/scope-xray-presentation.mjs": { scopeXrayPresentation },
+  "../dashboard/build-status-pills": { Pill: ({ children }) => ({ type: "span", props: {}, children: [children] }) },
+  "../disclosure": { SUMMARY_BASE: "summary" },
+  "../../lib/design-tokens": { TEXT_META: "text-meta", TEXT_SECTION: "text-section" },
+});
+
+/** The text a reader sees for one xray view. */
+function draw(view) {
+  return treeText(renderTree(ScopeXray({ xray: view })));
+}
+
+const approved = draw(xray());
+const projected = scopeXrayPresentation(xray());
+assert.match(approved, /env-seed-mapper/, "the node ids render");
+assert.match(approved, /The toggle/, "and their titles");
+assert.match(
+  approved,
+  new RegExp(projected.nodes[1].state.label),
+  "the deviation is labelled from the projection, in words",
 );
+assert.equal(
+  (approved.match(/In sync/g) ?? []).length,
+  1,
+  "freshness is said once, by the header — not repeated per scope",
+);
+
+// The stale map is the clean case for "no raw enum on the card": map-level
+// staleness leaves every node silent, so any contract word in the output would
+// be the component reading the raw view.
+const stale = draw(xray({
+  freshness: "stale",
+  nodes: xray().nodes.map((node) => ({ ...node, state: "stale" })),
+}));
+assert.match(stale, /Out of date/, "a stale map is one header fact");
+assert.doesNotMatch(stale, /Predates the current shape/, "a map-level staleness is not a per-scope deviation");
 for (const word of ["current", "stale", "blocked", "unknown"]) {
-  const rendered = new RegExp("[{>\"'][^<]*\\b" + word + "\\b", "i");
-  assert.ok(!rendered.test(body), `the raw contract word "${word}" is not rendered by the component`);
+  assert.ok(
+    !new RegExp(`\\b${word}\\b`).test(stale),
+    `the raw contract word "${word}" never reaches the card`,
+  );
 }
 
 // Draft tone: the same component draws previews, but every word a draft
-// renders must say draft. A "Scope map · approved" framing on a preview
-// would teach the reader that drafts are decisions.
-{
-  const draftBody = body;
-  assert.match(draftBody, /Scope draft/, "draft heading names itself a draft");
-  assert.match(draftBody, /not approved/, "draft says it is not approved");
-  assert.match(draftBody, /Draft preview/, "draft pill names the preview");
-  assert.match(
-    draftBody,
-    /scope stage still has to approve it/,
-    "draft names who still has to decide",
-  );
-}
+// renders must say draft. A "Scope map · approved" framing on a preview would
+// teach the reader that drafts are decisions.
+const draft = draw({ ...xray(), draft: true });
+assert.match(draft, /Scope draft/, "draft heading names itself a draft");
+assert.match(draft, /not approved/, "draft says it is not approved");
+assert.match(draft, /Draft preview/, "draft pill names the preview");
+assert.match(draft, /still has to approve/, "draft names who still has to decide");
 
-// Decisions join the header, said once: the projection carries one sentence
-// for the whole card, never a badge per scope, and silence when the card
-// holds no receipts — so cards without decisions draw exactly as before.
-{
-  const withDecisions = scopeXrayPresentation(xray({
-    decisions: { live: 2, stale: 1, unknown: 0, conflicts: [{ a: "r-1", b: "r-9", scopeIds: ["s1"] }] },
-  }));
-  assert.equal(
-    withDecisions.decisions,
-    "2 decisions · 1 stale · contradiction: r-1 vs r-9 (s1)",
-    "the header carries the decisions sentence once",
-  );
-  assert.equal(scopeXrayPresentation(xray()).decisions, null, "no receipts means no sentence");
-  assert.match(body, /view\.decisions/, "the component draws the projection's sentence, it does not derive it");
-  assert.match(body, /Decisions: \{view\.decisions\}/, "the sentence renders once, under the freshness note");
-}
+// Decisions join the header, said once, and silence when the card holds no
+// receipts — so cards without decisions draw exactly as before.
+assert.match(
+  draw(xray({ decisions: { live: 2, stale: 1, unknown: 0, conflicts: [{ a: "r-1", b: "r-9", scopeIds: ["s1"] }] } })),
+  /2 decisions · 1 stale · contradiction: r-1 vs r-9 \(s1\)/,
+  "the header carries the decisions sentence once",
+);
+assert.doesNotMatch(draw(xray()), /Decisions:/, "no receipts means no sentence");

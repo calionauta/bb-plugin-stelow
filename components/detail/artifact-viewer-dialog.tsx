@@ -6,7 +6,7 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { ArtifactViewerMode } from "../conversation/question-batch";
+import type { ArtifactViewerMode } from "../conversation/batch-types";
 import { OptionSection } from "./option-section";
 import { MOCKUP_SANDBOX, artifactRenderKind } from "../../lib/artifact-render.mjs";
 import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";

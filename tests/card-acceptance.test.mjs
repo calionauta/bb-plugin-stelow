@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   acceptanceLine,
   acceptanceRefusal,
@@ -10,6 +7,8 @@ import {
   isAccepted,
   unmergedPrNumber,
 } from "../lib/card-acceptance.mjs";
+import * as cardAcceptance from "../lib/card-acceptance.mjs";
+import { findElementByType, loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 /**
  * Human acceptance is a receipt, never a gate.
@@ -105,17 +104,62 @@ test("the cross-reference names only a still-open pull request", () => {
   assert.equal(unmergedPrNumber({ pullRequest: { number: "322", state: "open" } }), null, "a non-numeric number is not rendered");
 });
 
-// Wiring: the row reads the publication snapshot instead of re-deriving PR
-// state, and only while the button is still offered — after acceptance the
-// row is a stamp, and a fetch per render of a settled row would be a request
-// nobody asked for.
-const rowSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../components/detail/acceptance-row.tsx"),
-  "utf8",
-);
-assert.match(rowSource, /rpc\.call\("publicationStatus", \{ cardId \}\)/, "the cross-reference asks the snapshot that owns PR state");
-assert.match(
-  rowSource,
-  /useUnmergedPrNumber\(cardId, status === "completed" && !acceptanceLine\)/,
-  "the snapshot is read only while the receipt can still be written",
-);
+// Wiring, asked of the RENDERED row rather than of its source text: it reads
+// the publication snapshot instead of re-deriving PR state, and only while the
+// button is still offered — after acceptance the row is a stamp, and a fetch
+// per render of a settled row would be a request nobody asked for. The rpc is a
+// recorder, so "did it ask?" and "what did it ask?" are facts about the call.
+const rpcCalls = [];
+function loadRow() {
+  const hooks = {
+    useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+    useEffect: (effect) => { effect(); },
+  };
+  return loadComponent("components/detail/acceptance-row.tsx", "AcceptanceRow", {
+    react: hooks,
+    "@/components/ui/button": { Button: (props, ...children) => ({ type: "button", props, children }) },
+    "@get-bb/plugin-sdk/app": {
+      useRpc: () => ({
+        call: (method, args) => {
+          rpcCalls.push([method, args]);
+          return Promise.resolve({ pullRequest: { number: 7, state: "open" } });
+        },
+      }),
+    },
+    "../../lib/card-acceptance.mjs": cardAcceptance,
+    "./use-acceptance-action": { useAcceptanceAction: () => ({ accepting: false, doAccept: async () => {} }) },
+  });
+}
+const AcceptanceRow = loadRow();
+
+function renderRow(overrides = {}) {
+  rpcCalls.length = 0;
+  return renderTree(AcceptanceRow({
+    cardId: "card_1",
+    status: "completed",
+    acceptanceLine: null,
+    onChanged: () => {},
+    ...overrides,
+  }));
+}
+
+test("the row asks the publication snapshot only while the receipt can be written", () => {
+  const pending = renderRow();
+  assert.deepEqual(
+    rpcCalls,
+    [["publicationStatus", { cardId: "card_1" }]],
+    "the cross-reference asks the snapshot that owns PR state",
+  );
+  assert.ok(findElementByType(pending, "button"), "a completed card without a receipt still offers the button");
+
+  // A card that already carries a receipt is a stamp: no button, no fetch.
+  const stamped = renderRow({ acceptanceLine: "Accepted by you on 2026-10-02." });
+  assert.deepEqual(rpcCalls, [], "a card that already carries a receipt does not ask again");
+  assert.equal(findElementByType(stamped, "button"), null, "and stops offering the button");
+  assert.match(treeText(stamped), /Accepted/, "the row reads as the receipt it holds");
+
+  // And an unfinished card is neither: the row is empty and asks nothing.
+  const early = renderRow({ status: "in-progress" });
+  assert.deepEqual(rpcCalls, [], "only a completed card asks for its PR state");
+  assert.equal(treeText(early).trim(), "", "an unfinished card renders no row at all");
+});

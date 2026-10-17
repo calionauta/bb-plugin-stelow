@@ -215,7 +215,9 @@ async function reaskBoundary(deps: ResumeDeps, run: ExecutionRun): Promise<void>
   const card = deps.getCard(run.cardId);
   if (!card?.worker_thread_id || !run.boundaryId) return;
   const marker = run.boundaryId;
-  void deps.bb.sdk.threads.send({
+  // A resume that cannot re-ask must not park the card in silence: the send
+  // failure becomes a receipt naming the boundary, so a human can re-ask it.
+  await deps.bb.sdk.threads.send({
     threadId: card.worker_thread_id,
     mode: "auto",
     input: [{
@@ -226,7 +228,19 @@ async function reaskBoundary(deps: ResumeDeps, run: ExecutionRun): Promise<void>
       ].join(" "),
       mentions: [],
     }],
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    try {
+      deps.logComment(
+        run.cardId,
+        run.id,
+        `The resume-failure re-ask for boundary ${marker} could not be delivered (${
+          error instanceof Error ? error.message : "send failed"
+        }). Re-create the card question with marker [Stelow boundary ${marker}] explicitly.`,
+      );
+    } catch {
+      /* the receipt is owed, never load-bearing */
+    }
+  });
 }
 
 function parseResumeArgs(argsText: string): ResumeArgs | null {

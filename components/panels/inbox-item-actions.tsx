@@ -1,4 +1,4 @@
-import type { InboxNotification } from "./inbox-panel";
+import type { InboxNotification } from "./inbox-types";
 
 // The item's two reversible acts, in the words of the thing they touch.
 //
