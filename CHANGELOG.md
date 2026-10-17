@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.81.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.80.0...v0.81.0) (2026-10-17)
+
+
+### Features
+
+* one lean machine — single track panel, single spawn path, gated ledger repair ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+
+
+### Bug Fixes
+
+* give the gate receipt one writer ([#368](https://github.com/calionauta/bb-plugin-stelow/issues/368)) ([00c09ae](https://github.com/calionauta/bb-plugin-stelow/commit/00c09aeedf7882516b7a9fa7d093f49f5b1a95d6))
+
 ## [0.80.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.79.1...v0.80.0) (2026-10-13)
 
 
