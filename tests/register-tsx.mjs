@@ -44,10 +44,13 @@ async function firstExisting(base, suffixes) {
 export async function resolve(specifier, context, nextResolve) {
   // `@/*` is the tsconfig alias for the repo root, and components use it.
   if (specifier.startsWith("@/")) {
-    const found = await firstExisting(
-      new URL(specifier.slice(2), pathToFileURL(`${ROOT}${path.sep}`)).href,
-      ["", ".ts", ".tsx", ".js", ".mjs"],
-    );
+    const base = new URL(specifier.slice(2), pathToFileURL(`${ROOT}${path.sep}`)).href;
+    // `.js` in this tree means the `.ts`/`.tsx` beside it (the bundler's rule),
+    // mirroring the relative branch below — without the strip, a `.js`-suffixed
+    // alias specifier matches no file and falls through to a package lookup.
+    const stripped = specifier.endsWith(".js") ? base.slice(0, -3) : base;
+    const suffixes = specifier.endsWith(".js") ? [".ts", ".tsx"] : ["", ".ts", ".tsx", ".js", ".mjs"];
+    const found = await firstExisting(stripped, suffixes);
     if (found) return { url: found, shortCircuit: true };
   }
   if (specifier.startsWith(".") || specifier.startsWith("/")) {

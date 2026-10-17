@@ -3,6 +3,7 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
+import { ReasonPopover } from "../ui/reason-popover";
 import { errorActivityLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
@@ -12,7 +13,6 @@ import {
   AttentionChip,
   BuildStatusPills,
   DoingNowPill,
-  ErrorChip,
   IntegrationPendingChip,
   PausedChip,
   LightweightStatusPills,
@@ -60,10 +60,50 @@ export function CardRetryButton({ cardId, label }: { cardId: string; label: stri
   );
 }
 
+/**
+ * The failure sentence the card's accessible description must carry, or null.
+ *
+ * Both card roots are `role="button"`, and that role makes descendants
+ * presentational — so a chip's own text and its `title=` are removed from the
+ * accessibility tree. Hover reaches a sighted pointer user and nothing else; a
+ * screen-reader user would get the chip's existence and never the reason. Repeating
+ * it in the root's label is the only channel that actually reaches them.
+ *
+ * One helper so the two roots cannot disagree, and so it stays the SAME sentence the
+ * chip shows rather than a paraphrase that drifts.
+ */
+function cardFailureSentence(card: BoardCardItem): string | null {
+  const stopped = errorActivityLabel(card) ?? card.runFailure;
+  return stopped ? `${stopped.label}: ${stopped.detail}` : null;
+}
+
+/**
+ * The tile's alert row: the chips, in their fixed reading order.
+ *
+ * ONE failure slot, TWO SOURCES. `stopped` is the worker thread's failure
+ * (`errorActivityLabel`) falling back to the newest host run's (`runFailure`), and
+ * the worker wins. It is the state the reader can act on immediately, it owns the
+ * live border, and it is the older learned signal. Collapsing the two here — rather
+ * than rendering a second chip — is what makes two reds structurally IMPOSSIBLE
+ * instead of merely forbidden by a precedence rule, and it is why the row keeps
+ * exactly six branches and this change adds none.
+ *
+ * The loss, stated so a later author reads it as a decision: when a card has BOTH,
+ * the run failure is not rendered, not counted and not hinted at on this tile — it
+ * is reachable only in Execution runs. Two broken subsystems with different
+ * remedies ("Retry" versus "Retry run") therefore read as one red here.
+ *
+ * `card.runFailure != null` is deliberately ALSO a term of its own, not folded
+ * into `stopped`: the gate used to test only the worker source, so the row stayed
+ * absent and the chip was invisible on precisely the card it was built for. A
+ * positional order pin reads only the JSX below, never this gate — which is how an
+ * invisible chip once passed it.
+ */
 export function CardMetaRows({ card }: { card: BoardCardItem }) {
-  const stopped = errorActivityLabel(card);
+  const stopped = errorActivityLabel(card) ?? card.runFailure;
   const paused = pausedActivityLabel(card);
   const showAlerts =
+    card.runFailure != null ||
     stopped != null ||
     paused != null ||
     cardShowsAttention(card) ||
@@ -75,7 +115,7 @@ export function CardMetaRows({ card }: { card: BoardCardItem }) {
     <>
       {showAlerts ? (
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
+          {stopped ? <ReasonPopover label={stopped.label} detail={stopped.detail} /> : null}
           {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
           {cardShowsAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
           {card.integrationPending ? (
@@ -127,6 +167,7 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
   const openThread = useCallback(() => {
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
+  const failureSentence = cardFailureSentence(card);
   return (
     <div
       role="button"
@@ -140,7 +181,7 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"} ${selected ? "ring-1 ring-primary" : ""}`}
-      aria-label={`Open card ${card.displayName}.`}
+      aria-label={`Open card ${card.displayName}.${failureSentence ? ` ${failureSentence}` : ""}`}
     >
       <div className="flex min-w-0 items-start gap-2">
         {typeof onToggleSelection === "function" ? (
@@ -269,6 +310,7 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
   const retry = cardCanResume(card) && card.activity !== "error" ? (
     <CardRetryButton cardId={card.id} label="Resume work" />
   ) : null;
+  const failureSentence = cardFailureSentence(card);
   return (
     <div
       role="button"
@@ -282,7 +324,7 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}`}
-      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
+      aria-label={`Open ${ariaNoun} ${card.displayName}.${failureSentence ? ` ${failureSentence}` : ""}`}
     >
       <CardHeading title={card.displayName} status={<ActivityPill activity={card.activity} detail={card.lastError} />} />
       {tagLabel ? (

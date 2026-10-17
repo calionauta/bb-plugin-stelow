@@ -93,6 +93,16 @@ export const cardRpcContract = {
           readMissSince: z.number().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),
+          // Why the card's NEWEST host run failed, or null. Carried BESIDE
+          // `activity`, never inside it: it is a fact about the run ledger, not a
+          // verdict about the card's thread, and the board renders it in the same
+          // failure slot as the worker's own error rather than as a second chip.
+          runFailure: z
+            .object({
+              label: z.string(),
+              detail: z.string(),
+            })
+            .nullable(),
           integrationPending: z.object({
             state: z.enum(["unpublished", "local", "unmerged"]),
             label: z.string(),

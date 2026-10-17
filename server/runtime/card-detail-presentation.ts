@@ -9,6 +9,7 @@ import { totalScopeElapsedMs } from "../../lib/scope-elapsed.mjs";
 import { isDoneStatus } from "../../lib/trackables.mjs";
 import { normalizeKind } from "../../lib/tracks.mjs";
 import { stallCount } from "../../lib/worker-ledger.mjs";
+import { runFailure } from "../../lib/run-failure.mjs";
 import { splitActionState } from "../../lib/split-proposal.mjs";
 import { skippedStages } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
@@ -275,6 +276,12 @@ function cardLifecycle(deps: CardDetailDeps, card: WorkerCard, parts: DetailPart
     blockingRun: parts.blockingRun,
     needsAttention: detailAttention(deps, card, parts.activity) !== null,
     hasPendingReview: hasPendingReview(db, cardId),
+    // The board's run-failure signal, derived from the same helper beside the same
+    // ladder, so the two projections cannot disagree about what the board would
+    // show. The detail renders `blockingRun` (stage-scoped) instead; this field
+    // exists so the card TYPE matches the board card TYPE, not to add a second
+    // place the reason is shown.
+    runFailure: runFailure(deps.db, card),
     // The same ladder the board reads, so opening a card cannot disagree
     // with the chip that sent the reader here.
     integrationPending: integrationPending(db, card),

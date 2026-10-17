@@ -110,6 +110,17 @@ const FACT_HOMES = [
     evidence: /const contention = lockWaitHero\(detail\?\.fileLocks \?\? null\)/,
     because: "a reader told 'the worker is idle with unfinished work' cannot tell a contention from a crash; naming the holder is the whole fix",
   },
+  {
+    fact: "why the card's newest host run failed, on the board tile",
+    decidedIn: "components/board/board-cards.tsx",
+    // The tile's one failure slot: the worker thread's failure falling back
+    // to the newest host run's, with the worker winning. The Execution runs
+    // section below owns the full raw host code; the tile names the mapped,
+    // truncated state where the failure is noticed at all.
+    evidence: /errorActivityLabel\(card\) \?\? card\.runFailure/,
+    because: "the tile names the mapped and truncated state where the failure is noticed, while the Execution runs "
+      + "section owns the full raw host code the reader investigates when they open the card; one names, the other explains",
+  },
 ];
 
 const read = (relative) => readFileSync(join(fileURLToPath(import.meta.url), "..", "..", relative), "utf8");
