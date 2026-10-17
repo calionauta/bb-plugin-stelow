@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { ensureAutoContinueColumns } from "../lib/auto-continue.mjs";
 import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
-import { healRewrittenLedgerRow } from "../lib/migration-ledger-heal.mjs";
+import { healRewrittenLedgerRow, isLedgerHealEnabled } from "../lib/migration-ledger-heal.mjs";
 import { ensureTrackableEventsTable } from "../lib/trackable-events.mjs";
 import { runDecisionApiMigrations } from "./decision-api.js";
 import { runGithubMigrations } from "./github-migrations.js";
@@ -153,10 +153,19 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
   // Before `bb.storage.migrate`, and it has to be here: the host checks every
   // recorded position before it executes a single statement, so a bad record is
   // only correctable before the call, and this is the first line of the plugin's
-  // own startup that holds an open database.
-  const repaired = healRewrittenLedgerRow(db, BASE_MIGRATION_STATEMENTS, (why) => {
-    bb.log.warn(`stelow did not repair the v0.61.0 migration ledger: ${why}`);
-  });
+  // own startup that holds an open database. Behind STELOW_HEAL_LEDGER=0's
+  // kill switch: the repair rewrites a record the migrator treats as
+  // immutable, so an operator who distrusts it can decline and take the
+  // host's refusal instead.
+  const ledgerHeal = isLedgerHealEnabled(process.env);
+  if (!ledgerHeal) {
+    bb.log.warn("stelow ledger repair disabled by STELOW_HEAL_LEDGER=0; a v0.61.0 bad record will refuse the boot");
+  }
+  const repaired = ledgerHeal
+    ? healRewrittenLedgerRow(db, BASE_MIGRATION_STATEMENTS, (why) => {
+      bb.log.warn(`stelow did not repair the v0.61.0 migration ledger: ${why}`);
+    })
+    : null;
   if (repaired) {
     bb.log.warn(
       `stelow repaired migration ${repaired.index} in its migration ledger: v0.61.0 recorded `
