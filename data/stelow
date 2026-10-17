@@ -46,7 +46,6 @@ else
 fi
 INVARIANTS="$STATEDIR/invariants.json"
 TRANSITIONS="${STELOW_TRANSITIONS:-$ROOT/skills/stelow-workflow-orchestrator/references/transitions.md}"
-CATALOG="${STELOW_CATALOG:-$ROOT/data/stelow-stage-catalog.json}"
 LOCKDIR="$STATEDIR/lock"
 LOCK_TTL_SEC="${STELOW_LOCK_TTL_SEC:-120}"
 
@@ -236,33 +235,6 @@ lock_acquire() {
 
 allowed_candidates_for_stage() {
   local stage="$1" intent="$2"
-  # Canonical source is the JSON catalog; the markdown mirror is a fallback
-  # for workspaces seeded before the catalog shipped. When the catalog is
-  # present the advance path parses zero markdown.
-  if [ -f "$CATALOG" ]; then
-    python3 - "$stage" "$intent" "$CATALOG" <<'PY'
-import sys, json
-stage, intent, path = sys.argv[1:4]
-catalog = json.load(open(path))
-by_id = {s["id"]: s for s in catalog.get("stages", [])}
-node = by_id.get(stage)
-if node is None:
-    sys.exit(1)
-allowed = []
-for key in ("next", "accept", "reject", "rework", "annotate"):
-    for token in (node.get("transitions", {}) or {}).get(key, []) or []:
-        if isinstance(token, str) and token and token not in allowed:
-            allowed.append(token)
-routes = ((catalog.get("routes", {}) or {}).get("intents", {}) or {}).get(intent)
-if isinstance(routes, list) and stage in routes:
-    idx = routes.index(stage)
-    reachable = set(routes[:idx]) | set(routes[idx + 1:idx + 2]) | {stage}
-    allowed = [c for c in allowed if c in reachable]
-for candidate in dict.fromkeys(allowed):
-    print(candidate)
-PY
-    return
-  fi
   [ -f "$TRANSITIONS" ] || die "transitions reference not found at $TRANSITIONS"
   python3 - "$stage" "$intent" "$TRANSITIONS" <<'PY'
 import sys, re
@@ -320,15 +292,6 @@ PY
 }
 
 all_stages() {
-  if [ -f "$CATALOG" ]; then
-    python3 - "$CATALOG" <<'PY'
-import sys, json
-catalog = json.load(open(sys.argv[1]))
-for s in catalog.get("stages", []):
-    print(s["id"])
-PY
-    return
-  fi
   python3 - "$TRANSITIONS" <<'PY'
 import sys, re
 text = open(sys.argv[1]).read()
@@ -410,40 +373,27 @@ do_advance() {
   fi
 
   # pre-condition: required artifacts, resolved against the workflow's own
-  # state dir first, then the repo root. Catalog first, markdown mirror
-  # as fallback.
-  STELOW_CATALOG_PATH="$CATALOG" python3 - "$current" "$ROOT" "$STATEDIR" "$TRANSITIONS" <<'PY' || die "pre-condition check failed"
-import sys, re, os, glob, json
+  # state dir first, then the repo root.
+  python3 - "$current" "$ROOT" "$STATEDIR" "$TRANSITIONS" <<'PY' || die "pre-condition check failed"
+import sys, re, os, glob
 current, root, statedir, transitions = sys.argv[1:5]
-patterns = []
-catalog_path = os.environ.get("STELOW_CATALOG_PATH", "")
-if catalog_path and os.path.isfile(catalog_path):
-    try:
-        catalog = json.load(open(catalog_path))
-        node = next((s for s in catalog.get("stages", []) if s.get("id") == current), None)
-        if node is not None:
-            patterns = list(node.get("artifacts", []) or [])
-    except Exception:
-        patterns = []
-if not patterns and os.path.isfile(transitions):
-    trans = open(transitions).read()
-    m = re.search(r"^### " + re.escape(current) + r"\s*\n(.*?)(?=^### |\Z)", trans, re.MULTILINE | re.DOTALL)
-    if m:
-        for line in m.group(1).splitlines():
-            am = re.match(r"^artifact:\s*(\S+)\s*$", line.strip())
-            if am:
-                patterns.append(am.group(1))
-for pat in patterns:
-    bases = [statedir, root]
-    if pat.startswith("/"): bases = [""]
-    matched = False
-    for base in bases:
-        fullpat = pat if base == "" else os.path.join(base, pat)
-        if glob.glob(fullpat):
-            matched = True
-            break
-    if not matched:
-        print(f"missing required artifact: {pat} (expected under {statedir})", file=sys.stderr); sys.exit(1)
+trans = open(transitions).read()
+m = re.search(r"^### " + re.escape(current) + r"\s*\n(.*?)(?=^### |\Z)", trans, re.MULTILINE | re.DOTALL)
+if not m: sys.exit(0)
+for line in m.group(1).splitlines():
+    am = re.match(r"^artifact:\s*(\S+)\s*$", line.strip())
+    if am:
+        pat = am.group(1)
+        bases = [statedir, root]
+        if pat.startswith("/"): bases = [""]
+        matched = False
+        for base in bases:
+            fullpat = pat if base == "" else os.path.join(base, pat)
+            if glob.glob(fullpat):
+                matched = True
+                break
+        if not matched:
+            print(f"missing required artifact: {pat} (expected under {statedir})", file=sys.stderr); sys.exit(1)
 PY
 
   # dry run validates without side effects (no lock, no mutation)
@@ -627,7 +577,7 @@ PY
 # --- doctor ------------------------------------------------------------------
 
 do_doctor() {
-  STELOW_CATALOG_PATH="$CATALOG" python3 - "$ROOT" "$LOCKDIR" "$LOCK_TTL_SEC" "$STATE" "$TRANSITIONS" "${1:-}" <<'PY'
+  python3 - "$ROOT" "$LOCKDIR" "$LOCK_TTL_SEC" "$STATE" "$TRANSITIONS" "${1:-}" <<'PY'
 import sys, os, json, re, time
 root, lockdir, ttl, state_path, trans_path, want_json = sys.argv[1:7]
 findings = []
@@ -660,27 +610,16 @@ if os.path.isdir(lockdir):
         except (ValueError, ProcessLookupError, PermissionError):
             add("warn", "orphan-pid", "lock pid file points at dead pid")
 
-# 4. state<->catalog drift (markdown mirror as fallback)
-if os.path.exists(state_path):
+# 4. state<->transitions drift
+if os.path.exists(state_path) and os.path.exists(trans_path):
     blob = open(state_path).read()
     cm = re.search(r"^current_stage:\s*(\S+)", blob, re.MULTILINE)
     if cm:
         cur = cm.group(1).strip()
-        catalog_path = os.environ.get("STELOW_CATALOG_PATH", "")
-        if catalog_path and os.path.isfile(catalog_path):
-            try:
-                catalog = json.load(open(catalog_path))
-                ids = {s.get("id") for s in catalog.get("stages", [])}
-                if cur not in ids:
-                    add("error", "state-transitions-drift",
-                        f"state.md current_stage '{cur}' not in stage catalog")
-            except Exception:
-                pass
-        elif os.path.exists(trans_path):
-            text = open(trans_path).read()
-            if not re.search(r"^### " + re.escape(cur) + r"\s*$", text, re.MULTILINE):
-                add("error", "state-transitions-drift",
-                    f"state.md current_stage '{cur}' not in transitions.md")
+        text = open(trans_path).read()
+        if not re.search(r"^### " + re.escape(cur) + r"\s*$", text, re.MULTILINE):
+            add("error", "state-transitions-drift",
+                f"state.md current_stage '{cur}' not in transitions.md")
 
 if want_json == "--json":
     print(json.dumps({"findings": findings,

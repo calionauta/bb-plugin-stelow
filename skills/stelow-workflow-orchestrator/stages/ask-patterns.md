@@ -89,8 +89,8 @@ Recommendation: [approach(es) + one-line why, in plain words].`,
 
 Rules for this pattern:
 
-- **Recommend, don't dump.** Name the 1-2 approaches that fit with `(Recommended)` in the label and one line why; say in one line why the rest don't fit. Never ship the question without a recommendation -- an unranked menu of five is the worker abstaining.
-- **Context in plain words, two sentences max.** Who gains what -- never recon internals (bundle counts, parseable rows, file handles), stage slugs, or methodology brand names. Recon detail goes in `preview`, never inline.
+- **Recommend, don't dump.** Name the 1–2 approaches that fit with `(Recommended)` in the label and one line why; say in one line why the rest don't fit. Never ship the question without a recommendation — an unranked menu of five is the worker abstaining.
+- **Context in plain words, two sentences max.** Who gains what — never recon internals (bundle counts, parseable rows, file handles), stage slugs, or methodology brand names. Recon detail goes in `preview`, never inline.
 
 ---
 
@@ -702,7 +702,7 @@ Rules for this pattern:
    itself.
 10. **No channel, no dependency: tool-path asks resolve elaboration with a
     follow-up question.** `ask_user_question` carries no `--needs-note`
-    flag — only `bb stelow ask` declares it. An expectant option on the
+    flag — only `stelow ask` declares it. An expectant option on the
     tool path ("Adjust groups", "Adjust the list") must therefore end in a
     second question asked immediately ("Which group would you like to
     change?"), never in "tell me X" prose with nowhere to put X. Prefer

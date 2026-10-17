@@ -57,21 +57,6 @@ const PLUGIN_ORCHESTRATOR_REF = nodeJoin(
 // a broken install and must fail closed, not silently use a stale mirror.
 export const TRANSITIONS_REF = nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md");
 
-/** Canonical stage catalog (JSON). The advance path reads this, never prose. */
-export const STAGE_CATALOG_REF = (() => {
-  for (const candidate of [
-    nodeJoin(pluginDir, "data", "stelow-stage-catalog.json"),
-    nodeJoin(pluginDir, "..", "data", "stelow-stage-catalog.json"),
-  ]) {
-    try {
-      if (readFileSync(candidate, "utf8").length > 0) return candidate;
-    } catch {
-      /* try next */
-    }
-  }
-  return nodeJoin(pluginDir, "data", "stelow-stage-catalog.json");
-})();
-
 /**
  * Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
  * bundle and bb's plugin row are both sticky caches; the About tab renders
