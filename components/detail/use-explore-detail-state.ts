@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import type { ResearchStrategyOption } from "../creation/creation-settings";
 import { useDetailComment } from "../conversation/use-detail-comment";
 import { useDetailRecoveryActions } from "../manage/detail-recovery-actions";
+import { runTrackRestart, runTrackStart } from "./use-track-worker-actions";
 import type { ViewerFile } from "./research-detail-types";
 
 function useExploreWorkerActions(cardId: string, onChanged: () => void) {
@@ -14,15 +14,7 @@ function useExploreWorkerActions(cardId: string, onChanged: () => void) {
   const recovery = useDetailRecoveryActions({ cardId, trackNoun: "exploration", onChanged });
 
   async function start() {
-    setStarting(true);
-    try {
-      const result = await rpc.call("startWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the exploration is now Doing.");
-      onChanged();
-    } finally {
-      setStarting(false);
-    }
+    return runTrackStart(rpc, cardId, onChanged, "exploration", setStarting);
   }
 
   return { ...recovery, starting, restarting, setRestarting, start };
@@ -47,15 +39,7 @@ export function useExploreDetailState(cardId: string, cardStatus: string | undef
 
   async function restartWorker() {
     setRestartWorkerOpen(false);
-    actions.setRestarting(true);
-    try {
-      const result = await rpc.call("restartWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Restart failed.");
-      else toast.success("Worker restarted — continuing the exploration.");
-      onChanged();
-    } finally {
-      actions.setRestarting(false);
-    }
+    return runTrackRestart(rpc, cardId, onChanged, "exploration", actions.setRestarting);
   }
 
   return {

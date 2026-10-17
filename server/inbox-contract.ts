@@ -8,6 +8,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { optionalInput } from "./rpc-input.js";
 
 const RESOLUTION_REASONS = [
   "answered",
@@ -32,7 +33,7 @@ const inboxEventSnapshotSchema = z.object({
 export const inboxRpcContract = defineRpcContract({
   listNotifications: {
     experimental_description: "Inbox events: needs-attention first, then completions, history, archived",
-    input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
+    input: optionalInput(z.object({ includeArchived: z.boolean().default(false) }).strict()),
     output: z.object({
       notifications: z.array(inboxEventSnapshotSchema.extend({
         cardId: z.string(),

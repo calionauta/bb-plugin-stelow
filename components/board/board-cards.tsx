@@ -120,7 +120,13 @@ type BoardCardProps = {
   onToggleSelection?: (cardId: string) => void;
 };
 
-export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCardProps) {
+function CardShell({ card, ariaNoun, selected, onOpen, children }: {
+  card: BoardCardItem;
+  ariaNoun: string;
+  selected?: boolean;
+  onOpen: () => void;
+  children: ReactNode;
+}) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const open = useCallback(() => onOpen(), [onOpen]);
@@ -139,8 +145,33 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
         else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"} ${selected ? "ring-1 ring-primary" : ""}`}
-      aria-label={`Open card ${card.displayName}.`}
+      className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}${selected ? " ring-1 ring-primary" : ""}`}
+      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardResumeFooter({ card }: { card: BoardCardItem }) {
+  const retry = cardCanResume(card) && card.activity !== "error" ? (
+    <CardRetryButton cardId={card.id} label="Resume work" />
+  ) : null;
+  if (!retry) return null;
+  return (
+    <div className="mt-2 border-t border-border/70 pt-2">
+      <div className="flex gap-2">{retry}</div>
+    </div>
+  );
+}
+
+export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCardProps) {
+  return (
+    <CardShell
+      card={card}
+      ariaNoun="card"
+      selected={selected}
+      onOpen={onOpen}
     >
       <div className="flex min-w-0 items-start gap-2">
         {typeof onToggleSelection === "function" ? (
@@ -160,8 +191,8 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
           <CardMetaRows card={card} />
         </div>
       </div>
-      <BoardCardActions card={card} />
-    </div>
+      <CardResumeFooter card={card} />
+    </CardShell>
   );
 }
 
@@ -205,33 +236,6 @@ function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
 }
 
 /**
- * The edit/resume footer on a parked tile. Self-gating: null when there is
- * nothing to act on, so callers never render an empty bordered strip.
- * Gated to draft/pending without a worker — the sheet itself re-checks,
- * so a stale tile cannot save.
- */
-/**
- * The tile's action row, which is now only ever the resume control.
- *
- * It used to carry an "Edit" button opening a parked-edit sheet, and that button was the
- * ONLY thing that sheet existed for. Editing a parked card happens in the card itself —
- * the title inline in the header, the description through the prompt control, the provider
- * through the preset dialog — so a second entry point duplicated four forms and drifted
- * from them. `canEdit` went with it: its whole job was deciding whether that button showed.
- */
-function BoardCardActions({ card }: { card: BoardCardItem }) {
-  const retry = cardCanResume(card) && card.activity !== "error" ? (
-    <CardRetryButton cardId={card.id} label="Resume work" />
-  ) : null;
-  if (!retry) return null;
-  return (
-    <div className="mt-2 border-t border-border/70 pt-2">
-      <div className="flex gap-2">{retry}</div>
-    </div>
-  );
-}
-
-/**
  * The scope/task strip under the heading. Progress only — the numbers live
  * with the scopes, and this never duplicates them elsewhere on the tile.
  */
@@ -260,30 +264,8 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
   ariaNoun: string;
   onOpen: () => void;
 }) {
-  const navigate = useBbNavigate();
-  const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
-  const open = useCallback(() => onOpen(), [onOpen]);
-  const openThread = useCallback(() => {
-    if (card.workerThreadId) navigate.toThread(card.workerThreadId);
-  }, [navigate, card.workerThreadId]);
-  const retry = cardCanResume(card) && card.activity !== "error" ? (
-    <CardRetryButton cardId={card.id} label="Resume work" />
-  ) : null;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      ref={returnFocusRef}
-      onClick={open}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
-        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
-      }}
-      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}`}
-      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
-    >
+    <CardShell card={card} ariaNoun={ariaNoun} onOpen={onOpen}>
       <CardHeading title={card.displayName} status={<ActivityPill activity={card.activity} detail={card.lastError} />} />
       {tagLabel ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -291,8 +273,8 @@ export function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun,
         </div>
       ) : null}
       <CardMetaRows card={card} />
-      {retry ? <div className="mt-2 border-t border-border/70 pt-2">{retry}</div> : null}
-    </div>
+      <CardResumeFooter card={card} />
+    </CardShell>
   );
 }
 

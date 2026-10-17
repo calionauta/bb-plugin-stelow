@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { decideAskGate } from "../lib/ask-gate.mjs";
+import { decideAskGate } from "../lib/question-gate.mjs";
 
 // The dispatcher fixes pipeline order once: duplicate, then intent, then
 // evidence. Every matrix row below pins which refusal wins when several

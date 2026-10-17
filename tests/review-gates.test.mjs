@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync as readFixtureSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LEGACY_REVIEW_MODE_TO_GATES, formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReviewArtifactKind, skipReasonForGate } from "../lib/review-gates.mjs";
@@ -82,7 +82,7 @@ assert.deepEqual(requiredForStage({ stage: "selection", reviewMode: ["bogus"], a
 // agree on every novel set, not just inline blobs.
 {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const fixture = (name) => readFileSync(join(root, "tests/fixtures/review-gates", `${name}.state.md`), "utf8");
+  const fixture = (name) => readFixtureSync(join(root, "tests/fixtures/review-gates", `${name}.state.md`), "utf8");
   const expectations = {
     auto: { gates: [], pick: ["interface-pick-auto"], skipped: ["diff-gate", "plan-gate", "selection"] },
     "interface-only": { gates: ["interface"], pick: ["interface-pick"], skipped: ["diff-gate", "plan-gate"] },
@@ -129,40 +129,22 @@ assert.equal(preReviewArtifactKind("diff-gate"), null, "diff gate has no single 
 assert.equal(preReviewArtifactKind("execution"), null, "work stages never pre-review");
 assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 
-// Advance wiring: entering a gate fires the pre-review without waiting,
-// and the helper fails silent on every miss — designation, workflow,
-// artifact, thin file. Advance never depends on it.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
-const executionAdvance = readFileSync(join(root, "server/execution-advance-cli.ts"), "utf8");
-assert.match(
-  executionAdvance,
-  /void deps\.requestGatePreReview\(card\.id, stage\)\.catch\(\(\) => undefined\);/,
-  "gate entry triggers without waiting",
-);
-assert.match(
-  reviewPreflight,
-  /async function requestGatePreReview\(\s*deps: RuntimeDeps,\s*cardId: string,\s*stage: string,?\s*\): Promise<void>/,
-  "the trigger is one named helper owned by the preflight slice",
-);
-const preAt = reviewPreflight.indexOf("async function requestGatePreReview(");
-const preEnd = reviewPreflight.indexOf("\n  }\n", preAt);
-assert.ok(preAt >= 0 && preEnd > preAt, "the helper body is bounded");
-const preBody = reviewPreflight.slice(preAt, preEnd);
-assert.ok(preBody.includes("card.kind !== \"build\""), "research and explore never pre-review");
-assert.ok(preBody.includes("if (!reviewPreset) return;"), "undesignated reviewers stay silent, exactly like review refuses");
-assert.match(reviewPreflight, /preReviewArtifactKind\(stage\)/, "eligibility resolves through the lib map, never inline");
-assert.match(
-  reviewPreflight,
-  /boardFromRoot\(\s*deps\.bb,\s*workspace\.path,\s*card\.dir_hash/,
-  "artifact resolution mirrors approveGate",
-);
-assert.match(reviewPreflight, /return Boolean\(depth\?\.pass\)/, "thin files never spend review budget");
-assert.ok(reviewPreflight.includes('"review",'), "pre-reviews ride the registered review site");
-assert.match(
-  preBody,
-  /logCardComment\(\s*cardId,\s*"card",\s*cardId,\s*"agent"/,
-  "findings land as a card comment, never a gate file",
+// Pre-review routing is behavioral: the lib map decides eligibility, and the
+// runtime slice (covered by tests/review-preflight.test.mjs) fails silent on
+// every miss — designation, workflow, artifact, thin file. What this file pins
+// is that the map and the canonical rendering agree: every ladder rung
+// round-trips through the flow list without inventing or dropping a gate.
+for (const rung of Object.keys(LEGACY_REVIEW_MODE_TO_GATES)) {
+  assert.equal(
+    formatReviewGates(normalizeReviewGates(rung)),
+    formatReviewGates(LEGACY_REVIEW_MODE_TO_GATES[rung]),
+    `${rung} round-trips through the canonical flow list`,
+  );
+}
+assert.equal(
+  formatReviewGates(normalizeReviewGates("Product Spec + Interface + Scopes")),
+  "[spec, interface, scope]",
+  "a mid-ladder rung renders its exact atoms",
 );
 
 console.log("review gates test ok: normalize both directions, legacy no-regression, atom matrix, state.md storage, gate-named reasons");

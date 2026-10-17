@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { playbookEntries, renderPlaybook } from "../../lib/playbook.mjs";
-import { renderStatusLine, type QuestionCount, type StatusBoardLine } from "../../lib/status-question-state.mjs";
+import { renderStatusLine, type QuestionCount, type StatusBoardLine } from "../../lib/question-store.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers.js";

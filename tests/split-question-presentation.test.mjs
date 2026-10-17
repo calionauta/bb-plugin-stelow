@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SPLIT_QUESTION_GUIDANCE, isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "../lib/split-question-presentation.mjs";
+import { SPLIT_QUESTION_GUIDANCE, isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "../lib/question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError, questionCopy } from "../lib/question-presentation.mjs";
 
 const original = "Which deliveries should split?";

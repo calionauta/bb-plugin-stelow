@@ -2,8 +2,10 @@
  * The sweep rules: the two passes a reconcile makes over the whole board. One
  * repairs the runs already recorded — including stopping runs whose card has
  * gone away, which is the one repair with no card to publish to. The other
- * starts the run a card is eligible for and does not yet own, so a card whose
- * host run was lost picks its work back up without a human.
+ * observes stage entries a card is eligible for but does not yet own, and
+ * says so on the card: the reconciler never starts work on its own, because
+ * an auto-start inside a periodic sweep races every explicit start and births
+ * duplicate runs the ledger then has to explain.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { listExecutionRuns } from "../lib/execution-run-ledger.mjs";
@@ -19,6 +21,7 @@ export type SweepDeps = {
   db: Db;
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<{ path: string } | null>;
+  logComment: (cardId: string, targetId: string, body: string) => void;
   publishCard: (cardId: string) => void;
   native: ExecutionNative;
   lifecycle: ReconcileStopper;
@@ -26,6 +29,17 @@ export type SweepDeps = {
 };
 
 const LIVE_STATES = ["queued", "running", "needs_input"];
+
+/** Whether this card already carries this exact observation. A dead handle or a
+ * missing table answers "no" rather than ending the pass: the observation is
+ * advisory, and the pass has other cards to walk. */
+function alreadyObserved(db: Db, cardId: string, body: string): boolean {
+  try {
+    return db.prepare("SELECT 1 FROM comments WHERE card_id = ? AND body = ? LIMIT 1").get(cardId, body) !== undefined;
+  } catch {
+    return false;
+  }
+}
 
 export function createReconcileSweep(deps: SweepDeps) {
   return {
@@ -58,7 +72,7 @@ export async function reconcileStageEntries(deps: SweepDeps): Promise<void> {
     const card = deps.getCard(id);
     if (!card?.worker_thread_id) continue;
     // Ledger first: a card that already owns a run for its stage needs no
-    // route decision and, above all, no availability probe (two CLI calls).
+    // further attention from this pass.
     const recipeId = (STAGE_BY_ID as Record<string, { execution?: { recipe?: string } }>)[
       card.stage
     ]?.execution?.recipe;
@@ -66,24 +80,26 @@ export async function reconcileStageEntries(deps: SweepDeps): Promise<void> {
     const owned = listExecutionRuns(deps.db, card.id)
       .some((run) => run.stage === card.stage && run.recipeId === recipeId);
     if (owned) continue;
-    const workspace = await deps.cardWorkspace(card).catch(() => null);
-    if (!workspace?.path) continue;
-    const route = await deps.native.resolveStageExecutionRoute(card, card.stage, workspace.path);
-    if (!route || route.route.mode === "refused") continue;
-    if (route.route.mode === "coordinator-sequential") {
-      deps.native.recordCoordinatorSequentialRoute(card.id, card.stage, route.recipeId, route.route);
-      deps.publishCard(card.id);
-      continue;
+    // Observer only: record the gap on the card and publish it, but never
+    // resolve a route or start a run. Starting here raced explicit starts —
+    // the sweep and the human each birthed a run for the same stage — and a
+    // periodic pass must not spend the card's single execution slot.
+    // Owed once, not once per tick. The sweep runs on a timer, so an ungated
+    // comment buries the card's trail under copies of the same line for as long
+    // as the gap stands (ten were recorded on one card). The card already
+    // carries the observation if it is there — and after a reload it still is,
+    // which an in-memory guard would lose.
+    const observation = `Reconcile observed no ${recipeId} run for stage ${card.stage}; no run was started automatically. Start one explicitly to proceed.`;
+    if (alreadyObserved(deps.db, card.id, observation)) continue;
+    try {
+      deps.logComment(card.id, card.stage, observation);
+    } catch {
+      /* the observation is owed, never load-bearing */
     }
-    const existing = listExecutionRuns(deps.db, card.id)
-      .some((run) => run.stage === card.stage && run.recipeId === route.recipeId);
-    if (existing) continue;
-    const started = await deps.native.startNativeStageForCard(
-      card,
-      route.recipeId,
-      { prompt: card.prompt },
-      card.stage,
-    ).catch(() => null);
-    if (started?.run) deps.publishCard(card.id);
+    try {
+      deps.publishCard(card.id);
+    } catch {
+      /* publishing never fails the pass */
+    }
   }
 }

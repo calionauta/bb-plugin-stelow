@@ -1,28 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   MAX_CHILDREN,
   attachChildTokenUsage,
   attachChildTokenBreakdown,
   shapeChildThreads,
 } from "../lib/thread-children.mjs";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
-  readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
-].join("\n");
-const sharedSchemas = readFileSync(join(root, "server", "contracts.ts"), "utf8");
-const workerBackend = readFileSync(
-  join(root, "server", "workers-history.ts"),
-  "utf8",
-);
-const workerHistory = readFileSync(
-  join(root, "components", "worker-history", "worker-history.tsx"),
-  "utf8",
-);
+import * as tokenUsage from "../lib/token-usage.mjs";
+import { tokenBreakdownSchema, workerHistoryEntrySchema } from "../server/contracts.ts";
+import { cardDetailRpcContract } from "../server/card-detail-rpc-contract.ts";
+import { createWorkerHistory } from "../server/workers-history.ts";
+import { loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 // Shaping only: deleted threads hide, fields fall back, the list caps.
 assert.deepEqual(shapeChildThreads(null), [], "non-lists shape to nothing");
@@ -200,65 +187,130 @@ assert.deepEqual(
 );
 
 // Breakdowns ride the same history entries as totals: one latest event
-// per thread, totals kept, split added. The contract pins both fields so
-// a dropped split fails loudly instead of rendering half a story.
-assert.match(
-  workerBackend,
-  /tokenBreakdown: report\.breakdown/,
-  "history entries carry the split beside the total",
-);
-// The schema moved to server/contracts.ts, because it was declared twice in
-// the detail contract and a leg added for children and not for the parent
-// renders as "no usage" on the run it belongs to. The pin follows the shape:
-// it still has to carry every leg, and it has to be the shape BOTH the entry
-// and its children use — one name for the one story.
-// The schema lives in server/contracts.ts now, and the WHOLE entry object moved with
-// it when the detail contract crossed the repository's 400-line budget. The pin reads
-// the file that owns the shape, and keeps asserting both legs, so a leg added for
-// children and not for the parent still fails here.
-assert.match(
-  sharedSchemas,
-  /tokenBreakdown: tokenBreakdownSchema/,
-  "worker history entries and their children share one breakdown schema, not two spellings of it",
+// per thread, totals kept, split added. Driven, not read: the entry the
+// host builds must carry the split beside the total, so a dropped split
+// fails here instead of rendering half a story.
+{
+  const db = {
+    prepare() {
+      return {
+        all: () => [{
+          thread_id: "thr_a",
+          preset_id: null,
+          preset_name: null,
+          started_at: 1,
+          ended_at: 2,
+          ended_reason: null,
+        }],
+      };
+    },
+  };
+  const bb = {
+    sdk: {
+      threads: {
+        events: {
+          list: async ({ types }) => (types.includes("thread/tokenUsage/updated")
+            ? [{
+              type: "thread/tokenUsage/updated",
+              data: {
+                tokenUsage: {
+                  total: {
+                    inputTokens: 800,
+                    outputTokens: 300,
+                    cachedInputTokens: 100,
+                    cacheReadInputTokens: 50,
+                    reasoningOutputTokens: 20,
+                    totalTokens: 1270,
+                  },
+                },
+              },
+            }]
+            : []),
+        },
+        list: async () => [],
+      },
+    },
+  };
+  const entries = await createWorkerHistory(db, bb).history("card_1");
+  assert.deepEqual(
+    entries[0].tokenBreakdown,
+    { input: 800, output: 300, cached: 150, reasoning: 20, total: 1270 },
+    "history entries carry the provider split beside the total, cached summing both cache fields",
+  );
+}
+
+// The schema is shared: the entry and each child carry the same nullable
+// five legs, declared once. Asked of the imported schemas, so a second
+// spelling, a dropped leg, or a re-declared entry fails here.
+assert.equal(
+  tokenBreakdownSchema.safeParse({ input: 1, output: 2, cached: 3, reasoning: 4, total: 5 }).success,
+  true,
+  "the shared breakdown schema declares all five legs",
 );
 assert.equal(
-  (sharedSchemas.match(/tokenBreakdown: tokenBreakdownSchema/g) ?? []).length,
-  2,
-  "both legs use it — a child thread that reported a split cannot render as no usage",
+  tokenBreakdownSchema.safeParse({ input: null, output: null, cached: null, reasoning: null, total: null }).success,
+  true,
+  "every leg is nullable, so an unreported leg is unknown rather than zero",
 );
-// And the detail contract must USE the shared entry schema rather than re-spelling it,
-// which is the failure the extraction exists to prevent.
-assert.match(
-  server,
-  /workerHistory: z\.array\(workerHistoryEntrySchema\)/,
+assert.equal(
+  tokenBreakdownSchema.safeParse({ input: 1, output: 2, cached: 3, reasoning: 4 }).success,
+  false,
+  "a missing leg is refused, so the shape cannot silently drop one",
+);
+assert.equal(
+  workerHistoryEntrySchema.shape.tokenBreakdown,
+  tokenBreakdownSchema,
+  "the worker history entry uses the shared breakdown schema, not a second spelling",
+);
+assert.equal(
+  workerHistoryEntrySchema.shape.children.element.shape.tokenBreakdown,
+  tokenBreakdownSchema,
+  "and so does every child thread — one schema for the one story",
+);
+assert.equal(
+  cardDetailRpcContract.cardDetail.output.shape.workerHistory.element,
+  workerHistoryEntrySchema,
   "the card detail references the shared entry schema instead of declaring a second one",
 );
-// One regex per leg would stop being one regex, so this is split at the legs
-// instead: five alternatives in a row is the shape being asserted, and a
-// 190-character line asserts it illegibly.
-const SHARED_BREAKDOWN_LEGS = new RegExp([
-  "export const tokenBreakdownSchema = z\\s*\\.object\\(\\{",
-  "[\\s\\S]*?input:", "[\\s\\S]*?output:", "[\\s\\S]*?cached:",
-  "[\\s\\S]*?reasoning:",
-  "[\\s\\S]*?total: z\\s*\\.number\\(\\)\\s*\\.nullable\\(\\),",
-  "\\s*\\}\\)\\s*\\.nullable\\(\\)",
-].join(""));
 
-assert.match(
-  sharedSchemas,
-  SHARED_BREAKDOWN_LEGS,
-  "the shared schema declares all five legs, nullable per leg so an unreported leg is unknown rather than zero",
-);
-assert.match(
-  workerHistory,
-  /sumTokenBreakdowns\(history\.flatMap/,
-  "the card total sums splits through the lib",
-);
-assert.match(
-  workerHistory,
-  /legs\.join\(" · "\)/,
-  "reported legs render labeled, omitted legs never render",
-);
+// The card total sums splits through the lib and renders only the legs
+// that were reported, labeled. Rendered, not read: the text a reader sees
+// is what is asserted.
+{
+  const WorkerHistoryList = loadComponent(
+    "components/worker-history/worker-history.tsx",
+    "WorkerHistoryList",
+    {
+      "@get-bb/plugin-sdk/app": { useBbNavigate: () => ({ toThread: () => {} }) },
+      "@/components/ui/button": { Button: ({ children }) => ({ type: "button", props: {}, children }) },
+      "../../lib/utils": { cn: (...values) => values.filter(Boolean).join(" ") },
+      "../disclosure": { DisclosureChevron: () => null, SECTION_SURFACE: "section", SUMMARY_ROW: "summary" },
+      "../dashboard/build-status-pills": { Pill: ({ children }) => ({ type: "span", props: {}, children }) },
+      "../../lib/worker-action-policy.mjs": { workerSectionPolicy: () => ({}) },
+      "../../lib/relative-time.mjs": { relativeTime: () => "just now" },
+      "../../lib/token-usage.mjs": tokenUsage,
+    },
+  );
+  const rendered = treeText(renderTree(WorkerHistoryList({
+    history: [{
+      threadId: "thr_a",
+      presetName: null,
+      startedAt: 1,
+      endedAt: 2,
+      endedReason: null,
+      tokenUsage: 1000,
+      tokenUsageSource: "provider",
+      tokenBreakdown: { input: 800, output: 200, cached: null, reasoning: null, total: 1000 },
+      children: [],
+    }],
+  })));
+  assert.match(
+    rendered,
+    /in 800 · out 200/,
+    "reported legs render labeled and joined, summed through the lib",
+  );
+  assert.doesNotMatch(rendered, /cached/, "an omitted leg never renders");
+}
 
 console.log(
   "thread children test ok: shaping, fallbacks, deleted filter, cap, token attach",

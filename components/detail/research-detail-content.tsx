@@ -1,6 +1,6 @@
 import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
-import { researchColumnForStatus } from "../../lib/card-question-state.mjs";
+import { researchColumnForStatus } from "../../lib/question-store.mjs";
 import { groupResearchArtifacts } from "../../lib/artifact-groups.mjs";
 import { joinStrategyLabels, statusTone } from "../../lib/detail-presentation.mjs";
 import { parseResearchIndexSections } from "../../lib/research-index-sections.mjs";

@@ -1,5 +1,5 @@
-import { isAbsolute, relative, resolve } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
@@ -245,12 +245,15 @@ function scopeTally(summary: ScopeSummary) {
   return { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs };
 }
 
-function readableCardPath(rootPath: string, path: string): string | null {
+function readableCardPath(rootPath: string, path: string, allowlist: string[] = []): string | null {
+  // The manifest fast path first (relative, no `..`, jailed to the root).
   const resolved = resolveArtifactPath(rootPath, path);
   if (resolved) return resolved;
-  if (!isAbsolute(path) || path.split(/[\\/]+/).some((segment) => segment === "..")) return null;
-  const absolute = resolve(path);
-  return relative(rootPath, absolute).split(/[\\/]+/)[0] !== ".." ? absolute : null;
+  // No absolute-path exit: an absolute outsider used to pass when it held no
+  // `..` segment, so any absolute path on the host was readable through this
+  // door. Everything now resolves through the same jail — inside the
+  // workspace, or inside a managed-worktree allowlist root — or it is null.
+  return resolveWithinRoot(rootPath, path, { allowlist });
 }
 
 async function readTextFile(bb: BbPluginApi, path: string) {

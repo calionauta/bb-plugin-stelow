@@ -48,10 +48,10 @@ function sourceOf(relative) {
  * The touch-target and cursor rules are counted, because `AGENTS.md` says they are not tested.
  *
  * `AGENTS.md` records them as debt in its own words: *"`min-h-11` is the one this section is
- * least able to keep: it is stated, not tested, and 84 raw buttons are the standing
- * evidence."* That sentence is honest about the debt and silent about its SIZE — and 84 is
- * the button count, not the number of buttons breaking either rule. Measured: **69** carry no
- * `min-h-9` or larger, and **57** carry no `cursor-pointer` (84 buttons). The raw counts are
+ * least able to keep: it is stated, not tested, and 83 raw buttons are the standing
+ * evidence."* That sentence is honest about the debt and silent about its SIZE — and 83 is
+ * the button count, not the number of buttons breaking either rule. Measured: **68** carry no
+ * `min-h-9` or larger, and **56** carry no `cursor-pointer` (83 buttons). The raw counts are
  * the honest ones the `AGENTS.md` sentence is about; `components/` + `lib/` is the scope, and
  * comments are NOT stripped, because a button written in a comment is not a control.
  *
@@ -62,13 +62,13 @@ function sourceOf(relative) {
  * The floors are measured, not chosen: raise one only with a reason, and prefer migrating.
  */
 test("the untested touch-target and cursor rules cannot grow", () => {
-  // Measured on the raw text, the same way `AGENTS.md`'s own count is measured: 84 buttons,
-  // 69 without a touch height, 57 without a cursor. The first version of this block stripped
+  // Measured on the raw text, the same way `AGENTS.md`'s own count is measured: 83 buttons,
+  // 68 without a touch height, 56 without a cursor. The first version of this block stripped
   // comments and set the floors from the stripped figures, which left them 3 too high while
   // the census reported the stripped numbers — a new button fitted underneath and the test
   // stayed green. Found by adding one and watching it pass.
-  const TOUCH_FLOOR = 69;
-  const CURSOR_FLOOR = 57;
+  const TOUCH_FLOOR = 68;
+  const CURSOR_FLOOR = 56;
   let buttons = 0;
   let missingTouch = 0;
   let missingCursor = 0;
@@ -88,8 +88,8 @@ test("the untested touch-target and cursor rules cannot grow", () => {
   // elements it measures rather than the tree having fewer of them. That check is what caught
   // the per-line version reporting 32.
   assert.ok(
-    buttons >= 84,
-    `the census sees the raw buttons (found ${buttons}, expected at least 84) — a lower number `
+    buttons >= 83,
+    `the census sees the raw buttons (found ${buttons}, expected at least 83) — a lower number `
     + "means this scan stopped matching, not that the tree has fewer buttons",
   );
   assert.ok(

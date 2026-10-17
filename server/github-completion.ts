@@ -8,6 +8,7 @@
  * on, and the marker check makes a retry safe: a second attempt adopts the
  * existing comment instead of double-posting.
  */
+import { z } from "zod";
 import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
 import { requireGithubIssuesEnabled, type GithubAutomationDeps, type GithubCard } from "./github-automation-context.js";
 import type { GithubClient } from "./github-client.js";
@@ -45,7 +46,8 @@ export function completionBody(
   ].join("\n");
 }
 
-async function postGithubCompletion(ctx: GithubAutomationDeps, client: GithubClient, { cardId, closeIssue }: { cardId: string; closeIssue: boolean }) {
+async function postGithubCompletion(ctx: GithubAutomationDeps, client: GithubClient, input: { cardId: string; closeIssue: boolean }) {
+  const { cardId, closeIssue } = z.object({ cardId: z.string().min(1), closeIssue: z.boolean() }).strict().parse(input);
   const { db, bb } = ctx;
   const now = () => ctx.now();
   requireGithubIssuesEnabled();

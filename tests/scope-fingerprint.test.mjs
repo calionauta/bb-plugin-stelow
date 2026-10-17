@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
 import { scopeFingerprint } from "../lib/scope-fingerprint.mjs";
+import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { createScopeProgressSync } from "../server/scope-progress-sync.ts";
+import { startReconciler } from "../server/runtime/reconciler.ts";
 
 // The fingerprint moves exactly when progress moves: scope or task status
 // flips change it; renames, notes, and junk never wake the board. The
@@ -31,23 +39,97 @@ assert.equal(scopeFingerprint([{ id: "s1" }]), scopeFingerprint([{ id: "s1" }]),
 
 console.log("scope fingerprint test ok: progress moves it, cosmetics do not");
 
-// Server wiring: the reconcile loop watches prints per live card and
-// publishes card-state only on movement — first sight baselines silently,
-// dead cards prune out, and the map cannot outgrow the live set.
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const reconciler = readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8");
-// The watch owns its own module now: it answers "did the scopes move", which is
-// a different question from "what are this card's scopes".
-const scopeModule = readFileSync(join(root, "server/scope-progress-sync.ts"), "utf8");
-assert.match(scopeModule, /const prints = new Map<string, string>\(\);/, "one print per live card, closure lifetime");
-assert.match(scopeModule, /async function sync\(cardId: string\)/, "the watch is one named helper");
-assert.match(
-  reconciler,
-  /void deps\.scopeProgress\.sync\(row\.id\);/,
-  "every reconcile tick watches every live card",
-);
-assert.match(scopeModule, /if \(previous !== undefined && previous !== print\) deps\.publish\(cardId\);/, "movement publishes, first sight stays silent");
-assert.match(scopeModule, /for \(const id of prints\.keys\(\)\) if \(!liveIds\.has\(id\)\) prints\.delete\(id\);/, "dead cards prune out of the map");
+// The reconcile loop watches prints per live card and publishes card-state only
+// on movement — first sight baselines silently, dead cards prune out, and a
+// pruned card re-baselines rather than reporting a phantom move. Driven through
+// the real modules: a rename of the watch's internals, a first sync that
+// published, or a prune that leaked all fail here because the CALLS are
+// observed, not the source.
+
+function progressFixture() {
+  const root = mkdtempSync(join(tmpdir(), "stelow-scope-progress-"));
+  const tracking = {
+    workflows: [{ workflowId: "card_1", scopes: [{ id: "s1", status: "pending" }] }],
+  };
+  writeFileSync(join(root, "stelow.json"), JSON.stringify(tracking));
+  const writes = [];
+  const progress = createScopeProgressSync({
+    getCard: (id) => (id === "card_1" ? { id } : undefined),
+    cardWorkspace: async () => ({ path: root }),
+    publish: (id) => writes.push(id),
+  });
+  const advance = (status) => {
+    tracking.workflows[0].scopes[0].status = status;
+    writeFileSync(join(root, "stelow.json"), JSON.stringify(tracking));
+  };
+  return { root, writes, progress, advance };
+}
+
+test("the progress watch baselines silently, publishes on movement, and prunes", async () => {
+  const f = progressFixture();
+  try {
+    await f.progress.sync("card_1");
+    await f.progress.sync("card_1");
+    assert.deepEqual(f.writes, [], "the first print is a silent baseline");
+
+    f.advance("in-progress");
+    await f.progress.sync("card_1");
+    assert.deepEqual(f.writes, ["card_1"], "a moved print publishes card-state");
+
+    // A pruned card is no longer watched, so its next sync is a fresh baseline
+    // rather than a movement — the map cannot outgrow the live set.
+    f.progress.prune(new Set());
+    await f.progress.sync("card_1");
+    assert.deepEqual(f.writes, ["card_1"], "a re-baselined card does not report a move");
+
+    f.advance("done");
+    await f.progress.sync("card_1");
+    assert.deepEqual(f.writes, ["card_1", "card_1"], "the watch still publishes after pruning");
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+function reconcilerDb() {
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, status TEXT, worker_thread_id TEXT)");
+  db.exec(`CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
+    summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
+    occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER,
+    resolved_at INTEGER, resolved_reason TEXT, severity INTEGER,
+    severity_reasons TEXT, occurrences INTEGER
+  )`);
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live_a", "in-progress", "thread-1");
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live_b", "in-progress", "thread-2");
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("unstarted", "draft", null);
+  ensureCardClaimsTables(db);
+  return db;
+}
+
+test("every reconcile tick watches every live card and prunes the dead ones", () => {
+  const db = reconcilerDb();
+  const scopes = [];
+  const pruned = [];
+  const reconciler = startReconciler({
+    db,
+    now: () => 10_000,
+    syncThreadState: async () => {},
+    scopeProgress: {
+      sync: async (id) => { scopes.push(id); },
+      prune: (ids) => { pruned.push([...ids].sort()); },
+    },
+    maybeBumpSeverity: async () => {},
+    notifyClaimWaiters: async () => {},
+    onError: (phase, error) => { throw new Error(`${phase}: ${error}`); },
+    scheduler: { setInterval: () => 1, clearInterval: () => {} },
+  });
+  try {
+    reconciler.tick();
+    assert.deepEqual(scopes, ["live_a", "live_b"], "each live card is watched every tick");
+    assert.deepEqual(pruned, [["live_a", "live_b"]], "the live set is the prune input, so dead cards drop out");
+  } finally {
+    reconciler.dispose();
+    db.close();
+  }
+});

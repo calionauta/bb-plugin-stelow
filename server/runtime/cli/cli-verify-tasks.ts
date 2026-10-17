@@ -12,7 +12,7 @@ import {
   resolveScopeVerdicts,
   taskVerifyCommand,
   tasksToScoreQuestions,
-} from "../../../lib/task-evidence.mjs";
+} from "../../../lib/question-evidence.mjs";
 import { loadCardScopes } from "../../scopes.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";

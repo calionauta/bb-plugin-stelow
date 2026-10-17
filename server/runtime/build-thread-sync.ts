@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { readMissUpdates, readRecoveredUpdates } from "../../lib/host-read-streak.mjs";
@@ -343,7 +343,11 @@ async function resumeWithProgress(
  * failure this repo keeps refusing.
  */
 function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
-  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
+  // Compared against the last IDLE edge, not against `last_assistant_text`:
+  // a running sync (which a card-detail read also triggers) rewrites that field
+  // with the live turn text, so comparing there made "new text" depend on
+  // whether the reader looked mid-turn.
+  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_idle_text) {
     return true;
   }
   return calls?.advanced ?? false;

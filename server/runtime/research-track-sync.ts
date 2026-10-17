@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";

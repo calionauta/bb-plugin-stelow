@@ -1,3 +1,4 @@
+import { buildWorkflowPrompt as buildSharedWorkflowPrompt } from "./workflow-shared.js";
 import { WORKFLOW_INTRO, WORKFLOW_SKILLS } from "./plugin-protocols.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
@@ -91,39 +92,10 @@ function stateDirText(seed: Seed): string {
 }
 
 function buildWorkflowPrompt(input: PromptInput): string {
-  const protocols = input.protocols;
-  // Intro, then the shared clauses, then the per-card values — the order that lets a
-  // provider reuse this opening when the next worker runs on a different card. The
-  // state dir used to sit in the third sentence, which put a per-card path inside the
-  // prefix and made everything after it uncacheable. The intro itself is
-  // WORKFLOW_INTRO, the same const the restart path opens with, so the two are byte
-  // identical rather than equal by inspection.
-  const intro = [
-    WORKFLOW_INTRO,
-    protocols.cardOwnerRules,
-    workflowSkillsClause(),
-    protocols.neverSeed,
-    "Preserve every gate (product, interface, tech plan, diff).",
-    protocols.cliEquivalents,
-    protocols.reconProtocol,
-    protocols.draftProtocol,
-  ].join("\n\n");
-  // The remaining clauses continue the same canonical order the intro began, so the
-  // shared run is not interrupted by a per-card value. `interfacePick` and
-  // `userInputContract` are rendered through the same clause helper the spawn path
-  // uses, in the same position, because a helper that reorders them per path is the
-  // same divergence one level down.
-  const clauses = [
-    protocols.turnDiscipline,
-    protocols.commitStyle,
-    protocols.interfacePick,
-    protocols.userInputContract,
-    protocols.commandFailureRule,
-    protocols.doneProtocol,
-    protocols.splitProtocol,
-  ].join("\n\n");
-  // Everything below differs per card, so it comes last: the cacheable region is
-  // everything before this point.
+  // One parameterized builder: the shared prefix comes from the single
+  // buildWorkflowPrompt so spawn, restart, and reseed open byte-identically.
+  // Everything below differs per card, so it comes last: the cacheable region
+  // is everything before this point.
   const card = [
     `This worker was re-seeded. Your state dir is (${stateDirText(input.seed)}) — its state.md holds name, intent, `
       + `current_stage, status. Use \`bb stelow advance <stage>\` to change stages `
@@ -133,14 +105,23 @@ function buildWorkflowPrompt(input: PromptInput): string {
     presetInstructions(input.params.instructions),
     `Request:\n${input.card.prompt}`,
   ].join("\n\n");
-  return `${intro}\n\n${clauses}\n\n${card}`;
-}
-
-function workflowSkillsClause(): string {
-  // The shared const, not a second wording of the same rule: F1 gave each path its
-  // own phrasing of the skill pointer, which is the drift shape this file exists to
-  // avoid, and it cost the cache too (the two texts diverged at character 1,015).
-  return WORKFLOW_SKILLS;
+  const protocols = {
+    workflowIntro: WORKFLOW_INTRO,
+    cardOwnerRules: input.protocols.cardOwnerRules,
+    workflowSkills: WORKFLOW_SKILLS,
+    neverSeed: input.protocols.neverSeed,
+    cliEquivalents: input.protocols.cliEquivalents,
+    reconProtocol: input.protocols.reconProtocol,
+    draftProtocol: input.protocols.draftProtocol,
+    turnDiscipline: input.protocols.turnDiscipline,
+    commitStyle: input.protocols.commitStyle,
+    interfacePick: input.protocols.interfacePick,
+    userInputContract: input.protocols.userInputContract,
+    commandFailureRule: input.protocols.commandFailureRule,
+    doneProtocol: input.protocols.doneProtocol,
+    splitProtocol: input.protocols.splitProtocol,
+  };
+  return buildSharedWorkflowPrompt(protocols, card);
 }
 
 function intentClause(intent: string): string {

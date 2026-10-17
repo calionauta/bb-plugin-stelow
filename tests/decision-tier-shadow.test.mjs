@@ -57,25 +57,25 @@ for (const setup of [
 }
 
 // applyBand: shadow fires on a real swap only, never changes the swap,
-// and a throwing shadow never breaks the respawn.
+// and a throwing shadow never breaks the schedule. Every swap is scheduled —
+// never an immediate respawn inside the advance — so a burst of advances
+// still births exactly one replacement.
 {
   const seen = [];
   const router = createBandRouter({
     getReliablePreset: () => ({ id: "preset-next" }),
     getCardPresetId: () => "preset-now",
-    respawn: async () => seen.push("respawn"),
     scheduleRespawn: () => seen.push("scheduled"),
     suggestTier: async (advCard, stage) => { seen.push(`shadow:${stage}`); return null; },
   });
   await router.applyBand({ ...card, worker_preset_id: null }, "planning", false);
-  assert.deepEqual(seen, ["respawn", "shadow:planning"], "swap happens, then shadow observes");
+  assert.deepEqual(seen, ["scheduled", "shadow:planning"], "swap scheduled, then shadow observes");
 }
 {
   const seen = [];
   const router = createBandRouter({
     getReliablePreset: () => ({ id: "preset-same" }),
     getCardPresetId: () => "preset-same",
-    respawn: async () => seen.push("respawn"),
     scheduleRespawn: () => seen.push("scheduled"),
     suggestTier: async () => { seen.push("shadow"); return null; },
   });
@@ -87,7 +87,6 @@ for (const setup of [
   const router = createBandRouter({
     getReliablePreset: () => ({ id: "preset-next" }),
     getCardPresetId: () => "preset-now",
-    respawn: async () => seen.push("respawn"),
     scheduleRespawn: () => seen.push("scheduled"),
     suggestTier: async () => { throw new Error("shadow down"); },
   });

@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import {
   BRIEFING_MAX_CHARS,
@@ -23,7 +20,6 @@ import { createBriefingRuntime } from "../server/runtime/card-briefing-runtime.t
  * because the reader cannot tell it from the real ones.
  */
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = `CREATE TABLE cards (
   id TEXT PRIMARY KEY, project_id TEXT, kind TEXT, name TEXT, display_name TEXT,
   status TEXT, stage TEXT, workspace_kind TEXT, worker_thread_id TEXT,
@@ -183,18 +179,60 @@ test("the anchor is the card's own read state, and the delta starts there", asyn
 });
 
 test("the briefing never writes a card, an artifact, or a state file", async () => {
-  const source = readFileSync(join(ROOT, "server/runtime/card-briefing-runtime.ts"), "utf8");
-  assert.doesNotMatch(source, /files\.write|files\.mkdir|UPDATE cards|INSERT INTO cards/, "no write path exists here");
-  // Code shapes, not the word: the runtime's docstring says nothing advances,
-  // and a guard on the word would forbid saying so.
-  assert.doesNotMatch(source, /advanceCard|runHelper\(|requestGatePreReview\(/, "and nothing advances");
+  // Read-only is asked of the RUN, not of the source: every statement the
+  // briefing executes is recorded, and the whole database must be identical
+  // after a briefing that went all the way through the model path. A source
+  // grep passed on a runtime that had never been called; this fails the moment
+  // any read turns into a write.
   const db = fixture();
-  const { runtime: rt } = runtime(db);
-  const before = db.prepare("SELECT * FROM cards WHERE id = 'c1'").get();
-  await rt.catchUp("c1");
-  assert.deepEqual(db.prepare("SELECT * FROM cards WHERE id = 'c1'").get(), before, "the card is byte-identical after a briefing");
+  const statements = [];
+  const tracked = Object.create(db, {
+    prepare: {
+      value: (sql) => {
+        statements.push(sql);
+        return db.prepare(sql);
+      },
+    },
+  });
+  const before = dumpAll(db);
+  const { runtime: rt } = runtime(tracked, {
+    deps: {
+      bb: {
+        sdk: {
+          threads: {
+            get: async () => ({ status: "idle" }),
+            output: async () => ({ output: "The card moved to execution." }),
+          },
+          // The runtime has no file dependency at all; handing it one that
+          // throws is how "it writes no state file" stops being a claim about
+          // an import list and becomes a claim about a call.
+          files: {
+            write: () => { throw new Error("a briefing must not write a file"); },
+            mkdir: () => { throw new Error("a briefing must not create a directory"); },
+          },
+        },
+      },
+    },
+  });
+  const result = await rt.catchUp("c1");
+  assert.equal(result.ok, true, "the read-only briefing still answers");
+  assert.deepEqual(dumpAll(db), before, "every table is byte-identical after a briefing");
+  assert.deepEqual(
+    statements.filter((sql) => /\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i.test(sql)),
+    [],
+    "a briefing executes reads only — no statement writes",
+  );
   db.close();
 });
+
+/** Every table the schema has, ordered so a comparison sees any new row. */
+function dumpAll(db) {
+  return {
+    cards: db.prepare("SELECT * FROM cards ORDER BY id").all(),
+    stages: db.prepare("SELECT * FROM card_stage_events ORDER BY id").all(),
+    inbox: db.prepare("SELECT * FROM inbox_events ORDER BY id").all(),
+  };
+}
 
 test("usable output is accepted, oversized output is capped, empty is refused", () => {
   assert.equal(validateBriefingOutput("The card moved on.").ok, true, "plain prose is usable");

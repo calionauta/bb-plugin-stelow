@@ -37,6 +37,8 @@ export function syncQuestionInboxEvents(db: { prepare(query: string): { all(...v
   occurredAt: number;
   createId: () => string;
   summary: string;
+  /** Verified-empty opt-in: without it an empty key set throws instead of mass-resolving. */
+  explicitEmpty?: boolean;
 }): { inserted: number; resolved: number; reopened: number; pausedSuperseded: number };
 export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">, reason?: InboxResolutionReason | null): number;
 export declare function resolveAllInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, reason?: InboxResolutionReason | null): number;

@@ -18,7 +18,7 @@ import { summarizeTimeline } from "../../../lib/card-metrics.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordSplitAnswer } from "../../../lib/split-proposal.mjs";
-import { consumeAskContract } from "../../../lib/ask-contracts.mjs";
+import { consumeAskContract } from "../../../lib/question-contracts.mjs";
 import { resetAutoContinue } from "../../../lib/auto-continue.mjs";
 import { workerEnvironment } from "../../workers.js";
 import { cardAttachments } from "../card-files.js";
@@ -29,7 +29,7 @@ import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader
 import { createGapSummary } from "../gap-summary.js";
 import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
-import { createCardAdvance, createGateHandlers } from "../card-gates.js";
+import { createGateHandlers } from "../card-gates.js";
 import { createAuditTrailStatus } from "../card-audit-trail.js";
 import { createCardDiff } from "../card-diff.js";
 import { createCardReseed } from "../card-reseed.js";
@@ -72,7 +72,6 @@ export function createGateSurfaces(deps: GateSurfaceDeps) {
     gapSummary: buildGapSummary(core, critiqueGapState),
     qualitySeal: buildQualitySeal(core),
     gateHandlers: buildGateHandlers(core),
-    advanceCard: buildAdvanceCard(core, questionContractsGate),
     auditTrailStatus: buildAuditTrailStatus(core),
     cardDiff: buildCardDiff(core),
     reseedCard: buildReseedCard(core),
@@ -172,35 +171,6 @@ function buildGateHandlers(core: RuntimeCore) {
     cardWorkspace: core.cardWorkspace,
     boardFromRoot: core.boardFromRoot,
     loadBoard: core.loadBoard,
-  });
-}
-
-/** The advance RPC: the one that moves a card to the stage it asked for. */
-function buildAdvanceCard(
-  core: RuntimeCore,
-  questionGate: ReturnType<typeof buildQuestionContractsGate>,
-) {
-  const { bb, getCard, cardWorkspace, presetServer, workers } = core;
-  const ERRORS = core.ERRORS;
-  return createCardAdvance({
-    getCard,
-    cardWorkspace,
-    workflowStateDir: (rootPath, card) =>
-      core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
-    ensureArtifacts: (rootPath, stateDir, requireOwnedState) =>
-      core.ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
-    questionGate,
-    runHelper: core.runHelper,
-    getReliablePreset: presetServer.getReliablePresetForBand,
-    getCardPreset: presetServer.getPresetForCard,
-    respawn: workers.respawn,
-    updateCard: cardUpdater(core),
-    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
-    errors: {
-      cardNotFound: ERRORS.cardNotFound,
-      cardArchived: ERRORS.cardArchived,
-      workspaceUnavailable: ERRORS.workspaceUnavailable,
-    },
   });
 }
 

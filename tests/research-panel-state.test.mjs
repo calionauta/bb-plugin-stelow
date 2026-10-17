@@ -11,22 +11,21 @@ import {
 } from "../lib/research-panel-state.mjs";
 
 /**
- * The Research panel's own state rules and wiring.
+ * The Research track's own state rules and generic wiring.
  *
- * Split out of `kanban-layout.test.mjs`, which had grown to hold two unrelated concerns:
- * the shared column sizing every board uses, and this panel's filtering, grouping and
- * loader wiring. The split was forced by the repository's 400-line file budget, which is
- * the budget working — the file was over it, and the seam it exposed is real rather than
- * arbitrary.
+ * Explore/Research shells are deleted: both tracks mount through
+ * TrackPanelForKind with per-track configs. These pins guard the
+ * delegation (configs + shared renderers), not the old per-track
+ * shell bodies.
  */
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => readFileSync(join(root, rel), "utf8");
-// The panel sources this file's wiring pins read. Named here rather than inline so a
-// renamed panel is one edit instead of six.
-const researchPanel = read("components/panels/research-panel.tsx");
-const researchPanelView = read("components/panels/research-panel-view.tsx");
-const researchPanelDialogs = read("components/panels/research-panel-dialogs.tsx");
+const panelRendering = read("components/app-support/panel-rendering.tsx");
+const genericPanel = read("components/panels/track-panel.tsx");
+const genericState = read("components/panels/track-panel-state.ts");
+const genericView = read("components/panels/track-panel-view.tsx");
+const genericDialogs = read("components/panels/track-panel-dialogs.tsx");
 
 const researchFilters = {
   columns: ["inbox", "doing", "done", "archived"],
@@ -46,9 +45,9 @@ assert.deepEqual(
   "a project switch scopes the card request to that project and track",
 );
 assert.match(
-  readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8"),
-  /loadResearchData\(rpc, projectId\)[\s\S]*\[projectId, rpc\]/,
-  "the Research loader reloads when the routed project changes",
+  genericState,
+  /RESEARCH_PANEL_CONFIG[\s\S]*catalogRpc: "researchStrategies"/,
+  "Research keeps its strategy catalog behind the generic loader",
 );
 const researchGroups = filterAndGroupResearchCards([
   researchCard({ id: "unknown", status: "unexpected", updatedAt: 1 }),
@@ -86,14 +85,34 @@ assert.equal(
 // elsewhere asks the agent in the conversation. Re-adding a drop target is the
 // regression — it makes the board read as a manual tool.
 assert.doesNotMatch(
-  researchPanel,
+  genericPanel,
   /onMoveCard|moveResearchCard/,
-  "no manual card-move control survives in the Research panel",
+  "no manual card-move control survives in the Research track",
 );
 assert.match(
-  researchPanel,
-  /onOpenThread=\{\(threadId\) => navigate\.toThread\(threadId\)\}/,
-  "Research list thread actions reach the host thread router",
+  panelRendering,
+  /TrackPanelForKind[\s\S]*RESEARCH_PANEL_CONFIG[\s\S]*RESEARCH_VIEW_CONFIG[\s\S]*RESEARCH_DIALOGS_CONFIG/,
+  "research mounts through the generic track panel with its configs",
+);
+assert.match(
+  genericView,
+  /RESEARCH_VIEW_CONFIG/,
+  "Research view config lives on the generic track view",
+);
+assert.match(
+  genericView,
+  /TrackListForKind/,
+  "Research lists render through the shared kind-driven list",
+);
+assert.match(
+  genericView,
+  /renderTrackCardForKind/,
+  "Research tiles render through the shared kind-driven card",
+);
+assert.match(
+  genericDialogs,
+  /RESEARCH_DIALOGS_CONFIG/,
+  "Research dialogs delegate to the generic track dialogs with their config",
 );
 const strategyLabels = strategyLabelsById([
   { id: "strategy-a", label: "Jobs to be Done" },
@@ -136,24 +155,26 @@ assert.deepEqual(
   "an empty preset list creates no phantom assignment",
 );
 assert.match(
-  researchPanelView,
-  /<ResearchList[\s\S]*strategyLabelById=\{state\.labels\}[\s\S]*<ResearchCard[\s\S]*joinStrategyLabels\(card\.researchStrategies \?\? \[\], state\.labels\)/,
+  genericView,
+  /researchListMeta[\s\S]*joinStrategyLabels/,
   "board tiles and list rows receive the same strategy label map",
 );
 const researchCreationWiring = new RegExp([
-  /<CreateResearchDialog/,
+  /<CreateTrackDialog/,
   /activeProjectId=\{props\.projectId\}/,
-  /strategies=\{props\.data\.strategies\}/,
-  /researchPreset=\{props\.preset\.preset\}/,
+  /catalog=\{catalog/,
+  /preset=\{props\.preset\.preset/,
   /hasBandPreset=\{props\.preset\.hasBandPreset\}/,
+  /config=\{props\.config\.dialogConfig\}/,
 ].map((pattern) => pattern.source).join("[\\s\\S]*?"));
 assert.match(
-  researchPanelDialogs,
+  genericDialogs,
   researchCreationWiring,
   "creation receives the active project, strategy catalog, and resolved preset",
 );
 assert.match(
-  researchPanelDialogs,
-  /renderOnboarding\(\{[\s\S]*storageKey: STORAGE_KEYS\.onboardResearch[\s\S]*renderPresetManager\(\{[\s\S]*presets: props\.data\.presets/,
+  genericDialogs,
+  /renderOnboarding\(\{[\s\S]*storageKey: props\.config\.onboardKey[\s\S]*renderPresetManager\(\{[\s\S]*presets: props\.data\.presets/,
   "research keeps onboarding and preset-manager wiring",
-);console.log("research panel state ok: filters, grouping, loader and wiring");
+);
+console.log("research panel state ok: filters, grouping, loader and wiring");

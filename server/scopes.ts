@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import { parseScopeArgs } from "../lib/scope-command.mjs";
 import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 import {
@@ -131,8 +132,13 @@ export function trackingEntryForCard(
   workflowId: string,
 ): LooseRecord | null {
   try {
+    // The tracking file is always the workspace's own: resolve through the
+    // jail so a hostile rootPath (or a symlink game above it) cannot point
+    // this read at another checkout's state.
+    const trackingPath = resolveWithinRoot(rootPath, "stelow.json");
+    if (!trackingPath) return null;
     const tracking = JSON.parse(
-      readFileSync(nodeJoin(rootPath, "stelow.json"), "utf8"),
+      readFileSync(trackingPath, "utf8"),
     ) as LooseRecord;
     return workflowEntryForOwner(array(tracking.workflows), workflowId) as LooseRecord | null;
   } catch {
@@ -149,10 +155,16 @@ export function latestSpecTech(
     if (!match) return null;
     const plansRel = plansRelDir(workflowStateRelativeDir(match));
     if (!plansRel) return null;
-    const plans = nodeJoin(rootPath, ...plansRel.split("/"));
+    // plansRel derives from workflow state, not from a caller — but the
+    // state file is agent-influenced, so the joined dir still proves its
+    // containment before a readdir walks it.
+    const plans = resolveWithinRoot(rootPath, plansRel);
+    if (!plans) return null;
     const files = readdirSync(plans).filter(isSpecTechFile).sort();
     const file = files.at(-1);
-    return file ? { file, content: readFileSync(nodeJoin(plans, file), "utf8") } : null;
+    if (!file) return null;
+    const full = resolveWithinRoot(rootPath, nodeJoin(plansRel, file));
+    return full ? { file, content: readFileSync(full, "utf8") } : null;
   } catch {
     return null;
   }
@@ -164,8 +176,8 @@ export function loadCardScopes(
   opts?: { mergePlanned?: boolean },
 ): WorkflowScope[] {
   if (!rootPath) return [];
-  const tracking = nodeJoin(rootPath, "stelow.json");
-  if (!existsSync(tracking)) return [];
+  const tracking = resolveWithinRoot(rootPath, "stelow.json");
+  if (!tracking || !existsSync(tracking)) return [];
   let trackingData: LooseRecord;
   try {
     trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord;

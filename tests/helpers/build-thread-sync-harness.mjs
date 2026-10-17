@@ -155,9 +155,12 @@ function createSyncDeps(calls, getCurrent, options) {
     applyFailed: async (...args) => calls.push(["failed", ...args]),
     logComment: (id, body) => calls.push(["comment", id, body]),
     recordInbox: (...args) => calls.push(["inbox", ...args]),
+    // The veto's default is "keep the heuristic standing" (true). A fixture
+    // that sets `vet: false` asks the opposite: a confident halt, so the sync
+    // must park the card instead of resuming it.
     vetContinuation: async () => {
       calls.push(["vet"]);
-      return true;
+      return options.vet !== false;
     },
     escalateIfStalled: () => calls.push(["escalate"]),
     stripMessageDirectives: (text) => text,

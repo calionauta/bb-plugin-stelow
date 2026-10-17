@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { createAdvancePreflight } from "../server/execution-advance-preflight.ts";
+import { createCardDetailHandler } from "../server/runtime/card-detail.ts";
+import { executionRpcContract } from "../server/execution-contract.ts";
+import { cardDetailRpcContract } from "../server/card-detail-rpc-contract.ts";
 import { createExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { executionRunDb } from "./helpers/execution-run-harness.mjs";
+import { card, detailDeps } from "./helpers/card-detail-fixture.mjs";
+import { loadComponent, walk } from "./helpers/render-component.mjs";
 
 /**
  * The gate is only real if the advance REACHES it.
@@ -104,33 +108,180 @@ test("the dry run with nothing holding it still prepares", async () => {
 
 // The door: a refusal that names Retry run is only honest while a Retry exists,
 // is offered on the BLOCKING row, and is wired to an RPC that starts a run.
-// The actions moved to their own file when the section crossed 400 lines, and
-// the pin follows the code rather than the path it used to live at — pointing it
-// back at the section would slice a file that no longer contains the button.
-const actions = readFileSync(
-  new URL("../components/detail/execution-run-actions.tsx", import.meta.url), "utf8");
-assert.match(actions, /\{blocking \? \(/, "Retry is offered only on the blocking row");
-const section = readFileSync(
-  new URL("../components/detail/execution-runs-section.tsx", import.meta.url), "utf8");
-assert.match(section, /blockingRunId !== null\)/, "and a blocking run opens the section that holds it");
 
-const hook = readFileSync(
-  new URL("../components/detail/use-execution-runs.ts", import.meta.url), "utf8");
-assert.match(hook, /rpc\.call\("retryExecutionRun", \{ runId \}\)/, "the hook calls the retry RPC");
-assert.match(hook, /toast\.error\(result\.error/, "a refusal is shown, not swallowed");
+test("Retry is offered only on the blocking row, driven through the rendered controls", () => {
+  const RunActions = loadComponent(
+    "components/detail/execution-run-actions.tsx",
+    "RunActions",
+    {
+      "@get-bb/plugin-sdk/app": { useBbNavigate: () => () => {} },
+      "../app-support/navigation": { goToExecutionRun: () => {} },
+      "../../lib/workflow-vocabulary.mjs": { stageLabel: (stage) => stage },
+      "./use-execution-runs": {},
+      "./execution-run-row-types": {},
+    },
+  );
+  const baseProps = {
+    card: { id: "card_1", kind: "build", stage: "scope" },
+    run: { id: "exec_1", stage: "scope", normalizedStatus: "failed" },
+    active: false,
+    stopping: false,
+    retrying: false,
+    onCancel: () => {},
+    onRetry: () => {},
+  };
+  const labelsFor = (blocking) => {
+    const labels = [];
+    walk(RunActions({ ...baseProps, blocking }), (node) => {
+      if (node.type === "button" && typeof node.children?.[0] === "string") {
+        labels.push(node.children[0]);
+      }
+    });
+    return labels;
+  };
+  assert.ok(labelsFor(true).includes("Retry run"), "the blocking row offers the door the refusal names");
+  assert.ok(!labelsFor(false).includes("Retry run"), "history never offers a retry the server would refuse");
+});
 
-const contract = readFileSync(
-  new URL("../server/execution-contract.ts", import.meta.url), "utf8");
-assert.match(contract, /retryExecutionRun: \{/, "the RPC is declared");
-assert.match(contract, /runId: z\.string\(\)\.nullable\(\)/, "and answers with the new run's id");
+test("the detail ships the blocking run, driven through the handler", async () => {
+  const blockingDb = {
+    prepare(sql) {
+      return {
+        get: () => (sql.includes("execution_runs")
+          ? { id: "exec_9", recipe_id: "scope-map", error_code: "no outputs", normalized_status: "failed" }
+          : undefined),
+        all: () => [],
+        run: () => undefined,
+      };
+    },
+  };
+  const row = card({ stage: "scope", status: "in-progress", kind: "build" });
+  const handler = createCardDetailHandler(detailDeps(row, {
+    db: blockingDb,
+    fetchPendingQuestions: async () => [],
+  }));
+  const detail = await handler({ cardId: row.id });
+  assert.deepEqual(
+    detail.card.blockingRun,
+    { id: "exec_9", recipeId: "scope-map", errorCode: "no outputs" },
+    "the card is TOLD which run blocks rather than re-deriving the rule in the UI",
+  );
+});
 
-// The card is TOLD which run blocks, rather than re-deriving the rule in the UI —
-// otherwise the button and the gate are two implementations of one fact.
-const detail = readFileSync(
-  new URL("../server/runtime/card-detail.ts", import.meta.url), "utf8");
-assert.match(detail, /blockingRun: readBlockingRun\(deps\.db, card\)/, "the detail ships the blocking run");
-const detailContract = readFileSync(
-  new URL("../server/card-detail-rpc-contract.ts", import.meta.url), "utf8");
-assert.match(detailContract, /blockingRun: z\.object\(\{/, "and declares its shape");
+test("the retry RPC is declared, and its output carries the new run's id", () => {
+  assert.ok(executionRpcContract.retryExecutionRun, "the RPC is declared");
+  const output = executionRpcContract.retryExecutionRun.output;
+  assert.equal(
+    output.safeParse({ ok: true, runId: "exec_2", error: null }).success,
+    true,
+    "a success answers with the new run's id",
+  );
+  assert.equal(
+    output.safeParse({ ok: false, runId: null, error: "refused" }).success,
+    true,
+    "a refusal is null and carries the reason",
+  );
+});
+
+test("the detail contract declares the blocking run's shape", () => {
+  const blocking = cardDetailRpcContract.cardDetail.output.shape.card.shape.blockingRun;
+  assert.ok(blocking, "the detail contract declares the blocking run");
+  assert.equal(
+    blocking.safeParse({ id: "exec_1", recipeId: "scope-map", errorCode: null }).success,
+    true,
+    "a blocking run is shaped and still a link target",
+  );
+  assert.equal(blocking.safeParse(null).success, true, "and no live hold is null");
+});
+
+// A stateless hook runtime, enough to call a hook's returned callback: the
+// section's open state and the hook's retry both live in functions the tree
+// renderer cannot execute, so a real (or stubbed) hook of each is driven here
+// and the assertion is what the call DID, not what its source says.
+const reactStub = {
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+  useCallback: (fn) => fn,
+  useEffect: () => {},
+};
+
+function loadRunsSection() {
+  return loadComponent("components/detail/execution-runs-section.tsx", "ExecutionRunsSection", {
+    react: reactStub,
+    "../../lib/utils": { cn: (...values) => values.filter(Boolean).join(" ") },
+    "../disclosure": {
+      DisclosureSection: ({ children, open }) => ({ type: "section", props: { open }, children }),
+      DisclosureChevron: () => ({ type: "chevron", props: {}, children: [] }),
+    },
+    "../../lib/execution-deep-link.mjs": { executionRunRowId: (id) => `execution-run-${id}` },
+    "./execution-run-detail": { ExecutionRunDetail: () => ({ type: "detail", props: {}, children: [] }) },
+    "../../lib/execution-run-presentation.mjs": { liveProgressNote: () => "" },
+    "../../lib/execution-run-ledger.mjs": { runStatusLabel: (status) => status },
+    "../../lib/workflow-vocabulary.mjs": { stageLabel: (stage) => stage },
+    "./execution-run-actions": { RunActions: () => ({ type: "actions", props: {}, children: [] }) },
+    "./use-execution-runs": {},
+  });
+}
+
+/** The section's open state, read off the rendered disclosure. */
+function sectionOpen(runs, blockingRunId) {
+  const openStates = [];
+  walk(loadRunsSection()({
+    card: { id: "card_1", kind: "build", stage: "scope" },
+    runs,
+    focusRunId: null,
+    stoppingRunId: null,
+    retryingRunId: null,
+    blockingRunId,
+    onCancel: () => {},
+    onRetry: () => {},
+  }), (node) => {
+    if (node.type === "section") openStates.push(node.props.open);
+  });
+  return openStates;
+}
+
+test("a blocking run opens the section that holds the door", () => {
+  const failed = { id: "exec_1", stage: "scope", normalizedStatus: "failed", recipeId: "scope-map" };
+  assert.deepEqual(sectionOpen([failed], "exec_1"), [true], "the blocking run's section is open");
+  assert.deepEqual(sectionOpen([failed], null), [false], "history with no blocker stays closed");
+});
+
+function loadExecutionRunsHook(rpc, toast) {
+  return loadComponent("components/detail/use-execution-runs.ts", "useExecutionRuns", {
+    react: reactStub,
+    "@get-bb/plugin-sdk/app": { useRpc: () => rpc },
+    sonner: { toast },
+    "../../lib/execution-deep-link.mjs": { executionRunFocus: () => null, executionRunRowId: () => null },
+    "../../server": {},
+  });
+}
+
+test("the hook calls the retry RPC and shows its refusal, driven through the hook", async () => {
+  const calls = [];
+  let retryResult = { ok: true };
+  const rpc = {
+    call: async (...args) => {
+      calls.push(args);
+      return args[0] === "executionRuns" ? { runs: [] } : retryResult;
+    },
+  };
+  const toast = { error: (...args) => calls.push(["toast.error", ...args]) };
+  const { retry } = loadExecutionRunsHook(rpc, toast)("card_1", null);
+
+  await retry("exec_1");
+  assert.deepEqual(
+    calls.find(([name]) => name === "retryExecutionRun"),
+    ["retryExecutionRun", { runId: "exec_1" }],
+    "the hook calls the retry RPC with the run it was handed",
+  );
+
+  retryResult = { ok: false, error: "refused" };
+  await retry("exec_2");
+  assert.deepEqual(
+    calls.find(([name]) => name === "toast.error"),
+    ["toast.error", "refused"],
+    "a refusal is shown, not swallowed",
+  );
+});
 
 console.log("failed-run gate wiring ok: driven, not asserted by text position; the door is wired end to end");

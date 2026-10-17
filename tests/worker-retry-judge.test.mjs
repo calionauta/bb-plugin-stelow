@@ -30,7 +30,7 @@ function card() {
   };
 }
 
-function harness(judgeTransientError, judgeCalls) {
+function harness(extra = {}) {
   const updated = [];
   const comments = [];
   let published = 0;
@@ -45,9 +45,7 @@ function harness(judgeTransientError, judgeCalls) {
     failedCause: async () => null,
     scheduler: immediateScheduler(),
     retryDelayMs: () => 0,
-    ...(judgeTransientError ? {
-      judgeTransientError: async (...args) => { judgeCalls.push(args); return judgeTransientError(...args); },
-    } : {}),
+    ...extra,
   };
   const retry = createWorkerRetry(deps);
   return { retry, updated, comments, published: () => published, snapshot };
@@ -55,61 +53,40 @@ function harness(judgeTransientError, judgeCalls) {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
 
-// Classified transient retries with NO judge consulted.
+// Classified transient retries with no second opinion.
 {
-  const judgeCalls = [];
-  const { retry, updated, published } = harness(async () => { throw new Error("judge must not run"); }, judgeCalls);
+  const { retry, updated, published } = harness();
   await retry.applyFailed("card-retry", "thr_dead", "connection timeout after 30s");
   await flush();
-  assert.equal(judgeCalls.length, 0, "classified errors never pay for a judgment");
   assert.ok(updated.some(([, fields]) => String(fields.last_error ?? "").includes("automatic retry 1/3")), "classified retry scheduled");
   assert.equal(published(), 1, "recovery published");
   retry.dispose();
 }
 
-// Unclassified + confident judge: rescued from the same bounded budget.
+// Unclassified failures fail fast: there is no judge on this path, so the
+// card keeps the host's own words instead of spending budget on a guess.
 {
-  const judgeCalls = [];
-  const { retry, updated, comments, published } = harness(async () => true, judgeCalls);
+  const { retry, updated, comments, published } = harness();
   await retry.applyFailed("card-retry", "thr_dead", "weird flake nobody classified");
   await flush();
-  assert.equal(judgeCalls.length, 1, "one judgment for the blind spot only");
-  assert.deepEqual(judgeCalls[0][1], 1, "first attempt number reaches the judge");
-  assert.ok(updated.some(([, fields]) => String(fields.last_error ?? "").includes("automatic retry 1/3")), "rescued retry scheduled");
-  assert.ok(comments.some(([, body]) => body.includes("judged transient")), "rescue leaves a trail comment");
-  assert.equal(published(), 1, "recovery published");
-  retry.dispose();
-}
-
-// Unclassified + unconvinced judge: fail-fast, exactly like today.
-{
-  const judgeCalls = [];
-  const { retry, updated, comments, published } = harness(async () => false, judgeCalls);
-  await retry.applyFailed("card-retry", "thr_dead", "weird flake nobody classified");
-  await flush();
-  assert.equal(judgeCalls.length, 1, "judge consulted once");
   assert.ok(updated.some(([, fields]) => String(fields.last_error ?? "").includes("weird flake")), "original cause kept");
   assert.ok(!comments.some(([, body]) => body.includes("judged transient")), "no rescue comment");
   assert.equal(published(), 0, "nothing published");
   retry.dispose();
 }
 
-// No judge wired: fail-fast, today's behavior byte for byte.
+// A legacy judge key is ignored, never consulted: the failure path spends no
+// model call deciding whether an unclassified error is transient.
 {
-  const { retry, updated } = harness(null, []);
+  const judgeCalls = [];
+  const { retry, updated } = harness({
+    judgeTransientError: async (...args) => { judgeCalls.push(args); return true; },
+  });
   await retry.applyFailed("card-retry", "thr_dead", "weird flake nobody classified");
   await flush();
+  assert.equal(judgeCalls.length, 0, "no second opinion on the failure path");
   assert.ok(updated.some(([, fields]) => String(fields.last_error ?? "").includes("weird flake")), "fail-fast without a judge");
   retry.dispose();
 }
 
-// Throwing judge: fail-fast, never throw out of the failure path.
-{
-  const { retry, updated } = harness(async () => { throw new Error("judge down"); }, []);
-  await retry.applyFailed("card-retry", "thr_dead", "weird flake nobody classified");
-  await flush();
-  assert.ok(updated.some(([, fields]) => String(fields.last_error ?? "").includes("weird flake")), "judge failure keeps fail-fast");
-  retry.dispose();
-}
-
-console.log("worker retry judge test ok: classified fast path, rescue, fail-fast, unwired, throwing judge");
+console.log("worker retry judge test ok: classified retry, unclassified fail-fast, no second opinion");

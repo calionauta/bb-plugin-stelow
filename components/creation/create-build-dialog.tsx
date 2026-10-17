@@ -1,23 +1,16 @@
 import { useRef, useState } from "react";
 import {
-  experimental_NewThreadComposer as NewThreadComposer,
   useBbNavigate,
   useRpc,
   type NewThreadRequest,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { AgentConfigBox, CreateCardAlert, WorkflowSettings, type KnobPrefs, type ReviewGates } from "./creation-settings";
+import { AgentConfigBox, WorkflowSettings, type KnobPrefs, type ReviewGates } from "./creation-settings";
 import { useProjectSeed } from "./use-project-seed";
 import { composerExecutionOf } from "./composer-execution";
-import { useSeededComposerEnvironment, type ComposerEnvironmentSeed } from "./composer-environment-seed";
+import { useSeededComposerEnvironment } from "./composer-environment-seed";
+import { CreateCardComposer, CreateCardDialogShell, submissionOf, type CardAttachment } from "./create-card-shared";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 import { GithubCreateRow } from "../github/github-create-row";
 
@@ -34,8 +27,9 @@ import { GithubCreateRow } from "../github/github-create-row";
 // createCard payload: run knobs travel as typed fields (count as a
 // number — the dialog holds it as a radio string), review checkpoints as
 // the reviewMode ladder-or-set input.
-type CardAttachment = { type: "localFile" | "localImage"; path: string };
-
+// createCard payload: run knobs travel as typed fields (count as a
+// number — the dialog holds it as a radio string), review checkpoints as
+// the reviewMode ladder-or-set input.
 function createCardPayload(
   targetProjectId: string,
   request: NewThreadRequest,
@@ -59,23 +53,6 @@ function createCardPayload(
     start: startImmediately,
     execution: composerExecutionOf(request),
   };
-}
-
-// Composer request split: the text is the submission, local files and
-// images are attachments. A path printed in a prompt is not an attachment,
-// so BB cannot render or open it in the worker thread.
-function submissionOf(request: NewThreadRequest) {
-  const textPart = request.input.find((part) => part.type === "text");
-  const submission = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-  type AttachmentPart = { type: "localFile" | "localImage"; path: string };
-  const isAttachment = (part: unknown): part is AttachmentPart =>
-    (part as AttachmentPart).type === "localFile" || (part as AttachmentPart).type === "localImage";
-  const hasPath = (part: AttachmentPart): boolean =>
-    "path" in part && typeof part.path === "string" && part.path.length > 0;
-  const attachments = request.input
-    .filter((part): part is AttachmentPart => isAttachment(part) && hasPath(part))
-    .map((part) => ({ type: part.type, path: part.path }));
-  return { submission, attachments };
 }
 
 function useCreateBuildSubmit({ activeProjectId, prefs, reviewGates, githubRepos, onClose }: {
@@ -192,33 +169,6 @@ validProjectIds?: string[];
   onOpenPresets: () => void;
 };
 
-// Composer with the per-open project seed and the preset's environment seed.
-// Extracted so the dialog shell stays under the function budget — one composer
-// per creation dialog.
-function CreateBuildComposer({ seedProjectId, analysisPreset, seededEnvironment, prompt, onSubmit }: {
-  seedProjectId: string | null;
-  analysisPreset: CreateBuildDialogProps["analysisPreset"];
-  seededEnvironment: ComposerEnvironmentSeed;
-  prompt: string;
-  onSubmit: (request: NewThreadRequest) => Promise<void>;
-}) {
-  return (
-    <NewThreadComposer
-      defaultProjectId={seedProjectId ?? undefined}
-      defaultProviderId={analysisPreset?.providerId}
-      defaultModel={analysisPreset?.modelId}
-      defaultReasoningLevel={analysisPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-      defaultPermissionMode={analysisPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-      defaultEnvironment={seededEnvironment}
-      initialPrompt={prompt}
-      placeholder="What should Stelow build?"
-      layout="contained"
-      draftKey="stelow-board-create"
-      onSubmit={onSubmit}
-    />
-  );
-}
-
 export function CreateBuildDialog({
   open, onOpenChange, activeProjectId, validProjectIds,
   analysisPreset, prefs, reviewGates, githubRepos,
@@ -229,18 +179,20 @@ export function CreateBuildDialog({
   const seededEnvironment = useSeededComposerEnvironment(analysisPreset?.environmentKind, open);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto overflow-x-hidden sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Start new issue</DialogTitle>
-          <DialogDescription>Describe the outcome, problem, or change. Run knobs and review checkpoints below start from the board defaults.</DialogDescription>
-        </DialogHeader>
-        {submit.error ? <CreateCardAlert message={submit.error} /> : null}
-        <CreateBuildComposer
+    <CreateCardDialogShell
+      open={open}
+      onOpenChange={(next) => openChange(next, onOpenChange, submit.resetOnOpen)}
+      title="Start new issue"
+      description="Describe the outcome, problem, or change. Run knobs and review checkpoints below start from the board defaults."
+      error={submit.error}
+    >
+        <CreateCardComposer
           seedProjectId={seedProjectId}
-          analysisPreset={analysisPreset}
+          preset={analysisPreset}
           seededEnvironment={seededEnvironment}
           prompt={submit.prompt}
+          placeholder="What should Stelow build?"
+          draftKey="stelow-board-create"
           onSubmit={(request) => submitWithMemory(request, submit.start)}
         />
         <CreateBuildSettings
@@ -259,7 +211,6 @@ export function CreateBuildDialog({
           onPrefsChange={onPrefsChange}
           onReviewGatesChange={onReviewGatesChange}
         />
-      </DialogContent>
-    </Dialog>
+    </CreateCardDialogShell>
   );
 }

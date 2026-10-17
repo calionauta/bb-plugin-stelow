@@ -1,12 +1,12 @@
-import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/ask-cancel.mjs";
-import { kickQuestionSync } from "../../../lib/question-sync-kick.mjs";
+import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/question-gate.mjs";
+import { kickQuestionSync } from "../../../lib/question-store.mjs";
 import {
   persistFailureInboxEvent,
   persistFailureTrailLine,
   shouldRecordPersistFailure,
-} from "../../../lib/ask-persist-failure.mjs";
+} from "../../../lib/question-evidence.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
-import { askFinishedUpdates } from "../../../lib/card-question-state.mjs";
+import { askFinishedUpdates } from "../../../lib/question-store.mjs";
 import { answerMentionsSplit, splitEligibility } from "../../../lib/split-proposal.mjs";
 import { array, record } from "../values.js";
 import {
@@ -95,7 +95,7 @@ async function blockOnAnswer(
   // The ask call ended (answered, cancelled, or torn down): mark the worker
   // running again. Activity only — board position is owned by the sync poll,
   // the answer RPCs, and advance/moveCard, on both tracks.
-  // See lib/card-question-state.
+  // See lib/question-store.
   deps.updateCard(cardId, askFinishedUpdates());
   const cancelReason =
     requested.result.outcome === "cancelled" ? requested.result.reason : null;

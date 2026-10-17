@@ -348,8 +348,7 @@ function buildResearchTrack(
     logCardComment: core.ledger.logCardComment,
     reliablePreset: presetServer.getReliablePresetForBand,
     presetName: (presetId) => presetServer.getPresetById(presetId)?.name,
-    respawn: (cardId, presetId, reason, options) =>
-      workers.respawn(cardId, presetId, reason, options),
+    respawn: workers.respawn,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,

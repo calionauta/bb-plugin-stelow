@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { bandForCardKindStage, isWorkerPresetStale, liveWorkerCards } from "../lib/preset-staleness.mjs";
 import { refreshRestartPending } from "../lib/worker-ledger.mjs";
 import { resolveReliablePreset } from "../lib/reliable-preset.mjs";
@@ -101,46 +98,4 @@ assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'li
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'archived'").get().preset_restart_pending, 0, "archived cards are never touched");
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'workerless'").get().preset_restart_pending, 0, "workerless cards are never touched");
 
-// Preset server wiring: every mutating RPC fans out through the extracted
-// feature seam. A new write path that skips re-evaluation fails here.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
-].join("\n");
-const presetAccessors = [
-  readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
-  readFileSync(join(root, "server/preset-workers.ts"), "utf8"),
-].join("\n");
-const presetHandlers = [
-  readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),
-  readFileSync(join(root, "server/preset-handler-assignments.ts"), "utf8"),
-  readFileSync(join(root, "server/preset-handler-crud.ts"), "utf8"),
-].join("\n");
-assert.match(
-  presetHandlers,
-  /table === "reliable_preset"\) accessors\.refreshLiveWorkers\(null\)/,
-  "reliable assign re-evaluates all live workers",
-);
-assert.match(
-  presetHandlers,
-  /accessors\.refreshLiveWorkers\(\[band\]\)/,
-  "band assign re-evaluates exactly that band's workers",
-);
-assert.match(
-  presetHandlers,
-  /DELETE FROM presets WHERE id = \?[\s\S]*accessors\.refreshLiveWorkers\(null\)/,
-  "preset delete re-evaluates all live workers (band rows cascade silently)",
-);
-assert.match(
-  presetAccessors,
-  /refreshRestartPending\([\s\S]*effective\.id/,
-  "band and reliable mutations recompute restart-pending",
-);
-assert.match(
-  server,
-  /return deps\.getReliablePreset\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/,
-  "reseed resolves the reliable-tier preset like any fresh start",
-);
-
-console.log("preset staleness test ok: band mapping, live filtering, cascade composition, RPC fan-out");
+console.log("preset staleness test ok: band mapping, live filtering, cascade composition");

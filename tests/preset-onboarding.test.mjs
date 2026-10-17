@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { sourceBetween as sharedSourceBetween } from "./helpers/source-slice.mjs";
+import { loadComponent } from "./helpers/render-component.mjs";
 import {
   acknowledgeSharedOnboarding,
   onboardingInitialDialogState,
@@ -16,16 +13,51 @@ import {
 } from "../lib/preset-onboarding-state.mjs";
 import { STORAGE_KEYS } from "../lib/panel-storage.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const appShell = readFileSync(join(root, "app.tsx"), "utf8");
-const rendering = readFileSync(join(root, "components/app-support/panel-rendering.tsx"), "utf8");
-const app = `${appShell}\n${rendering}`;
-const component = readFileSync(join(root, "components/settings/preset-onboarding.tsx"), "utf8");
-const about = readFileSync(join(root, "components/settings/about-panel.tsx"), "utf8");
-
-function sourceBetween(start, end) {
-  return sharedSourceBetween(app, start, end);
+// The shell wiring is driven, not read: `renderTrackPanel` is the pure function
+// that decides which dialog renderer every track receives, so the wiring is a
+// fact about the element it returns rather than about the source text. A run
+// without this check is the mutation the old regex guard could not refuse.
+const OnboardingStub = () => null;
+const ManagerStub = () => null;
+const InboxStub = () => null;
+const AboutStub = () => null;
+const FallbackPanelStub = () => null;
+const renderTrackPanel = loadComponent(
+  "components/app-support/panel-rendering.tsx",
+  "renderTrackPanel",
+  {
+    "../panels/build-panel": { BuildPanel: FallbackPanelStub },
+    "../panels/track-panel": { TrackPanelForKind: FallbackPanelStub },
+    "../panels/track-panel-state": { EXPLORE_PANEL_CONFIG: {}, RESEARCH_PANEL_CONFIG: {} },
+    "../panels/track-panel-view": { EXPLORE_VIEW_CONFIG: {}, RESEARCH_VIEW_CONFIG: {} },
+    "../panels/track-panel-dialogs": { EXPLORE_DIALOGS_CONFIG: {}, RESEARCH_DIALOGS_CONFIG: {} },
+    "../panels/inbox-panel": { InboxPanel: InboxStub },
+    "../settings/about-panel": { AboutPanel: AboutStub },
+    "../settings/preset-onboarding": { PresetOnboardingDialog: OnboardingStub },
+    "../settings/preset-manager-shell": { PresetManagerDialog: ManagerStub },
+    "../detail/card-detail-route": {
+      BareCardRoute: () => null,
+      StelowCardDetail: () => null,
+      INTENT_LABEL: {},
+    },
+  },
+);
+for (const track of ["build", "research", "explore"]) {
+  const panel = renderTrackPanel(track, false);
+  const onOpen = () => {};
+  assert.equal(
+    panel.props.renderOnboarding({ open: true, onOpenChange: onOpen, onChanged: onOpen }).type,
+    OnboardingStub,
+    `${track} renders the onboarding dialog through its track panel`,
+  );
+  assert.equal(
+    panel.props.renderPresetManager({ open: true, onOpenChange: onOpen, onChanged: onOpen }).type,
+    ManagerStub,
+    `${track} renders the preset manager through its track panel`,
+  );
 }
+assert.equal(renderTrackPanel("inbox", false).type, InboxStub, "the inbox tab keeps its own panel");
+assert.equal(renderTrackPanel("unknown", false).type, AboutStub, "an unknown tab falls back to the manage panel");
 
 function storage(failingKey) {
   const values = new Map();
@@ -153,49 +185,124 @@ assert.equal(
   "one blocked reset does not suppress the remaining tracks",
 );
 
-assert.match(
-  rendering,
-  /import \{ PresetOnboardingDialog \} from "\.\.\/settings\/preset-onboarding"/,
-  "the app shell consumes the settings onboarding component",
-);
-assert.doesNotMatch(app, /function PresetOnboardingDialog\(/, "onboarding dialog no longer lives in the app shell");
-assert.match(component, /step === total - 1/, "the body selects the last-step contact view");
-assert.match(component, /step === 1 && secondBody/, "the body selects the optional defaults step");
-assert.match(component, /setStep\(0\)[\s\S]*setSingleStep\(false\)/, "dismissal resets onboarding navigation");
-const onboardingRenderer = /renderOnboarding=\{\(props\) => <PresetOnboardingDialog \{\.\.\.props\} \/>\}/;
-const managerRenderer = /renderPresetManager=\{\(props\) => <PresetManagerDialog \{\.\.\.props\} \/>\}/;
-for (const [track, nextTrack] of [
-  ["build", "research"],
-  ["research", "explore"],
-  ["explore", "return <AboutPanel"],
-]) {
-  const endMarker = nextTrack === "return <AboutPanel"
-    ? nextTrack
-    : `if (tab === "${nextTrack}")`;
-  const branch = sourceBetween(`if (tab === "${track}")`, endMarker);
-  assert.match(branch, onboardingRenderer, `${track} retains onboarding wiring`);
-  assert.match(branch, managerRenderer, `${track} retains preset-manager wiring`);
+// The dialog's step selection and its shared acknowledgement are driven, not
+// read: the component is mounted with a real localStorage, so which body and
+// which footer a step shows are facts about a rendered tree rather than about
+// a JSX branch a regex guessed at.
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
+
+globalThis.__bbPluginRuntime = {
+  pluginSdkApp: {
+    useRpc: () => ({ call: async () => ({}) }),
+    UrlLink: ({ href, children }) => h("a", { href }, children),
+  },
+};
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
+const { createElement: h } = await import("react");
+const { render, screen, fireEvent, cleanup } = await import("@testing-library/react");
+const { PresetOnboardingDialog } = await import("../components/settings/preset-onboarding.tsx");
+
+function mountDialog({ opened = [], active = true } = {}) {
+  window.localStorage.clear();
+  render(h(PresetOnboardingDialog, {
+    storageKey: STORAGE_KEYS.onboardBuild,
+    title: "Choose an agent preset",
+    intro: "Presets decide the model each worker runs with.",
+    active,
+    secondTitle: "Start from a boarding default",
+    secondBody: h("p", null, "Quality and supervisor defaults for new cards."),
+    onOpenPresets: () => opened.push("presets"),
+  }));
+  return opened;
 }
-assert.match(
-  about,
-  /function reset\(\) \{[\s\S]*resetOnboarding\(window\.localStorage\)/,
-  "Manage confirms the behavior-tested reset helper",
+
+mountDialog();
+assert.ok(screen.getByText("Choose an agent preset"), "the first step is the track's own introduction");
+assert.ok(screen.getByText("Step 1 of 3"), "a fresh three-step track counts its steps");
+fireEvent.click(screen.getByRole("button", { name: "Next" }));
+assert.ok(screen.getByText("Start from a boarding default"), "the optional defaults step has its own title");
+assert.ok(screen.getByText("Quality and supervisor defaults for new cards."), "and its own body");
+fireEvent.click(screen.getByRole("button", { name: "Next" }));
+assert.ok(screen.getByText("Stay in touch"), "the last step is the contact view");
+assert.ok(screen.getByRole("button", { name: "Done" }), "and it ends with Done rather than Next");
+cleanup();
+
+// Shared completion (another track already onboarded presets) opens the
+// defaults step directly and without a counter.
+const sharedOpened = [];
+window.localStorage.clear();
+window.localStorage.setItem(STORAGE_KEYS.onboardPresets, "onboarded");
+render(h(PresetOnboardingDialog, {
+  storageKey: STORAGE_KEYS.onboardResearch,
+  title: "Choose an agent preset",
+  intro: "Presets decide the model each worker runs with.",
+  active: true,
+  secondTitle: "Start from a boarding default",
+  secondBody: h("p", null, "Quality and supervisor defaults for new cards."),
+  onOpenPresets: () => sharedOpened.push("presets"),
+}));
+assert.ok(screen.getByText("Start from a boarding default"), "shared completion opens the defaults step directly");
+assert.equal(screen.queryByText(/^Step \d/), null, "a shared acknowledgement is not counted as this track's progress");
+cleanup();
+
+// Opening Agent Presets acknowledges the SHARED key through the shared helper
+// before opening — the binding the panel used to hold as a local name.
+const openPresets = mountDialog();
+fireEvent.click(screen.getByRole("button", { name: "Open Agent Presets" }));
+assert.deepEqual(openPresets, ["presets"], "opening presets still runs the caller's action");
+assert.equal(
+  window.localStorage.getItem(STORAGE_KEYS.onboardPresets),
+  "onboarded",
+  "opening presets acknowledges the shared onboarding state through the shared helper, not a second implementation",
 );
-// The shared helper is bound to a local name and invoked through it, so the
-// old pin — which looked for a literal `acknowledgeSharedOnboarding(...)` call
-// — no longer matched, while the behaviour was unchanged: `close` IS the
-// helper. Two assertions instead of one, so this is now the stronger pin: it
-// proves the binding AND the call site with its exact arguments, where the old
-// regex could have matched the helper's use anywhere in the file.
-assert.match(
-  component,
-  /const close = acknowledgeSharedOnboarding;/,
-  "the shared acknowledgement helper is the one bound for the open-presets action",
+cleanup();
+
+// A track that already completed keeps the dialog closed.
+mountDialog({ active: false });
+assert.equal(screen.queryByText("Choose an agent preset"), null, "an inactive track keeps the dialog closed");
+cleanup();
+// The dismissal navigation reset (step 0, not single-step) is not separately
+// observable — the dialog reopens from the lib-derived initial state driven at
+// the top of this file — so the pure next/back/initial functions are the
+// coverage, and the shell wiring is driven through `renderTrackPanel` above.
+// Manage's reset, clicked: the Resources card's confirm clears every track's
+// onboarding key through the shared helper, so the control is proved where the
+// reader presses it rather than by matching the call inside it.
+const { AboutPanel } = await import("../components/settings/about-panel.tsx");
+for (const storageKey of [
+  STORAGE_KEYS.onboardBuild,
+  STORAGE_KEYS.onboardResearch,
+  STORAGE_KEYS.onboardExplore,
+  STORAGE_KEYS.onboardPresets,
+]) {
+  window.localStorage.setItem(storageKey, "onboarded");
+}
+render(h(AboutPanel));
+fireEvent.click(screen.getByRole("button", { name: /Reset onboarding/ }));
+assert.equal(
+  window.localStorage.getItem(STORAGE_KEYS.onboardBuild),
+  "onboarded",
+  "the first press only asks for confirmation",
 );
-assert.match(
-  component,
-  /onOpenPresets=\{\(\) => close\(window\.localStorage, STORAGE_KEYS\.onboardPresets, onOpenPresets\)\}/,
-  "opening presets acknowledges the shared onboarding state before opening",
-);
+fireEvent.click(screen.getByRole("button", { name: "Confirm reset" }));
+for (const storageKey of [
+  STORAGE_KEYS.onboardBuild,
+  STORAGE_KEYS.onboardResearch,
+  STORAGE_KEYS.onboardExplore,
+  STORAGE_KEYS.onboardPresets,
+]) {
+  assert.equal(
+    window.localStorage.getItem(storageKey),
+    null,
+    `Manage's confirmed reset clears ${storageKey}`,
+  );
+}
+cleanup();
+// The shared acknowledgement helper is bound for the open-presets action, and
+// that is now asserted by pressing the button (above) rather than by matching
+// the binding: `close` IS the helper only if the shared key moves and the
+// caller's action runs.
 
 console.log("preset onboarding test ok: opening cases, navigation, dismissal reset, storage reset, and all manager paths");

@@ -102,14 +102,28 @@ assert.equal(card3Questions[1].resolved_at, null, "the replacement interaction s
 db.prepare("UPDATE inbox_events SET resolved_at = ? WHERE id = ?").run(850, "evt_ask_2");
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_2"], occurredAt: 860, createId: () => "evt_ask_2_again", summary: questionSummary });
 assert.equal(db.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get("evt_ask_2").resolved_at, null, "a still-pending interaction reopens its resolved notification");
-syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: [], occurredAt: 900, createId: () => "unused", summary: questionSummary });
+syncQuestionInboxEvents(db, {
+  cardId: "card_3",
+  interactionIds: [],
+  occurredAt: 900,
+  createId: () => "unused",
+  summary: questionSummary,
+  explicitEmpty: true,
+});
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL").get("card_3").count, 0, "no pending interaction resolves all question notifications");
 // An answered question keeps its reason even though disappearance alone
 // would have called it superseded: mark first, sync second.
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_4", "Answered", "answered", "project_1", "build");
 syncQuestionInboxEvents(db, { cardId: "card_4", interactionIds: ["ask_9"], occurredAt: 1000, createId: () => "evt_ask_9", summary: questionSummary });
 assert.equal(markQuestionsAnswered(db, { cardId: "card_4", interactionIds: ["ask_9"], occurredAt: 1010 }), 1, "answering marks the open question");
-syncQuestionInboxEvents(db, { cardId: "card_4", interactionIds: [], occurredAt: 1020, createId: () => "unused", summary: questionSummary });
+syncQuestionInboxEvents(db, {
+  cardId: "card_4",
+  interactionIds: [],
+  occurredAt: 1020,
+  createId: () => "unused",
+  summary: questionSummary,
+  explicitEmpty: true,
+});
 assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?").get("evt_ask_9").resolved_reason, "answered", "the sync never relabels an answer as superseded");
 assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?").get("evt_ask_1").resolved_reason, "superseded", "a withdrawn question reads as superseded");
 assert.equal(markQuestionsAnswered(db, { cardId: "card_4", interactionIds: [], occurredAt: 1030 }), 0, "empty answer batch marks nothing");
@@ -143,9 +157,10 @@ const openBatchRows = () => db.prepare(
   + "WHERE card_id = 'card_5' AND kind = 'question' ORDER BY occurred_at",
 ).all();
 const openBatchCount = () => openBatchRows().filter((row) => row.resolved_at === null).length;
-// An unknown expired id notifies nothing: no row, no batch, no phantom.
-// Placed before the first batch exists, so the empty key set resolves nothing.
-assert.equal(syncBatch(["expired:ghost"], 900).inserted, 0, "a stale expired id invents no attention");
+// An unknown expired id notifies nothing: no row, no batch, no phantom —
+// the stale-only view refuses outright instead of resolving what it cannot
+// see, which likewise writes nothing.
+assert.throws(() => syncBatch(["expired:ghost"], 900), /explicitEmpty/, "a stale-only view refuses rather than resolving blind");
 assert.equal(openBatchRows().length, 0, "and leaves no row behind");
 expireBatch([{ id: "qexp_a1", question: "Keep IN?", at: 1000 }, { id: "qexp_a2", question: "Add to IN?", at: 1000 }]);
 assert.equal(syncBatch(["expired:qexp_a1", "expired:qexp_a2"], 1100).inserted, 1, "one timed-out batch mints one notification, not one per sub-question");

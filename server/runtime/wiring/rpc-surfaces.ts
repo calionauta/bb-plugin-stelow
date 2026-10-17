@@ -128,7 +128,6 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     auditTrailStatus: gates.auditTrailStatus,
     reseedCard: gates.reseedCard,
     promoteCard: cards.promoteCard,
-    advanceCard: gates.advanceCard,
     answerQuestions: gates.answerQuestions,
     startWorkflow: startWorkflow(deps),
     ensureWorkflow: ensureWorkflow(deps),

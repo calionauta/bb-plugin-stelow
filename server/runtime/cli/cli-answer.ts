@@ -16,7 +16,7 @@ import {
   buildAnswerPayload,
   expiredQuestionRowId,
   parseAnswerArgs,
-} from "../../../lib/question-answer-recording.mjs";
+} from "../../../lib/question-evidence.mjs";
 import type { WorkerCard } from "../../workers-types.js";
 import type { CliCommandFn, CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";

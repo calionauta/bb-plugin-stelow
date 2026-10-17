@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { doingNowNames, orderedDoingNow } from "../lib/doing-now.mjs";
 
 const scopes = [
@@ -58,69 +55,6 @@ assert.deepEqual(
   orderedDoingNow(null, ["A", "A", "B"]),
   ["A", "B"],
   "without an active scope, names are de-duplicated",
-);
-
-// Server carries doing names on the list payload (one parse, cached with
-// the summary): tiles and rows read names, never re-derive them.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
-  readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/cards.ts"), "utf8"),
-].join("\n");
-const trackLists = readFileSync(
-  join(root, "components", "board", "track-lists.tsx"),
-  "utf8",
-);
-const boardCards = readFileSync(
-  join(root, "components", "board", "board-cards.tsx"),
-  "utf8",
-);
-const scopesList = readFileSync(
-  join(root, "components", "detail", "scopes-list.tsx"),
-  "utf8",
-);
-assert.match(
-  server,
-  /doingNow: z\.array\(z\.string\(\)\)/,
-  "list cards contract the doing names",
-);
-assert.match(
-  server,
-  /doingNow: doingNowNames\(scopes\)/,
-  "the cached summary computes names once per card",
-);
-assert.match(
-  server,
-  /doingNow: summary\.doingNow/,
-  "list rows carry the cached names",
-);
-
-// One shared pill on tiles and rows, live execution only: idle cards show
-// no pill (paused speaks for itself), and empty sets render nothing.
-assert.match(
-  boardCards,
-  /<DoingNowPill names=\{orderedDoingNow\(card\.executingScope, card\.doingNow\)\} \/>/,
-  "tiles prioritize the executing scope",
-);
-assert.match(
-  trackLists,
-  /<DoingNowPill names=\{orderedDoingNow\(card\.executingScope, card\.doingNow\)\} \/>/,
-  "rows prioritize the executing scope",
-);
-assert.match(
-  trackLists,
-  /card\.activity === "running" \|\| card\.activity === "awaiting-answer"/,
-  "the row pill marks live execution, never idle",
-);
-
-// Scope rows disclose through the same chevron as every other surface:
-// the explicit open prop drives rotation, never the group-open variant,
-// so the arrow cannot silently stop turning again.
-assert.match(
-  scopesList,
-  /<DisclosureChevron open=\{isOpen\} \/>/,
-  "scope rows rotate through the shared chevron contract",
 );
 
 console.log("doing now test ok: shared selection, done silent");

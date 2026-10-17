@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { optionSectionExcerpt, sectionHeadingsMatch } from "../lib/option-anchor.mjs";
-import { optionCoverage, pickOptionDocument } from "../server/runtime/ask-artifacts.ts";
+import { createAskArtifacts, optionCoverage, pickOptionDocument } from "../server/runtime/ask-artifacts.ts";
 
 /**
  * The case a reader actually hit.
@@ -159,19 +158,66 @@ assert.equal(optionCoverage("", questionLabels), 0, "empty content scores zero")
 assert.equal(optionCoverage(placementBrief, []), 0, "no labels means nothing to match");
 
 // The pure functions above cannot reach two hops of wiring, and both hops are
-// what put the reader on the wrong document in the first place. These are
-// topology pins on the data flow, not existence pins: each one is the exact
-// form whose absence reinstates the reported behaviour.
-const askArtifacts = readFileSync(new URL("../server/runtime/ask-artifacts.ts", import.meta.url), "utf8");
-assert.match(
-  askArtifacts,
-  /fallbackGateAskArtifact\(deps, card, options\.map\(\(option\) => option\.label\)\)/,
-  "the ask's option labels reach the manifest recovery — without them it has nothing to score and silently takes the first document",
+// what put the reader on the wrong document in the first place. Driven through
+// the recovery the host actually runs: `fallbackGateAskArtifact` is called with
+// the ask's own labels, reads the stage manifest, and must return the document
+// that names them — never the first one registered. The labels reaching the
+// recovery and the scored choice both ride this one call, so a regression that
+// dropped either would open the placement contrast instead.
+const STATE_DIR = "/w/.stelow/2026-09-24/hash1";
+const FILES = {
+  "/w/stelow.json": JSON.stringify({
+    workflows: [{ workflowId: "card_1", dirHash: "hash1", created: "2026-09-24T00:00:00.000Z" }],
+  }),
+  [`${STATE_DIR}/state.md`]: [
+    "---",
+    "workflow_id: card_1",
+    "current_stage: interface",
+    "---",
+    "",
+    "artifacts:",
+    "  - stage: interface",
+    "    kind: document",
+    "    path: interfaces/interfaces.md",
+    "  - stage: interface",
+    "    kind: document",
+    "    path: interfaces/interfaces_v1.md",
+    "",
+  ].join("\n"),
+  "/w/interfaces/interfaces.md": placementBrief,
+  "/w/interfaces/interfaces_v1.md": layoutBrief,
+};
+
+const asks = createAskArtifacts({
+  bb: {
+    sdk: {
+      files: {
+        read: async ({ path }) => {
+          if (!(path in FILES)) throw new Error(`ENOENT ${path}`);
+          return { content: FILES[path] };
+        },
+      },
+    },
+  },
+  db: { prepare: () => ({ run: () => undefined, get: () => undefined, all: () => [] }) },
+  now: () => 0,
+  getCard: () => undefined,
+  cardWorkspace: async () => ({ path: "/w", hostId: "host1" }),
+  cardStageSlug: async () => "int-gate",
+  gitEvidence: async () => ({ gitRoot: "/w", headSha: null }),
+  sha256OfHostFile: async () => null,
+});
+
+const recovered = await asks.fallbackGateAskArtifact({ id: "card_1", dir_hash: "hash1" }, questionLabels);
+assert.equal(
+  recovered?.path,
+  "interfaces/interfaces_v1.md",
+  "the ask's own labels reach the manifest recovery and select the document that names them, not the first registered",
 );
-assert.match(
-  askArtifacts,
-  /return pickOptionDocument\(candidates, scores\);/,
-  "the recovery returns the scored choice, not candidates[0] — taking the first is the reported bug",
-);
+
+// With no labels there is nothing to score, so the recovery keeps manifest
+// order — the old behaviour, for an ask that names no options.
+const unlabeled = await asks.fallbackGateAskArtifact({ id: "card_1", dir_hash: "hash1" }, []);
+assert.equal(unlabeled?.path, "interfaces/interfaces.md", "an unwritten-from ask keeps the first registered document");
 
 console.log("option-section-mismatch test ok: a different decision's document yields no section, and the right one yields the hybrid");

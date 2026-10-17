@@ -1,8 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
-import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
-import type { PresetRow } from "../presets.js";
 
 import { GATES, type Gate } from "./gate-vocabulary.js";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -126,80 +123,4 @@ async function writeApproval(
 
 function joinPath(root: string, relative: string): string {
   return `${root.replace(/\/$/, "")}/${relative}`;
-}
-
-type AdvanceDeps = {
-  getCard: (cardId: string) => WorkerCard | undefined;
-  cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
-  workflowStateDir: (
-    rootPath: string,
-    card: WorkerCard,
-  ) => Promise<string | null>;
-  ensureArtifacts: (
-    rootPath: string,
-    stateDir: string | null,
-    requireOwnedState: boolean,
-  ) => Promise<string | null>;
-  questionGate: (card: WorkerCard, stateDir: string | null) => Promise<string | null>;
-  runHelper: (
-    args: string[],
-    rootPath: string,
-    stateDir?: string,
-  ) => Promise<{ code: number | null; stdout: string; stderr: string }>;
-  getReliablePreset: (band: string, cardId: string) => PresetRow | null;
-  getCardPreset: (cardId: string) => PresetRow;
-  respawn: (cardId: string, presetId: string) => Promise<unknown>;
-  updateCard: (cardId: string, fields: Record<string, unknown>) => void;
-  publishCard: (cardId: string) => void;
-  errors: { cardNotFound: string; cardArchived: string; workspaceUnavailable: string };
-};
-
-export function createCardAdvance(deps: AdvanceDeps) {
-  return ({ cardId, stage }: { cardId: string; stage: string }) =>
-    advanceCard(deps, cardId, stage);
-}
-
-async function advanceCard(deps: AdvanceDeps, cardId: string, stage: string) {
-  const card = deps.getCard(cardId);
-  const refusal = advanceRefusal(deps, card);
-  if (refusal) return refusal;
-  const workspace = await deps.cardWorkspace(card!);
-  if (!workspace?.path) return advanceFailure(deps.errors.workspaceUnavailable);
-  const stateDir = card!.dir_hash
-    ? await deps.workflowStateDir(workspace.path, card!)
-    : null;
-  const guard = await deps.ensureArtifacts(workspace.path, stateDir, Boolean(card!.dir_hash));
-  if (guard) return advanceFailure(guard);
-  const questionGuard = await deps.questionGate(card!, stateDir);
-  if (questionGuard) return advanceFailure(questionGuard);
-  const result = await deps.runHelper(["advance", stage], workspace.path, stateDir ?? undefined);
-  if (result.code !== 0) return advanceFailure(result.stderr || "stelow advance failed", result.stdout);
-  await swapBandPreset(deps, card!, stage);
-  deps.updateCard(cardId, { stage, status: stage === "triage" ? "draft" : "in-progress", activity: "running" });
-  deps.publishCard(cardId);
-  return { ok: true, stdout: result.stdout, error: null };
-}
-
-function advanceRefusal(deps: AdvanceDeps, card: WorkerCard | undefined) {
-  if (!card) return advanceFailure(deps.errors.cardNotFound);
-  if (isArchivedCard(card)) return advanceFailure(deps.errors.cardArchived);
-  if (card.kind === "research") return advanceFailure("Research cards don't use stages — a completed index moves them to Done automatically.");
-  if (card.kind === "explore") return advanceFailure("Explore cards don't use stages — a completed artifact moves them to Done automatically.");
-  return null;
-}
-
-function advanceFailure(error: string, stdout = "") {
-  return { ok: false, stdout, error };
-}
-
-async function swapBandPreset(
-  deps: AdvanceDeps,
-  card: WorkerCard,
-  stage: string,
-): Promise<void> {
-  const band = STAGE_TO_BAND[stage];
-  if (!band) return;
-  const preset = deps.getReliablePreset(band, card.id);
-  const currentId = card.worker_preset_id ?? deps.getCardPreset(card.id).id;
-  if (preset && preset.id !== currentId) await deps.respawn(card.id, preset.id);
 }

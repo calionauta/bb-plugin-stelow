@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NO_INPUT, optionalInput } from "./rpc-input.js";
 import {
   attachmentSchema,
   appetiteSchema,
@@ -33,7 +34,7 @@ export const cardRpcContract = {
   },
   projects: {
     experimental_description: "Projects BB knows, for board and card pickers",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
   answerQuestions: {
@@ -51,19 +52,21 @@ export const cardRpcContract = {
   },
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
-    input: z
-      .object({
-        // Optional, not merely nullable. `queryCards` omits the project filter
-        // when this is null, so the handler genuinely answers "every project"
-        // — but a non-optional property is what the host's schema derivation
-        // reports as REQUIRED, so a caller that omitted it (the host's own
-        // plugin probe) was refused at validation for a call the handler
-        // supports. `.nullable()` said the value could be absent; only
-        // `.optional()` makes that true of the published contract too.
-        projectId: z.string().nullable().optional(),
-        kind: z.enum(["build", "research", "explore"]).nullable().optional(),
-      })
-      .strict(),
+    input: optionalInput(
+      z
+        .object({
+          // Optional, not merely nullable. `queryCards` omits the project filter
+          // when this is null, so the handler genuinely answers "every project"
+          // — but a non-optional property is what the host's schema derivation
+          // reports as REQUIRED, so a caller that omitted it (the host's own
+          // plugin probe) was refused at validation for a call the handler
+          // supports. `.nullable()` said the value could be absent; only
+          // `.optional()` makes that true of the published contract too.
+          projectId: z.string().nullable().optional(),
+          kind: z.enum(["build", "research", "explore"]).nullable().optional(),
+        })
+        .strict(),
+    ),
     output: z.object({
       cards: z.array(
         z.object({
@@ -170,13 +173,15 @@ export const cardRpcContract = {
   },
   flowMetrics: {
     experimental_description: "Lead/cycle per finished card with p50/p90, where the time went, plus stuck and review-awaiting now",
-    input: z
-      .object({
-        projectId: z.string().nullable().optional(),
-        since: z.number().int().nonnegative().nullable().optional(),
-        until: z.number().int().nonnegative().nullable().optional(),
-      })
-      .strict(),
+    input: optionalInput(
+      z
+        .object({
+          projectId: z.string().nullable().optional(),
+          since: z.number().int().nonnegative().nullable().optional(),
+          until: z.number().int().nonnegative().nullable().optional(),
+        })
+        .strict(),
+    ),
     output: z.object({
       items: z.array(
         z.object({
@@ -254,7 +259,7 @@ export const cardRpcContract = {
   },
   boardWorkflowDefaults: {
     experimental_description: "Board defaults: run knobs and review gates for new cards",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {

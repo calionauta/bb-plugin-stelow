@@ -21,10 +21,6 @@ const boardCard = boardCards.slice(
   boardCards.indexOf("export function BoardCard"),
   boardCards.indexOf("export function LightweightTrackCard"),
 );
-const lightweightCard = boardCards.slice(
-  boardCards.indexOf("export function LightweightTrackCard"),
-  boardCards.indexOf("export function ResearchCard"),
-);
 
 
 // icon for the playbook tag, statusTone for state, muted for the tag. Tiles
@@ -134,12 +130,12 @@ assert.match(
   "completed cards refuse Retry instead of nudging a finished worker",
 );
 assert.match(
-  boardCard,
+  boardCards,
   /cardCanResume\(card\)/,
   "build board cards use the shared terminal retry guard",
 );
 assert.match(
-  lightweightCard,
+  boardCards,
   /cardCanResume\(card\)/,
   "research/explore cards use the shared terminal retry guard",
 );

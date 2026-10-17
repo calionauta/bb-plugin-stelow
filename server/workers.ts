@@ -2,15 +2,15 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { failureCauseFromEvents } from "../lib/worker-failure.mjs";
 import { needsNaming } from "../lib/card-naming.mjs";
-import { recordWorkerThread } from "../lib/worker-ledger.mjs";
+import { clearPresetStaleness, recordWorkerThread } from "../lib/worker-ledger.mjs";
 import { resetSpawnRetry } from "../lib/spawn-retry.mjs";
 import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
 import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
-import { judgeRetryTransientError } from "./decision-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
+import { recoverInterruptedRespawns } from "./workers-respawn-guard.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
 import {
@@ -75,7 +75,16 @@ function recordThread(
   presetId: string | null,
   reason: string,
 ): number {
-  return recordWorkerThread(deps.db, cardId, threadId, presetId, reason);
+  const closed = recordWorkerThread(deps.db, cardId, threadId, presetId, reason);
+  // A fresh spawn is the explicit clear for preset staleness: the new thread
+  // was born after every override, so a carried flag would offer a Restart
+  // for staleness that no longer exists.
+  try {
+    clearPresetStaleness(deps.db, cardId);
+  } catch {
+    /* the flag is advisory; the spawn already committed */
+  }
+  return closed;
 }
 
 type LineageInput = {
@@ -153,6 +162,7 @@ function respawnDeps(deps: WorkerDeps): RespawnDeps {
     recordThread: (cardId, threadId, presetId, reason) => recordThread(deps, cardId, threadId, presetId, reason),
     lineage: (input) => lineage(deps, input),
     continuingEnvironment: (card, fallback) => continuingEnvironment(deps, card, fallback),
+    noteLinkFailure: (cardId, body) => deps.comment(cardId, body),
   };
 }
 
@@ -219,6 +229,18 @@ function workerFacade(
 
 export function createWorkers(deps: WorkerDeps) {
   const scheduler = deps.scheduler ?? defaultWorkerScheduler;
+  // Boot sweep first: a kill -9 between claim and release leaves a pending
+  // row whose holder is gone. Reap it now so the card says so instead of
+  // refusing its next replacement against a dead claim.
+  try {
+    recoverInterruptedRespawns(deps.db, {
+      nowMs: deps.now(),
+      getCard: deps.getCard,
+      comment: deps.comment,
+    });
+  } catch {
+    /* recovery is owed, never load-bearing for startup */
+  }
   const retry = createWorkerRetry({
     db: deps.db,
     getCard: deps.getCard,
@@ -229,7 +251,6 @@ export function createWorkers(deps: WorkerDeps) {
     failedCause: (threadId) => failedCause(deps, threadId),
     scheduler,
     retryDelayMs: deps.retryDelayMs,
-    judgeTransientError: (cause, attempt) => judgeRetryTransientError({ db: deps.db }, cause, attempt),
   });
   const history = createWorkerHistory(deps.db, deps.bb);
   const respawnScheduler = createRespawnScheduler(

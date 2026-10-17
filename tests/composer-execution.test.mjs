@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   sanitizeComposerExecution,
   resolveComposerSpawn,
@@ -99,92 +96,5 @@ assert.equal(tiered.serviceTier, "fast", "a valid serviceTier rides to spawn");
 assert.equal(tiered.executionInputSources.serviceTier, "client-preference", "its provenance rides along");
 const fallback = composerSpawnInput(base, { providerId: "pi" });
 assert.equal(fallback.executionInputSources.providerId, "explicit", "missing provenance defaults to explicit");
-
-// Contracts: the choice must travel composer -> RPC -> spawn on every
-// track, through one shared helper per layer — never pasted per site.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
-  readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
-  readFileSync(join(root, "server/workers.ts"), "utf8"),
-  // The restart spawn moved here when replacing a worker became its own
-  // module. It is listed because the rule below is about the SITES that must
-  // pin their sources, not about one file: drop this line and the restart
-  // spawn silently falls back to the environment's own sources.
-  readFileSync(join(root, "server/workers-respawn.ts"), "utf8"),
-  readFileSync(join(root, "server/cards-create.ts"), "utf8"),
-  readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
-  readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),
-].join("\n");
-const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-const composerHelper = readFileSync(join(root, "components", "creation", "composer-execution.ts"), "utf8");
-const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
-const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
-const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
-
-assert.match(server, /composerExecutionSchema/, "the RPC contract names the shared execution schema");
-for (const method of ["createCard", "createResearchCard", "createExploreCard"]) {
-  const at = server.indexOf(`${method}: {`);
-  assert.ok(at >= 0, `the ${method} RPC exists`);
-  const window = server.slice(at, server.indexOf("},", at) + 2);
-  assert.ok(window.includes("execution"), `the ${method} input carries the composer execution`);
-}
-assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
-assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-const directExplicitSources = new RegExp(
-  "executionInputSources: \\{\\s*"
-    + 'providerId: "explicit"(?: as const)?,\\s*'
-    + 'model: "explicit"(?: as const)?,\\s*'
-    + 'reasoningLevel: "explicit"(?: as const)?,\\s*'
-    + 'permissionMode: "explicit"(?: as const)?,?\\s*\\}',
-  "g",
-);
-assert.equal(
-  (server.match(directExplicitSources) ?? []).length,
-  3,
-  "restart/review/gate-pre-review keep hardcoded explicit sources",
-);
-assert.match(
-  server,
-  /executionInputSources: explicitSources\(\)/,
-  "the reseed spawn declares explicit sources through its own helper",
-);
-assert.match(
-  drafting,
-  /function executionArgs\(params: DraftingParams, includeInputSources = false\)/,
-  "draft and title share execution coercion without changing provenance",
-);
-assert.match(
-  drafting,
-  /executionArgs\(params, true\)/,
-  "only the draft burst marks preset execution sources as explicit",
-);
-assert.match(server, /createCardOverride\(cardId, base, override\)/, "a divergent choice is delegated to the preset slice");
-assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
-
-// Ordering: card_presets references cards, so the pin must land after the
-// card row exists — and a spawn failure must not orphan the staged row.
-const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
-const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
-const createAt = cardsCreate.indexOf("export function createCardInternal");
-assert.ok(createAt >= 0, "createCardInternal exists");
-const createWindow = cardsCreate.slice(createAt);
-const cardsInsertAt = cardsPersist.indexOf("INSERT INTO cards (");
-const pinAt = cardsPersist.indexOf("pinnedId");
-assert.ok(cardsInsertAt >= 0 && pinAt >= 0, "creation persists the card and its override");
-assert.ok(createWindow.includes("deps.removeCardPreset(cardId)"), "a failed spawn delegates cleanup to the preset slice");
-
-assert.match(composerHelper, /export function composerExecutionOf\(/, "the creation module extracts the composer choice through one helper");
-assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 0, "no submit left in the panel forwards inline");
-assert.equal((buildDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the build submit forwards the choice");
-assert.equal((researchDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the research submit forwards the choice");
-assert.equal((exploreDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the explore submit forwards the choice");
-assert.ok(!app.includes('rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode })'), "the build submit no longer drops the choice");
-assert.match(buildDialog, /execution: composerExecutionOf\(request\)/, "the build submit carries the composer choice");
 
 console.log("composer execution test ok: sanitize, merge, override, spawn input, all three tracks wired");

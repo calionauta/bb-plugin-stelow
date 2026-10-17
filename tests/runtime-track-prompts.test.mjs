@@ -42,7 +42,8 @@ const EXPLORE_BASE = {
 test("the research prompt writes the canonical index shape and the round file", () => {
   const { researchWorkerPrompt } = createTrackPrompts(PROTOCOLS);
   const prompt = researchWorkerPrompt(RESEARCH_BASE);
-  assert.match(prompt, /# Research index: Pricing landscape/);
+  assert.match(prompt, /# Research index\n/);
+  assert.match(prompt, /Card: Pricing landscape/, "the card name travels in the per-card tail, after the shared steps");
   assert.match(prompt, /## Outputs\n\s*\| Strategy \| Round \| Output \| Artifact \| Notes \|/);
   assert.match(prompt, /## Opportunities\n\s*### Pricing — <today's YYYY-MM-DD date>/);
   assert.match(prompt, /<workspaceRoot>\/\.stelow\/x\/rounds\/pricing-r1\.md/);

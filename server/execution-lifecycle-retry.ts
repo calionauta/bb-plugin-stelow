@@ -16,6 +16,7 @@
  * stage — so the hold releases the moment the retry starts, and re-tightens by
  * itself if the retry fails too. Nothing to clear, nothing to reconcile.
  */
+import { z } from "zod";
 import { runStatusPhrase } from "../lib/execution-run-ledger.mjs";
 import { getExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
@@ -33,8 +34,9 @@ export type RetryResult = { ok: boolean; runId: string | null; error: string | n
 const RETRYABLE = ["failed", "cancelled"];
 
 export function createLifecycleRetrier(deps: RetryDeps) {
+  const runIdInput = z.object({ runId: z.string().min(1) }).strict();
   return {
-    retryExecutionRun: ({ runId }: { runId: string }) => retryExecutionRun(deps, runId),
+    retryExecutionRun: (input: { runId: string }) => retryExecutionRun(deps, runIdInput.parse(input).runId),
   };
 }
 

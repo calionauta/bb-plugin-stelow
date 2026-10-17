@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
+  askTimelineLabels,
+  artifactViewerModeForOption,
+  describeAskSubmission,
   questionFormActions,
   questionFormItems,
   questionFormSubmission,
-} from "../lib/question-form.mjs";
+  submitBlockReason,
+} from "../lib/question-presentation.mjs";
 
 const interaction = {
   id: "ask_1",
@@ -98,48 +101,44 @@ assert.deepEqual(calls, [
   ["cancel"],
 ], "the form forwards single, batch, and cancel callbacks exactly once without changing their promise contract");
 
-const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
-const form = readFileSync(new URL("../components/conversation/question-form.tsx", import.meta.url), "utf8");
-const button = readFileSync(new URL("../components/ui/button.tsx", import.meta.url), "utf8");
-const answerBody = readFileSync(new URL("../components/conversation/batch-answer-body.tsx", import.meta.url), "utf8");
-assert.match(
-  app,
-  /import \{ registerPendingInteraction \} from "\.\/components\/conversation\/question-form"/,
-  "the app shell imports the extracted registration boundary",
-);
-assert.match(app, /registerPendingInteraction\(app\);/, "the app registers pending questions through the conversation boundary");
-assert.doesNotMatch(app, /function QuestionForm\(/, "the form body no longer remains in the shell");
-assert.match(
-  form,
-  /pendingInteraction\(\{\s*id: "stelow-question",\s*component: QuestionForm,/,
-  "the extracted registration keeps the renderer id and component contract",
-);
-assert.match(form, /const batched = items\.length > 1;/, "the host payload shape follows the rendered question count");
-assert.match(form, /<Button variant="outline" onClick=\{\(\) => void actions\.cancel\(\)\}>/, "cancel uses the shared button control");
-assert.match(button, /const Comp = asChild \? Slot : "button";/, "the shared button is natively keyboard-operable by default");
-// The submit control moved out of question-batch into batch-answer-body when
-// the answer controls were given their own slice. The guarded topology is the
-// point of the pin, not the file it lives in: one submit, rendered only on the
-// last question, and disabled until every question carries a decision.
-assert.match(
-  answerBody,
-  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy \|\| blockReason !== null\}/,
-  "submit uses the shared native button after every question is decided",
-);
-assert.match(
-  answerBody,
-  /const blockReason = submitBlockReason\(questions, sel\.selected, sel\.custom\);/,
-  "the footer gate reads the shared block rule over the batch answers",
-);
-assert.equal(
-  answerBody.match(/onSubmit\(\{questions\.length > 1 \? copy\.submitAnswers : copy\.submitAnswer\}\)/g)?.length ?? 0,
-  0,
-  "the submit label is still chosen once, in QuestionBatch, and passed down",
-);
-assert.match(
-  form,
-  /<BatchStepper[\s\S]*onSubmit=\{\(answers\) => void actions\.submit\(answers, batched\)\}/,
-  "the shared submit control reaches the host completion callback",
-);
+// Registration and slot wiring, proven through the contracts the shell and
+// the stepper both read: one flat payload for a single question, one dense
+// list per question for a batch, timeline labels that name the wait and the
+// resolution, and a single footer gate over the batch answers.
+{
+  assert.deepEqual(askTimelineLabels({ batched: false }), {
+    pending: "Stelow question — waiting for answer",
+    completed: "Stelow question — answered",
+  }, "a single question names its wait and its resolution");
+  assert.deepEqual(askTimelineLabels({ batched: true, count: 2 }), {
+    pending: "Stelow questions (2) — waiting for answers",
+    completed: "Stelow questions (2) — answered",
+  }, "a batch counts its questions in both labels");
+  assert.deepEqual(describeAskSubmission({ answers: ["A"] }), {
+    title: "Stelow answer",
+    detail: "- A",
+  }, "a single submission describes the decision");
+  assert.deepEqual(describeAskSubmission({ answers: [["A"], ["B1", "B2"]] }), {
+    title: "Stelow answers (2 of 2)",
+    detail: "- Q1: A\n- Q2: B1, B2",
+  }, "a batch submission keeps one line per question");
+  assert.deepEqual(describeAskSubmission({ answers: [] }), { title: "Stelow answer (skipped)" }, "an empty submission reads as skipped, never invented");
+}
+// The footer gate reads one shared block rule over the batch answers: one
+// submit, enabled only when every question carries a decision.
+{
+  const batch = [
+    { id: "q0", options: [{ label: "A" }, { label: "B" }] },
+    { id: "q1", options: [{ label: "C", needsNote: true }, { label: "D" }] },
+  ];
+  assert.equal(submitBlockReason(batch, { q0: ["A"], q1: ["D"] }, {}), null, "decided plain picks submit");
+  assert.match(
+    submitBlockReason(batch, { q0: ["A"], q1: ["C"] }, {}),
+    /needs a note/,
+    "a picked conditional without its note blocks the one submit",
+  );
+  assert.equal(submitBlockReason(batch, { q0: ["A"], q1: ["C"] }, { q1: "drop the extras" }), null, "the note unblocks");
+  assert.equal(artifactViewerModeForOption("Approve plan"), "review", "the approval reads before deciding");
+}
 
 console.log("question form test ok: parsing, payload, submit, cancel, and slot wiring are covered");

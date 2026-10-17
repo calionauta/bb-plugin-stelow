@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { contractForExplore } from "../lib/artifact-contracts.mjs";
 import { validateExplore } from "../lib/artifact-validation.mjs";
@@ -29,29 +28,115 @@ assert.equal(technique.skill, "stelow-workflow-interface-contrast", "Explore del
 assert.ok(TECHNIQUE_CATALOG.some((entry) => entry.id === "interface-contrast"), "it is in the Explore catalog");
 assert.deepEqual(technique.optionalEvidence, ["interfaces/contrast.json"], "the machine receipt is optional and never replaces the readable document");
 
-// The premise the entry rests on, asserted rather than assumed. This is the
-// wiring that cannot be extracted to lib/: the card detail must render the
-// shared question surface, or the pick has nowhere to land.
-const exploreContent = readFileSync(new URL("../components/detail/explore-detail-content.tsx", import.meta.url), "utf8");
-assert.match(
-  exploreContent,
-  /<DetailQuestionSections/,
+// The premise the entry rests on, rendered rather than read: the Explore card
+// detail really mounts the shared question surface, with the card's own detail
+// as its argument. This is the wiring that cannot be extracted to lib/, and a
+// substring pin could not tell a rendered element from one behind a
+// permanently-false guard — disabling it is exactly how this entry would rot,
+// because the technique would stay in the catalog with nowhere to record a pick.
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
+
+globalThis.__bbPluginRuntime = {
+  pluginSdkApp: {
+    useRpc: () => ({ call: async () => ({}) }),
+    useRealtime: () => ({ on: () => () => {} }),
+    useRealtimeConnectionState: () => "connected",
+    useBbNavigate: () => () => {},
+    useBbContext: () => ({}),
+    useSettings: () => ({}),
+    experimental_useAppPanel: () => null,
+    experimental_useFixedTabTarget: () => null,
+    useComposer: () => null,
+    useComposerView: () => null,
+    experimental_useSidebarThreads: () => [],
+    experimental_useSidebarThreadActions: () => ({}),
+    Markdown: ({ content }) => content,
+  },
+};
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
+const { createElement: h } = await import("react");
+const { render, screen, cleanup } = await import("@testing-library/react");
+const { ExploreDetailContent } = await import("../components/detail/explore-detail-content.tsx");
+
+const exploreCard = {
+  id: "card_1",
+  status: "in-progress",
+  activity: "running",
+  prompt: "Explore checkout",
+  workerThreadId: null,
+  workspaceKind: "project",
+  exploreStage: "diverge",
+  displayName: "Explore",
+  kind: "explore",
+  stage: "explore",
+  intent: "feature",
+  needsAttention: false,
+  hasPendingReview: false,
+  projectId: "proj_1",
+};
+/** The card's own detail, carrying the structured pick this technique asks for. */
+const exploreDetail = {
+  card: { acceptanceLine: null, presetProviderId: null, presetModelId: null, presetName: null, environmentLabel: null },
+  artifacts: [],
+  pendingQuestions: [{
+    id: "q_contrast",
+    title: "Which direction should the interface take?",
+    prompt: "Pick one of the contrasted directions.",
+    multiple: false,
+    options: [{ label: "Direction A — extend the stage view", description: "the first contrast", preview: null, artifact: null }],
+  }],
+  expiredQuestions: [],
+  comments: [],
+  fileEnvironmentId: null,
+  workerHistory: [],
+};
+const exploreState = {
+  inboxEventRef: { current: null },
+  viewerFile: null,
+  setViewerFile: () => {},
+  comment: "",
+  setComment: () => {},
+  submitComment: async () => {},
+  setRestartWorkerOpen: () => {},
+  setPresetDialogOpen: () => {},
+  actions: { starting: false, retrying: false, restarting: false, repairing: false, start: () => {}, doRetry: () => {}, doQualityRepair: () => {} },
+};
+
+function renderExplore(detail) {
+  return render(h(ExploreDetailContent, {
+    inboxEventId: null,
+    inboxEvent: null,
+    card: exploreCard,
+    detail,
+    stageLabel: "Diverge",
+    state: exploreState,
+    onChanged: () => {},
+  }));
+}
+
+renderExplore(exploreDetail);
+assert.ok(
+  screen.getByText("Which direction should the interface take?"),
   "the Explore card renders the shared question surface, so a structured pick has somewhere to land",
 );
-assert.match(
-  exploreContent,
-  /DetailQuestionSections[\s\S]{0,400}detail=\{detail\}/,
-  "and it is fed the card's own detail, not a stub",
+assert.ok(
+  screen.getByText("Direction A — extend the stage view"),
+  "and it is fed the card's own detail — the option the technique recorded is the option a reader can pick",
 );
-// A substring pin cannot tell a rendered element from a dead branch, and
-// disabling the surface is exactly how this entry would rot: the technique
-// would still be in the catalog with nowhere to record a pick. So the guard
-// itself is pinned.
-assert.doesNotMatch(
-  exploreContent,
-  /\{\s*(false|0|null|undefined)\s*&&\s*<DetailQuestionSections/,
-  "the question surface is not rendered behind a permanently-false guard",
+cleanup();
+
+// Control, same card: without a detail there is no question surface at all, so
+// the assertion above is about the wiring rather than about copy that always
+// renders.
+renderExplore(null);
+assert.equal(
+  screen.queryByText("Which direction should the interface take?"),
+  null,
+  "the question surface is conditional on the card's own detail",
 );
+cleanup();
 
 // A technique with no deliverable contract is a technique the quality seal
 // cannot judge, which is how a card ends up marked done on nothing.

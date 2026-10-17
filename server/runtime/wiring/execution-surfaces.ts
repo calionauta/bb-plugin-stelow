@@ -214,7 +214,6 @@ function buildAdvance(
       recordExecutionEntry(core.db, cardId, evidence, transition),
     getReliablePreset: presetServer.getReliablePresetForBand,
     getCardPresetId: (cardId) => presetServer.getPresetForCard(cardId).id,
-    respawn: (cardId, presetId) => workers.respawn(cardId, presetId),
     scheduleRespawn: (cardId, presetId) => workers.scheduleRespawn(cardId, presetId),
     suggestTier: (card, stage) => core.decision.suggestTierShadow(card, stage),
     requestGatePreReview: core.requestGatePreReview,

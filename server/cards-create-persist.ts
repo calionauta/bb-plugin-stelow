@@ -2,7 +2,7 @@ import { describeCardEnvironment } from "../lib/tracks.mjs";
 import { resolveKnobInput } from "../lib/workflow-config.mjs";
 import { assertCardStatus } from "../lib/card-status.mjs";
 import { environmentFallbackNotice } from "../lib/card-environment.mjs";
-import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create.js";
+import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create-types.js";
 
 function recordOf(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};

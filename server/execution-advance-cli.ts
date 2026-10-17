@@ -3,12 +3,24 @@
  * the terminal forces: a dry run must mutate nothing at all — not the card, not
  * the scopes, not the preset — and a stage named with no card to advance is a
  * project-level helper run, which is legitimate and says so in its exit code.
+ *
+ * Fail-closed like the card action: archived, no-stage kinds, and the question
+ * gate are all enforced even on --dry-run. The probe that asks "may I advance?"
+ * must report the same refusal the real advance would, or it teaches the worker
+ * a yes the real path refuses. Kind and status facts come from the card-action
+ * module (noStageKindRefusal/commitStage) so the two paths cannot disagree.
  */
 import type { AdvanceDeps, CliContext, CliResult, PreparedAdvance } from "./execution-advance-types.js";
-import type { AdvanceServices } from "./execution-advance-card.js";
+import {
+  commitStage,
+  noStageKindRefusal,
+  type AdvanceServices,
+} from "./execution-advance-card.js";
 
 type CliAdvanceDeps = Pick<
   AdvanceDeps,
+  | "errors"
+  | "isArchivedCard"
   | "getCardByWorkerThread"
   | "cardWorkspace"
   | "projectRoot"
@@ -54,13 +66,18 @@ export async function advanceCli(
   const parsed = parseCli(argv, context);
   if (!parsed.projectId || !parsed.stage) return { exitCode: 2, stderr: USAGE };
   const card = context.threadId ? deps.getCardByWorkerThread(context.threadId) : undefined;
+  if (card) {
+    if (deps.isArchivedCard(card)) return { exitCode: 1, stderr: deps.errors.cardArchived };
+    const kindRefusal = noStageKindRefusal(card.kind);
+    if (kindRefusal) return { exitCode: 1, stderr: kindRefusal };
+  }
   const workspace = card ? await deps.cardWorkspace(card) : null;
   const rootPath = workspace?.path ?? await deps.projectRoot(parsed.projectId);
   if (!rootPath) return { exitCode: 1, stderr: workspaceUnavailable(USAGE) };
   const stateDir = card?.dir_hash ? await deps.stateDir(card, rootPath) : null;
   const guard = await deps.ensureArtifacts(rootPath, stateDir, Boolean(card?.dir_hash));
   if (guard) return { exitCode: 1, stderr: guard };
-  if (!parsed.dryRun && card) {
+  if (card) {
     const questionGuard = await deps.questionGate(card, stateDir);
     if (questionGuard) return { exitCode: 1, stderr: questionGuard };
   }
@@ -94,8 +111,7 @@ async function runAdvance(
   }
   if (parsed.dryRun || !card) return { exitCode: 0, stdout: result.stdout };
   await services.applyBand(card, stage, true);
-  deps.updateCard(card.id, { stage, status: "in-progress", activity: "running", last_error: null });
-  deps.recordStageEvent(card.id, stage);
+  commitStage(deps, card.id, stage);
   const dispatched = await services.dispatchAdvance({
     card, stage, route: prepared.route, note: prepared.note, evidence: prepared.evidence,
   });

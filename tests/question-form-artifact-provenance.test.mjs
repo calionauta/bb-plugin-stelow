@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-import { questionFormItems } from "../lib/question-form.mjs";
+import { artifactViewerModeForOption, questionFormItems, sharedQuestionArtifact } from "../lib/question-presentation.mjs";
 
 // Context: a worker attached `--artifact` to ONE option. The host's
 // inheritance rule then handed that same file to every sibling, so four rows
@@ -52,25 +47,16 @@ assert.equal(perOption.options[1].artifact?.path, "interfaces/proposal-b.md", "t
 console.log("question form artifact provenance test ok: an inherited brief is marked, a per-option document is not");
 
 // The rendered control is where the reader actually learns what a row opens.
-// A filename hidden in a hover-only `title` is not a label, and four rows
-// saying "Open document" over one shared file read as a broken button.
-// The option row was split out of the stepper into the module that renders the
-// options, so the control is pinned where it now lives.
-const batch = readFileSync(join(root, "components", "conversation", "batch-options.tsx"), "utf8");
-assert.match(batch, /Open: \{artifact\.display\}/, "the control names the document it opens with one verb");
-assert.match(
-  batch,
-  /artifactInherited \? \([\s\S]*?Shared[\s\S]*?: null/,
-  "an inherited brief adds a Shared chip, an owned document does not",
-);
-assert.match(batch, /The brief shared by every option/, "the Shared chip explains it is not the option's own document");
-assert.match(
-  batch,
-  /aria-label=\{artifactInherited\s*\n?\s*\? `Open the shared brief/,
-  "an inherited brief is announced as shared, not as this option's own document",
-);
-assert.doesNotMatch(
-  batch,
-  /^\s*>Open document<span aria-hidden>↗<\/span><\/Button>/m,
-  "the bare 'Open document' label with the filename only in a tooltip is gone",
-);
+// Proven behaviorally through the contracts the row reads: an inherited
+// brief resolves to ONE shared document (so one embedded reader replaces N
+// identical per-row buttons), per-option documents stay distinct, and the
+// viewer mode follows the decision — approvals read, changes can comment.
+{
+  const shared = sharedQuestionArtifact(mixed.options);
+  assert.equal(shared?.path, "interfaces/interfaces.md", "a shared brief resolves to one document, not N buttons");
+  assert.equal(sharedQuestionArtifact(perOption.options), null, "competing proposals keep their own documents — no shared reader");
+  assert.equal(sharedQuestionArtifact(bare.options), null, "no document means no reader and nothing to mislabel");
+  assert.equal(artifactViewerModeForOption("Approve plan"), "review", "the approval reads");
+  assert.equal(artifactViewerModeForOption("Request changes"), "comment", "the change request keeps the comment path");
+  assert.equal(mixed.options[1].artifactInherited, true, "the shared reader is marked shared, never presented as the option's own");
+}

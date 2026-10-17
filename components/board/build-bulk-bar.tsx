@@ -46,29 +46,36 @@ type BulkPartition = {
 
 type BulkOutcome = { started: string[]; failed: Array<{ cardId: string; error: string }> };
 
-// One bulk verb, straight through: guard, per-card calls, honest toasts.
-// Split out because three of these inline is what pushed the bar past its
-// function budget — each verb reads alone now, and the bar only routes.
-async function runBulkStart(eligible: Card[], skipped: BulkPartition["skipped"], rpc: Props["rpc"]): Promise<boolean> {
+// One per-card RPC loop for every bulk verb that acts card-by-card (start,
+// archive): guard, calls, honest toasts. Delete stays separate — it batches
+// through deleteInBatches rather than one call per card.
+async function runBulkPerCard({ eligible, skipped, call, emptyError, successOf, failOf }: {
+  eligible: Card[];
+  skipped: BulkPartition["skipped"];
+  call: (card: Card) => Promise<{ ok: boolean; error: string | null }>;
+  emptyError: string;
+  successOf: (done: string[]) => string | null;
+  failOf: (failed: BulkOutcome["failed"], skippedCount: number) => string | null;
+}): Promise<boolean> {
   if (eligible.length === 0) {
-    toast.error(`No cards can start — ${skipped.map((s) => s.reason).join(", ")}`);
+    toast.error(emptyError);
     return false;
   }
-  const started: string[] = [];
+  const done: string[] = [];
   const failed: BulkOutcome["failed"] = [];
   for (const card of eligible) {
     try {
-      const result = await rpc.call("startWorker", { cardId: card.id }) as {
-        ok: boolean; error: string | null;
-      };
-      if (result.ok) started.push(card.id);
+      const result = await call(card);
+      if (result.ok) done.push(card.id);
       else failed.push({ cardId: card.id, error: String(result.error ?? "failed") });
     } catch (err) {
       failed.push({ cardId: card.id, error: err instanceof Error ? err.message : "failed" });
     }
   }
-  if (started.length) toast.success(`Started ${started.length} of ${eligible.length}`);
-  if (failed.length) toast.error(`${failed.length} failed — ${failed.map((f) => f.error).join("; ")}`);
+  const success = successOf(done);
+  if (success) toast.success(success);
+  const fail = failOf(failed, skipped.length);
+  if (fail) toast.error(fail);
   if (skipped.length) {
     const names = skipped.map((s) => s.card.displayName).join(", ");
     toast.message(`${skipped.length} skipped: ${names}`);
@@ -76,29 +83,29 @@ async function runBulkStart(eligible: Card[], skipped: BulkPartition["skipped"],
   return true;
 }
 
+// One bulk verb, straight through: guard, per-card calls, honest toasts.
+// Split out because three of these inline is what pushed the bar past its
+// function budget — each verb reads alone now, and the bar only routes.
+async function runBulkStart(eligible: Card[], skipped: BulkPartition["skipped"], rpc: Props["rpc"]): Promise<boolean> {
+  return runBulkPerCard({
+    eligible,
+    skipped,
+    call: (card) => rpc.call("startWorker", { cardId: card.id }) as Promise<{ ok: boolean; error: string | null }>,
+    emptyError: `No cards can start — ${skipped.map((s) => s.reason).join(", ")}`,
+    successOf: (started) => started.length ? `Started ${started.length} of ${eligible.length}` : null,
+    failOf: (failed) => failed.length ? `${failed.length} failed — ${failed.map((f) => f.error).join("; ")}` : null,
+  });
+}
+
 async function runBulkArchive(eligible: Card[], skipped: BulkPartition["skipped"], rpc: Props["rpc"]): Promise<boolean> {
-  if (eligible.length === 0) {
-    toast.error("No cards can be archived");
-    return false;
-  }
-  const archived: string[] = [];
-  const failed: BulkOutcome["failed"] = [];
-  for (const card of eligible) {
-    try {
-      const result = await rpc.call("moveCard", {
-        cardId: card.id,
-        status: "archived",
-      }) as { ok: boolean; error: string | null };
-      if (result.ok) archived.push(card.id);
-      else failed.push({ cardId: card.id, error: String(result.error ?? "failed") });
-    } catch (err) {
-      failed.push({ cardId: card.id, error: err instanceof Error ? err.message : "failed" });
-    }
-  }
-  if (archived.length) toast.success(`Archived ${archived.length}`);
-  if (failed.length) toast.error(`${failed.length} failed`);
-  if (skipped.length) toast.message(`${skipped.length} skipped`);
-  return true;
+  return runBulkPerCard({
+    eligible,
+    skipped,
+    call: (card) => rpc.call("moveCard", { cardId: card.id, status: "archived" }) as Promise<{ ok: boolean; error: string | null }>,
+    emptyError: "No cards can be archived",
+    successOf: (archived) => archived.length ? `Archived ${archived.length}` : null,
+    failOf: (failed) => failed.length ? `${failed.length} failed` : null,
+  });
 }
 
 async function runBulkDelete(eligible: Card[], skipped: BulkPartition["skipped"], rpc: Props["rpc"]): Promise<boolean> {

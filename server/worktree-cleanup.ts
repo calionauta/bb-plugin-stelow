@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { cleanupConfirm, cleanupEligibility, cleanupIntegrationGate, cleanupTrail } from "../lib/discard-policy.mjs";
+import { resolveWithinRoot } from "../lib/path-jail.mjs";
 
 type Card = {
   id: string;
@@ -21,6 +23,20 @@ type CleanupDeps = {
   log: (cardId: string, body: string) => void;
   publish: (event: "card-state" | "board-changed", payload: { cardId: string }) => void;
 };
+
+const cardIdInput = z.object({ cardId: z.string().min(1) }).strict();
+
+// A branch name that reaches a shell or git CLI must not smuggle flags or
+// traversals: no leading dash, no `..`, no whitespace, no NUL.
+const SAFE_BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9/_.-]+$/;
+
+function jailedCheckout(checkoutPath: string | null, branch: string | null): string | null {
+  if (!checkoutPath || !branch) return null;
+  if (!SAFE_BRANCH.test(branch)) return null;
+  // The checkout resolves against itself: absolute, NUL-free, separator-clean.
+  // A relative or hostile path never reaches the removal below.
+  return resolveWithinRoot(checkoutPath, ".");
+}
 
 type PreviewResult = {
   eligible: boolean;
@@ -102,8 +118,16 @@ async function cleanup(deps: CleanupDeps, cardId: string): Promise<CleanupResult
   if (!evidence.checkoutPath || !evidence.branch) {
     return { ok: false, summary: null, error: "The linked worktree identity is unavailable." };
   }
+  // Last look before a destructive removal: the checkout and branch re-prove
+  // themselves against the jail. Evidence is re-read above, so a checkout
+  // that moved (or a branch that changed shape) between preview and removal
+  // refuses instead of deleting the wrong tree.
+  const jailed = jailedCheckout(evidence.checkoutPath, evidence.branch);
+  if (!jailed) {
+    return { ok: false, summary: null, error: "The linked worktree path failed validation. Refresh and review again." };
+  }
   try {
-    await deps.dropWorktree(evidence.checkoutPath, evidence.branch);
+    await deps.dropWorktree(jailed, evidence.branch);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Cleanup failed.";
     return { ok: false, summary: null, error: message };
@@ -117,11 +141,11 @@ async function cleanup(deps: CleanupDeps, cardId: string): Promise<CleanupResult
 
 export function createWorktreeCleanup(deps: CleanupDeps) {
   return {
-    preview: (cardId: string) => preview(deps, cardId),
-    cleanup: (cardId: string) => cleanup(deps, cardId),
+    preview: (cardId: string) => preview(deps, cardIdInput.parse({ cardId }).cardId),
+    cleanup: (cardId: string) => cleanup(deps, cardIdInput.parse({ cardId }).cardId),
     handlers: {
-      cleanupWorktreePreview: ({ cardId }: { cardId: string }) => preview(deps, cardId),
-      cleanupWorktree: ({ cardId }: { cardId: string }) => cleanup(deps, cardId),
+      cleanupWorktreePreview: (input: { cardId: string }) => preview(deps, cardIdInput.parse(input).cardId),
+      cleanupWorktree: (input: { cardId: string }) => cleanup(deps, cardIdInput.parse(input).cardId),
     },
   };
 }

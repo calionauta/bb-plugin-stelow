@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   cardSubPath,
   inboxCardSubPath,
@@ -8,6 +7,7 @@ import {
   trackRootSubPath,
   trackTitle,
 } from "../components/panel/stelow-route.mjs";
+import { loadComponent, renderTree } from "./helpers/render-component.mjs";
 
 const track = (value) => ({ kind: "track", track: value });
 
@@ -83,19 +83,86 @@ assert.equal(
 );
 assert.equal(inboxCardSubPath("card_abc123", "evt_xyz789"), "inbox/card/card_abc123/event/evt_xyz789", "inbox events always identify both ids");
 
-// React has no mounted renderer in this repository. These wiring pins catch
-// hidden keep-alive panels becoming active, which would restart subscriptions.
-const panelSource = readFileSync(new URL("../components/panel/stelow-panel.tsx", import.meta.url), "utf8");
-const renderingSource = readFileSync(new URL("../components/app-support/panel-rendering.tsx", import.meta.url), "utf8");
-assert.match(panelSource, /renderTrack\(track, track === tab\)/, "only the selected keep-alive track receives active=true");
-for (const component of ["BuildPanel", "ResearchPanel", "ExplorePanel"]) {
-  const openTag = renderingSource.match(new RegExp(`<${component}\\b[\\s\\S]*?>`));
-  assert.ok(openTag, `${component} must be mounted by the track renderer`);
-  assert.match(
-    openTag[0],
-    /\bactive=\{active\}/,
-    `${component} must forward the routed active state`,
-  );
-}
+// React has no mounted renderer here, so these wiring claims are asked of the
+// components themselves — compiled and walked to a plain tree — rather than of
+// their source text. An edit that changed what renders now fails here; a regex
+// over the file could not tell the two apart.
+const stelowPanel = loadComponent("components/panel/stelow-panel.tsx", "StelowPanel", {
+  react: {
+    useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: (fn) => fn(),
+    useCallback: (fn) => fn,
+  },
+  "./stelow-tab-bar": { StelowTabBar: () => null },
+  "./stelow-route.mjs": { parseStelowSubPath },
+});
+
+const seen = [];
+const shellProps = {
+  counts: { inbox: 0, build: 0, research: 0, explore: 0, about: 0 },
+  aboutAlert: false,
+  updateBadge: null,
+  onSelectTrack: () => {},
+  renderCard: () => ({ card: true }),
+  renderTrack: (tab, active) => {
+    seen.push({ tab, active });
+    return null;
+  },
+};
+renderTree(stelowPanel({ ...shellProps, subPath: "build" }));
+assert.deepEqual(
+  seen.filter((entry) => entry.active).map((entry) => entry.tab),
+  ["build"],
+  "only the selected keep-alive track receives active=true",
+);
+assert.deepEqual(
+  seen.map((entry) => entry.tab),
+  ["inbox", "build", "research", "explore", "about"],
+  "every track stays mounted so subscriptions survive a tab switch",
+);
+seen.length = 0;
+renderTree(stelowPanel({ ...shellProps, subPath: "about" }));
+assert.deepEqual(
+  seen.filter((entry) => entry.active).map((entry) => entry.tab),
+  ["about"],
+  "the active track follows the route rather than a fixed tab",
+);
+
+// The track renderer, rendered: each route mounts its own panel with the routed
+// active state and the config object it imported.
+const marker = (name) => {
+  const fn = () => null;
+  fn.displayName = name;
+  return fn;
+};
+const EXPLORE_PANEL_CONFIG = { kind: "explore" };
+const RESEARCH_PANEL_CONFIG = { kind: "research" };
+const BuildPanel = marker("BuildPanel");
+const TrackPanelForKind = marker("TrackPanelForKind");
+const renderTrackPanel = loadComponent("components/app-support/panel-rendering.tsx", "renderTrackPanel", {
+  "../panels/build-panel": { BuildPanel },
+  "../panels/track-panel": { TrackPanelForKind },
+  "../panels/track-panel-state": { EXPLORE_PANEL_CONFIG, RESEARCH_PANEL_CONFIG },
+  "../panels/track-panel-view": { EXPLORE_VIEW_CONFIG: { kind: "explore" }, RESEARCH_VIEW_CONFIG: { kind: "research" } },
+  "../panels/track-panel-dialogs": { EXPLORE_DIALOGS_CONFIG: { kind: "explore" }, RESEARCH_DIALOGS_CONFIG: { kind: "research" } },
+  "../panels/inbox-panel": { InboxPanel: marker("InboxPanel") },
+  "../settings/about-panel": { AboutPanel: marker("AboutPanel") },
+  "../settings/preset-onboarding": { PresetOnboardingDialog: marker("PresetOnboardingDialog") },
+  "../settings/preset-manager-shell": { PresetManagerDialog: marker("PresetManagerDialog") },
+  "../detail/card-detail-route": { BareCardRoute: marker("BareCardRoute"), StelowCardDetail: marker("StelowCardDetail"), INTENT_LABEL: {} },
+});
+
+const build = renderTrackPanel("build", true);
+assert.equal(build.type, BuildPanel, "build mounts the extracted Build panel");
+assert.equal(build.props.active, true, "and forwards the routed active state");
+const research = renderTrackPanel("research", false);
+assert.equal(research.type, TrackPanelForKind, "research mounts through the generic track panel");
+assert.equal(research.props.active, false, "research forwards active=false when it is not the selected tab");
+assert.equal(research.props.panelConfig, RESEARCH_PANEL_CONFIG, "and passes the Research panel config it imported");
+const explore = renderTrackPanel("explore", true);
+assert.equal(explore.type, TrackPanelForKind, "explore mounts through the generic track panel");
+assert.equal(explore.props.panelConfig, EXPLORE_PANEL_CONFIG, "with the Explore panel config");
+assert.equal(explore.props.active, true, "and the routed active state");
 
 console.log("panel routes test ok: tracks, cards, events, padding, active state, and safe fallback");

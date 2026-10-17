@@ -1,7 +1,7 @@
 import { conditionSpread, groupConditionsByType, isSharedCondition } from "../../lib/scope-conditions-grouping.mjs";
 import { dependencyRows } from "../../lib/scope-dependency-relations.mjs";
 import { TEXT_META } from "../../lib/design-tokens";
-import type { ScopeListScope } from "./scopes-list";
+import type { ScopeListScope } from "./scope-types";
 
 /**
  * The two facts a scope list shows ABOUT the set of scopes rather than inside

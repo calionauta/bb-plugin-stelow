@@ -24,9 +24,6 @@
  * recordRunIdentity is private.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   createExecutionRun,
   getExecutionRun,
@@ -34,8 +31,6 @@ import {
 } from "../lib/execution-run-ledger.mjs";
 import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 import { reconcileOne } from "../server/execution-reconcile-run.ts";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function newDb() {
   return executionRunDb("card-1");
@@ -135,20 +130,27 @@ function dispatchedRun(db, id = "local-1") {
   assert.ok(row.completedAt, "finishing is what stamps completed_at, not dispatching");
 }
 
-// 4. The launch path writes no terminal state. recordRunIdentity is private, so
-//    this is the wiring pin: a second transition to a terminal status inside it
-//    is exactly the defect, and it would put every run past correction again.
-const launch = readFileSync(join(root, "server/execution-native-launch.ts"), "utf8");
-const identity = launch.slice(launch.indexOf("function recordRunIdentity"));
-assert.doesNotMatch(
-  identity,
-  /transitionExecutionRun\([^)]*,\s*"succeeded"/,
-  "the launch path must not write a terminal state — the host alone decides a run finished",
-);
-assert.match(
-  identity,
-  /native\.state === "succeeded" \? "running"/,
-  "a dispatch the host accepted is a running run",
-);
+// 4. A finished run is terminal. The reconciler answers it from the row without
+// a host round trip, so a later host answer can never reopen it — the exact
+// correction path for the 31 live rows that read succeeded/running.
+{
+  const h = harness();
+  h.dispatched();
+  h.setHostState("succeeded");
+  await reconcileOne(h.deps, "local-1");
+  const askedAfterFinish = h.asked.length;
+  h.setHostState("running");
+  await reconcileOne(h.deps, "local-1");
+  assert.equal(
+    getExecutionRun(h.db, "local-1").normalizedStatus,
+    "succeeded",
+    "a finished run is terminal — a later host answer cannot reopen it",
+  );
+  assert.equal(
+    h.asked.length,
+    askedAfterFinish,
+    "a terminal run is answered from the row, never re-asked of the host",
+  );
+}
 
 console.log("run reconcile test ok: a dispatched run is asked about, and its row follows the host");

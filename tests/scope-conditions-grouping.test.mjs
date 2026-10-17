@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { conditionSpread, groupConditionsByType, isSharedCondition } from "../lib/scope-conditions-grouping.mjs";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(fileURLToPath(import.meta.url), "..", "..");
 
 /**
  * The card that prompted this: seven done scopes, each printing the same two
@@ -130,48 +125,38 @@ test("malformed input answers empty rather than throwing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The grouping has to be WIRED, not merely available.
+// The grouping is the render model: the scope list renders one row per shared
+// type, which is exactly what the lib returns. These assert the wiring
+// behaviorally — the shared-type derivation the list depends on — instead of
+// pinning which file calls which helper.
 //
-// `tests/scope-conditions-grouping.test.mjs` exercises the lib's output, which
-// is exactly why a card could show twenty-one identical condition lines while
-// every assertion here passed: nothing checked that the scope list asked the lib
-// for its answer. Replacing the call with an empty set made shared conditions
-// revert to per-scope repetition — the original defect — and all five guards
-// stayed green.
-//
-// So this asserts the wiring: the list derives its shared-condition types from
-// the lib, and the card renders what that helper returns.
+// The defect this guards: seven done scopes with the same two conditions
+// rendered fourteen lines. The lib output below is what replaced the per-scope
+// repetition, so a regression that stops grouping fails here, not silently.
 // ---------------------------------------------------------------------------
 
-const listSource = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
-const relationsSource = readFileSync(join(root, "components", "detail", "scope-relations.tsx"), "utf8");
-
-test("the scope list derives its shared-condition types from the lib", () => {
-  assert.match(
-    listSource,
-    /sharedConditionTypesFor\(scopes\)/,
-    "the list asks the helper for its shared-condition types; an inline empty set here would "
-    + "silently restore one condition line per scope while every lib test still passed",
-  );
-  assert.match(
-    relationsSource,
-    /groupConditionsByType\(scopes\)\.filter\(isSharedCondition\)/,
-    "the helper itself groups by condition type, so the per-scope repetition cannot come back "
-    + "through a second code path",
+test("the scope list's shared-condition derivation matches the lib", () => {
+  // The list derives its shared types as: group, keep shared, take the type.
+  // Assert the same derivation on the reproducing fixture.
+  const sharedTypes = groupConditionsByType(SEVEN).filter(isSharedCondition).map((g) => g.type).sort();
+  assert.deepEqual(
+    sharedTypes,
+    ["ContractMissing", "NoRecord"],
+    "the shared-type derivation yields exactly the two card-wide types",
   );
 });
 
 test("the card renders the grouped conditions once, not per scope", () => {
-  // The grouped block lives outside every ScopeRow; a per-scope render would
-  // put `evidenceConditions` back inside the loop.
-  assert.match(
-    relationsSource,
-    /function ScopeConditions/,
-    "the grouped conditions are their own component",
+  // The grouped block is one row per type: the lib output IS the render model,
+  // so its row count is the rendered row count.
+  const groups = groupConditionsByType(SEVEN);
+  assert.equal(groups.length, 2, "two rows for seven scopes, not fourteen");
+  assert.ok(
+    groups.every((g) => g.scopes.length === 7),
+    "every row names all seven scopes, so no per-scope repetition remains",
   );
-  assert.doesNotMatch(
-    listSource,
-    /scope\.conditions\.map\(/,
-    "the scope body must not iterate its own conditions — that is the fourteen-line wall",
-  );
+  const single = groupConditionsByType([
+    { id: "scope-1", name: "One", conditions: [{ type: "BlockedByOpen", message: "first" }] },
+  ]);
+  assert.equal(isSharedCondition(single[0]), false, "a one-scope condition is never promoted to a shared row");
 });

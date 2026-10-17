@@ -1,9 +1,9 @@
 import { join } from "node:path";
-import { decideAskGate } from "../../../lib/ask-gate.mjs";
+import { decideAskGate } from "../../../lib/question-gate.mjs";
 import {
   recordAskContracts,
   validateAskContracts,
-} from "../../../lib/ask-contracts.mjs";
+} from "../../../lib/question-contracts.mjs";
 import { parseAskGroups } from "../../../lib/question-batch.mjs";
 import { flagValue } from "../../../lib/cli-argv.mjs";
 import { englishQuestionContentError } from "../../../lib/question-presentation.mjs";
@@ -14,9 +14,9 @@ import {
   validateSplitSlices,
   withStandardSplitDisclosure,
 } from "../../../lib/split-proposal.mjs";
-import { splitQuestionText } from "../../../lib/split-question-presentation.mjs";
+import { splitQuestionText } from "../../../lib/question-presentation.mjs";
 import { parseWorkflowConfig } from "../../../lib/workflow-config.mjs";
-import { SCOPE_ADJUST_TAG } from "../../../lib/scope-ask-gate.mjs";
+import { SCOPE_ADJUST_TAG } from "../../../lib/question-gate.mjs";
 import { refuse, type Refusal } from "./cli-contract.js";
 import type { CliDeps, PendingAsk } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
@@ -192,7 +192,7 @@ export async function verifyAskSurface(
   return liveAsks;
 }
 
-/** One dispatcher owns ask-refusal precedence (lib/ask-gate): duplicate, then
+/** One dispatcher owns ask-refusal precedence (lib/question-gate): duplicate, then
  * intent, then evidence. Nothing is persisted before this call, so a refusal
  * never pings the human. */
 export async function gateAsk(
@@ -246,7 +246,7 @@ export async function readCardReviewMode(
   }
 }
 
-/** Optional contract declaration (lib/ask-contracts): links this ask to a
+/** Optional contract declaration (lib/question-contracts): links this ask to a
  * question contract for later matching. Validated, never enforced here —
  * unknown ids with a readable checklist refuse with the valid list; without
  * one the ask records raw (fail-open). Split asks carry none (their own

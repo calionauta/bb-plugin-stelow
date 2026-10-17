@@ -1,81 +1,61 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
+import {
+  isPathInstall,
+  mapUpdateEntry,
+  updateAvailableFrom,
+} from "../lib/plugin-update.mjs";
 
-const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
-const rendering = readFileSync(new URL("../components/app-support/panel-rendering.tsx", import.meta.url), "utf8");
-const about = readFileSync(new URL("../components/settings/about-panel.tsx", import.meta.url), "utf8");
-const actions = readFileSync(new URL("../components/settings/plugin-update-actions.ts", import.meta.url), "utf8");
-const tools = readFileSync(new URL("../components/settings/host-tools-section.tsx", import.meta.url), "utf8");
-const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
-const workflow = readFileSync(new URL("../components/settings/workflow-dependency-card.tsx", import.meta.url), "utf8");
-const onboarding = readFileSync(new URL("../components/settings/preset-onboarding.tsx", import.meta.url), "utf8");
-const dependency = readFileSync(new URL("../server/runtime/workflow-dependency.ts", import.meta.url), "utf8");
-const contract = readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8");
-
-test("app mounts About through the focused settings module", () => {
-  assert.match(app, /<StelowPanelRoute\b/, "the app shell mounts the extracted panel route");
-  assert.match(rendering, /import \{ AboutPanel \} from "\.\.\/settings\/about-panel"/);
-  assert.match(rendering, /return <AboutPanel \/>/, "the About track renders the focused settings module");
-  assert.doesNotMatch(app, /function (AboutPanel|HostToolsSection|PluginUpdateStatus)\(/);
+// About owns one update verdict shared by every surface: the sidebar
+// accessory, the About badge, and the status box must agree, so they all
+// read one predicate — never an inline expression per call site.
+test("update verdict is one predicate for every surface", () => {
+  assert.equal(
+    updateAvailableFrom({ pluginUpdate: { outcome: "update-available" } }),
+    true,
+    "a BB-managed candidate counts",
+  );
+  assert.equal(
+    updateAvailableFrom({ githubRelease: { newer: true } }),
+    true,
+    "a newer GitHub release behind an unmanaged install counts",
+  );
+  assert.equal(
+    updateAvailableFrom({ pluginUpdate: { outcome: "current" } }),
+    false,
+    "current reads as no update",
+  );
+  assert.equal(updateAvailableFrom(null), false, "junk reads as no update, never a throw");
+  assert.equal(updateAvailableFrom({}), false, "an unknown shape reads as no update");
 });
 
-test("About owns one tool lifecycle and delegates update lifecycle", () => {
-  assert.match(about, /rpc\.call\("installTool", \{ id \}\)/);
-  assert.match(about, /usePluginUpdateActions\(buildInfo, setBuildInfo\)/);
-  assert.match(actions, /rpc\.call\("checkPluginUpdate", \{\}\)/);
-  assert.match(actions, /rpc\.call\("applyPluginUpdate", \{\}\)/);
-  assert.match(actions, /setPluginUpdateAvailable\(updateAvailableFrom\(result\)\)/,
-    "a fresh check publishes its verdict to every update surface");
-  assert.match(actions, /setPluginUpdateAvailable\(updateAvailableFrom\(info\)\)/,
-    "post-apply build info republishes the refreshed verdict");
-  assert.match(actions, /if \(started === state\) return/,
-    "the lifecycle guard owns refusal of unconfirmed or duplicate apply calls");
-  assert.equal((about.match(/rpc\.call\("toolStatus"/g) ?? []).length, 2,
-    "initial status and successful-install refresh are the only probes");
+test("path installs take the manual update path only", () => {
+  assert.equal(isPathInstall("path:/home/user/checkout"), true, "path installs update from the checkout");
+  assert.equal(isPathInstall("  PATH:/x  "), true, "the prefix match ignores case and padding");
+  assert.equal(isPathInstall("bb-managed"), false, "managed installs never take the manual path");
+  assert.equal(isPathInstall(null), false, "junk never takes the manual path");
 });
 
-test("About preserves its team pointer, width, and destructive confirmation", () => {
-  assert.match(about, /className="grid max-w-2xl gap-5"/);
-  assert.match(about, /see the experimental team playbook/);
-  assert.match(about, /Clear onboarding state so every track shows its setup dialog again/);
-  assert.match(about, /Show the first-visit setup dialogs again/);
-});
-
-test("BB Workflows status and explicit setup are wired into About and onboarding", () => {
-  assert.match(workflow, /BB Workflows integration/);
-  assert.match(workflow, /Install BB Workflows/);
-  assert.match(workflow, /Enable BB Workflows/);
-  assert.match(workflow, /Native execution is available for eligible Stelow recipes/);
-  assert.match(onboarding, /<WorkflowDependencyCard compact \/>/);
-  assert.match(about, /<WorkflowDependencyCard \/>/);
-  assert.match(dependency, /"plugin", "install", "builtin:workflows"/, "install goes through the host CLI, on request only");
-  assert.match(dependency, /"plugin", "enable", "workflows"/, "enable goes through the host CLI, on request only");
-  assert.match(dependency, /workflowDependencyStatus/, "the status is one decision over one CLI answer");
-  assert.match(contract, /workflowDependencyStatus: \{/, "the dependency status is a contracted RPC");
-  assert.match(contract, /installWorkflowDependency: \{/, "install is a contracted RPC");
-  assert.match(contract, /enableWorkflowDependency: \{/, "enable is a contracted RPC");
-  assert.doesNotMatch(
-    [workflow, onboarding, about].join("\n"),
-    /WorkflowDependencyCard[^>]*onInstall|fetch\(|child_process/,
-    "the card asks through the contract; it never shells out itself",
+test("wire entries reduce without throwing", () => {
+  assert.equal(
+    mapUpdateEntry({
+      outcome: "update-available",
+      installed: { version: "1.0.0", display: "v1.0.0" },
+      candidate: { version: "1.1.0", display: "v1.1.0" },
+    }).candidate,
+    "1.1.0",
+    "the candidate version survives the mapping",
+  );
+  assert.equal(
+    mapUpdateEntry(null).outcome,
+    "unavailable",
+    "a missing entry reads unavailable, never a throw",
+  );
+  assert.equal(
+    mapUpdateEntry({ outcome: "bogus" }).outcome,
+    "unavailable",
+    "an unknown outcome reads unavailable",
   );
 });
 
-test("tool rows preserve exclusive install and resilient presentation", () => {
-  assert.match(tools, /disabled=\{disabled\}/);
-  assert.match(tools, /installingId !== null/);
-  assert.match(tools, /\{!present && !installing \?/);
-  assert.match(tools, /Installing — can take a couple minutes/);
-  assert.match(tools, /<InstallError message=\{error\} \/>/);
-});
-
-test("update actions remain guarded and unmanaged guidance is split", () => {
-  assert.match(status, /function UpdateActions/);
-  assert.match(status, /<UnmanagedUpdateCopy/);
-  assert.match(status, /disabled=\{updating\}/);
-  assert.match(status, /disabled=\{checking\}/);
-  assert.match(status, /isPathInstall\(update\.installedDisplay\)/);
-});
-
-console.log("about UI contracts ok: focused settings mount and lifecycle topology");
+console.log("about UI contracts ok: shared update verdict, path-install routing, entry mapping");

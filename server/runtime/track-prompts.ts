@@ -82,12 +82,16 @@ over unless the index is empty.";
   return "The host re-seeded your state dir: start the research over with a fresh research-index.md.";
 }
 
-function researchPrelude(
-  protocols: TrackPromptProtocols,
-  input: ResearchWorkerPromptInput,
-): string {
-  return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir \
-(${input.stateDirText}) inside the workspace (${input.workspaceRoot}). ${protocols.cardOwnerRules} \
+function researchPrelude(protocols: TrackPromptProtocols): string {
+  // Shared-only: the role plus the owner rules. Per-card values (state dir,
+  // workspace, flavor, previous thread) live in the card tail below, so two
+  // cards on different state dirs share this whole region and the provider
+  // prefix cache reaches the steps instead of dying at character ~140.
+  return `You are running a Stelow research task inside the bb-plugin-stelow panel. ${protocols.cardOwnerRules}`;
+}
+
+function researchCardTail(input: ResearchWorkerPromptInput): string {
+  return `Your work owns its own state dir (${input.stateDirText}) inside the workspace (${input.workspaceRoot}). Card: ${input.displayName}. \
 ${researchFlavorLine(input.flavor)}${previousWorkerContext(input.previousThreadId, "research-index.md")}`;
 }
 
@@ -104,7 +108,7 @@ quotes, or statistics. You MUST NOT write product code or open pull requests. Re
 Step 3 — write your findings to <state-dir>/research-index.md (create it) in EXACTLY this shape (headings verbatim — the plugin parses them deterministically \
 for review and fan-out):
 
-    # Research index: ${input.displayName}
+    # Research index
 
     ## Summary
     <concise cross-strategy synthesis, evidence limits, key decisions — keep it short>
@@ -173,13 +177,17 @@ function researchWorkerPrompt(
   protocols: TrackPromptProtocols,
   input: ResearchWorkerPromptInput,
 ): string {
+  // Shared clauses first, per-card tail last: the cacheable prefix ends at the
+  // first per-card byte, so the state dir, card name, flavor, and request all
+  // render after everything both cards share.
   return [
-    researchPrelude(protocols, input),
+    researchPrelude(protocols),
     researchIndexStep(input),
     researchRoundStep(input),
     researchRegistrationStep(input),
     researchUserContract(),
     protocolFooter(protocols),
+    researchCardTail(input),
     requestTail(input),
   ].join("\n\n");
 }
@@ -192,13 +200,15 @@ function exploreFlavorLine(flavor: ExploreWorkerPromptInput["flavor"]): string {
   return "The host re-seeded your state dir: run the stage again from scratch.";
 }
 
-function explorePrelude(
-  protocols: TrackPromptProtocols,
-  input: ExploreWorkerPromptInput,
-): string {
-  return `You are running a SINGLE-STAGE Stelow exploration inside the bb-plugin-stelow panel. Your work owns its own state dir \
-(${input.stateDirText}) inside the workspace (${input.workspaceRoot}). ${protocols.cardOwnerRules} ${exploreFlavorLine(input.flavor)}\
-${previousWorkerContext(input.previousThreadId, "artifact")}`;
+function explorePrelude(protocols: TrackPromptProtocols): string {
+  // Shared-only, same reason as the research prelude: per-card values live in
+  // the tail so the prefix cache survives across cards.
+  return `You are running a SINGLE-STAGE Stelow exploration inside the bb-plugin-stelow panel. ${protocols.cardOwnerRules}`;
+}
+
+function exploreCardTail(input: ExploreWorkerPromptInput): string {
+  return `Your work owns its own state dir (${input.stateDirText}) inside the workspace (${input.workspaceRoot}). Card: ${input.displayName}. \
+${exploreFlavorLine(input.flavor)}${previousWorkerContext(input.previousThreadId, "artifact")}`;
 }
 
 function exploreWorkStep(input: ExploreWorkerPromptInput): string {
@@ -251,11 +261,12 @@ function exploreWorkerPrompt(
   input: ExploreWorkerPromptInput,
 ): string {
   return [
-    explorePrelude(protocols, input),
+    explorePrelude(protocols),
     exploreWorkStep(input),
     exploreArtifactStep(input),
     exploreUserContract(),
     protocolFooter(protocols),
+    exploreCardTail(input),
     requestTail(input),
   ].join("\n\n");
 }

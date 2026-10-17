@@ -98,3 +98,28 @@ export function classesOf(node) {
   const value = node?.props?.className;
   return typeof value === "string" ? value.split(/\s+/) : [];
 }
+
+/**
+ * Render a JSX tree the way React does: children reach a component through its
+ * props. `walk` calls a component with children as positional arguments, which
+ * a component that destructures `children` from props never sees — this is the
+ * variant that resolves children first, so the output is the tree a reader
+ * would actually get.
+ */
+export function renderTree(node) {
+  if (Array.isArray(node)) return node.map(renderTree);
+  if (node === null || node === undefined || typeof node !== "object") return node;
+  const children = (node.children ?? []).map(renderTree);
+  if (typeof node.type === "function") {
+    return renderTree(node.type({ ...node.props, children }));
+  }
+  return { type: node.type, props: node.props ?? {}, children };
+}
+
+/** Every string a rendered tree carries, joined for a single-text search. */
+export function treeText(node) {
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map(treeText).join(" ");
+  if (!node || typeof node !== "object") return "";
+  return (node.children ?? []).map(treeText).join(" ");
+}

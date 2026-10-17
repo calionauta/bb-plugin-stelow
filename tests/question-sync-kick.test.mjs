@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { QUESTION_WAITING_SUMMARY, ensureInboxResolvedReasonColumn, insertInboxEvent } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
-import { kickQuestionSync, syncFreshQuestionInbox } from "../lib/question-sync-kick.mjs";
+import { kickQuestionSync, syncFreshQuestionInbox } from "../lib/question-store.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

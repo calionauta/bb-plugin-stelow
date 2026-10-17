@@ -1389,7 +1389,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   output or stage progress, no question is pending, and the per-stage
   budget (10 consecutive resumes without a stage advance) remains, the
   host resumes the worker in place with the same nudge a manual Retry
-  sends — no human click per stage. A silent stop or an exhausted budget
+  sends — no human click per stage. *Fresh* is measured against the text
+  recorded at the last idle edge (`last_idle_text`), never against the live
+  text: a card-detail read runs the same sync, so a reader could otherwise
+  decide whether the worker resumes. A silent stop or an exhausted budget
   still surfaces as paused with exactly one inbox event per idle period;
   manual Retry/Restart reseeds the budget. With the Auto-continue router
   in Decision API mode, a confident "no real progress" judgment vetoes the
@@ -1844,7 +1847,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   alone and the boot is still refused**, because a genuine mismatch is a real
   signal and silencing it is worse than the defect; the same applies to a
   statement that has itself drifted, which the repair declines out loud. A
-  healthy install is not written to at all.
+  healthy install is not written to at all. The repair sits behind its own
+  flag: `STELOW_HEAL_LEDGER=0` on the host disables it, leaving the host's
+  refusal (and its message) standing for the operator to handle manually.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
@@ -1905,15 +1910,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (no extra calls, default), Decision
-  API with a confidence floor, or Preset judge — plus the shared typed client
+  API with a confidence floor, or Preset (refused to built-in rules —
+  no hidden judge thread; decisions resolve via the deterministic
+  Decision API or the point's built-in rules) — plus the shared typed client
   (`lib/decision-api.mjs`, fail-soft result objects, never throws). The
   endpoint, key, and model live once in the Decision API section above;
-  routers only pick a mode, a confidence floor, or a judge preset — any
-  provider preset, including one no stage uses — via one hidden thread with
-  a strict-JSON verdict contract (`lib/preset-judge.mjs`); failures fall
-  back to built-in rules. Preset judging is offered only on low-frequency
-  points (triage intent, artifact criteria); hot paths stay on rules/api
-  so judgments never burn worker turns. Mode selection stages locally and
+  routers only pick a mode, a confidence floor, or a preset. The preset
+  mode is offered only on low-frequency points (triage intent, artifact
+  criteria) and resolves through the deterministic preset-judge stub
+  (`server/decisions/preset-judge-runner.ts`) against the strict-JSON verdict
+  contract (`lib/preset-judge.mjs`) — no thread is spawned for a judgment,
+  so a preset never burns a worker turn; hot paths stay on rules/api. Mode selection stages locally and
   saves explicitly; saves refresh only the routers section, never the
   board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.
@@ -2013,7 +2020,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Delegation registry** (`lib/delegation-map.mjs`). Every LLM/thread
   contact point registered once (site, tier, preset source, spawn path,
   writes, judge): draft bursts and card titles on Generation, reviews on
-  the reviewer preset, preset judges direct, worker spawns documented on
+  the reviewer preset, worker spawns documented on
   their own cascade. Disposable spawns validate before any SDK call
   (known site, hidden, never full permission); a new spawn site without
   a `delegation-site` marker fails the topology pin.
@@ -2566,7 +2573,7 @@ one input, one artifact.*
   default, else board default) with a Configure presets entry; the
   provider/model picked in BB's composer is forwarded to the spawn and
   pinned as the card's preset override when it differs.
-- **Stage catalog** (`STAGE_CATALOG`, `lib/stage-catalog.mjs`). One entry
+- **Stage catalog** (`TECHNIQUE_CATALOG`, `lib/stage-catalog.mjs`). One entry
   per single-runnable workflow stage (Shape Up, interface alternatives,
   plan critiques, tech planning, codebase/UX critiques, testing
   strategy, execution critique) mapping to its bundled skill. Single

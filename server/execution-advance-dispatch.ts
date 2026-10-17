@@ -13,7 +13,7 @@ import type { AdvanceDeps } from "./execution-advance-types.js";
 import type { WorkerCard } from "./workers-types.js";
 
 type DispatchDeps = Pick<AdvanceDeps, "native" | "recordExecutionEntry">;
-type BandDeps = Pick<AdvanceDeps, "getReliablePreset" | "getCardPresetId" | "respawn" | "scheduleRespawn" | "suggestTier">;
+type BandDeps = Pick<AdvanceDeps, "getReliablePreset" | "getCardPresetId" | "scheduleRespawn" | "suggestTier">;
 
 export type DispatchInput = {
   card: WorkerCard;
@@ -116,9 +116,11 @@ function recordEntered(deps: DispatchDeps, input: DispatchInput): void {
 }
 
 /**
- * Each band runs on its own preset. A deferred advance schedules the swap for
- * the moment the card stops running; an immediate one does it now, because the
- * next worker thread has to be the one the band asked for.
+ * Each band runs on its own preset. Every swap is scheduled, never immediate:
+ * an immediate respawn inside a stage advance races the advance's own thread
+ * handoff (and the retry path, and a manual restart), and the loser orphans
+ * the thread it just spawned. The scheduler coalesces to one pending swap
+ * per card, so a burst of advances still births exactly one replacement.
  */
 export async function applyBand(
   deps: BandDeps,
@@ -131,8 +133,8 @@ export async function applyBand(
   const preset = deps.getReliablePreset(band, card.id);
   const currentPresetId = card.worker_preset_id ?? deps.getCardPresetId(card.id);
   if (!preset || preset.id === currentPresetId) return;
-  if (deferred) deps.scheduleRespawn(card.id, preset.id);
-  else await deps.respawn(card.id, preset.id);
+  void deferred;
+  deps.scheduleRespawn(card.id, preset.id);
   // Shadow only, after the real decision: the suggestion is recorded by the
   // verb itself and can never change this swap. Absent in tests and in any
   // wiring that does not opt in; a throwing provider is swallowed here so

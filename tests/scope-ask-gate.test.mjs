@@ -4,7 +4,7 @@ import {
   SCOPE_ADJUST_TAG,
   SCOPE_ASK_MAX_OPTIONS,
   scopeAskRefusal,
-} from "../lib/scope-ask-gate.mjs";
+} from "../lib/question-gate.mjs";
 
 /**
  * Scope confirms are marked, not guessed.

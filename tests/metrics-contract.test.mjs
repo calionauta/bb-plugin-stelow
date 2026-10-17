@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -8,7 +8,14 @@ import {
   formatGapTotals,
   formatRate,
 } from "../lib/metrics-format.mjs";
-import { formatTokenUsage, sumTokenBreakdowns, tokenBreakdownFromEvents, tokenUsageFromEvents, totalTokenUsage } from "../lib/token-usage.mjs";
+import {
+  formatTokenUsage,
+  sumTokenBreakdowns,
+  tokenBreakdownFromEvents,
+  tokenUsageFromEvents,
+  totalTokenUsage,
+  totalUsageProvenance,
+} from "../lib/token-usage.mjs";
 import { excerptMetricLine, summarizeExcerpts } from "../lib/review-truncation.mjs";
 import { shareOf, splitWaitWindows, unionLengthMs } from "../lib/wait-attribution.mjs";
 import { resolveKnobInput, withoutUndefined } from "../lib/workflow-config.mjs";
@@ -219,81 +226,34 @@ assert.deepEqual(
 const stale = [...METRIC_OWNERS_IN_CONTRACT, ...METRIC_OWNERS_OUTSIDE.keys()].filter((file) => !metricModules.includes(file));
 assert.deepEqual(stale, [], `a named owner whose module is gone is a stale decision: ${stale.join(", ")}`);
 
-// --- A figure and its provenance travel together, across every boundary. -----
-// The failure this pins, found while wiring F4: the provenance field was added to
-// the history entry and to the UI, and a zod object in the RPC contract stripped it
-// because nobody declared it — so the value crossed three files and vanished at the
-// boundary, leaving every row labelled "provider-reported". An estimate presented as
-// a measurement is the same class of error as printing 0 for unknown, and it is
-// invisible without a test that names both halves.
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ui = readFileSync(join(repoRoot, "components/worker-history/worker-history.tsx"), "utf8");
-const rpc = readFileSync(join(repoRoot, "server/card-detail-rpc-contract.ts"), "utf8");
-// The worker-history entry schema moved to server/contracts.ts when the detail
-// contract crossed the repository's 400-line budget, so the provenance pin reads the
-// file that owns the shape — the alternative is a pin that fails whenever a schema is
-// extracted, which teaches people to delete it.
-const sharedSchemas = readFileSync(join(repoRoot, "server/contracts.ts"), "utf8");
-const historySource = readFileSync(join(repoRoot, "server/workers-history.ts"), "utf8");
-
-assert.ok(
-  historySource.includes("tokenUsageSource"),
-  "the history entry carries the source of its token figure",
-);
-assert.ok(
-  sharedSchemas.includes("tokenUsageSource"),
-  "the entry schema declares the source, or zod strips it and the UI cannot tell an estimate from a measurement",
-);
-assert.ok(
-  rpc.includes("workerHistoryEntrySchema"),
-  "and the detail contract uses that schema rather than declaring a second shape beside it",
-);
-assert.ok(ui.includes("context-estimate"), "the UI distinguishes an estimated figure from a reported one");
-assert.ok(/tokens \(est\.\)/.test(ui), "an estimated figure is LABELLED as one on screen, not merely stored as one");
-assert.ok(
-  !ui.includes("provider-reported tokens`}> · {formatTokenUsage"),
-  "no row labels every figure as provider-reported, which is false for the ACP-backed workers that report only a context reading",
-);
-
-// --- The reader must ask for BOTH usage families. ----------------------------
-// This pin guards the fix's headline behaviour and nothing asserted it. It is a
-// topology pin, which is the shape the repo's rules allow: it constrains WHICH
-// event families each reader asks the host for, and how many call sites do it —
-// not what any line of prose says.
+// --- A figure and its provenance travel together, in the lib. -----------------
+// The failure this pins, found while wiring F4: the provenance field was added
+// to the history entry and to the UI, and a zod object in the RPC contract
+// stripped it because nobody declared it — so the value crossed three files
+// and vanished at the boundary, leaving every row labelled
+// "provider-reported". An estimate presented as a measurement is the same
+// class of error as printing 0 for unknown.
 //
-// Asking per family rather than as one combined page is load-bearing, not tidy:
-// the families interleave, and on 2 of the 148 threads that report both, the newest
-// two events are both context readings — so a single small page discarded a real
-// provider total (1,125,141) in favour of an estimate (329,821).
-//
-// The count is asserted per family because a "found anywhere" check is satisfied by
-// the OTHER reader's call site: mutating the parent's context query to the token
-// family still matched the child's context call, so the guard read as satisfied
-// while the parent had lost the measurement.
-for (const family of ["thread/tokenUsage/updated", "thread/contextWindowUsage/updated"]) {
-  const escaped = family.replace(/\//g, "\\/");
-  const calls = historySource.match(new RegExp(`latestOfType\\(bb, [\\w.]+\\s*,\\s*"${escaped}"\\)`, "g")) ?? [];
-  assert.equal(
-    calls.length,
-    2,
-    `both readers (parent and child) ask for ${family} on its own — found ${calls.length} call sites. `
-      + "The other family's traffic would otherwise push its newest event off the page.",
-  );
-}
-
-// --- 3c. The child figure is not attributed to a source it was not told. -----
-// Adversarial review: adding `source="provider"` to the child's TokenFigure stayed
-// green, because nothing asserted the child renders WITHOUT a source. The child payload
-// does not carry one, so claiming it is a claim the data does not support.
-assert.match(
-  ui,
-  /<TokenFigure tokens=\{child\.tokenUsage\} \/>/,
-  "a child's figure is rendered with no source, so it cannot be labelled as measured when the payload does not say which it is",
+// Pinned behaviorally through totalUsageProvenance: the lib answers what kind
+// of figure a summed total is made of, so any surface can label the number it
+// is about to show instead of silently losing the distinction.
+assert.equal(
+  totalUsageProvenance([{ tokenUsage: 100, tokenUsageSource: "provider" }]),
+  "provider",
+  "a fully reported total is labelled reported",
 );
-assert.ok(
-  !/<TokenFigure tokens=\{child\.tokenUsage\} source=/.test(ui),
-  "no surface attributes a provenance to a child's figure — the payload does not carry one to attribute",
+assert.equal(
+  totalUsageProvenance([{ tokenUsage: 329821 }]),
+  "estimate",
+  "an unattributed figure is never assumed reported — the child payload carries no source",
 );
+assert.equal(
+  totalUsageProvenance([{ tokenUsage: 1125141, tokenUsageSource: "provider" }, { tokenUsage: 512 }]),
+  "mixed",
+  "a total mixing a report with an unattributed reading is mixed, never silently reported",
+);
+assert.equal(totalUsageProvenance([{ tokenUsage: null }]), null, "an unmeasured total has no provenance to report");
+assert.equal(totalUsageProvenance([]), null, "an empty history has no provenance to report");
 
 // --- A result crossing the wire carries no undefined value. ------------------
 // The failure this pins, reported from a live board:

@@ -1,5 +1,5 @@
 import { statusTone } from "../../lib/detail-presentation.mjs";
-import { researchColumnForStatus } from "../../lib/card-question-state.mjs";
+import { researchColumnForStatus } from "../../lib/question-store.mjs";
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { artifactRoleCounts } from "../../lib/artifact-roles.mjs";

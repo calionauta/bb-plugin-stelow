@@ -19,3 +19,6 @@ export declare function healRewrittenLedgerRow(
   statements: readonly string[],
   onDecline?: (why: string) => void,
 ): LedgerRepair | null;
+
+/** Kill switch for the ledger repair: runs unless STELOW_HEAL_LEDGER=0. */
+export declare function isLedgerHealEnabled(env?: Record<string, string | undefined>): boolean;

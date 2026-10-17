@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
 import { formatBytes, isStaleEnvironment, threadIdFromWorktreePath } from "../../../lib/worktree-storage.mjs";
+import { duBytes } from "./du-bytes.js";
 import { scanFlags, type CliCommandFn } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
@@ -59,16 +59,6 @@ export function createStorageCommand(deps: CliDeps): CliCommandFn {
       return { exitCode: 0, stdout: "No worktrees reported." };
     return { exitCode: 0, stdout: storageLines(rows, total, unknown).join("\n") };
   };
-}
-
-function duBytes(path: string): Promise<number | null> {
-  return new Promise((resolveDu) => {
-    execFile("du", ["-sb", path], { timeout: 8000 }, (error, stdout) => {
-      if (error) return resolveDu(null);
-      const match = /^\d+/.exec(String(stdout ?? ""));
-      resolveDu(match ? Number.parseInt(match[0], 10) : null);
-    });
-  });
 }
 
 async function collectWorktrees(

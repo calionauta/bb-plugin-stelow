@@ -1,5 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { NO_INPUT, optionalInput } from "./rpc-input.js";
 
 const routeSchema = z.object({
   provider: z.string().nullable(),
@@ -17,7 +18,7 @@ const routeInputSchema = z.object({
 export const decisionApiRpcContract = defineRpcContract({
   getDecisionApiConfig: {
     experimental_description: "Decision API endpoint, model, and key presence, never the key",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       endpoint: z.string(),
       model: z.string(),
@@ -31,19 +32,21 @@ export const decisionApiRpcContract = defineRpcContract({
   },
   setDecisionApiConfig: {
     experimental_description: "Configure the shared decision endpoint, provider, key, and model",
-    input: z
-      .object({
-        endpoint: z.string().max(500).nullable().optional(),
-        apiKey: z.string().max(1000).nullable().optional(),
-        model: z.string().max(120).nullable().optional(),
-        provider: z.string().max(20).nullable().optional(),
-      })
-      .strict(),
+    input: optionalInput(
+      z
+        .object({
+          endpoint: z.string().max(500).nullable().optional(),
+          apiKey: z.string().max(1000).nullable().optional(),
+          model: z.string().max(120).nullable().optional(),
+          provider: z.string().max(20).nullable().optional(),
+        })
+        .strict(),
+    ),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   testDecisionApi: {
     experimental_description: "Probe the decision endpoint with one fixed call and latency",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       ok: z.boolean(),
       latencyMs: z.number().nullable(),
@@ -64,7 +67,7 @@ export const decisionApiRpcContract = defineRpcContract({
   },
   listDecisionPoints: {
     experimental_description: "Every decision router with rules, modes, and current settings",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       points: z.array(
         z.object({
@@ -98,7 +101,7 @@ export const decisionApiRpcContract = defineRpcContract({
   },
   getReviewPolicy: {
     experimental_description: "Independent-review gate policy: off or required",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ mode: z.enum(["off", "required"]) }),
   },
   setReviewPolicy: {

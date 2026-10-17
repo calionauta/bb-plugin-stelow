@@ -50,17 +50,43 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
   };
 }
 
-function wireReconcileRules(deps: ReconcileDeps) {
-  const notifier: CardNotifier = {
+/**
+ * The notifier the rules reach a worker through.
+ *
+ * Extracted from the wiring so the composition root reads as wiring, and so
+ * the send-failure receipt lives with the send it reports on. A failed note
+ * becomes a receipt comment, never a swallow: a worker that cannot be reached
+ * is usually stopped, and the card — not the void — is where the reader will
+ * look for why it went quiet.
+ */
+function createCardNotifier(deps: ReconcileDeps): CardNotifier {
+  return {
     sendToCard(card: WorkerCard, text: string): void {
       if (!card.worker_thread_id) return;
+      const threadId = card.worker_thread_id;
       void deps.bb.sdk.threads.send({
-        threadId: card.worker_thread_id,
+        threadId,
         mode: "auto",
         input: [{ type: "text", text, mentions: [] }],
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        try {
+          deps.logComment(
+            card.id,
+            threadId,
+            `A note to the worker could not be delivered (${
+              error instanceof Error ? error.message : "send failed"
+            }). The worker thread may be stopped; restart it to resume.`,
+          );
+        } catch {
+          /* the receipt is owed, never load-bearing */
+        }
+      });
     },
   };
+}
+
+function wireReconcileRules(deps: ReconcileDeps) {
+  const notifier = createCardNotifier(deps);
   const boundary = createBoundaryReconciler({
     db: deps.db,
     randomId: deps.randomId,
@@ -90,6 +116,7 @@ function wireReconcileRules(deps: ReconcileDeps) {
     db: deps.db,
     getCard: deps.getCard,
     cardWorkspace: deps.cardWorkspace,
+    logComment: deps.logComment,
     publishCard: deps.publishCard,
     native: deps.native,
     lifecycle: deps.lifecycle,

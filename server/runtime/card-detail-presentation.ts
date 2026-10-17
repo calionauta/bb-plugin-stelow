@@ -31,7 +31,7 @@ import type {
   Preset,
   Question,
   Staleness,
-} from "./card-detail.js";
+} from "./card-detail-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];

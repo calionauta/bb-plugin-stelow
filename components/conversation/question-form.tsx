@@ -2,7 +2,7 @@ import type {
   PluginAppBuilder,
   PluginPendingInteractionProps,
 } from "@get-bb/plugin-sdk/app";
-import { questionFormActions, questionFormItems } from "../../lib/question-form.mjs";
+import { questionFormActions, questionFormItems } from "../../lib/question-presentation.mjs";
 import { questionCopy } from "../../lib/question-presentation.mjs";
 import { Button } from "../ui/button";
 import { BatchStepper, type BatchItem } from "./question-batch";

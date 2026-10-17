@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { questionSubstanceGate } from "../lib/question-substance.mjs";
-import { decideAskGate } from "../lib/ask-gate.mjs";
+import { questionSubstanceGate } from "../lib/question-gate.mjs";
+import { decideAskGate } from "../lib/question-gate.mjs";
 
 // Regression pin for card_48uuhus1, where a worker probing "is a question
 // already pending?" ran `--question "ping" --option "a" --option "b"` and the

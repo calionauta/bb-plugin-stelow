@@ -21,6 +21,13 @@ import {
 import { parseSeverityReasons } from "../lib/inbox-severity.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
+import {
+  createArchiveHandler,
+  createCardReadHandler,
+  createReadHandler,
+  createRestoreHandler,
+  createUnreadHandler,
+} from "./inbox-notification-handlers.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Publish = (
@@ -196,12 +203,17 @@ function createTerminalResolver(ctx: InboxContext) {
 
 function createQuestionSync(ctx: InboxContext) {
   return (cardId: string, interactionIds: string[], occurredAt = ctx.now()) => {
+    // explicitEmpty: every caller of this wrapper verified its read first —
+    // question-inbox returns null (skip) on a failed poll rather than [],
+    // and the answer door passes its own verified open set. An empty list
+    // here means "looked, nothing open", never "the read failed".
     const result = syncQuestionInboxEvents(ctx.db, {
       cardId,
       interactionIds,
       occurredAt,
       createId: () => ctx.randomId("evt"),
       summary: QUESTION_WAITING_SUMMARY,
+      explicitEmpty: true,
     });
     const fields = ["inserted", "resolved", "reopened", "pausedSuperseded"] as const;
     if (fields.some((field) => result[field] > 0)) ctx.changed({ cardId });
@@ -221,7 +233,9 @@ function createAnswerMarker(ctx: InboxContext) {
 }
 
 function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {
-  return async ({ includeArchived }: { includeArchived: boolean }) => {
+  const input = z.object({ includeArchived: z.boolean() }).strict();
+  return async (raw: { includeArchived: boolean }) => {
+    const { includeArchived } = input.parse(raw);
     const rows = listInboxEvents(ctx.db, includeArchived) as Array<
       InboxEventRow & {
         display_name: string | null;
@@ -245,84 +259,10 @@ function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {
   };
 }
 
-function changedUpdate(
-  ctx: InboxContext,
-  sql: string,
-  values: unknown[],
-  payload: Record<string, unknown>,
-) {
-  const result = ctx.db.prepare(sql).run(...values);
-  if (result.changes > 0) ctx.changed(payload);
-  return result.changes > 0;
-}
-
-function createEventUpdateHandler(
-  ctx: InboxContext,
-  sql: string,
-  notificationIdFirst: boolean,
-) {
-  return async ({ notificationId }: { notificationId: string }) => {
-    const values = notificationIdFirst
-      ? [ctx.now(), notificationId]
-      : [notificationId];
-    const changed = changedUpdate(ctx, sql, values, { notificationId });
-    return { ok: changed };
-  };
-}
-
-function createReadHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL",
-    true,
-  );
-}
-
-// The other half of read state, and the reason the button on an item can be
-// reversible. Clearing `read_at` returns the update to attention — which
-// `archived_at` deliberately does not, because archive is how a person keeps
-// an item out of the way for good and `restoreNotification` is its only exit.
-function createUnreadHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET read_at = NULL WHERE id = ? AND read_at IS NOT NULL",
-    false,
-  );
-}
-
-function createCardReadHandler(ctx: InboxContext) {
-  return async ({ cardId, kind }: { cardId: string; kind: InboxKind }) => {
-    if (kind !== "completed") return { marked: false };
-    const changed = changedUpdate(
-      ctx,
-      `UPDATE inbox_events SET read_at = ?
-       WHERE card_id = ? AND kind = 'completed'
-         AND read_at IS NULL AND archived_at IS NULL`,
-      [ctx.now(), cardId],
-      { cardId },
-    );
-    return { marked: changed };
-  };
-}
-
-function createArchiveHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
-    true,
-  );
-}
-
-function createRestoreHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
-    false,
-  );
-}
-
 function createGetHandler(ctx: InboxContext) {
-  return async ({ notificationId, cardId }: { notificationId: string; cardId: string }) => {
+  const input = z.object({ notificationId: z.string().min(1), cardId: z.string().min(1) }).strict();
+  return async (raw: { notificationId: string; cardId: string }) => {
+    const { notificationId, cardId } = input.parse(raw);
     const row = ctx.db.prepare(`
       SELECT id, kind, summary, occurred_at, resolved_at, resolved_reason,
         archived_at, severity, severity_reasons, holder_card_id, holder_file

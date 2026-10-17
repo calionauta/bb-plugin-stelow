@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { QUESTION_ACTIVITY, questionWaitUpdates, askFinishedUpdates, researchColumnForStatus } from "../lib/card-question-state.mjs";
+import { QUESTION_ACTIVITY, questionWaitUpdates, askFinishedUpdates, researchColumnForStatus } from "../lib/question-store.mjs";
 
 // The reported bug: a research card in Doing fell back to the first column
 // while a question waited. Waiting is activity, never board position.

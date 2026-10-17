@@ -80,13 +80,10 @@ const inheritedBaseline = [
   // Splitting a migration list would scatter the single-writer convention the
   // ledger exists to enforce, so the ceiling is recorded, not refactored.
   "lib/execution-run-ledger.mjs:ensureExecutionRunTable#1: 51 lines (recorded 51)",
-  // The --selected flag and its validation moved into validateAskGroups,
-  // and per-flag details into applyOptionDetail, so the argv loop stays a
-  // dispatcher — 80 lines at the fork point, 68 now. The --needs-note flag
-  // then folded into the same path via attachOptionFlag (one shape for both
-  // boolean flags, deleting the lastOption closure and the per-flag
-  // branch) — 60 now, same dispatcher rationale.
-  "lib/question-batch.mjs:parseAskGroups#1: 60 lines (baseline 80)",
+  // Paid in the ask/question collapse: the argv loop split into one take*
+  // helper per flag plus a dispatcher, so parseAskGroups is 14 lines and no
+  // longer oversized — the gate requires the entry dropped rather than left
+  // as a stale waiver. Recorded here as the reason it is absent.
   // Paid in the evidence/expiry slice: the per-row checks moved to
   // validateGapRow plus dimension validators, so validateGapRegistry is a
   // loop again and the gate requires the entry dropped rather than left as
@@ -97,7 +94,11 @@ const inheritedBaseline = [
   "lib/scope-merge.mjs:mergeScopesAtomically#1: 71 lines (recorded 71)",
   "lib/scope-retry.mjs:claimScopeRetry#1: 61 lines (recorded 61)",
   "lib/trackable-evidence.mjs:evidenceConditions#1: 74 lines (baseline 74)",
-  "lib/workflow-skills-sync.mjs:syncWorkflowSkills#1: 112 lines (baseline 112)",
+  // Paid in the SCOPE9 fetch/diff/swap split: the 112-line syncWorkflowSkills
+  // is now an orchestrator plus stageSkillFile/stageSkill/pruneRetiredSkills,
+  // each under the function budget — so `source-debt.json` carries no entry
+  // for it and the gate requires the waiver dropped rather than left as a
+  // stale record.
   "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
   // Paid: `deliverableSubject` was 69 lines because the research branch was
   // written inline. Splitting the research deliverable into `researchSubject`

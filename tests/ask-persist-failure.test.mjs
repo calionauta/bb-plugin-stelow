@@ -3,7 +3,7 @@ import {
   persistFailureInboxEvent,
   persistFailureTrailLine,
   shouldRecordPersistFailure,
-} from "../lib/ask-persist-failure.mjs";
+} from "../lib/question-evidence.mjs";
 
 /**
  * A failed question-persist must leave a record on the card, not only a log line.

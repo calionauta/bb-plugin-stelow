@@ -50,6 +50,10 @@ function runnerHarness({
   return { calls, runner: createPresetJudgeRunner({ bb, getPresetById, now }) };
 }
 
+// The hidden preset-judge thread is removed: the runner never spawns and
+// always fails closed to the deterministic Decision API / built-in rules.
+// Every preset-mode call below pins that contract: no turn is spent, no
+// thread is opened, stopped, or archived.
 {
   const { calls, runner } = runnerHarness();
   const result = await runner({
@@ -58,12 +62,12 @@ function runnerHarness({
     title: "Judge",
     prompt: "Question",
   });
-  assert.deepEqual(result, { ok: true, text: '{"ok":true}', error: null });
-  assert.equal(calls[0][1].visibility, "hidden");
-  assert.deepEqual(calls.slice(1), [
-    ["stop", { threadId: "thr_judge" }],
-    ["archive", { threadId: "thr_judge" }],
-  ]);
+  assert.deepEqual(result, {
+    ok: false,
+    text: null,
+    error: "preset judge disabled: decisions resolve via the Decision API or built-in rules",
+  });
+  assert.deepEqual(calls, [], "a disabled judge spends no turn and opens no thread");
 }
 
 {
@@ -80,11 +84,12 @@ function runnerHarness({
     title: "Judge",
     prompt: "Question",
   });
-  assert.deepEqual(result, { ok: false, text: null, error: "Preset judge timed out." });
-  assert.deepEqual(calls.slice(1), [
-    ["stop", { threadId: "thr_judge" }],
-    ["archive", { threadId: "thr_judge" }],
-  ]);
+  assert.deepEqual(result, {
+    ok: false,
+    text: null,
+    error: "preset judge disabled: decisions resolve via the Decision API or built-in rules",
+  });
+  assert.deepEqual(calls, [], "a disabled judge never polls a thread it never opened");
 }
 
 {
@@ -98,7 +103,7 @@ function runnerHarness({
   assert.deepEqual(result, {
     ok: false,
     text: null,
-    error: 'Unknown preset "missing".',
+    error: "preset judge disabled: decisions resolve via the Decision API or built-in rules",
   });
   assert.deepEqual(calls, [], "an unknown preset never spends a turn");
 }
@@ -114,7 +119,7 @@ function runnerHarness({
   assert.deepEqual(result, {
     ok: false,
     text: null,
-    error: "Preset judging needs a project.",
+    error: "preset judge disabled: decisions resolve via the Decision API or built-in rules",
   });
   assert.deepEqual(calls, [], "a preset without a project never spends a turn");
 }
@@ -295,8 +300,10 @@ const batchBase = {
 // the regression only they can: re-adding either string, or narrowing the
 // mode's key away from the plain ok check, which would hide a real payload
 // change behind a second refusal path.
+// decision-seed.ts no longer parses a preset verdict: the hidden judge thread
+// is removed, so preset mode refuses before any parse. The no-shape-guard
+// pin covers only the two shared judges that still parse verdicts.
 for (const file of [
-  "decision-seed.ts",
   join("decisions", "scored-batch-judge.ts"),
   join("decisions", "artifact-criteria-judge.ts"),
 ]) {

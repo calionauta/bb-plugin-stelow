@@ -10,7 +10,7 @@
  */
 import { spawn } from "node:child_process";
 import { join as nodeJoin } from "node:path";
-import { HELPER_SCRIPT } from "../plugin-paths.js";
+import { HELPER_SCRIPT, STAGE_CATALOG_REF } from "../plugin-paths.js";
 
 export type HelperResult = {
   code: number | null;
@@ -30,6 +30,7 @@ export function runHelper(
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       STELOW_TRANSITIONS: nodeJoin(cwd, TRANSITIONS_RELATIVE),
+      STELOW_CATALOG: STAGE_CATALOG_REF,
     };
     if (stateDir) {
       env.STELOW_STATEDIR = stateDir;

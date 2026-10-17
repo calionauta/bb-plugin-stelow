@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ArtifactsPublicationDeps } from "./artifacts-publication.js";
+import type { ArtifactsPublicationDeps } from "./artifacts-publication-types.js";
 import {
   preparedEnvironment,
   recordPublication,

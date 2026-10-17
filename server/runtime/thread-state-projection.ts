@@ -1,4 +1,4 @@
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -97,9 +97,9 @@ export function projectNoProgress(
 ): boolean {
   return Boolean(
     transitioningIntoIdle &&
-    card.last_assistant_text != null &&
+    card.last_idle_text != null &&
     lastOutput != null &&
-    lastOutput === card.last_assistant_text,
+    lastOutput === card.last_idle_text,
   );
 }
 
