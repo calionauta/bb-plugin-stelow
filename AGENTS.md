@@ -107,6 +107,16 @@ gh api -X POST repos/calionauta/bb-plugin-stelow/dispatches \
 Then confirm the pin actually moved (`data/stelow-source.json` on
 `master`) before calling the two repos consistent.
 
+**A pin must be a ref upstream released, not just a ref that exists.**
+`check-upstream-drift.mjs` proves the vendored tree *equals* the pin; it
+says nothing about whether the pin was worth following, and this repo
+pinned the tip of an unmerged branch once (`abc51fb`, from
+`fix-question-copy-verify`) with the drift gate reporting a perfect
+match. `npm run check:pin-provenance` asks GitHub whether the pinned
+commit is on upstream `main` and fails closed when it cannot tell; CI
+runs it in `verify`. The verdict logic is a pure function in
+`lib/pin-provenance.mjs`, so the rule is testable without a network.
+
 **Sync-owned content that disagrees with upstream is a bug in the
 plugin, and it is invisible until the next sync silently reverts it.**
 The drift shows up as an uncommitted diff in `skills/`/`data/`, or as a
@@ -219,6 +229,8 @@ enforcement is what tells you the rule is real:
 | A type size is a named step of `lib/design-tokens.ts`, or a declared exception with a reason | `card-design-tokens` |
 | A section starts closed unless it is `live` or `blocking` | `card-surface-consistency` |
 | Every fact on the card has exactly one home | `card-information-hierarchy` |
+| An optional tool is advertised in the About panel only if the vendored methodology names it, or a ledger entry says why not | `host-tool-consumers` |
+| Every installable tool declares how it installs, and the pin is enforced rather than displayed | `runtime-platform` |
 
 Adding a UI rule means adding its test in the same commit. If the test cannot
 be written, the rule is a preference and belongs in review, not here. Known

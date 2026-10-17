@@ -22,4 +22,7 @@ jobs:
       - run: npm run quality:report
       - run: npm run architecture
       - run: npm test
+      - run: npm run check:pin-provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - run: npm run security:production

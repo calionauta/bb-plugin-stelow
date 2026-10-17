@@ -1319,7 +1319,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the release it resolves pinned in the environment (xerj, which also verifies
   its binary against the checksum published beside the asset). `tests/runtime-platform.test.mjs`
   requires every installable tool to declare how it installs, so a new tool
-  cannot ship unprovenanced. A separate "Ready via
+  cannot ship unprovenanced. A tool the methodology does not name anywhere is
+  not advertised here (`tests/host-tool-consumers.test.mjs` walks the vendored
+  skills and fails on a row with no consumer), and the pin itself is checked
+  against upstream `main` before a release ships. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
   no commands shown, no buttons. When `sem` is installed on the host, a one-line
