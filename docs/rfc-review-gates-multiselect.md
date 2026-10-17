@@ -51,7 +51,9 @@ take-it-all rungs.
   not the human's review choices).
 - **Out of scope**: research/explore tracks (stageless, already ignore
   review mode); `approveGate` semantics (approves named gates on demand,
-  orthogonal to which gates wait).
+  orthogonal to which gates wait) — since retired: the host-side gate writer
+  is gone and the worker owns the approval receipt (see `FEATURES.md`, gate
+  approvals).
 
 ## 3. Upstream changes (required first — gates semantics live there)
 
