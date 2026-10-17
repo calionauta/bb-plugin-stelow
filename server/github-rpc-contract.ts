@@ -4,6 +4,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { optionalInput } from "./rpc-input.js";
 
 const label = z.string().min(1).max(60);
 const labelList = z.array(label).min(1).max(10);
@@ -69,7 +70,7 @@ const runSchema = z.object({
 export const githubRpcContract = defineRpcContract({
   listGithubCandidates: {
     experimental_description: "GitHub issues matching watcher labels, with import state",
-    input: watchedLabelsSchema(),
+    input: optionalInput(watchedLabelsSchema()),
     output: z.object({
       issues: z.array(candidateIssueSchema),
       allLabels: z.array(z.string()),

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { NO_INPUT } from "./rpc-input.js";
+import { legacyWorkflowRpcContract } from "./legacy-workflow-rpc-contract.js";
 import { BOARD_MOVE_COLUMNS } from "../lib/tracks.mjs";
 import { attachmentSchema, composerExecutionSchema } from "./contracts.js";
 
@@ -116,7 +118,7 @@ export const lifecycleRpcContract = {
   },
   researchStrategies: {
     experimental_description: "Research strategy catalog: labels, skills, keywords",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       strategies: z.array(
         z.object({
@@ -180,7 +182,7 @@ export const lifecycleRpcContract = {
   },
   stageCatalog: {
     experimental_description: "Explore technique catalog: labels, skills, keywords",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       stages: z.array(
         z.object({
@@ -372,29 +374,5 @@ export const lifecycleRpcContract = {
       .strict(),
     output: z.object({ approved: z.boolean(), receiptPath: z.string().nullable(), error: z.string().nullable() }),
   },
-  startWorkflow: {
-    experimental_description: "Start a cardless workflow thread (legacy entry)",
-    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000) }).strict(),
-    output: z.object({ threadId: z.string() }),
-  },
-  advance: {
-    experimental_description: "Advance a cardless workflow (legacy entry)",
-    input: z.object({ projectId: z.string().nullable(), stage: z.string().min(1).max(40) }).strict(),
-    output: z.object({ stage: z.string(), stdout: z.string(), error: z.string().nullable() }),
-  },
-  ensureWorkflow: {
-    experimental_description: "Seed state files for a cardless workflow (legacy entry)",
-    input: z
-      .object({
-        projectId: z.string().nullable(),
-        name: z.string().min(1).max(120),
-        intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]),
-      })
-      .strict(),
-    output: z.object({
-      rootPath: z.string().nullable(),
-      statePath: z.string().nullable(),
-      error: z.string().nullable(),
-    }),
-  },
+  ...legacyWorkflowRpcContract,
 };
