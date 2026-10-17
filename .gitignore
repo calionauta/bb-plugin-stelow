@@ -1,5 +1,8 @@
 dist/
-node_modules/
+# No trailing slash: a bb worktree links node_modules to the main checkout's
+# copy, and `node_modules/` matches directories only, so the symlink stayed
+# untracked-but-stageable and `git add -A` committed a machine-specific path.
+node_modules
 .agents/
 skills-lock.json
 data/*.db
