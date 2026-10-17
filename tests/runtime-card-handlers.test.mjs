@@ -1,56 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGateHandlers } from "../server/runtime/card-gates.ts";
 import { createCardAdvance } from "../server/execution-advance-card.ts";
 import { createCardDiff } from "../server/runtime/card-diff.ts";
 import { createAuditTrailStatus } from "../server/runtime/card-audit-trail.ts";
 import { createCardReseed } from "../server/runtime/card-reseed.ts";
 import { auditDeps, card, reseedDeps } from "./card-handler-fixtures.mjs";
-
-test("gate approval keeps artifact refusal and conflict publication behavior", async () => {
-  const calls = [];
-  let hasArtifact = false;
-  let conflict = false;
-  const handlers = createGateHandlers({
-    db: { prepare: () => ({ get: () => undefined }) },
-    bb: {
-      sdk: { files: {
-        mkdir: async (input) => calls.push(["mkdir", input]),
-        write: async (input) => {
-          calls.push(["write", input]);
-          return { outcome: conflict ? "conflict" : "written" };
-        },
-      } },
-      realtime: { publish: (...args) => calls.push(["publish", ...args]) },
-    },
-    getCard: () => undefined,
-    cardWorkspace: async () => null,
-    boardFromRoot: async () => ({ rootPath: null, workflows: [], error: null }),
-    loadBoard: async () => ({
-      rootPath: "/project",
-      workflows: [{
-        id: "sw_1",
-        name: "Card",
-        dirHash: "hash_1",
-        artifacts: hasArtifact ? [{ kind: "product-spec" }] : [],
-      }],
-      error: null,
-    }),
-  });
-  assert.equal((await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" })).error,
-    "The gate artifact does not exist yet.");
-  assert.equal(calls.length, 0);
-
-  hasArtifact = true;
-  conflict = true;
-  assert.equal((await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" })).approved,
-    true);
-  assert.equal(calls.some(([name]) => name === "publish"), false);
-
-  conflict = false;
-  await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" });
-  assert.deepEqual(calls.at(-1), ["publish", "board-changed", { workflowId: "sw_1", gate: "gate" }]);
-});
 
 test("card advance preserves refusal, helper, respawn, update, publish order", async () => {
   const calls = [];

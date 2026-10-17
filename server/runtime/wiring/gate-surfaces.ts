@@ -29,7 +29,6 @@ import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader
 import { createGapSummary } from "../gap-summary.js";
 import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
-import { createGateHandlers } from "../card-gates.js";
 import { createAuditTrailStatus } from "../card-audit-trail.js";
 import { createCardDiff } from "../card-diff.js";
 import { createCardReseed } from "../card-reseed.js";
@@ -71,7 +70,6 @@ export function createGateSurfaces(deps: GateSurfaceDeps) {
     answerExpiredQuestions: answers.answerExpiredQuestions,
     gapSummary: buildGapSummary(core, critiqueGapState),
     qualitySeal: buildQualitySeal(core),
-    gateHandlers: buildGateHandlers(core),
     auditTrailStatus: buildAuditTrailStatus(core),
     cardDiff: buildCardDiff(core),
     reseedCard: buildReseedCard(core),
@@ -163,16 +161,6 @@ function buildQualitySeal(core: RuntimeCore) {
 }
 
 /** The gate RPCs: approve, request, and the review queue behind them. */
-function buildGateHandlers(core: RuntimeCore) {
-  return createGateHandlers({
-    db: core.db,
-    bb: core.bb,
-    getCard: core.getCard,
-    cardWorkspace: core.cardWorkspace,
-    boardFromRoot: core.boardFromRoot,
-    loadBoard: core.loadBoard,
-  });
-}
 
 /** The audit-trail read: what a card recorded, and whether it still holds. */
 function buildAuditTrailStatus(core: RuntimeCore) {

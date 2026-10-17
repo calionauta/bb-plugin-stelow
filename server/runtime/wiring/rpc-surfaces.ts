@@ -123,7 +123,6 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     flowMetrics: (input: FlowMetricsInput) =>
       buildFlowMetrics({ bb, core, gates }, input),
     boardWorkflowDefaults: async () => withoutUndefined(await readBoardWorkflowDefaults(bb)),
-    ...gates.gateHandlers,
     cardDiff: gates.cardDiff,
     auditTrailStatus: gates.auditTrailStatus,
     reseedCard: gates.reseedCard,

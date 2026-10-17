@@ -363,16 +363,5 @@ export const lifecycleRpcContract = {
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
     output: z.object({ ok: z.boolean(), stdout: z.string(), error: z.string().nullable() }),
   },
-  approveGate: {
-    experimental_description: "Approve a review gate and write its receipt file",
-    input: z
-      .object({
-        projectId: z.string().nullable(),
-        workflowId: z.string(),
-        gate: z.enum(["gate", "int-gate", "plan-gate", "diff-gate"]),
-      })
-      .strict(),
-    output: z.object({ approved: z.boolean(), receiptPath: z.string().nullable(), error: z.string().nullable() }),
-  },
   ...legacyWorkflowRpcContract,
 };

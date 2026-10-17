@@ -1093,9 +1093,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   record them together); split proposals keep their exclusivity, where a
   keep choice contradicts deliveries. The "Other" box is now a note box:
   "Note — or your own answer instead".
-- **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
-  with receipt files; review entry surfaces the artifact under decision. The
-  check walks the workflow's whole state dir, so the spec the layout wrote to
+- **Gate receipts, one writer** (`server/runtime/gate-vocabulary.ts`). A gate is
+  approved by its receipt file under `.stelow/approvals/<dirHash>/`
+  (`gate-approved.md`, `int-gate-approved.md`, `plan-gate-approved.md`,
+  `diff-gate-approved.md`), and the host marks the gate approved from that
+  file's presence — it reads the directory, it does not write to it. The
+  worker writes the receipt, the same way it writes its findings, so the fact
+  has exactly one author and one home. The vocabulary — which artifact a gate
+  reviews and which receipt it carries — lives once, here. The read walks the
+  workflow's whole state dir, so the spec the layout wrote to
   `plans/spec-product_<v>.md` is found: “the gate artifact does not exist
   yet” now means the document really is missing.
 - **Workflow classification** (`server/runtime/card-mutations.ts`). Correct the type freely while a Build card
