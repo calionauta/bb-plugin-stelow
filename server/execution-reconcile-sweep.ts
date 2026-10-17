@@ -30,6 +30,17 @@ export type SweepDeps = {
 
 const LIVE_STATES = ["queued", "running", "needs_input"];
 
+/** Whether this card already carries this exact observation. A dead handle or a
+ * missing table answers "no" rather than ending the pass: the observation is
+ * advisory, and the pass has other cards to walk. */
+function alreadyObserved(db: Db, cardId: string, body: string): boolean {
+  try {
+    return db.prepare("SELECT 1 FROM comments WHERE card_id = ? AND body = ? LIMIT 1").get(cardId, body) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 export function createReconcileSweep(deps: SweepDeps) {
   return {
     reconcileRuns: () => reconcileRuns(deps),
@@ -73,12 +84,15 @@ export async function reconcileStageEntries(deps: SweepDeps): Promise<void> {
     // resolve a route or start a run. Starting here raced explicit starts —
     // the sweep and the human each birthed a run for the same stage — and a
     // periodic pass must not spend the card's single execution slot.
+    // Owed once, not once per tick. The sweep runs on a timer, so an ungated
+    // comment buries the card's trail under copies of the same line for as long
+    // as the gap stands (ten were recorded on one card). The card already
+    // carries the observation if it is there — and after a reload it still is,
+    // which an in-memory guard would lose.
+    const observation = `Reconcile observed no ${recipeId} run for stage ${card.stage}; no run was started automatically. Start one explicitly to proceed.`;
+    if (alreadyObserved(deps.db, card.id, observation)) continue;
     try {
-      deps.logComment(
-        card.id,
-        card.stage,
-        `Reconcile observed no ${recipeId} run for stage ${card.stage}; no run was started automatically. Start one explicitly to proceed.`,
-      );
+      deps.logComment(card.id, card.stage, observation);
     } catch {
       /* the observation is owed, never load-bearing */
     }
