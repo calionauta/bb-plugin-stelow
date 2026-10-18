@@ -13,6 +13,14 @@
  * are enough for a public repository (one request per run); `GITHUB_TOKEN` is
  * used when present because CI and operators usually have one.
  *
+ * The compare direction is `main...{pin}`, so the payload describes the PIN
+ * against main: `identical` means the pin is main's tip and `behind` means main
+ * has moved past it — both prove the pin is on main's history. The reverse
+ * direction (`{pin}...main`) describes MAIN instead, where an already-released
+ * pin reads as `ahead` and an unreleased one as `behind`; that inversion is
+ * what shipped first, and it passed CI only because the pin happened to equal
+ * main's tip at the time.
+ *
  * Network, so it is a CI step and an operator verb, never part of `npm test`.
  */
 import { readFileSync } from "node:fs";
@@ -38,7 +46,7 @@ if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITH
 let payload = null;
 let failure = null;
 try {
-  const response = await fetch(`${API}/repos/${REPO}/compare/${pin}...${BRANCH}`, { headers });
+  const response = await fetch(`${API}/repos/${REPO}/compare/${BRANCH}...${pin}`, { headers });
   if (response.ok) payload = await response.json();
   else failure = `GitHub returned ${response.status} ${response.statusText}`;
 } catch (error) {
