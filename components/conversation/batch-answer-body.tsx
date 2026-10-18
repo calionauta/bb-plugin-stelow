@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { BatchOptionList } from "./batch-options";
 import { boundaryOptions } from "./boundary-question-frame";
 import { submitBlockReason } from "../../lib/question-presentation.mjs";
+import { incompleteBatchReason } from "../../lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 import type { BatchItem, OpenArtifactHandler } from "./batch-types";
 import type { questionCopy } from "../../lib/question-presentation.mjs";
@@ -229,6 +230,17 @@ function AnswerStatus({ splitNotice, error }: {
   );
 }
 
+function FooterReason({ blockReason, incompleteReason }: {
+  blockReason: string | null;
+  incompleteReason: string | null;
+}) {
+  // A refusal outranks the count: it says what to fix, while the count only says
+  // how much is left. Both render in the same slot so the footer never grows two
+  // stacked notes for one dead button.
+  const line = blockReason ?? incompleteReason;
+  return line ? <p role="note" className={BLOCKED_CLASS + " w-full"}>{line}</p> : null;
+}
+
 function FooterButtons({
   sel,
   questions,
@@ -236,6 +248,7 @@ function FooterButtons({
   busy,
   submitLabel,
   blockReason,
+  incompleteReason,
   onSubmit,
 }: {
   sel: AnswerFooterState;
@@ -244,13 +257,14 @@ function FooterButtons({
   busy: boolean;
   submitLabel: string;
   blockReason: string | null;
+  incompleteReason: string | null;
   onSubmit: (answers: string[][]) => void;
 }) {
   const multi = questions.length > 1;
   const lastIndex = questions.length - 1;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {blockReason ? <p role="note" className={BLOCKED_CLASS + " w-full"}>{blockReason}</p> : null}
+      <FooterReason blockReason={blockReason} incompleteReason={incompleteReason} />
       {multi
         ? (
           <Button size="sm" variant="outline" disabled={sel.index === 0 || busy} onClick={() => sel.setIndex(Math.max(0, sel.index - 1))}>
@@ -276,12 +290,22 @@ function FooterButtons({
   );
 }
 
+/**
+ * The footer's two reasons, and why one of them had no copy.
+ *
+ * The submit button is disabled by `!sel.complete || blockReason !== null`, but
+ * only the refusal half used to render a sentence — so an unanswered batch
+ * showed a dead button with no stated cause. `incompleteBatchReason` is that
+ * missing half, and it names the door (answer it, or skip it) because the answer
+ * is still the reader's to give.
+ */
 export function BatchFooter({
   sel,
   questions,
   copy,
   busy,
   submitLabel,
+  isDone,
   onSubmit,
 }: {
   sel: AnswerFooterState & AnswerBodyState;
@@ -289,11 +313,13 @@ export function BatchFooter({
   copy: Copy;
   busy: boolean;
   submitLabel: string;
+  isDone: (id: string) => boolean;
   onSubmit: (answers: string[][]) => void;
 }) {
   const current = questions[Math.min(sel.index, questions.length - 1)];
   if (!current) return null;
   const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
+  const incompleteReason = incompleteBatchReason(questions, isDone);
   // The reason is stated TWICE on purpose, and a UX review flagged the
   // duplication before this note existed.
   //
@@ -315,6 +341,7 @@ export function BatchFooter({
       busy={busy}
       submitLabel={submitLabel}
       blockReason={blockReason}
+      incompleteReason={incompleteReason}
       onSubmit={onSubmit}
     />
   );

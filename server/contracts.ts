@@ -227,6 +227,22 @@ export const askOptionSchema = z.object({
   // document as if it were the evidence for every option, which reads as a
   // broken control rather than as the recovery it is.
   artifactInherited: z.boolean(),
+  // Sparse like the producer (`cleanOptions` in lib/question-batch): an
+  // explicit true travels, absence means off. Declared here because zod
+  // STRIPS unknown keys, so without this line the flags were silently
+  // dropped on the way out of cardDetail while the renderer kept reading
+  // them — every opt-out confirm (scope IN/OUT) rendered unchecked, which
+  // inverts its meaning: "keeping means doing nothing" became "nothing is
+  // kept", and the shape the ask declared was unreadable at the card.
+  // A plain boolean, not a literal true: the readers test `=== true`
+  // (lib/question-batch `preselectedAnswers`, batch-types "absent or false
+  // reads as unchecked"), so a producer that spells out `false` must parse
+  // rather than fail the whole cardDetail payload.
+  selected: z.boolean().optional(),
+  // A conditional option ("trim the scope — tell me which"): submit waits
+  // for the note box. Lost the same way `selected` was, so the marker and
+  // the field-level refusal never reached a reader served by this contract.
+  needsNote: z.boolean().optional(),
 });
 
 export const workflowSchema = z.object({

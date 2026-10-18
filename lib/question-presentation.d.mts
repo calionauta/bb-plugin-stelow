@@ -34,6 +34,10 @@ export declare function submitBlockReason(
   selected: unknown,
   custom: unknown,
 ): string | null;
+export declare function incompleteBatchReason(
+  questions: unknown,
+  isResolved: unknown,
+): string | null;
 // An approval is a decision after reading, not a request to alter the
 // document. All other choices — especially Request/Review changes — keep
 // the full quote-and-comment path to communicate precise feedback.

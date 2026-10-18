@@ -239,9 +239,16 @@ test("R5: the refusal is stated at the field AND at the disabled submit", () => 
   assert.match(bodyCode, /aria-describedby=\{invalid && error \? "batch-note-error" : undefined\}/,
     "and the description points at that same element");
   // The footer's own line must survive: removing it disables the submit with no
-  // explanation, and `question-needs-note-ui` fails on exactly that.
-  assert.match(bodyCode, /\{blockReason \? <p role="note" className=\{BLOCKED_CLASS \+ " w-full"\}>\{blockReason\}<\/p> : null\}/,
-    "the footer still names the reason the submit is disabled");
+  // explanation, and `question-needs-note-ui` fails on exactly that. The line
+  // moved into FooterReason (which picks the refusal when there is one, and the
+  // outstanding-question count otherwise), so the pin reads BOTH halves: the
+  // component still renders the sentence, and the footer still passes the
+  // refusal to it. A pin on only the call site would pass on a component that
+  // renders nothing.
+  assert.match(bodyCode, /className=\{BLOCKED_CLASS \+ " w-full"\}>\{line\}<\/p> : null/,
+    "the footer's reason component still renders the sentence that explains the disabled submit");
+  assert.match(bodyCode, /<FooterReason blockReason=\{blockReason\} incompleteReason=\{incompleteReason\} \/>/,
+    "and the footer feeds it the refusal, so the explanation cannot become unreachable");
 });
 
 /* ------------------------------------------------------------------ R4 --- */
