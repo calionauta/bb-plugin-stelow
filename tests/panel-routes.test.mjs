@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   cardSubPath,
+  inboxAskSubPath,
   inboxCardSubPath,
   parseStelowSubPath,
   trackOfCard,
@@ -45,6 +46,31 @@ assert.deepEqual(
   { kind: "bare-card", cardId: "card_abc123", eventId: null, executionRunId: null },
   "a trackless card route remains supported",
 );
+
+// The narrow door onto a question. Its own route, not a flag on the card route:
+// it renders the ask and its evidence, not the card's nine sections. Both halves
+// are asserted — the builder and the parser — because a round trip that lost the
+// event id would open the door on the wrong ask.
+assert.equal(
+  inboxAskSubPath("card_abc123", "evt_xyz789"),
+  "inbox/ask/card_abc123/event/evt_xyz789",
+  "the narrow door's path names the card AND the ask it belongs to",
+);
+assert.deepEqual(
+  parseStelowSubPath(inboxAskSubPath("card_abc123", "evt_xyz789")),
+  { kind: "ask", cardId: "card_abc123", eventId: "evt_xyz789", origin: "inbox" },
+  "and it parses back to the ask route, not to a card or a track",
+);
+// The card route must stay reachable for the same ids: the door falls back to
+// the card wherever its gate refuses, so both routes have to coexist.
+assert.deepEqual(
+  parseStelowSubPath(inboxCardSubPath("card_abc123", "evt_xyz789")),
+  { kind: "card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null, origin: "inbox" },
+  "the card route is untouched, so a refusal has somewhere to go",
+);
+// A malformed ask path must not fall through to the card: an id-less door has
+// nothing to open, and the parser's last resort is the Build board.
+assert.equal(parseStelowSubPath("inbox/ask/card_abc123").kind, "track", "an ask path without an event id is not a route");
 assert.deepEqual(
   parseStelowSubPath("/card/card_abc123/event/evt_xyz789/"),
   { kind: "bare-card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null },
@@ -151,6 +177,14 @@ const renderTrackPanel = loadComponent("components/app-support/panel-rendering.t
   "../settings/preset-onboarding": { PresetOnboardingDialog: marker("PresetOnboardingDialog") },
   "../settings/preset-manager-shell": { PresetManagerDialog: marker("PresetManagerDialog") },
   "../detail/card-detail-route": { BareCardRoute: marker("BareCardRoute"), StelowCardDetail: marker("StelowCardDetail"), INTENT_LABEL: {} },
+  // The router's fourth case, stubbed like the rest: this file is about routes,
+  // not about what the door renders.
+  "../detail/card-ask-body": { CardAskBody: marker("CardAskBody") },
+  "../panels/inbox-panel-actions": {
+    goToInboxCard: () => undefined,
+    goToInboxAsk: () => undefined,
+    goToHolderCard: () => undefined,
+  },
 });
 
 const build = renderTrackPanel("build", true);

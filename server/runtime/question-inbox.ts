@@ -11,6 +11,7 @@
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import type { QuestionCount } from "../../lib/question-store.mjs";
 import { expiredQuestionId } from "../../lib/question-evidence.mjs";
+import { expandInteractionQuestions } from "../../lib/question-batch.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -29,6 +30,7 @@ export type QuestionInboxDeps = {
   syncPendingQuestionInbox: (
     card: WorkerCard,
     interactionIds: string[],
+    question?: { summary?: string | null; count?: number | null; kind?: string | null },
   ) => void;
 };
 
@@ -71,17 +73,58 @@ async function fetchPendingAsks(
     return null;
   }
 }
+/**
+ * The single question line an Inbox row shows, plus how many it covers.
+ *
+ * A row used to show only the generic wait sentence, so two question rows were
+ * indistinguishable until you opened one. The description is the card's
+ * original request, not the question, so the missing fact was the ask itself:
+ * this takes the first pending question's own text.
+ *
+ * `expandInteractionQuestions` is reused rather than re-read here because it
+ * already understands both payload shapes and drops malformed entries instead
+ * of throwing. The expired batch is represented by its prompt too, so a row
+ * whose only open items timed out still names what it is about.
+ */
+function questionLine(
+  deps: QuestionInboxDeps,
+  card: WorkerCard,
+  active: PendingAsk[],
+  expired: string[],
+): { summary: string | null; count: number; kind: string | null } {
+  const expanded = active.flatMap((entry) => expandInteractionQuestions(entry));
+  const first = expanded.find((question) => question.question.trim().length > 0)?.question ?? null;
+  let expiredLine: string | null = null;
+  if (first === null && expired.length > 0) {
+    try {
+      const row = deps.db
+        .prepare("SELECT question FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC LIMIT 1")
+        .get(card.id) as { question?: string } | undefined;
+      expiredLine = typeof row?.question === "string" && row.question.trim() ? row.question : null;
+    } catch {
+      // A read that cannot answer is better than a row that invents one.
+      expiredLine = null;
+    }
+  }
+  // `kind` gates the narrow door: a split answer creates child cards, which is
+  // a card-scoped consequence, so the row must not offer the shortcut for it.
+  const split = expanded.some((question) => question.kind === "split");
+  const count = expanded.length > 0 ? expanded.length : expired.length;
+  return { summary: first ?? expiredLine, count: count > 0 ? count : 0, kind: split ? "split" : null };
+}
+
 async function syncOpenQuestionInbox(
   deps: QuestionInboxDeps,
   card: WorkerCard,
 ): Promise<string[] | null> {
   const active = await fetchPendingAsks(deps, card.worker_thread_id);
   if (active === null) return null;
+  const expired = openExpiredQuestionIds(deps, card.id);
   const questionIds = [
     ...active.map((entry) => entry.id),
-    ...openExpiredQuestionIds(deps, card.id),
+    ...expired,
   ];
-  deps.syncPendingQuestionInbox(card, questionIds);
+  deps.syncPendingQuestionInbox(card, questionIds, questionLine(deps, card, active, expired));
   return questionIds;
 }
 function hasOpenQuestions(

@@ -56,7 +56,7 @@ export function StelowPanel({ subPath, counts, aboutAlert, updateBadge, onSelect
   aboutAlert: boolean;
   updateBadge: ReactNode;
   onSelectTrack: (track: StelowTrack) => void;
-  renderCard: (route: ParsedStelowRoute & { kind: "card" | "bare-card" }) => ReactNode;
+  renderCard: (route: ParsedStelowRoute & { kind: "card" | "bare-card" | "ask" }) => ReactNode;
   renderTrack: (tab: StelowTrack, active: boolean) => ReactNode;
 }) {
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);

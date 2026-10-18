@@ -58,7 +58,11 @@ type QuestionAnswersDeps = {
   isArchivedCard: (card: WorkerCard) => boolean;
   pendingAsks: (threadId: string) => Promise<PendingAsk[]>;
   openExpiredQuestionIds: (cardId: string) => string[];
-  syncPendingQuestionInbox: (card: WorkerCard, ids: string[]) => void;
+  syncPendingQuestionInbox: (
+    card: WorkerCard,
+    ids: string[],
+    question?: { summary?: string | null; count?: number | null; kind?: string | null },
+  ) => void;
   syncOpenQuestionInbox: (card: WorkerCard) => Promise<string[] | null>;
   markInboxQuestionsAnswered: (cardId: string, ids: string[]) => void;
   recordSplitAnswer: typeof recordSplitAnswer;

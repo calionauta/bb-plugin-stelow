@@ -369,6 +369,14 @@ const panelRendering = loadComponent("components/app-support/panel-rendering.tsx
     StelowCardDetail: stubFor("StelowCardDetail"),
     INTENT_LABEL: {},
   },
+  // The router's fourth case: the narrow question door. Stubbed like the rest,
+  // because this test is about which panel a tab mounts, not about the door.
+  "../detail/card-ask-body": { CardAskBody: stubFor("CardAskBody") },
+  "../panels/inbox-panel-actions": {
+    goToInboxCard: () => undefined,
+    goToInboxAsk: () => undefined,
+    goToHolderCard: () => undefined,
+  },
 });
 const explorePanel = findElement(panelRendering("explore", true), TrackPanelForKindStub);
 assert.ok(explorePanel, "the explore tab mounts through the generic track panel");

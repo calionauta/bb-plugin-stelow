@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { QUESTION_WAITING_SUMMARY, ensureInboxResolvedReasonColumn, insertInboxEvent } from "../lib/inbox-events.mjs";
+import { QUESTION_WAITING_SUMMARY, ensureInboxQuestionColumns, ensureInboxResolvedReasonColumn, insertInboxEvent } from "../lib/inbox-events.mjs";
+import { ensureInboxSeverityColumns } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { kickQuestionSync, syncFreshQuestionInbox } from "../lib/question-store.mjs";
 
@@ -26,6 +27,10 @@ function createDb() {
   `);
   ensureInboxResolvedReasonColumn(db);
   ensureInboxOccurrencesColumn(db);
+  // The columns the question write path touches; without them the mint throws
+  // and the kick swallows it, so the test would see a silent null instead.
+  ensureInboxSeverityColumns(db);
+  ensureInboxQuestionColumns(db);
   db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_1", "Kick", "kick", "project_1", "build");
   return db;
 }

@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   ensureInboxResolvedReasonColumn,
+  ensureInboxQuestionColumns,
   ensureInboxSeverityColumns,
   insertInboxEvent,
   listInboxEvents,
@@ -101,6 +102,7 @@ export function runInboxMigrations(db: Db): void {
     ["holder_file", "TEXT"],
   ]);
   ensureInboxSeverityColumns(db);
+  ensureInboxQuestionColumns(db);
   ensureInboxOccurrencesColumn(db);
   db.prepare(`
     DELETE FROM inbox_events
@@ -202,7 +204,15 @@ function createTerminalResolver(ctx: InboxContext) {
 }
 
 function createQuestionSync(ctx: InboxContext) {
-  return (cardId: string, interactionIds: string[], occurredAt = ctx.now()) => {
+  // `questionSummary` / `questionCount` are optional so every existing caller
+  // keeps working: a caller that cannot name the question still mints the row
+  // it used to, and the row falls back to the generic sentence at read time.
+  return (
+    cardId: string,
+    interactionIds: string[],
+    occurredAt = ctx.now(),
+    question: { summary?: string | null; count?: number | null; kind?: string | null } = {},
+  ) => {
     // explicitEmpty: every caller of this wrapper verified its read first —
     // question-inbox returns null (skip) on a failed poll rather than [],
     // and the answer door passes its own verified open set. An empty list
@@ -213,6 +223,9 @@ function createQuestionSync(ctx: InboxContext) {
       occurredAt,
       createId: () => ctx.randomId("evt"),
       summary: QUESTION_WAITING_SUMMARY,
+      questionSummary: question.summary ?? null,
+      questionCount: question.count ?? null,
+      questionKind: question.kind === "split" ? "split" : null,
       explicitEmpty: true,
     });
     const fields = ["inserted", "resolved", "reopened", "pausedSuperseded"] as const;
@@ -253,6 +266,15 @@ function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {
         projectName: projectNames.get(row.project_id) ?? row.project_id,
         cardKind: normalizeKind(row.card_kind),
         readAt: row.read_at,
+        // The question this row is about, when it was captured at mint. Null on
+        // every legacy row and every non-question row; the client falls back to
+        // the generic summary, so nothing has to be migrated in place.
+        questionSummary: (row as { question_summary?: string | null }).question_summary ?? null,
+        questionCount: (row as { question_count?: number | null }).question_count ?? null,
+        // `as const` because this object is built inside a `.map` whose type is
+        // inferred before the outer RPC contract is checked, which widens the
+        // literal to `string` and makes the contract reject it.
+        questionKind: (row as { question_kind?: string | null }).question_kind === "split" ? ("split" as const) : null,
         ...snapshot(row),
       })),
     };

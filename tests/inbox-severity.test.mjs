@@ -5,7 +5,7 @@ import {
   SEVERITY_REVIEW_WAIT_MS, scoreEventSeverity, parseSeverityReasons,
 } from "../lib/inbox-severity.mjs";
 import {
-  ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshEventSeverity,
+  ensureInboxQuestionColumns, ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshEventSeverity,
   sweepEventSeverity, countsForInboxBadge,
 } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
@@ -58,6 +58,7 @@ db.exec(`CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT N
   );`);
 ensureInboxSeverityColumns(db);
 ensureInboxOccurrencesColumn(db);
+ensureInboxQuestionColumns(db);
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity"), "pre-tier databases gain the severity column");
 assert.ok(db.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "severity_reasons"), "pre-tier databases gain the reasons column");
 db.prepare("INSERT INTO cards (id, display_name, name, project_id, kind) VALUES ('c1', 'C1', 'c1', 'p1', 'build')").run();

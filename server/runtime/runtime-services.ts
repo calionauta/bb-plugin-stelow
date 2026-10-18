@@ -90,8 +90,8 @@ export function createRuntimeServices(deps: RuntimeServiceDeps) {
     syncPendingQuestionInbox: (
       card: { id: string },
       interactionIds: string[],
-      occurredAt = deps.now(),
-    ) => inbox.syncPendingQuestion(card.id, interactionIds, occurredAt),
+      question?: { summary?: string | null; count?: number | null; kind?: string | null },
+    ) => inbox.syncPendingQuestion(card.id, interactionIds, deps.now(), question),
     presetParams: (preset: unknown) =>
       presetServer.presetAttachmentParams(preset as PresetRow),
     ...writers,
