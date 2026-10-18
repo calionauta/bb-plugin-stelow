@@ -26,6 +26,9 @@ test("a pin on main's history is released; a pin off it is not", () => {
     state: "released",
     detail: "pin abc is the tip of upstream main",
   });
+  // `classifyPinProvenance` reads a payload describing the PIN against main
+  // (the script asks `compare/main...{pin}`), so `behind` is a pin main has
+  // moved past — released. Reading the reverse direction inverted this pair.
   assert.equal(classifyPinProvenance({ status: "behind", behind_by: 3 }, "abc").state, "released");
   assert.equal(
     classifyPinProvenance({ status: "behind", behind_by: 3 }, "abc").detail,
@@ -73,7 +76,7 @@ function runScript(api) {
   });
 }
 
-test("the script passes a pin that is on main and fails one that is not", async () => {
+test("the script asks GitHub in the direction that describes the pin", async () => {
   const pin = JSON.parse(
     readFileSync(join(root, "data", "stelow-source.json"), "utf8"),
   ).commit;
@@ -82,14 +85,20 @@ test("the script passes a pin that is on main and fails one that is not", async 
   const released = await withFakeApi((request, response) => {
     asked.push(request.url);
     response.writeHead(200, { "content-type": "application/json" });
+    // A payload describing the PIN: main has moved past it, so it is released.
     response.end(JSON.stringify({ status: "behind", behind_by: 2 }));
   }, runScript);
   assert.equal(released.status, 0, released.stderr);
   assert.match(released.stdout, /pin provenance: .* \(released\)/);
   assert.match(
     asked[0],
+    new RegExp(`/compare/main\\.\\.\\.${pin}$`),
+    "asks whether the pin is on main, in the direction whose status describes the pin",
+  );
+  assert.doesNotMatch(
+    asked[0],
     new RegExp(`/compare/${pin}\\.\\.\\.main$`),
-    "asks whether the pinned commit is on main",
+    "the reversed direction describes main instead, which inverts ahead/behind",
   );
 
   const stranded = await withFakeApi((request, response) => {
