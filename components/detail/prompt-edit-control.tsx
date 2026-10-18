@@ -4,6 +4,8 @@ import type { rpcContract } from "../../server";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
+import { splitProseSummary } from "../../lib/question-presentation.mjs";
 
 export const PROMPT_MAX_CHARS = 20_000;
 
@@ -50,14 +52,33 @@ async function savePromptEdit({ rpc, cardId, draft, onSaved, setEditing, setErro
   }
 }
 
-function PromptRead({ prompt, editable, onEdit }: {
+export function PromptRead({ prompt, editable, onEdit }: {
   prompt: string;
   editable: boolean;
   onEdit: () => void;
 }) {
+  const summary = splitProseSummary(prompt);
+  const remainder = summary.tail;
   return (
     <div className="flex items-start gap-1 pt-1">
-      <p className="min-w-0 flex-1 text-[15px] leading-relaxed text-foreground">{prompt}</p>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        {/* The collapsed line and the expanded paragraphs are the SAME prose at
+            the SAME size (the design-token exception for the card's request
+            text), so opening the disclosure reveals more of the request rather
+            than switching to a different typeface's worth of emphasis. The line
+            clamps: a narrow panel must not wrap 140 characters into six lines
+            and push the question off the fold, which is the whole point. */}
+        <p className="line-clamp-2 text-[15px] leading-relaxed text-foreground">{summary.head}</p>
+        {remainder ? (
+          <details className="group">
+            <summary className={SUMMARY_LINK} aria-label={`Show the full description — ${remainder.length} more characters`}>
+              <DisclosureChevron />
+              Show full description
+            </summary>
+            <p className="whitespace-pre-line text-[15px] leading-relaxed text-foreground">{remainder}</p>
+          </details>
+        ) : null}
+      </div>
       {editable ? (
         <button
           type="button"

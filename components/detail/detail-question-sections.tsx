@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 import { openAskArtifact } from "../artifacts/artifact-inventory";
-import {
-  ExpiredQuestionsSection,
-  QuestionBatch,
-  type BatchItem,
-  type ExpiredQuestionItem,
-} from "../conversation/question-batch";
+import { QuestionBatch, type BatchItem } from "../conversation/question-batch";
+import { ExpiredQuestionsSection } from "../conversation/expired-questions-section";
+import type { ExpiredQuestionItem } from "../conversation/batch-types";
 
 type PendingQuestionInput = {
   id: string;
@@ -69,14 +66,17 @@ export function DetailQuestionSections({
 
 function QuestionFrame({
   children,
-  withSpace = false,
 }: {
   children: ReactNode;
-  withSpace?: boolean;
 }) {
-  const spacing = withSpace ? " space-y-2" : "";
+  // The boundary between the hero's status and the question it produced. It
+  // used to be amber (`border-amber-500/20`), which is the same tone the hero
+  // already wears — so the marker competed with the thing it was marking
+  // rather than separating it. `border` is the card's own hairline: the hero's
+  // amber says "this needs you", and this neutral rule says "the answer starts
+  // here".
   return (
-    <div className={`mt-3 border-t border-amber-500/20 pt-3${spacing}`}>
+    <div className="mt-3 space-y-2 border-t border-border pt-3">
       {children}
     </div>
   );
@@ -96,14 +96,14 @@ function LiveQuestionSection({
   if (!questions[0]) return null;
   return (
     <div id="execution-needs-input-questions" tabIndex={-1}>
-      <QuestionFrame withSpace>
-      <QuestionBatch
-        cardId={cardId}
-        mode="live"
-        questions={questions.map((question) => ({ ...question, prompt: question.question }))}
-        onAnswered={onAnswered}
-        onOpenArtifact={onOpenArtifact}
-      />
+      <QuestionFrame>
+        <QuestionBatch
+          cardId={cardId}
+          mode="live"
+          questions={questions.map((question) => ({ ...question, prompt: question.question }))}
+          onAnswered={onAnswered}
+          onOpenArtifact={onOpenArtifact}
+        />
       </QuestionFrame>
     </div>
   );
@@ -122,13 +122,13 @@ function ExpiredQuestionSection({
 }) {
   if (questions.length === 0) return null;
   return (
-    <QuestionFrame>
+    <div className="mt-3 space-y-2">
       <ExpiredQuestionsSection
         cardId={cardId}
         questions={questions}
         onOpenArtifact={onOpenArtifact}
         onAnswered={onAnswered}
       />
-    </QuestionFrame>
+    </div>
   );
 }

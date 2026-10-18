@@ -49,6 +49,7 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
   const { hero, heroStyle, target } = heroModel(view);
   if (!card || !hero || !heroStyle) return null;
   return (
+    <>
     <section
       aria-label="Card status"
       {...(heroStyle.alert ? { role: "alert" } : {})}
@@ -78,19 +79,32 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
           />
         </div>
       </div>
-      <BuildHeroBelow card={card} detail={detail} view={view} />
+      <AcceptanceRow
+        cardId={card.id}
+        status={card.status}
+        acceptanceLine={detail?.card.acceptanceLine}
+        onChanged={view.load}
+      />
     </section>
+    {detail ? <QuestionsAndSplit card={card} detail={detail} view={view} /> : null}
+    </>
   );
 }
 
 /**
- * What sits under the status reading: the questions the card is waiting on, the
- * human disposition of a finished result, and the split proposal when one is
- * open. Cut by subject — everything here is "something else on this card"
- * rather than the one status line above — because the hero was carrying all of
- * it inline and crossing its function budget.
+ * What sits below the status reading: the questions the card is waiting on and
+ * the split proposal when one is open.
+ *
+ * This is a SIBLING of the hero section, not a child of it, and that placement
+ * is the whole point. The question used to render inside the hero's own
+ * `SECTION_SURFACE` box, so a bordered box sat inside a bordered box and the
+ * hairline between them separated nothing — a reader could not tell where the
+ * status ended and the answerable question began, which is exactly what the
+ * deleted amber frame had been doing badly. As a sibling the boundary is real:
+ * one box is the status, the next is the decision, and the gap between them is
+ * the card's own section rhythm.
  */
-function BuildHeroBelow({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
+function QuestionsAndSplit({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
   return (
     <>
       {detail
