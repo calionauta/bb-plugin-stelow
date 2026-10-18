@@ -268,7 +268,7 @@ assert.equal(totalUsageProvenance([]), null, "an empty history has no provenance
 // stored defaults predate red-first hit it, which is why the same screen worked for some
 // people and failed for others.
 assert.equal(
-  resolveKnobInput({ quality: "production", supervisor: "high", explorationCount: 3 }).redFirst,
+  resolveKnobInput({ quality: "production", explorationCount: 3 }).redFirst,
   undefined,
   "an unchosen red-first resolves to undefined, which is the contract — the bug was echoing it onto the wire, not producing it",
 );

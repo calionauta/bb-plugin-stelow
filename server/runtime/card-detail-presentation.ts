@@ -71,7 +71,6 @@ export type DetailParts = {
   questionStaleness: Map<string, Staleness>;
   stageSkips: {
     quality: string;
-    supervisor: string;
     explorationCount: number;
     explorationHybrid: boolean;
     reviewMode: string;

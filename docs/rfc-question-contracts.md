@@ -17,11 +17,10 @@ a plan-gate with zero answered gaps, advances today.
 
 ## 2. Governing insight: two orthogonal axes
 
-> **Update (knobs refactor):** the breadth axis is now three explicit knobs —
-> quality (verification rigor), supervisor (checkpoint cadence), exploration
-> breadth (direction counts + hybrid) — instead of the Lean/Core/Complete
-> appetite ladder. Legacy appetite lines map once to knobs. The decider axis
-> (review mode) is unchanged.
+> **Update (knobs refactor):** the breadth axis is now explicit knobs —
+> quality (verification rigor) and exploration breadth (direction counts +
+> hybrid) — instead of the Lean/Core/Complete appetite ladder. Legacy appetite
+> lines map once to knobs. The decider axis (review mode) is unchanged.
 
 - **Exploration breadth** scales *depth*: how many (1–5 interaction directions,
   2–5 construction directions, top-3 vs top-5

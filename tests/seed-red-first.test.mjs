@@ -19,7 +19,6 @@ const bb = {
 
 const KNOBS = {
   quality: "production",
-  supervisor: "high",
   explorationCount: 3,
   explorationHybrid: true,
 };

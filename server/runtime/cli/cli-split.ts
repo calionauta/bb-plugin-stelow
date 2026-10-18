@@ -163,7 +163,7 @@ function staleRefusal(): CliResult {
 
 type ParentInheritance = {
   stateAbs: string | null;
-  knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
+  knobs: { quality: string; explorationCount: number; explorationHybrid: boolean };
   reviewGates: string[];
 };
 
@@ -185,7 +185,7 @@ async function readParentInheritance(
         .catch(() => null)
     : null;
   const stateAbs = parentStateDir ? join(parentStateDir, "state.md") : null;
-  if (!stateAbs) return { stateAbs, knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true }, reviewGates: [] };
+  if (!stateAbs) return { stateAbs, knobs: { quality: "production", explorationCount: 3, explorationHybrid: true }, reviewGates: [] };
   // Shared parser: the indented `config:` block with whole, untruncated
   // values (a bare `(\S+)` once degraded "Product Spec + …" to "Product" on
   // live children).
@@ -194,13 +194,12 @@ async function readParentInheritance(
     .then((file) => file.content)
     .catch(() => null);
   if (typeof blob !== "string")
-    return { stateAbs, knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true }, reviewGates: [] };
+    return { stateAbs, knobs: { quality: "production", explorationCount: 3, explorationHybrid: true }, reviewGates: [] };
   const parsed = parseWorkflowConfig(blob);
   return {
     stateAbs,
     knobs: {
       quality: parsed.quality,
-      supervisor: parsed.supervisor,
       explorationCount: parsed.explorationCount,
       explorationHybrid: parsed.explorationHybrid,
     },
@@ -268,7 +267,6 @@ This card owns ONLY this slice — ignore everything else from the parent reques
     })),
     intent: "unknown",
     quality: parent.knobs.quality,
-    supervisor: parent.knobs.supervisor,
     explorationCount: parent.knobs.explorationCount,
     reviewMode: parent.reviewGates,
     kind: "build",

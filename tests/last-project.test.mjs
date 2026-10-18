@@ -195,7 +195,7 @@ function buildDialogProps() {
     activeProjectId: "project_1",
     validProjectIds: ["project_1"],
     analysisPreset: null,
-    prefs: { quality: "production", supervisor: "high", explorationCount: "3", redFirst: "strict" },
+    prefs: { quality: "production", explorationCount: "3", redFirst: "strict" },
     reviewGates: [],
     githubRepos: ["octo/a"],
     onPrefsChange: () => {},

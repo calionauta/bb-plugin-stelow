@@ -242,7 +242,7 @@ const seeded = await seedWorkflow(
   "card_1",
   "My card",
   "feature",
-  { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
+  { quality: "production", explorationCount: 3, explorationHybrid: true },
   ["spec"],
 );
 assert.equal(seeded.error, null, "a fresh workspace seeds");
@@ -250,7 +250,7 @@ assert.ok(seeded.statePath?.endsWith("/state.md"), "the seed returns the state f
 const state = fs.readFileSync(seeded.statePath, "utf8");
 assert.match(state, /workflow_id: card_1/, "the seeded state names its owner");
 assert.match(state, /quality: production/, "the configured quality is written");
-assert.match(state, /supervisor: high/, "the configured supervisor is written");
+assert.doesNotMatch(state, /supervisor:/, "the retired supervision knob is never written");
 assert.match(state, /exploration_count: 3/, "the configured exploration count is written");
 assert.match(state, /review_gates: \[spec\]/, "the gate set is the canonical storage");
 const tracking = JSON.parse(fs.readFileSync(path.join(workspace, "stelow.json"), "utf8"));

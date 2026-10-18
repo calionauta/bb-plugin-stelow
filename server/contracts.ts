@@ -103,6 +103,13 @@ export const scopeSummarySchema = z.object({
 /** @deprecated Alias only. Run knobs replaced the appetite ladder. */
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 export const qualitySchema = z.enum(["production", "experimental"]);
+/**
+ * The retired supervision knob (`low|med|high`), kept for one job only: the
+ * board defaults are stored in a kv row written before the knob was removed,
+ * and `boardWorkflowDefaultsSchema` is `.strict()` — dropping the key here
+ * would reject the whole row and silently reset the review gates the operator
+ * chose. Absorbed and ignored, never required, never emitted.
+ */
 export const supervisorSchema = z.enum(["low", "med", "high"]);
 export const explorationCountSchema = z.number().int().min(1).max(5);
 /** Red-first acceptance gate. Optional everywhere: absent means the
@@ -123,7 +130,8 @@ export const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGa
 export const boardWorkflowDefaultsSchema = z
   .object({
     quality: qualitySchema,
-    supervisor: supervisorSchema,
+    /** Absorbed legacy key (see supervisorSchema); absence is the new normal. */
+    supervisor: supervisorSchema.optional(),
     explorationCount: explorationCountSchema,
     reviewMode: z.string(),
     reviewGates: z.array(reviewGateAtomSchema).default([]),
@@ -135,9 +143,9 @@ export const boardWorkflowDefaultsSchema = z
 
 /** Legacy appetite → knobs. Rigor always strongest; breadth keeps old intent. */
 export const LEGACY_APPETITE_DEFAULTS = {
-  Lean: { quality: "production", supervisor: "high", explorationCount: 2 },
-  Core: { quality: "production", supervisor: "high", explorationCount: 3 },
-  Complete: { quality: "production", supervisor: "high", explorationCount: 5 },
+  Lean: { quality: "production", explorationCount: 2 },
+  Core: { quality: "production", explorationCount: 3 },
+  Complete: { quality: "production", explorationCount: 5 },
 } as const;
 
 export const taskSchema = z.object({
@@ -228,7 +236,8 @@ export const workflowSchema = z.object({
   status: trackableStatusSchema,
   stage: z.string(),
   quality: z.string(),
-  supervisor: z.string(),
+  /** Absorbed legacy key: tracking entries seeded before the knob retired. */
+  supervisor: z.string().optional(),
   explorationCount: z.number(),
   explorationHybrid: z.boolean(),
   /** Deprecated alias passthrough for old tracking entries. */

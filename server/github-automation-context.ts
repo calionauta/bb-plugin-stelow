@@ -39,7 +39,6 @@ export interface GithubAutomationDeps {
       attachments: Array<{ path: string; type: "localFile" | "localImage" }>;
       intent: string;
       quality?: string;
-      supervisor?: string;
       explorationCount?: number;
       /** Deprecated alias; maps once when knobs are absent. */
       appetite?: string;

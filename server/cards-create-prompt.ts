@@ -22,7 +22,7 @@ export type BuildPromptContext = {
   stateDir: string;
   intent: string;
   managedWorktree: boolean;
-  knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean };
+  knobs: { quality: string; explorationCount: number; explorationHybrid: boolean };
   reviewGates: string;
   reviewRung: string;
   instructions: string | null;
@@ -48,7 +48,7 @@ export function buildBuildPrompt(
       + ` \`unknown\`). Read the request, confirm or pick the fitting intent`
       + ` (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise`
       + ` question via the form above only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled.`
-      + ` Run knobs (quality=\`${context.knobs.quality}\`, supervisor=\`${context.knobs.supervisor}\`,`
+      + ` Run knobs (quality=\`${context.knobs.quality}\`,`
       + ` exploration=\`count=${context.knobs.explorationCount} hybrid=${context.knobs.explorationHybrid}\`) and review gates=\`${context.reviewGates}\``
       + ` (${context.reviewRung}) are already recorded in state.md — use them, never re-ask.`,
     "Order of work, always: (1) triage — settle intent and record it in state.md; (2) load only the skills `bb stelow playbook` names for your "

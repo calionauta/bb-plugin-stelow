@@ -8,14 +8,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
 - **New card composer** (CreateBuildDialog, `createCard`). Prompt + file/image
-  attachments, intent, run knobs (quality, supervision, exploration count,
+  attachments, intent, run knobs (quality, exploration count,
   acceptance tests), your review gates, agent preset from
   the analysis band. Knobs and review gates render as compact
   rows under the composer — title plus current value always visible, so
   consequential choices stay discoverable without a wall of option cards
   pushing content below the fold. One tap expands a row into the
   full controls (real inputs, min-h-11 targets) — no hidden select.
-  Quality defaults to production, supervision to high, exploration to 3 +
+  Quality defaults to production, exploration to 3 +
   hybrid, acceptance tests to Strict (Advisory on experimental cards);
   a legacy appetite default maps once (rigor always strongest). The
   exploration row discloses which design archetypes each count runs
@@ -1899,11 +1899,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   drafts): card pins still win, a set override replaces the band preset,
   empty means the band preset. Same singleton discipline as the generation
   and reviewer designations; the draft-burst band fallback stays pure band.
-- **Board defaults** (`boardWorkflowDefaults`). Run knobs (quality, supervision,
+- **Board defaults** (`boardWorkflowDefaults`). Run knobs (quality,
   exploration count) and
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
-  Legacy appetite defaults map once to knobs (production/high, breadth 2/3/5).
+  Legacy appetite defaults map once to knobs (production, breadth 2/3/5).
+  The retired supervision knob is absorbed on read and ignored: it set a
+  checkpoint cadence nothing enforced, priced at a full headless harness
+  spawn per check, while the acceptance contract (red-first, freeze_sha,
+  baseline) already proved the same work at close.
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
   `testDecisionApi`, `decision_api_config` table). One decision endpoint
   for every decision router, configured once in Manage agent presets.

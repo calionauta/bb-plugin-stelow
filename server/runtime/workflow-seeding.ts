@@ -127,7 +127,6 @@ async function existingSeed(
  */
 export type RunKnobs = {
   quality: string;
-  supervisor: string;
   explorationCount: number;
   explorationHybrid: boolean;
   /** Explicit red-first mode; absent means the quality-derived default
@@ -166,7 +165,6 @@ async function writeStateFile(
     statePath,
     body
       .replace("quality: production", `quality: ${knobs.quality}`)
-      .replace("supervisor: high", `supervisor: ${knobs.supervisor}`)
       .replace("exploration_count: 3", `exploration_count: ${knobs.explorationCount}`)
       .replace("exploration_hybrid: true", `exploration_hybrid: ${knobs.explorationHybrid}`)
       .replace("  review_mode: Auto", `${redFirstLine}  review_mode: Auto`)
@@ -217,7 +215,6 @@ function trackSeededWorkflow(
       phases: [],
       config: {
         quality: knobs.quality,
-        supervisor: knobs.supervisor,
         exploration_count: knobs.explorationCount,
         exploration_hybrid: knobs.explorationHybrid,
         ...(typeof knobs.redFirst === "string" && knobs.redFirst ? { red_first: knobs.redFirst } : {}),
@@ -234,7 +231,7 @@ export async function seedWorkflow(
   workflowId: string,
   name: string,
   intent: string,
-  knobs: RunKnobs = { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
+  knobs: RunKnobs = { quality: "production", explorationCount: 3, explorationHybrid: true },
   reviewMode: string | string[] = "Auto",
   fresh = false,
 ): Promise<SeedResult> {

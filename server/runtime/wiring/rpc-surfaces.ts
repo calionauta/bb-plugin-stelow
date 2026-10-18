@@ -185,7 +185,6 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
   ) as BoardWorkflowDefaults["reviewGates"];
   const knobs = resolveKnobInput({
     quality: parsed.data.quality,
-    supervisor: parsed.data.supervisor,
     explorationCount: parsed.data.explorationCount,
     appetite: parsed.data.appetite,
     redFirst: parsed.data.redFirst,
@@ -201,7 +200,6 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
   // people and failed for others.
   return {
     quality: knobs.quality as BoardWorkflowDefaults["quality"],
-    supervisor: knobs.supervisor as BoardWorkflowDefaults["supervisor"],
     explorationCount: knobs.explorationCount as BoardWorkflowDefaults["explorationCount"],
     ...(typeof knobs.redFirst === "string" ? { redFirst: knobs.redFirst as BoardWorkflowDefaults["redFirst"] } : {}),
     reviewMode: legacyLabelForGates(reviewGates) ?? "Auto",
@@ -211,7 +209,6 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
 
 const DEFAULT_BOARD_WORKFLOW_DEFAULTS: BoardWorkflowDefaults = {
   quality: "production",
-  supervisor: "high",
   explorationCount: 3,
   redFirst: "strict",
   reviewMode: "Auto",
