@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.83.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.82.0...v0.83.0) (2026-10-18)
+
+
+### Features
+
+* retire the supervision knob ([a1d10f0](https://github.com/calionauta/bb-plugin-stelow/commit/a1d10f07569d66693d4918657a152c11e121d0ba))
+
+  The new-card composer no longer asks for a checkpoint cadence, because
+  nothing enforced one. `Supervision` was stored in `state.md` and
+  `stelow.json`, quoted in the worker prompt, and rendered on the board — but
+  no code branched on the value, and no artifact recorded that a checkpoint
+  had run. Its only consumer was methodology prose asking the worker to
+  re-check itself against the definition of done, priced at a full headless
+  harness spawn every three to ten tool calls: the most expensive operation
+  the reference describes, spent to re-read work the acceptance contract
+  already proves at scope close. Two of the three settings told the worker to
+  skip it entirely.
+
+  The rigor that does block is untouched: red-first acceptance with a frozen
+  contract (`test_map`, `freeze_sha`, `baseline`), the parent-controlled loop
+  that re-delegates on a failed verify with a fresh context per iteration, and
+  every review gate. Boards keep working — the stored key is absorbed on read,
+  so a saved default written before this release never resets your review
+  gates to Auto. `Quality`, `Exploration`, and your review gates are the knobs
+  that remain.
+
+
+### Bug Fixes
+
+* ask GitHub for the pin's provenance in the direction that describes it ([8b7c0c9](https://github.com/calionauta/bb-plugin-stelow/commit/8b7c0c9f0c3eca05de74327ae8950b67fb03f699))
+* move the fork ledger's pin with the synced tree ([23d949e](https://github.com/calionauta/bb-plugin-stelow/commit/23d949e0241aa54aa430771afcfbbf719b031f38))
+
 ## [0.82.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.81.0...v0.82.0) (2026-10-17)
 
 
