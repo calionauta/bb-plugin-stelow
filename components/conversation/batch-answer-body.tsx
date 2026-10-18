@@ -10,20 +10,25 @@ import { Button } from "@/components/ui/button";
 import { BatchOptionList } from "./batch-options";
 import { boundaryOptions } from "./boundary-question-frame";
 import { submitBlockReason } from "../../lib/question-presentation.mjs";
+import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 import type { BatchItem, OpenArtifactHandler } from "./batch-types";
 import type { questionCopy } from "../../lib/question-presentation.mjs";
 
 type Copy = ReturnType<typeof questionCopy>;
 
 const NOTICE_CLASS =
-  "rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 "
-  + "text-amber-900/80 dark:text-amber-100/80";
-const MUTED_CLASS = "text-xs text-amber-900/60 dark:text-amber-200/60";
+  "rounded-md border border-border bg-background/50 p-2 text-xs leading-5 "
+  + "text-muted-foreground";
+
+/** The local needs-note refusal. It keeps amber because it names the one
+ * blocking condition and the exit; the split reminder below is a status, not a
+ * warning, so it takes the neutral surface. */
+const BLOCKED_CLASS =
+  "text-xs leading-5 text-amber-700 dark:text-amber-300";
 
 /** The subset of the stepper's selection state the answer controls read. */
 export type AnswerBodyState = {
   isSplitProposal: boolean;
-  splitKeepLabel: string;
   selected: Record<string, string[]>;
   custom: Record<string, string>;
   skipped: Set<string>;
@@ -38,8 +43,6 @@ export type AnswerFooterState = {
   index: number;
   isLastQuestion: boolean;
   complete: boolean;
-  doneCount: number;
-  remainingCount: number;
   setIndex: (index: number) => void;
   merged: (id: string) => string[];
 };
@@ -55,20 +58,41 @@ export function BatchCustomInput({
   copy,
   value,
   onType,
+  invalid = false,
+  error = null,
 }: {
   copy: Copy;
   value: string;
   onType: (value: string) => void;
+  /** The field is the reason the submit was refused, not the batch. */
+  invalid?: boolean;
+  error?: string | null;
 }) {
+  // The field-level refusal. The batch's `submitBlockReason` line under the
+  // footer is the right place for "question 3 still needs an answer" — the
+  // reader is looking at the footer when they press the button. It is the WRONG
+  // place for "this note is required", because the keyboard layer lets someone
+  // press Cmd/Ctrl+Enter from inside this field: the refusal then lands below the
+  // fold of their attention, next to a button they did not touch. So the note
+  // owns its own refusal, with the reason attached to the input it is about, and
+  // focus stays here with the text intact.
   return (
-    <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
+    <label className="block text-xs font-medium text-muted-foreground">
       <span>{copy.other}</span>
       <input
         value={value}
         onChange={(event) => onType(event.target.value)}
         placeholder={copy.customPlaceholder}
         className={INPUT_CLASS}
+        data-batch-note=""
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={invalid && error ? "batch-note-error" : undefined}
       />
+      {invalid && error ? (
+        <span id="batch-note-error" role="alert" className="mt-1 block text-xs leading-5 text-amber-700 dark:text-amber-300">
+          {error}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -91,7 +115,7 @@ function SkipControl({
       </button>
     )
     : (
-      <button onClick={onSkip} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">
+      <button onClick={onSkip} className="min-h-11 cursor-pointer text-xs text-muted-foreground hover:underline">
         {copy.skip}
       </button>
     );
@@ -121,8 +145,9 @@ function CustomAndSkip({
         copy={copy}
         value={sel.custom[current.id] ?? ""}
         onType={(value) => sel.typeCustom(current, value)}
+        invalid={missingNote !== null}
+        error={missingNote}
       />
-      {missingNote ? <p role="note" className="text-xs text-amber-900/80 dark:text-amber-200/80">{missingNote}</p> : null}
       {allowSkip
         ? (
           <SkipControl
@@ -172,7 +197,7 @@ export function BatchAnswerBody({
         cardId={cardId}
         current={shown}
         isSplitProposal={sel.isSplitProposal}
-        splitKeepLabel={sel.splitKeepLabel}
+        splitKeepLabel={SPLIT_KEEP_LABEL}
         selected={sel.selected}
         onPick={sel.pick}
         onOpenArtifact={onOpenArtifact}
@@ -199,41 +224,7 @@ function AnswerStatus({ splitNotice, error }: {
           </p>
         )
         : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </>
-  );
-}
-
-/** How far along the batch is, and what is still owed. Both can show at once. */
-function ProgressNotes({
-  sel,
-  current,
-  copy,
-  questions,
-  allowSkip,
-}: {
-  sel: AnswerFooterState & AnswerBodyState;
-  current: BatchItem;
-  copy: Copy;
-  questions: BatchItem[];
-  allowSkip: boolean;
-}) {
-  const multi = questions.length > 1;
-  return (
-    <>
-      {multi
-        ? <p className={MUTED_CLASS}>{copy.batchProgress(sel.doneCount, questions.length, allowSkip)}</p>
-        : null}
-      {!multi && current.multiple && !sel.isSplitProposal
-        ? <p className={MUTED_CLASS}>{copy.pickOneOrMore}</p>
-        : null}
-      {sel.isLastQuestion && !sel.complete
-        ? (
-          <p role="status" className="text-xs text-amber-900/70 dark:text-amber-200/70">
-            {copy.answersRemaining(sel.remainingCount, allowSkip)}
-          </p>
-        )
-        : null}
+      {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
     </>
   );
 }
@@ -259,7 +250,7 @@ function FooterButtons({
   const lastIndex = questions.length - 1;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {blockReason ? <p role="note" className="w-full text-xs text-amber-900/80 dark:text-amber-200/80">{blockReason}</p> : null}
+      {blockReason ? <p role="note" className={BLOCKED_CLASS + " w-full"}>{blockReason}</p> : null}
       {multi
         ? (
           <Button size="sm" variant="outline" disabled={sel.index === 0 || busy} onClick={() => sel.setIndex(Math.max(0, sel.index - 1))}>
@@ -290,7 +281,6 @@ export function BatchFooter({
   questions,
   copy,
   busy,
-  allowSkip,
   submitLabel,
   onSubmit,
 }: {
@@ -298,25 +288,34 @@ export function BatchFooter({
   questions: BatchItem[];
   copy: Copy;
   busy: boolean;
-  allowSkip: boolean;
   submitLabel: string;
   onSubmit: (answers: string[][]) => void;
 }) {
   const current = questions[Math.min(sel.index, questions.length - 1)];
   if (!current) return null;
   const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
+  // The reason is stated TWICE on purpose, and a UX review flagged the
+  // duplication before this note existed.
+  //
+  // The field carries it because that is where the fix is: the note input is
+  // marked `aria-invalid` with the refusal attached, and the caret is already
+  // there when the reader pressed the chord from inside it.
+  //
+  // The footer carries it because the submit button is DISABLED by the same
+  // reason, and a disabled control with no stated cause is a dead end — the
+  // failure this codebase refuses everywhere else ("a refusal without an exit").
+  // Suppressing it here to avoid repeating a sentence traded a mild redundancy
+  // for an unexplained dead button, which the needs-note UI test correctly
+  // refused.
   return (
-    <>
-      <ProgressNotes sel={sel} current={current} copy={copy} questions={questions} allowSkip={allowSkip} />
-      <FooterButtons
-        sel={sel}
-        questions={questions}
-        copy={copy}
-        busy={busy}
-        submitLabel={submitLabel}
-        blockReason={blockReason}
-        onSubmit={onSubmit}
-      />
-    </>
+    <FooterButtons
+      sel={sel}
+      questions={questions}
+      copy={copy}
+      busy={busy}
+      submitLabel={submitLabel}
+      blockReason={blockReason}
+      onSubmit={onSubmit}
+    />
   );
 }

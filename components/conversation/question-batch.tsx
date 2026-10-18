@@ -1,19 +1,19 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
-import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { questionCopy } from "../../lib/question-presentation.mjs";
 import { expiredAnswerPayload } from "../../lib/question-store.mjs";
-import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/question-presentation.mjs";
+import { isSplitQuestion, splitQuestionText, splitSelectionNotice, submitBlockReason } from "../../lib/question-presentation.mjs";
+import { artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
+import { BatchKeyLegend, BatchKeyOverlay, useBatchKeys } from "./batch-keys-ui";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
+import { boundaryOptions } from "./boundary-question-frame";
 import { preselectedAnswers, toggleSinglePick } from "../../lib/question-batch.mjs";
 import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
-import { BoundaryQuestionFrame } from "./boundary-question-frame";
+import { BatchQuestionHeading } from "./batch-question-heading";
 import type {
   BatchItem,
-  ExpiredQuestionItem,
   OpenArtifactHandler,
-  QuestionStalenessNotice,
 } from "./batch-types";
 
 // Question conversation: the stepper (radio/checkbox options, free-text
@@ -31,60 +31,8 @@ export type {
   ArtifactViewerMode,
   BatchItem,
   BatchOption,
-  ExpiredQuestionItem,
   OpenArtifactHandler,
-  QuestionStalenessNotice,
 } from "./batch-types";
-
-// One class for both disclosures (preview and touched paths) so a keyboard
-// focus ring reads identically wherever a disclosure appears.
-// Advisory only: names what moved since a question was asked — a revised or
-// removed document, a moved checkout with the touched paths — and points at
-// the existing exits (re-open the doc, request changes, regress the stage).
-// It never blocks answering and adds no new actions of its own.
-// Advisory only: names what moved since a question was asked — a revised or
-// removed document, a moved checkout with the touched paths — and points at
-// the existing exits (re-open the doc, request changes, regress the stage).
-// It never blocks answering and adds no new actions of its own.
-//
-// The file paths are what made this unusable: on a real card the notice
-// listed seven paths and pushed the actual question off the screen. The
-// reader needs the WARNING first and the paths only if they are auditing
-// which files moved, so the paths collapse behind a summary that still shows
-// the count. "What this means" is stated before "what changed", because the
-// first thing a person has to decide is whether it matters.
-function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) {
-  if (!staleness.docRevised && !staleness.docRemoved && !staleness.checkoutMoved) return null;
-  const paths = staleness.touchedPaths;
-  return (
-    <div className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200" role="note" aria-label="Evidence changed since asked">
-      <p className="font-semibold">Something changed since this question was asked</p>
-      <p className="mt-1">
-        {staleness.docRemoved
-          ? "A document this question relies on can no longer be opened."
-          : staleness.docRevised
-            ? "A document this question relies on was revised."
-            : `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed.`}
-        {" "}Check the linked document before answering if your choice depends on it.
-      </p>
-      {/* `group` is load-bearing: the chevron rotates from the `group-open:` variant when
-          it is not given an explicit `open`, so a <details> without it renders a
-          disclosure whose arrow never moves. This one was missing it. */}
-      {paths.length > 0 ? (
-        <details className="group mt-1">
-          <summary className={SUMMARY_LINK}>
-            <DisclosureChevron />
-            {paths.length} file{paths.length === 1 ? "" : "s"} touched
-          </summary>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-[11px]">
-            {paths.map((path) => <li key={path} className="break-all">{path}</li>)}
-          </ul>
-        </details>
-      ) : null}
-      <p className="mt-1 text-amber-900/70 dark:text-amber-200/70">If the plan no longer matches the code, request changes or return it to an earlier stage from Workflow progress.</p>
-    </div>
-  );
-}
 
 // Preselected answers live in lib/question-batch.mjs (pure, node-tested);
 // the hook only reads the resolved initial state once per batch.
@@ -122,7 +70,6 @@ function useBatchSelection(questions: BatchItem[]) {
   // run unconditionally — the shell guards before reading current.
   const current = questions.length === 0 ? null : (questions[Math.min(index, questions.length - 1)] as BatchItem);
   const isSplitProposal = current ? isSplitQuestion(current) : false;
-  const splitKeepLabel = SPLIT_KEEP_LABEL;
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -130,9 +77,7 @@ function useBatchSelection(questions: BatchItem[]) {
     if (text) out.push(text);
     return out;
   };
-  const doneCount = questions.filter((q) => isQuestionDone(q, skipped, merged)).length;
-  const remainingCount = questions.length - doneCount;
-  const complete = remainingCount === 0;
+  const complete = questions.every((q) => isQuestionDone(q, skipped, merged));
   const isLastQuestion = index === questions.length - 1;
   const pick = (question: BatchItem, label: string) => {
     setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
@@ -143,8 +88,8 @@ function useBatchSelection(questions: BatchItem[]) {
         // alternative, not a fourth delivery: choosing either side clears
         // the other so a card answer can never encode two contradictory
         // outcomes.
-        if (label === splitKeepLabel) return { ...prev, [question.id]: has ? [] : [splitKeepLabel] };
-        const withoutKeep = (prev[question.id] ?? []).filter((item) => item !== splitKeepLabel);
+        if (label === SPLIT_KEEP_LABEL) return { ...prev, [question.id]: has ? [] : [SPLIT_KEEP_LABEL] };
+        const withoutKeep = (prev[question.id] ?? []).filter((item) => item !== SPLIT_KEEP_LABEL);
         return { ...prev, [question.id]: has ? withoutKeep.filter((item) => item !== label) : [...withoutKeep, label] };
       }
       if (question.multiple) return { ...prev, [question.id]: has ? prev[question.id]!.filter((item) => item !== label) : [...(prev[question.id] ?? []), label] };
@@ -164,85 +109,163 @@ function useBatchSelection(questions: BatchItem[]) {
     setCustom((prev) => ({ ...prev, [question.id]: "" }));
   };
   const unskip = (question: BatchItem) => setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
-  return { index, setIndex, selected, custom, skipped, current, isSplitProposal, splitKeepLabel, merged, pick, typeCustom, skip, unskip, doneCount, remainingCount, complete, isLastQuestion };
-}
-
-// Stepper dots: one step per question, done steps checked, exactly one tab
-// stop on the current step.
-function BatchStepDots({ questions, index, onSelect, isDone, copy }: {
-  questions: BatchItem[];
-  index: number;
-  onSelect: (index: number) => void;
-  isDone: (id: string) => boolean;
-  copy: ReturnType<typeof questionCopy>;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1" role="group" aria-label={copy.questions}>
-      {questions.map((q, i) => {
-        const done = isDone(q.id);
-        return (
-          <button
-            key={q.id}
-            aria-current={i === index ? "step" : undefined}
-            aria-label={`${copy.questionOf(i + 1, questions.length)}${done ? ` (${copy.answered})` : ""}`}
-            onClick={() => onSelect(i)}
-            className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-xs font-medium ${i === index ? "border-primary bg-primary/15 text-foreground" : done ? "border-emerald-500/50 bg-emerald-500/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}
-          >
-            {done && i !== index ? "✓ " : ""}{i + 1}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Question heading: progress counters, step dots, title, prompt, the
-// staleness advisory, and the split exclusivity notice.
-function BatchQuestionHeading({ questions, index, showHeading, copy, current, prompt, onSelectDot, isDone }: {
-  questions: BatchItem[];
-  index: number;
-  showHeading?: boolean;
-  copy: ReturnType<typeof questionCopy>;
-  current: BatchItem;
-  prompt: string;
-  onSelectDot: (index: number) => void;
-  isDone: (id: string) => boolean;
-}) {
-  return (
-    <>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        {showHeading ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
-          {questions.length > 1 ? copy.answersNeeded(questions.length) : copy.answerNeeded}
-        </div> : null}
-        {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.questionOf(index + 1, questions.length)}</div> : null}
-      </div>
-      {questions.length > 1 ? (
-        <BatchStepDots questions={questions} index={index} onSelect={onSelectDot} isDone={isDone} copy={copy} />
-      ) : null}
-      {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
-      {current.boundary ? <BoundaryQuestionFrame boundary={current.boundary} /> : null}
-      {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
-      {current.staleness ? <StalenessNotice staleness={current.staleness} /> : null}
-    </>
-  );
+  return { index, setIndex, selected, custom, skipped, current, isSplitProposal, merged, pick, typeCustom, skip, unskip, complete, isLastQuestion };
 }
 
 // radio (single) / checkbox (multi) options plus a free-text "Other", explicit
 // skip, and a single atomic submit — one worker resume, one inbox resolution.
 // The controls themselves live in ./batch-answer-body; this owns position,
 // framing, and submission.
-export function BatchStepper({ cardId, questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
+//
+// The frame went with the counters. It used to be a bordered amber panel with a
+// "?" badge and `role="alert"`, and it is rendered INSIDE the card's hero
+// section — which is already a section surface wearing the amber decision tone.
+// So a bordered box sat inside a bordered box, announcing "a question exists"
+// two lines below the hero that had already said exactly that, in amber text on
+// an amber wash. The hero owns the alert (HERO_STYLE.decision.alert); a second
+// live region for one fact is worse than one. What marks the boundary now is
+// position (the hairline in detail-question-sections), the default-open state,
+// and the option rows' own frames.
+/**
+ * The batch's keyboard wiring, as one hook.
+ *
+ * Extracted from `BatchStepper`, which was over its function budget once the
+ * accelerator landed. The stepper owns the shape of the surface; this owns what
+ * each key does to the selection it is given.
+ */
+/**
+ * What each key does to this batch, as a plain object.
+ *
+ * Module scope rather than inline, so `useStepperKeys` reads as the wiring it is
+ * and neither function crosses the size budget. Every handler that needs the
+ * current question tolerates its absence, because this map is built on renders
+ * where the batch is empty too.
+ */
+function stepperKeyHandlers({
+  questions, sel, current, shownOptions, firstDocument, busy, focusNote, onSubmit, onOpenArtifact,
+}: {
+  questions: BatchItem[];
+  sel: ReturnType<typeof useBatchSelection>;
+  current: BatchItem | null;
+  shownOptions: BatchItem["options"];
+  firstDocument: BatchItem["options"][number] | undefined;
+  busy: boolean;
+  focusNote: () => void;
+  onSubmit: (answers: string[][]) => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}): Parameters<typeof useBatchKeys>[0]["handlers"] {
+  return {
+    onPick: (optionIndex) => {
+      if (!current) return;
+      const option = shownOptions[optionIndex];
+      if (option) sel.pick(current, option.label);
+    },
+    onMove: sel.setIndex,
+    onFocusNote: focusNote,
+    onToggleSkip: () => {
+      if (!current) return;
+      if (sel.skipped.has(current.id)) sel.unskip(current);
+      else sel.skip(current);
+    },
+    onOpenDocument: () => {
+      if (!firstDocument?.artifact || !onOpenArtifact) return;
+      onOpenArtifact(firstDocument.artifact, artifactViewerModeForOption(firstDocument.label), firstDocument.label);
+    },
+    // The SAME guard the footer's button uses. Calling `onSubmit` bare sent a
+    // `needsNote` pick with an empty note — the exact case the field refusal
+    // exists to prevent — and allowed a second submit while one was in flight.
+    // A chord must shortcut the button's REFUSALS too, not just its action.
+    onSubmit: () => {
+      const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
+      if (!sel.complete || busy || blockReason !== null) return;
+      onSubmit(questions.map((q) => sel.merged(q.id)));
+    },
+  };
+}
+
+function useStepperKeys({
+  questions,
+  sel,
+  allowSkip,
+  busy,
+  onOpenArtifact,
+  onSubmit,
+  focusNote,
+}: {
+  questions: BatchItem[];
+  sel: ReturnType<typeof useBatchSelection>;
+  allowSkip: boolean;
+  busy: boolean;
+  onOpenArtifact?: OpenArtifactHandler;
+  onSubmit: (answers: string[][]) => void;
+  focusNote: () => void;
+}) {
+  // Read the current question from the selection rather than taking it as an
+  // argument, because every hook above must run even for an empty batch — and
+  // an empty batch has no current question to pass in.
+  const current = sel.current;
+  // The options the reader can actually SEE. A boundary question may render none
+  // of them (`boundaryOptions`), and the digit keys must index that same list:
+  // indexing the raw options would let `1` pick an invisible option and complete
+  // the batch from a question the reader never answered.
+  const shownOptions = current ? boundaryOptions(current) : [];
+  const firstDocument = shownOptions.find((option) => option.artifact);
+  return useBatchKeys({
+    questions,
+    index: sel.index,
+    setIndex: sel.setIndex,
+    canSkip: allowSkip,
+    hasDocument: Boolean(firstDocument?.artifact) && Boolean(onOpenArtifact),
+    optionCount: shownOptions.length,
+    handlers: stepperKeyHandlers({
+      questions, sel, current, shownOptions, firstDocument, busy, focusNote, onSubmit, onOpenArtifact,
+    }),
+  });
+}
+
+/**
+ * The stepper's accelerator, with the one indirection it needs.
+ *
+ * `o` focuses the note by walking down from the container, but the container
+ * ref lives on the hook the handlers are passed TO — so one ref carries the
+ * handler into the binding. Bundled here because the stepper is a layout
+ * function and this is the whole of its keyboard setup.
+ */
+function useStepperKeySetup({
+  questions, sel, allowSkip, busy, onOpenArtifact, onSubmit,
+}: {
+  questions: BatchItem[];
+  sel: ReturnType<typeof useBatchSelection>;
+  allowSkip: boolean;
+  busy: boolean;
+  onOpenArtifact?: OpenArtifactHandler;
+  onSubmit: (answers: string[][]) => void;
+}) {
+  // The ref breaks a cycle: `focusNote` must call the binding that is created
+  // by PASSING `focusNote`. One ref carries the callback into the binding, and
+  // only `keys` needs to leave this hook.
+  const focusNoteRef = useRef<{ focusNote: () => void } | null>(null);
+  const focusNote = useCallback(() => focusNoteRef.current?.focusNote(), []);
+  const keys = useStepperKeys({ questions, sel, allowSkip, busy, onOpenArtifact, onSubmit, focusNote });
+  focusNoteRef.current = keys;
+  return keys;
+}
+
+export function BatchStepper({ cardId, questions, allowSkip, busy, error, submitLabel, onSubmit, onOpenArtifact }: {
   cardId?: string;
   questions: BatchItem[];
   allowSkip: boolean;
   busy: boolean;
   error: string | null;
   submitLabel: string;
-  showHeading?: boolean;
   onSubmit: (answers: string[][]) => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   const sel = useBatchSelection(questions);
+  // A hook, so it runs even for an empty batch — calling it after the early
+  // return below would change the hook count the moment a batch arrived
+  // (tests/question-surface-collapse.test.mjs pins the order).
+  const keys = useStepperKeySetup({ questions, sel, allowSkip, busy, onOpenArtifact, onSubmit });
   if (questions.length === 0) return null;
   const current = sel.current!;
   const copy = questionCopy();
@@ -250,32 +273,79 @@ export function BatchStepper({ cardId, questions, allowSkip, busy, error, submit
   const splitNotice = sel.isSplitProposal ? splitSelectionNotice(current.options, sel.selected[current.id] ?? []) : null;
   const isDone = (id: string): boolean => isDoneById(questions, sel.skipped, sel.merged, id);
   return (
-    <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-      <div className="flex items-start gap-3">
-        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
-        <div className="min-w-0 flex-1 space-y-2">
-          <BatchQuestionHeading questions={questions} index={sel.index} showHeading={showHeading} copy={copy} current={current} prompt={prompt} onSelectDot={sel.setIndex} isDone={isDone} />
-          <BatchAnswerBody
-            cardId={cardId}
-            sel={sel}
-            current={current}
-            copy={copy}
-            allowSkip={allowSkip}
-            error={error}
-            splitNotice={splitNotice}
-            onOpenArtifact={onOpenArtifact}
-          />
-          <BatchFooter
-            sel={sel}
-            questions={questions}
-            copy={copy}
-            busy={busy}
-            allowSkip={allowSkip}
-            submitLabel={submitLabel}
-            onSubmit={onSubmit}
-          />
-        </div>
-      </div>
+    <StepperSurface
+      keys={keys}
+      questions={questions}
+      sel={sel}
+      current={current}
+      copy={copy}
+      prompt={prompt}
+      splitNotice={splitNotice}
+      isDone={isDone}
+      cardId={cardId}
+      allowSkip={allowSkip}
+      busy={busy}
+      error={error}
+      submitLabel={submitLabel}
+      onSubmit={onSubmit}
+      onOpenArtifact={onOpenArtifact}
+    />
+  );
+}
+
+/**
+ * The batch's markup. Split from `BatchStepper` — which owns selection and the
+ * keyboard binding — so neither function crosses the size budget, and so the
+ * layout can be read without reading the state machine behind it.
+ *
+ * No ring, no `tabIndex` on the container: the keys arrive by bubbling from the
+ * focused child, so this div is never a focus target, and a ring on a
+ * non-focusable element is dead CSS. A `tabIndex={0}` would add an empty tab
+ * stop before the real controls, which is worse than none.
+ */
+function StepperSurface({
+  keys, questions, sel, current, copy, prompt, splitNotice, isDone,
+  cardId, allowSkip, busy, error, submitLabel, onSubmit, onOpenArtifact,
+}: {
+  keys: { containerRef: React.RefObject<HTMLDivElement | null>; showKeys: boolean; closeKeys: () => void };
+  questions: BatchItem[];
+  sel: ReturnType<typeof useBatchSelection>;
+  current: BatchItem;
+  copy: ReturnType<typeof questionCopy>;
+  prompt: string;
+  splitNotice: { text: string } | null;
+  isDone: (id: string) => boolean;
+  cardId?: string;
+  allowSkip: boolean;
+  busy: boolean;
+  error: string | null;
+  submitLabel: string;
+  onSubmit: (answers: string[][]) => void;
+  onOpenArtifact?: OpenArtifactHandler;
+}) {
+  return (
+    <div ref={keys.containerRef} className="space-y-2">
+      <BatchQuestionHeading questions={questions} index={sel.index} copy={copy} current={current} prompt={prompt} onSelectDot={sel.setIndex} isDone={isDone} />
+      <BatchAnswerBody
+        cardId={cardId}
+        sel={sel}
+        current={current}
+        copy={copy}
+        allowSkip={allowSkip}
+        error={error}
+        splitNotice={splitNotice}
+        onOpenArtifact={onOpenArtifact}
+      />
+      <BatchFooter
+        sel={sel}
+        questions={questions}
+        copy={copy}
+        busy={busy}
+        submitLabel={submitLabel}
+        onSubmit={onSubmit}
+      />
+      <BatchKeyOverlay open={keys.showKeys} onClose={keys.closeKeys} />
+      <BatchKeyLegend multiQuestion={questions.length > 1} canSkip={allowSkip} />
     </div>
   );
 }
@@ -312,38 +382,16 @@ export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtif
     }
   }
   return (
-      <BatchStepper
-        cardId={cardId}
-        questions={questions}
-        allowSkip={mode === "live"}
-        busy={busy}
-        error={error}
-        submitLabel={questions.length > 1 ? copy.submitAnswers : copy.submitAnswer}
-        showHeading={mode !== "expired"}
-        onSubmit={(all) => void submit(all)}
-        onOpenArtifact={onOpenArtifact}
-      />
+    <BatchStepper
+      cardId={cardId}
+      questions={questions}
+      allowSkip={mode === "live"}
+      busy={busy}
+      error={error}
+      submitLabel={questions.length > 1 ? copy.submitAnswers : copy.submitAnswer}
+      onSubmit={(all) => void submit(all)}
+      onOpenArtifact={onOpenArtifact}
+    />
   );
 }
 
-export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: {
-  cardId: string;
-  questions: ExpiredQuestionItem[];
-  onAnswered: () => void;
-  onOpenArtifact?: OpenArtifactHandler;
-}) {
-  if (questions.length === 0) return null;
-  const copy = questionCopy();
-  return (
-    <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">{copy.recoveryHeading}</h3>
-        <QuestionBatch
-          cardId={cardId}
-          mode="expired"
-          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null }))}
-          onAnswered={onAnswered}
-          onOpenArtifact={onOpenArtifact}
-        />
-    </section>
-  );
-}
