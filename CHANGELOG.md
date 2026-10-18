@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.83.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.82.0...v0.83.0) (2026-10-18)
+
+
+### Features
+
+* retire the supervision knob ([a1d10f0](https://github.com/calionauta/bb-plugin-stelow/commit/a1d10f07569d66693d4918657a152c11e121d0ba))
+
+
+### Bug Fixes
+
+* ask GitHub for the pin's provenance in the direction that describes it ([8b7c0c9](https://github.com/calionauta/bb-plugin-stelow/commit/8b7c0c9f0c3eca05de74327ae8950b67fb03f699))
+* move the fork ledger's pin with the synced tree ([23d949e](https://github.com/calionauta/bb-plugin-stelow/commit/23d949e0241aa54aa430771afcfbbf719b031f38))
+
 ## [0.82.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.81.0...v0.82.0) (2026-10-17)
 
 
