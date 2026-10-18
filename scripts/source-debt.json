@@ -5,7 +5,6 @@
   },
   "functions": {
     "app.tsx:callback": 56,
-    "components/conversation/question-batch.tsx:useBatchSelection": 53,
     "components/detail/build-diff.tsx:DiffFile": 54,
     "components/github/github-completion-dialog.tsx:GithubCompletionDialog": 60,
     "components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog": 89,

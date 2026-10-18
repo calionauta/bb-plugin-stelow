@@ -87,9 +87,15 @@ test("the untested touch-target and cursor rules cannot grow", () => {
   // The count is its own floor: if it drops sharply, this census has stopped seeing the
   // elements it measures rather than the tree having fewer of them. That check is what caught
   // the per-line version reporting 32.
+  //
+  // Lowered 83 -> 82 with a reason (2026-10-18): the question stepper's step dots became the
+  // shared `ui/Button`, which removed exactly ONE raw element from the tree. A drop of one is
+  // a real conversion, not a blind scanner — the failure mode this floor exists to catch is a
+  // scan that stops seeing most of its subject, and it would land tens below, not one. If this
+  // number is ever lowered again, the reason goes here.
   assert.ok(
-    buttons >= 83,
-    `the census sees the raw buttons (found ${buttons}, expected at least 83) — a lower number `
+    buttons >= 82,
+    `the census sees the raw buttons (found ${buttons}, expected at least 82) — a lower number `
     + "means this scan stopped matching, not that the tree has fewer buttons",
   );
   assert.ok(
