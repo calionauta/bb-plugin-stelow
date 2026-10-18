@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  OPTION_DESCRIPTION_PREVIEW_LIMIT,
+  PROSE_SUMMARY_LIMIT,
   artifactViewerModeForOption,
-  splitOptionDescriptionPreview,
+  splitProseSummary,
   submitBlockReason,
 } from "../lib/question-presentation.mjs";
 import { cleanOptions } from "../lib/question-batch.mjs";
@@ -17,11 +17,11 @@ import { cleanOptions } from "../lib/question-batch.mjs";
 // behind a click costs two clicks for less information than the label beside
 // it. The glance cap keeps previews glances (not documents); cleaning keeps a
 // short preview verbatim so there is something inline to read.
-assert.ok(OPTION_DESCRIPTION_PREVIEW_LIMIT >= 120, "the description glance covers the real walls that were unreadable");
+assert.ok(PROSE_SUMMARY_LIMIT >= 120, "the description glance covers the real walls that were unreadable");
 {
-  const short = splitOptionDescriptionPreview("Two lines of prose, under the glance.");
+  const short = splitProseSummary("Two lines of prose, under the glance.");
   assert.equal(short.tail, null, "a short description needs no disclosure");
-  const wall = splitOptionDescriptionPreview("w ".repeat(400));
+  const wall = splitProseSummary("w ".repeat(400));
   assert.ok(wall.head.length > 0 && wall.tail !== null, "a 400-token wall splits: the decision stays at a glance, the rest is one click away");
   const cleaned = cleanOptions([{ label: "A", preview: "27-char glance here" }]);
   assert.equal(cleaned[0].preview, "27-char glance here", "a short preview survives cleaning verbatim");
@@ -50,7 +50,7 @@ assert.ok(OPTION_DESCRIPTION_PREVIEW_LIMIT >= 120, "the description glance cover
 {
   assert.equal(artifactViewerModeForOption("Approve plan"), "review", "an approval opens read-only");
   assert.equal(artifactViewerModeForOption("Request changes"), "comment", "a change request keeps the comment path");
-  const split = splitOptionDescriptionPreview("x".repeat(OPTION_DESCRIPTION_PREVIEW_LIMIT + 10));
+  const split = splitProseSummary("x".repeat(PROSE_SUMMARY_LIMIT + 10));
   assert.ok(split.tail && split.tail.length > 0, "over-limit text always has a tail behind the disclosure");
 }
 

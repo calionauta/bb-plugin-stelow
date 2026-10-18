@@ -1,6 +1,4 @@
 export declare function questionCopy(): {
-  answerNeeded: string;
-  answersNeeded: (count: number) => string;
   questionOf: (current: number, total: number) => string;
   questions: string;
   answered: string;
@@ -15,9 +13,6 @@ export declare function questionCopy(): {
   next: string;
   continue: string;
   continueWithAnswers: (count: number) => string;
-  batchProgress: (done: number, total: number, canSkip: boolean) => string;
-  answersRemaining: (count: number, canSkip: boolean) => string;
-  pickOneOrMore: string;
   recoveryHeading: string;
 };
 export declare function englishQuestionContentError(question: unknown, options?: Array<{ label?: unknown; description?: unknown }> | null): string | null;
@@ -29,8 +24,8 @@ export declare function describeAskSubmission(value: unknown): {
   title?: string;
   detail?: string;
 };
-export declare const OPTION_DESCRIPTION_PREVIEW_LIMIT: number;
-export declare function splitOptionDescriptionPreview(description: unknown, limit?: unknown): {
+export declare const PROSE_SUMMARY_LIMIT: number;
+export declare function splitProseSummary(text: unknown, limit?: unknown): {
   head: string;
   tail: string | null;
 };
