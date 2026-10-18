@@ -37,7 +37,6 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // line. "baseline N" is the gate's own wording for debt the pre-branch tree
 // already carried; "recorded N" is debt the ledger holds.
 const inheritedBaseline = [
-  "components/conversation/question-batch.tsx:useBatchSelection#1: 53 lines (baseline 53)",
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 57 lines (baseline 65)",
   "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   // The unlinked-create branch and the mirrored-comment row moved into their
@@ -45,10 +44,11 @@ const inheritedBaseline = [
   // questions — that is the split the budget asked for, not a line shaved to
   // fit a number.
   "components/github/github-linked-discussion.tsx:LinkedDiscussionSection#1: 115 lines (baseline 116)",
-  // The filter toolbar moved into InboxToolbar, so this shrank from 106 to
-  // 87 — the split the budget asked for, not a line shaved to fit a number.
+  // The filter toolbar moved into InboxToolbar, so this shrank from 106 to 87;
+  // extracting the row and the entry itself brought it to 89. Both are the
+  // split the budget asked for, not a line shaved to fit a number.
   // The parenthesised number is the debt the FORK POINT carried (119).
-  "components/panels/inbox-panel.tsx:InboxPanel#1: 87 lines (baseline 119)",
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 89 lines (baseline 119)",
   // The parenthesised number is the debt the FORK POINT carried, not today's:
   // the gate reports what the branch started with, so it stays stable while the
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —
@@ -118,6 +118,11 @@ const inheritedBaseline = [
   // fixtures live in their own files. The entry appears only because editing
   // this file makes the gate report its existing debt.
   "tests/server-drafting.test.mjs:harness#1: 83 lines (baseline 83)",
+  // Not inherited debt and not new debt: this file is new, and the budget gate
+  // reports a new file over the line budget as "relocated" because it has no
+  // HEAD counterpart to compare against. It is listed here because this
+  // assertion mirrors the gate's output exactly, and an entry that is in one and
+  // not the other fails whether it is debt or not.
 ];
 
 function git(...command) {

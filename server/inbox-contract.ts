@@ -46,6 +46,12 @@ export const inboxRpcContract = defineRpcContract({
         // reader to match a display name against a board.
         holderCardId: z.string().nullable(),
         holderFile: z.string().nullable(),
+        // The question line captured when the event was minted, and how many
+        // questions the row covers. Nullable because every row that predates
+        // them validates too — the client falls back to the generic summary.
+        questionSummary: z.string().nullable().optional(),
+        questionCount: z.number().nullable().optional(),
+        questionKind: z.enum(["split", "standard"]).nullable().optional(),
       })),
     }),
   },

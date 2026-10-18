@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
 import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
-import { splitOptionDescriptionPreview, artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
+import { splitProseSummary, artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
 import { splitOptionDescription } from "../../lib/question-presentation.mjs";
 import type {
   AskArtifact,
@@ -192,7 +192,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
   // Long descriptions collapse behind a disclosure placed OUTSIDE the pick
   // control: a details element inside a button is invalid markup and expanding
   // it would also pick the option. Short text renders inline, as before.
-  const preview = splitOptionDescriptionPreview(description);
+  const preview = splitProseSummary(description);
   const rowFrame = `flex min-h-11 items-stretch overflow-hidden rounded-md border ${
     active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"
   }`;

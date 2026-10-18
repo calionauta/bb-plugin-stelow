@@ -14,4 +14,10 @@ export type InboxNotification = {
   severityReasons: string[];
   holderCardId: string | null;
   holderFile: string | null;
+  /** The question this row is about, captured at mint; null on legacy rows. */
+  questionSummary?: string | null;
+  /** How many questions the row covers, when the batch had more than one. */
+  questionCount?: number | null;
+  /** "split" when the open batch is a split proposal; gates the narrow door. */
+  questionKind?: "split" | "standard" | null;
 };

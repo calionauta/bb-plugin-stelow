@@ -51,22 +51,32 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
           <DetailHeroActions card={card} heroKind={hero.kind} pending={Boolean(detail?.pendingQuestions?.[0])} preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }} state={{ starting: state.actions.starting, retrying: state.actions.retrying, restarting: state.actions.restarting }} continuation="continuing the exploration" onStart={state.actions.start} onRetry={state.actions.doRetry} onRestart={() => state.setRestartWorkerOpen(true)} />
         </div>
       </div>
-      {detail
-        ? (
-          <DetailQuestionSections
-            card={card}
-            detail={detail}
-            setViewerFile={state.setViewerFile}
-            onAnswered={onChanged}
-            openLiveArtifact={false}
-          />
-        )
-        : null}
       <AcceptanceRow
         cardId={card.id}
         status={card.status}
         acceptanceLine={detail?.card.acceptanceLine}
         onChanged={onChanged}
+      />
+    </section>
+  );
+}
+
+/**
+ * The answerable question, as a SIBLING of the status hero rather than a child.
+ * The same placement the Build card uses: a box inside the hero's own box never
+ * read as a boundary, so the question gets its own section below it and the
+ * hairline between them finally separates two things instead of decorating one.
+ */
+function ExploreQuestions({ card, detail, state, onChanged }: Pick<ExploreContentProps, "card" | "detail" | "state" | "onChanged">) {
+  if (!detail) return null;
+  return (
+    <section className="space-y-3">
+      <DetailQuestionSections
+        card={card}
+        detail={detail}
+        setViewerFile={state.setViewerFile}
+        onAnswered={onChanged}
+        openLiveArtifact={false}
       />
     </section>
   );
@@ -93,6 +103,7 @@ export function ExploreDetailContent({ inboxEventId, inboxEvent, card, detail, s
     <>
       <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={state.inboxEventRef} />
       <ExploreStatus card={card} detail={detail} stageLabel={stageLabel} state={state} onChanged={onChanged} />
+      <ExploreQuestions card={card} detail={detail} state={state} onChanged={onChanged} />
       <WorkerSection
         card={card}
         detail={detail}

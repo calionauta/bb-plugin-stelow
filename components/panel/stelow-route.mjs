@@ -62,6 +62,19 @@ export function inboxCardSubPath(cardId, eventId) {
   return `inbox/card/${cardId}/event/${eventId}`;
 }
 
+/**
+ * The narrow door onto a question: the ask itself, without the nine sections.
+ *
+ * A second route rather than a flag on the card route, because it is a
+ * different view of the same card: the card's decision region plus the evidence
+ * that decision needs, and nothing else. Reachable only from a question's Inbox
+ * row, and gated there (see lib/inbox-question-route.mjs) — this parser states
+ * the grammar, the gate states whether the door exists.
+ */
+export function inboxAskSubPath(cardId, eventId) {
+  return `inbox/ask/${cardId}/event/${eventId}`;
+}
+
 // One panel, five tracks. Grammar (routes are panel-relative):
 //   "" | "build"                 -> Build board ("" reopens the last tab)
 //   "inbox"                      -> Inbox list
@@ -95,7 +108,11 @@ export function parseStelowSubPath(subPath) {
       executionRunId: executionRoute.localRunId,
     };
   }
-  let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
+  let match = normalized.match(/^inbox\/ask\/(card_[A-Za-z0-9]+)\/event\/(evt_[A-Za-z0-9]+)$/);
+  if (match) {
+    return { kind: "ask", cardId: match[1], eventId: match[2], origin: "inbox" };
+  }
+  match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) {
     return {
       kind: "card",

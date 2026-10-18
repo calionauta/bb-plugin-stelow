@@ -15,7 +15,7 @@ import {
   serverRecovery,
   app,
   buildProgress,
-  conversation,
+  questionHeading,
   detailTimeline,
   rpcMethod,
 } from "./card-lifecycle-contract.fixtures.mjs";
@@ -126,8 +126,11 @@ assert.match(
   /deps\.stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/,
   "card reads compare every open question against its baseline",
 );
+// The notice renders in the question's HEADING, beside the title and prompt it
+// is about — not in the stepper that owns selection and submission. The pin
+// reads the file the notice actually lives in.
 assert.match(
-  conversation,
+  questionHeading,
   /<StalenessNotice staleness=\{current\.staleness\} \/>/,
   "each open question carries its own notice",
 );

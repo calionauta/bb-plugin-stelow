@@ -222,6 +222,19 @@ export const conversation = readFileSync(
   join(root, "components", "conversation", "question-batch.tsx"),
   "utf8",
 );
+/**
+ * The question HEADING: the dots, the title, the prompt, and the two advisories
+ * that travel with a question.
+ *
+ * A pin that asked "does each open question carry its own staleness notice"
+ * used to read `question-batch`; the notice moved to this file when the heading
+ * was extracted, so the fixture follows the code. Reading the old file would
+ * have kept the pin green while asserting nothing about where the notice now is.
+ */
+export const questionHeading = readFileSync(
+  join(root, "components", "conversation", "batch-question-heading.tsx"),
+  "utf8",
+);
 export const answerBody = readFileSync(
   join(root, "components", "conversation", "batch-answer-body.tsx"),
   "utf8",

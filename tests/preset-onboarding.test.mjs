@@ -40,6 +40,12 @@ const renderTrackPanel = loadComponent(
       StelowCardDetail: () => null,
       INTENT_LABEL: {},
     },
+    "../detail/card-ask-body": { CardAskBody: () => null },
+    "../panels/inbox-panel-actions": {
+      goToInboxCard: () => undefined,
+      goToInboxAsk: () => undefined,
+      goToHolderCard: () => undefined,
+    },
   },
 );
 for (const track of ["build", "research", "explore"]) {

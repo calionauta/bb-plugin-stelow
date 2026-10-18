@@ -963,6 +963,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way —
+  behind a **closed "Waiting for you" disclosure**, because the worker already
+  moved on and the recovered batch is neither live nor blocking: the row carries
+  the caveat (every option you picked is kept, and a later answer cannot revise
+  work already resumed) and the funnel inside is Submit-only, with no skip —
   except on terminal cards: a completed or archived card serves no expired
   questions (`isTerminalCardStatus`), because its open asks closed with it and
   submitting would wake nothing the card can still use. Answered ones stay
@@ -1003,7 +1007,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
+  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-presentation.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
@@ -2067,6 +2071,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`ERR_CARD_STARTED` / `ERR_CARD_COMPLETED` / `ERR_CARD_ARCHIVED` /
   `ERR_PROMPT_EMPTY` / `ERR_PROMPT_TOO_LONG`); the gate re-checks before
   the write so a Start landing mid-edit wins and the draft is preserved.
+  **The description renders COLLAPSED on a card that has a worker** (a parked
+  card keeps its prompt fully open, because editing it is the job there, and
+  the pencil stays reachable in both cases — editing is never behind an
+  expansion). The open card shows the request's first sentence at prose size
+  with a `Show full description` disclosure beneath it that reveals the rest;
+  a description with nothing hidden renders no disclosure at all. Opening it
+  does not change the text's size, so the disclosure reads as "there is more of
+  this request", not as "this is a different, more important passage".
   Starting a parked card whose title is still the heuristic re-fires the
   same title burst creation uses (at most once per Start, human titles
   never overwritten); prompt saves refresh still-heuristic titles
@@ -2389,7 +2401,57 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   manifest lists nothing. Label-only options work unchanged everywhere
   else. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
-  beside the amber panel); the inline glance expands below.
+  beside the amber panel); the inline glance expands below. **The question itself
+  is not a panel.** The stepper renders as part of the card's hero section,
+  under a neutral hairline, with no bordered amber box, no `?` badge and no
+  `role="alert"` — the hero already owns the alert and the amber, so a second
+  amber container announcing "a question exists" two lines below it left nothing
+  reading as the primary action (amber text on an amber wash). The step dots, the
+  counters and the batch-progress sentences that restated the hero went with it;
+  the dots keep their position for assistive tech (their label still reads
+  "Question i of N (answered)"), and the note box, explicit skip, split
+  keep-vs-deliver exclusivity and one atomic submit are unchanged.
+- **Answering without the mouse** (`lib/batch-keys.mjs`,
+  `components/conversation/batch-keys-ui.tsx`). The question batch is
+  answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move
+  between questions, `o` focuses the note, `s` toggles skip, `x` opens the
+  option's document, `?` lists every shortcut, and `Cmd`/`Ctrl`+`Enter` submits
+  — the same chord the description editor already saves with, so the card
+  teaches one chord rather than two. The listener is bound to the question
+  CONTAINER, never the document, because the card renders as a thread tab beside
+  a live worker terminal and a global listener would take that terminal's keys.
+  Digits and letters are inert whenever the caret is in a text field: typing
+  "3 items" in the note must not jump to question 3. A key the accelerator does
+  not claim is left alone, and a terse legend stays on screen — `?` opens the
+  complete list, but the visible line is what makes the keys discoverable
+  without one.
+- **A question's own refusal, at the field** (`BatchCustomInput`). The
+  needs-note refusal used to arrive only as a line under the footer, which is
+  fine with a mouse — the reader is already looking there when they press the
+  button. From the keyboard it is not: `Cmd`/`Ctrl`+`Enter` is pressed from
+  INSIDE the note, and the refusal landed where the reader was not looking. The
+  note now carries `aria-invalid` plus a `role="alert"` description naming what
+  is wrong, and focus stays in the field with the text intact. The batch-level
+  refusal still names its own cause under the footer, so the two never become
+  two homes for one fact.
+- **The Inbox row names the ask, and can open it alone**
+  (`lib/inbox-question-route.mjs`, `components/detail/card-ask-body.tsx`). Two
+  related fixes to one defect: a question row is a door onto a decision, and it
+  said neither which decision nor how to reach it quickly. The row's second line
+  is now the QUESTION itself — captured when the row was minted, cut by the same
+  `splitProseSummary` the card uses, with the full text in `title` and the count
+  when a batch has more than one — instead of the generic "The agent is waiting
+  for your answer to continue." that every question row shared. A legacy row
+  with no captured question, an error, a pause, a completion and a resolved
+  entry all read exactly as before. The row also offers a narrow second door:
+  `Answer` (or `Enter` from the row) opens the ask, the request's collapsed
+  line, the status line and the option rows, and NOTHING else — no receipt, no
+  stage and runs, no files and diffs, no comments — so answering one question
+  does not mean loading nine sections. The CLICK keeps meaning one thing (the
+  card) at every viewport; the gate refuses the narrow door, with a named exit,
+  on any non-question row, on a host that cannot open an option's document, and
+  for any batch containing a split question, whose answer creates child cards
+  and belongs on the card.
 - **Stale-question notices** (`bb stelow ask` snapshots, `lib/question-staleness.mjs`).
   Asking records what each questioned document contained and where its
   checkout stood (doc hash + Git HEAD, latest wins per card and path).

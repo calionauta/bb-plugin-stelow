@@ -3,27 +3,14 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePanelData } from "../panel/panel-state-hooks";
 import { HolderChip } from "./inbox-holder-chip";
-import { ItemActions } from "./inbox-item-actions";
+import { openAskDoor } from "./inbox-ask-door";
+import { InboxEntry } from "./inbox-row";
 import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
-import {
-  INBOX_EVENT_LABELS,
-  inboxDisplayReasons,
-  inboxEventPresentation,
-  inboxEventText,
-  inboxEventTime,
-} from "../../lib/inbox-event-presentation.mjs";
-import { inboxAction, inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
+import { inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
 import type { InboxNotification } from "./inbox-types";
 
 export type { InboxNotification };
-
-const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
-  question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },
-  error: { icon: "!", label: INBOX_EVENT_LABELS.error, tone: "bg-destructive/15 text-destructive" },
-  paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
-  completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
-};
 
 const FILTERS: Array<{ id: InboxFilter; label: string; description: string }> = [
   { id: "attention", label: "Needs attention", description: "Work that needs your decision or recovery." },
@@ -132,7 +119,7 @@ function PanelSkeleton() {
 function openNotification(
   rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
   navigate: ReturnType<typeof useBbNavigate>,
-  reload: () => Promise<unknown>,
+  _reload: () => Promise<unknown>,
 ) {
   return async (entry: InboxNotification) => {
     if (!entry.readAt) {
@@ -177,122 +164,6 @@ function holderChipFor(navigate: ReturnType<typeof useBbNavigate>) {
   );
 }
 
-function InboxEntryHeader({ entry, label, stateLabel }: {
-  entry: InboxNotification;
-  label: string;
-  stateLabel: string | null;
-}) {
-  return (
-    <span className="flex flex-wrap items-center gap-x-2">
-      <strong className="text-sm">{entry.cardName}</strong>
-      {stateLabel ? (
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          {label}
-        </span>
-      ) : null}
-      {entry.severity >= 2 && entry.resolvedAt == null ? (
-        <span
-          className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-          title={entry.severityReasons.join(" · ")}
-        >
-          escalating
-          {entry.severityReasons.length > 0 ? (
-            <span className="sr-only">: {entry.severityReasons.join(", ")}</span>
-          ) : null}
-        </span>
-      ) : null}
-      {!entry.readAt ? (
-        <span className="size-1.5 rounded-full bg-primary">
-          <span className="sr-only">Unread</span>
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-// What the item says, in the order a reader needs it: who it is about, what
-// it says, why it escalated, and when. Split from the row so the row owns
-// only the click targets.
-function InboxEntryBody({ entry, presentation, onHolderChip }: {
-  entry: InboxNotification;
-  presentation: ReturnType<typeof inboxEventPresentation>;
-  onHolderChip: (entry: InboxNotification) => ReactNode;
-}) {
-  // Severity chips that merely restate the row's own label are noise, not
-  // signal — only reasons that add information survive the filter.
-  const reasons = inboxDisplayReasons(entry);
-  return (
-    <span className="min-w-0">
-      <InboxEntryHeader entry={entry} label={presentation.label} stateLabel={presentation.stateLabel} />
-      <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>
-      {entry.holderCardId ? onHolderChip(entry) : null}
-      {reasons.length > 0 && entry.resolvedAt == null ? (
-        <span className="mt-1 block text-xs text-muted-foreground">
-          {reasons.slice(0, 3).join(" · ")}
-        </span>
-      ) : null}
-      <span className="mt-1 block text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>
-        {entry.projectName} · {inboxEventTime(entry)}
-      </span>
-    </span>
-  );
-}
-
-type InboxEntryProps = {
-  entry: InboxNotification;
-  onOpen: () => void;
-  onHolderChip: (entry: InboxNotification) => ReactNode;
-  onMarkRead: () => void;
-  onMarkUnread: () => void;
-  onSetAside: () => void;
-  onBringBack: () => void;
-};
-
-function InboxEntry({
-  entry,
-  onOpen,
-  onHolderChip,
-  onMarkRead,
-  onMarkUnread,
-  onSetAside,
-  onBringBack,
-}: InboxEntryProps) {
-  const copy = INBOX_COPY[entry.kind];
-  const presentation = inboxEventPresentation(entry);
-  const action = inboxAction(entry);
-  return (
-    <div className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
-      <button
-        onClick={onOpen}
-        className={
-          "flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left "
-          + "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        }
-      >
-        <span
-          aria-hidden
-          className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}
-        >
-          {copy.icon}
-        </span>
-        <InboxEntryBody
-          entry={entry}
-          presentation={presentation}
-          onHolderChip={onHolderChip}
-        />
-      </button>
-      <ItemActions
-        entry={entry}
-        action={action}
-        onMarkRead={onMarkRead}
-        onMarkUnread={onMarkUnread}
-        onSetAside={onSetAside}
-        onBringBack={onBringBack}
-      />
-    </div>
-  );
-}
-
 export function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -332,6 +203,7 @@ export function InboxPanel() {
 
   const open = openNotification(rpc, navigate, load);
   const { markRead, markUnread, setAside, bringBack } = readToggles(rpc, load);
+  const openAsk = openAskDoor(rpc, navigate, load);
 
   return (
     <div className="h-full overflow-auto bg-background p-4 md:p-6">
@@ -361,6 +233,7 @@ export function InboxPanel() {
                   key={entry.id}
                   entry={entry}
                   onOpen={() => void open(entry)}
+                  onOpenAsk={openAsk}
                   onHolderChip={holderChipFor(navigate)}
                   onMarkRead={() => void markRead(entry)}
                   onMarkUnread={() => void markUnread(entry)}

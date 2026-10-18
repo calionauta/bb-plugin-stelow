@@ -18,6 +18,8 @@ import { AboutPanel } from "../settings/about-panel";
 import { PresetOnboardingDialog } from "../settings/preset-onboarding";
 import { PresetManagerDialog } from "../settings/preset-manager-shell";
 import { BareCardRoute, StelowCardDetail, INTENT_LABEL } from "../detail/card-detail-route";
+import { CardAskBody } from "../detail/card-ask-body";
+import { goToInboxCard } from "../panels/inbox-panel-actions";
 import type { ParsedStelowRoute, StelowTrack } from "../panel/stelow-route.mjs";
 import type { BbNavigateHandle } from "./navigation";
 
@@ -72,6 +74,17 @@ export function renderCardRoute(
   renderPresetDialog: (cardId: string, props: PresetDialogRendererProps) => ReactNode,
 ) {
   const shared = { navigate, intentLabels: INTENT_LABEL, onOpenRecoveryAudit, renderPresetDialog };
+  if (route.kind === "ask") {
+    // The narrow door. Its only escape is the full card, which is the exit the
+    // NULL the reader's row still offers: one click meant one thing when they
+    // arrived, and it still does.
+    return (
+      <CardAskBody
+        cardId={route.cardId}
+        onOpenCard={() => goToInboxCard(navigate, route.cardId, route.eventId)}
+      />
+    );
+  }
   if (route.kind === "bare-card") {
     return <BareCardRoute cardId={route.cardId} eventId={route.eventId} executionRunId={route.executionRunId} {...shared} />;
   }

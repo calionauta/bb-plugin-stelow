@@ -73,4 +73,40 @@ assert.deepEqual(
   "the archived filter shows exactly the dismissed items",
 );
 assert.deepEqual(inboxFilterEntries([openQuestion, archivedQuestion], "all"), [openQuestion], "All stays the active inbox");
+// The Inbox row must name the ASK, not just repeat that one exists.
+//
+// The generic summary is the same sentence on every question row, so a reader
+// scanning the Inbox could not tell which ask a row was about without opening
+// the card — and the description would not have helped, because the description
+// is the card's original request rather than the question the worker later
+// discovered. The row therefore prefers the question captured when it was
+// minted. The fallback below is what keeps legacy rows, errors, pauses and
+// completions reading exactly as they did before.
+const WAIT = "The agent is waiting for your answer to continue.";
+const ASK = "Which storage should the map be built from?";
+const questionRow = { ...openQuestion, summary: WAIT, questionSummary: ASK };
+assert.equal(inboxEventDescription(questionRow), ASK, "a question row shows the question, not the generic wait sentence");
+assert.match(inboxEventText(questionRow), /Which storage should the map be built from\?/, "and the full text carries it too");
+assert.doesNotMatch(inboxEventText(questionRow), /waiting for your answer/, "the generic sentence is gone once the ask is known");
+
+// The fallback is the safety property, so each row that has no question is
+// asserted against the EXACT string it showed before this change.
+const legacy = { ...openQuestion, summary: WAIT };
+assert.equal(inboxEventDescription(legacy), WAIT, "a legacy row without a captured question is unchanged, not blank");
+assert.equal(inboxEventDescription({ ...legacy, questionSummary: null }), WAIT, "an explicit null is the same as absent");
+assert.equal(
+  inboxEventDescription({ ...legacy, questionSummary: "   " }),
+  WAIT,
+  "whitespace is not a question: it falls back rather than rendering an empty row",
+);
+const errorRow = { kind: "error", occurredAt: 10, resolvedAt: null, archivedAt: null, summary: "Worker failed: ENOENT" };
+assert.equal(inboxEventDescription(errorRow), "Worker failed: ENOENT", "an error row is untouched: only question rows ever gain the field");
+
+// History outranks both: a resolved row is not an instruction to answer again,
+// so it must never resurface the question as if it were still open.
+const HISTORICAL = "This Inbox update is kept for history.";
+const resolvedWithQuestion = { ...questionRow, resolvedAt: 20 };
+assert.equal(inboxEventDescription(resolvedWithQuestion), HISTORICAL, "a resolved question row stays historical, question captured or not");
+assert.equal(inboxEventDescription({ ...questionRow, archivedAt: 30 }), HISTORICAL, "and so does a set-aside one");
+
 console.log("inbox event presentation test ok: active, resolved, archived, and informational states");

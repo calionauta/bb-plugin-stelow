@@ -45,14 +45,18 @@ assert.match(
 );
 
 // One signature end to end. A narrower callback is assignable, so a dropped
-// parameter at any hop typechecks; the pin is what catches it. Six components
-// accept the callback: the row's document control, the row, the option list,
-// the stepper, the live batch, and the expired batch — the first three live in
-// the option module, the last three in the stepper.
+// parameter at any hop typechecks; the pin is what catches it.
+//
+// NINE hops now. Six were the original set; the batch's keyboard layer added
+// `useStepperKeySetup` and `useStepperKeys` (so `x` opens what the option row
+// opens), and extracting `StepperSurface` added the ninth — the layout function
+// now forwards the handler it used to inline. Every one takes the NAMED type,
+// which is the property this pin guards: the count moves when a hop is added,
+// and a hop added with a two-parameter signature is the regression it catches.
 assert.equal(
   [...optionRows.matchAll(/onOpenArtifact\?: OpenArtifactHandler/g)].length
   + [...batch.matchAll(/onOpenArtifact\?: OpenArtifactHandler/g)].length,
-  6,
+  9,
   "every component that accepts the callback takes the named type, so no hop can narrow it back to two parameters",
 );
 assert.match(

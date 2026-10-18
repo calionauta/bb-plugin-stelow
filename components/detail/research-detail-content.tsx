@@ -106,24 +106,18 @@ type ResearchQuestionsProps = Pick<
 >;
 
 /**
- * What a reader has to look at before this research is finished: its open
- * questions, and the receipt for the human disposition of a completed one.
- *
- * Grouped because they answer the same question — "is there anything left for
- * me here?" — and because the hero was carrying both inline, which put the
- * status block over its function budget.
+ * The receipt for the human disposition of a completed result. It stays inside
+ * the hero's status section; the open questions it used to sit beside are now
+ * their own sibling section (see the placement note at the call site).
  */
 function ResearchReview(props: ResearchQuestionsProps) {
   return (
-    <>
-      <ResearchQuestions {...props} />
-      <AcceptanceRow
-        cardId={props.card.id}
-        status={props.card.status}
-        acceptanceLine={props.detail?.card.acceptanceLine}
-        onChanged={props.onQuestionsChanged}
-      />
-    </>
+    <AcceptanceRow
+      cardId={props.card.id}
+      status={props.card.status}
+      acceptanceLine={props.detail?.card.acceptanceLine}
+      onChanged={props.onQuestionsChanged}
+    />
   );
 }
 
@@ -238,6 +232,21 @@ export function ResearchDetailContent(props: ResearchContentProps) {
     <>
       <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
       <ResearchStatus {...props} />
+      {/* The question section is a SIBLING of the status hero, never a child,
+          and the parent composes it because `ResearchStatus` is already at its
+          function budget. The same placement the Build and Explore cards use: a
+          box inside the hero's own box never read as a boundary.
+          `ResearchQuestions` was already the right component — it had been
+          welded to `AcceptanceRow` inside `ResearchReview`, which is what kept
+          it inside the hero. */}
+      <section className="space-y-3">
+        <ResearchQuestions
+          card={card}
+          detail={detail}
+          setViewerFile={setViewerFile}
+          onQuestionsChanged={props.onQuestionsChanged}
+        />
+      </section>
       <InputFiles card={card} detail={detail} onView={setViewerFile} />
       <ResearchSummary index={index} groups={groups} body={body} onOpenFanOut={props.onOpenFanOut} onOpenStrategyRun={props.onOpenStrategyRun} />
       <PreviewSection cardId={card.id} />

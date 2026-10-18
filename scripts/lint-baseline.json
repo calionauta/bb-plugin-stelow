@@ -5,7 +5,6 @@
     "components/detail/build-publication-history.tsx :: no-unused-vars :: copyText",
     "components/detail/option-section.tsx :: no-unused-vars :: useRef",
     "components/panels/inbox-holder-chip.tsx :: no-unused-vars :: cn",
-    "components/panels/inbox-panel.tsx :: no-unused-vars :: Parameter 'reload' is declared but never",
     "lib/board-filter-label.mjs :: no-unused-vars :: Parameter 'kind' is declared but never u",
     "lib/file-occupancy.mjs :: no-unused-vars :: EXPIRED_LABEL",
     "lib/metrics-format.mjs :: no-useless-fallback-in-spread :: Empty fallbacks in spreads are unnecessa",

@@ -21,6 +21,8 @@ export declare const QUESTION_WAITING_SUMMARY: string;
 export declare function ensureInboxResolvedReasonColumn(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
 
 export declare function ensureInboxSeverityColumns(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
+/** The question a question row is about, captured at mint; nullable on every legacy row. */
+export declare function ensureInboxQuestionColumns(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
 
 export function insertInboxEvent(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, event: InboxEventInput): boolean;
 export function questionInboxDedupeKey(cardId: string, interactionId: string): string;
@@ -37,6 +39,10 @@ export function syncQuestionInboxEvents(db: { prepare(query: string): { all(...v
   occurredAt: number;
   createId: () => string;
   summary: string;
+  /** The question this row is about, plus how many it covers; null falls back to `summary`. */
+  questionSummary?: string | null;
+  questionCount?: number | null;
+  questionKind?: "split" | null;
   /** Verified-empty opt-in: without it an empty key set throws instead of mass-resolving. */
   explicitEmpty?: boolean;
 }): { inserted: number; resolved: number; reopened: number; pausedSuperseded: number };
