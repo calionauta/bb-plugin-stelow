@@ -61,6 +61,14 @@ jobs:
             if [ -f "$src" ]; then cp "$src" "$dst"; fi
           done
           UPSTREAM_SHA="$UPSTREAM_SHA" node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const pkg = JSON.parse(readFileSync("upstream/package.json", "utf8")); if (typeof pkg.version !== "string") throw new Error("upstream package has no version"); writeFileSync("data/stelow-source.json", JSON.stringify({ version: pkg.version, commit: process.env.UPSTREAM_SHA }, null, 2) + "\n");'
+          # The fork ledger qualifies the SAME pin, so it has to move with it:
+          # tests/upstream-hygiene asserts `forks.pin === source.commit` and
+          # fails closed otherwise. Before this line the workflow rewrote the
+          # source pin alone, so every run that had something to sync failed
+          # hygiene and opened no PR — which is why the last sync was done by
+          # hand. Only `pin` and `upstream_version` are rewritten; the forks
+          # themselves are host policy, never upstream content.
+          UPSTREAM_SHA="$UPSTREAM_SHA" node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const p = "data/upstream-forks.json"; const pkg = JSON.parse(readFileSync("upstream/package.json", "utf8")); const ledger = JSON.parse(readFileSync(p, "utf8")); ledger.pin = process.env.UPSTREAM_SHA; ledger.upstream_version = pkg.version; writeFileSync(p, JSON.stringify(ledger, null, 2) + "\n");'
       - name: Verify the candidate
         run: |
           npm ci
@@ -78,7 +86,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add data/stelow data/product-strategies.json data/stelow-package.json data/stelow-source.json data/stelow-stage-catalog.json data/stelow-recipe-catalog.json data/stelow-recipes.schema.json skills
+          git add data/stelow data/product-strategies.json data/stelow-package.json data/stelow-source.json data/upstream-forks.json data/stelow-stage-catalog.json data/stelow-recipe-catalog.json data/stelow-recipes.schema.json skills
           git commit -m "chore: sync Stelow ${VERSION}"
           git push --force-with-lease origin "$BRANCH"
           if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then
