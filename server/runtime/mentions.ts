@@ -11,7 +11,6 @@ type BoardWorkflow = {
   stage: string;
   status: string;
   quality: string;
-  supervisor: string;
   explorationCount: number;
   reviewMode: string;
   scopes: Array<{ id: string; status: string }>;
@@ -93,7 +92,7 @@ async function resolveWorkflowMention(bb: BbPluginApi, deps: MentionDeps, itemId
     if (workflow) {
       const scopes = workflow.scopes.map((scope) => `${scope.id}:${scope.status}`).join(", ") || "none";
       const context = `Stelow workflow ${workflow.name}: stage=${workflow.stage}, status=${workflow.status}, `
-        + `quality=${workflow.quality} supervisor=${workflow.supervisor} explore=${workflow.explorationCount} `
+        + `quality=${workflow.quality} explore=${workflow.explorationCount} `
         + `review_mode=${workflow.reviewMode}. Scopes: ${scopes}.`;
       return { context };
     }

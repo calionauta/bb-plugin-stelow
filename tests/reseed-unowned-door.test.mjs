@@ -181,7 +181,6 @@ try {
   const redReseed = createCardReseed({
     ...workspaceDeps(root, bb, redCalls, {
       quality: "production",
-      supervisor: "high",
       explorationCount: 3,
       explorationHybrid: true,
       redFirst: "off",

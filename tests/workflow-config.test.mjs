@@ -8,14 +8,13 @@ import { STATE_TEMPLATE } from "../lib/state-template.mjs";
 // review modes — live children inherited `review_mode: Product`.
 const PROD3 = {
   quality: "production",
-  supervisor: "high",
   explorationCount: 3,
   explorationHybrid: true,
 };
 const FULL_GATES = ["spec", "interface", "scope", "tech"];
 
 const indented = `---\nworkflow_id: card_1\nintent: refactor\nconfig:\n` +
-  `  quality: production\n  supervisor: high\n  exploration_count: 4\n` +
+  `  quality: production\n  exploration_count: 4\n` +
   `  exploration_hybrid: true\n  review_mode: Product Spec + Interface + Tech Review\n` +
   `  product_type: software\n---\n`;
 assert.deepEqual(
@@ -96,7 +95,6 @@ assert.deepEqual(
 );
 const STRICT_NULLS = {
   quality: null,
-  supervisor: null,
   explorationCount: null,
   explorationHybrid: null,
   appetite: null,

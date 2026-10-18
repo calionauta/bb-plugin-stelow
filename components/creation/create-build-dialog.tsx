@@ -46,7 +46,6 @@ function createCardPayload(
     attachments,
     intent: "unknown" as const,
     quality: prefs.quality,
-    supervisor: prefs.supervisor,
     explorationCount: Number(prefs.explorationCount),
     redFirst: prefs.redFirst,
     reviewMode: reviewGates,

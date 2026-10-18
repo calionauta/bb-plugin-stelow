@@ -244,7 +244,6 @@ async function stageFromState(
 function boardWorkflowKnobs(config: LooseRecord) {
   return resolveKnobInput({
     quality: typeof config.quality === "string" ? config.quality : undefined,
-    supervisor: typeof config.supervisor === "string" ? config.supervisor : undefined,
     explorationCount: config.exploration_count,
     explorationHybrid: config.exploration_hybrid,
     appetite: typeof config.appetite === "string" ? config.appetite : undefined,
@@ -281,7 +280,6 @@ async function boardWorkflow(
           "Not started",
       ),
     quality: knobs.quality,
-    supervisor: knobs.supervisor,
     explorationCount: knobs.explorationCount,
     explorationHybrid: knobs.explorationHybrid,
     appetite: text(config.appetite, ""),

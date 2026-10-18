@@ -44,7 +44,6 @@ type ReseedDeps = {
   workflowStateDir: (rootPath: string, card: WorkerCard) => Promise<string | null>;
   readStateConfig: (rootPath: string, card: WorkerCard) => Promise<{
     quality?: string | null;
-    supervisor?: string | null;
     explorationCount?: number | null;
     explorationHybrid?: boolean | null;
     redFirst?: string | null;
@@ -54,7 +53,7 @@ type ReseedDeps = {
     rootPath: string;
     card: WorkerCard;
     intent: string;
-    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean; redFirst?: string };
+    knobs: { quality: string; explorationCount: number; explorationHybrid: boolean; redFirst?: string };
     reviewGates: string[];
   }) => Promise<SeedResult>;
   getPresetById: (presetId: string) => PresetRow | null;
@@ -148,7 +147,6 @@ async function reseedCard(
     intent: decision.intent,
     knobs: {
       quality: config?.quality ?? "production",
-      supervisor: config?.supervisor ?? "high",
       explorationCount: config?.explorationCount ?? 3,
       explorationHybrid: config?.explorationHybrid ?? (config?.explorationCount ?? 3) >= 2,
       // An explicit red_first survives the reseed; absent stays absent so the

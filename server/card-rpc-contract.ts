@@ -11,7 +11,6 @@ import {
   reviewModeInputSchema,
   cardStatusSchema,
   scopeSummarySchema,
-  supervisorSchema,
   workflowSchema,
 } from "./contracts.js";
 
@@ -280,7 +279,6 @@ export const cardRpcContract = {
         attachments: z.array(attachmentSchema).max(20).default([]),
         intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"),
         quality: qualitySchema.default("production"),
-        supervisor: supervisorSchema.default("high"),
         explorationCount: explorationCountSchema.default(3),
         redFirst: redFirstSchema.optional(),
         /** Deprecated alias; when present without knobs it maps once to knobs. */

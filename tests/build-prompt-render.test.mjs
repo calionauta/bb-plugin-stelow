@@ -12,7 +12,7 @@ const context = {
   stateDir: "/repo/.stelow/2026-09-26/sw-card_probe",
   intent: "feature",
   managedWorktree: true,
-  knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
+  knobs: { quality: "production", explorationCount: 3, explorationHybrid: true },
   reviewGates: "Product Spec, Interface, Scopes",
   reviewRung: "Product Spec + Interface + Scopes",
   instructions: "Preset instructions:\nstay narrow\n",
@@ -53,7 +53,7 @@ assert.ok(
 assert.ok(prompt.includes(context.stateDir), "the owned state dir is named");
 assert.ok(prompt.includes("intent=`feature`"), "the seeded intent is stated");
 assert.ok(prompt.includes("quality=`production`"), "the recorded quality is stated");
-assert.ok(prompt.includes("supervisor=`high`"), "the recorded supervisor is stated");
+assert.ok(!prompt.includes("supervisor="), "the retired supervision knob is not stated");
 assert.ok(prompt.includes("exploration=`count=3 hybrid=true`"), "the recorded exploration is stated");
 assert.ok(prompt.includes("Product Spec, Interface, Scopes"), "the recorded review gates are stated");
 assert.ok(prompt.includes("stay narrow"), "preset instructions are forwarded");

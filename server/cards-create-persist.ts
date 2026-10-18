@@ -104,7 +104,6 @@ export async function finishCard(
     const knobs = resolveKnobInput(input);
     await deps.bb.storage.kv.set("board-workflow-defaults", {
       quality: knobs.quality,
-      supervisor: knobs.supervisor,
       explorationCount: knobs.explorationCount,
       // Conditional, not `redFirst: knobs.redFirst`. That value is `undefined` when the
       // caller did not choose a mode — "derive me downstream" is the contract — and a key

@@ -15,7 +15,7 @@ import { ExplorationArchetypes } from "./exploration-archetypes";
 // and waits for a decision. These are the board defaults — kept for every
 // new card until you change them.
 const WORKFLOW_PREFS_DESCRIPTION =
-  "Quality caps verification rigor, supervision sets checkpoint cadence, " +
+  "Quality caps verification rigor, " +
   "and exploration sets how many directions get compared (with a hybrid " +
   "synthesis whenever more than one exists). " +
   "Acceptance tests decide whether scopes must prove themselves with a " +
@@ -27,11 +27,6 @@ const WORKFLOW_PREFS_DESCRIPTION =
 const QUALITY_HINT =
   "Production verifies everything the same way every time. " +
   "Experimental runs lighter and only for probes — never ship as-is.";
-
-const SUPERVISOR_HINT =
-  "How often the worker re-checks its own work against each scope's " +
-  "definition of done while executing. High catches drift early; low only " +
-  "for trivial, reversible work.";
 
 const EXPLORATION_HINT =
   "How many directions divergence compares, for interaction and for " +
@@ -47,12 +42,6 @@ const RED_FIRST_HINT =
 const QUALITY_OPTIONS = [
   { value: "production", label: "Production", description: "Full paths, edge cases, parallel reviewers, full test layers." },
   { value: "experimental", label: "Experimental", description: "Reduced checks for probes. Never ship as-is." },
-] as const;
-
-const SUPERVISOR_OPTIONS = [
-  { value: "high", label: "High", description: "Frequent self-checks; drift is caught early." },
-  { value: "med", label: "Medium", description: "Standard self-check cadence during execution." },
-  { value: "low", label: "Low", description: "Minimal self-checks. Trivial, reversible work only." },
 ] as const;
 
 const EXPLORATION_OPTIONS = [
@@ -99,7 +88,6 @@ const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }>
 ];
 
 export type Quality = (typeof QUALITY_OPTIONS)[number]["value"];
-export type Supervisor = (typeof SUPERVISOR_OPTIONS)[number]["value"];
 export type ExplorationCount = (typeof EXPLORATION_OPTIONS)[number]["value"];
 export type RedFirst = (typeof RED_FIRST_OPTIONS)[number]["value"];
 /** @deprecated Alias only. Run knobs replaced the appetite ladder. */
@@ -227,7 +215,6 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
 
 export type KnobPrefs = {
   quality: Quality;
-  supervisor: Supervisor;
   explorationCount: ExplorationCount;
   redFirst: RedFirst;
 };
@@ -236,14 +223,13 @@ export type KnobPrefs = {
 export function sanitizeKnobPrefs(value: unknown, current: KnobPrefs): KnobPrefs {
   const record = (value && typeof value === "object" ? value : {}) as Partial<Record<keyof KnobPrefs, unknown>>;
   const quality = QUALITY_OPTIONS.some((option) => option.value === record.quality) ? (record.quality as Quality) : current.quality;
-  const supervisor = SUPERVISOR_OPTIONS.some((option) => option.value === record.supervisor) ? (record.supervisor as Supervisor) : current.supervisor;
   const explorationCount = EXPLORATION_OPTIONS.some((option) => option.value === record.explorationCount)
     ? (record.explorationCount as ExplorationCount)
     : current.explorationCount;
   const redFirst = RED_FIRST_OPTIONS.some((option) => option.value === record.redFirst)
     ? (record.redFirst as RedFirst)
     : current.redFirst;
-  return { quality, supervisor, explorationCount, redFirst };
+  return { quality, explorationCount, redFirst };
 }
 
 export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGatesChange, groupNamePrefix }: {
@@ -257,8 +243,6 @@ export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGa
     <SettingsSection title="Workflow preferences" description={WORKFLOW_PREFS_DESCRIPTION}>
       <CollapsibleChoiceCards label="Quality" hint={QUALITY_HINT} value={prefs.quality} options={QUALITY_OPTIONS}
         onChange={(quality) => onPrefsChange({ quality })} groupName={`${groupNamePrefix}-quality`} />
-      <CollapsibleChoiceCards label="Supervision" hint={SUPERVISOR_HINT} value={prefs.supervisor} options={SUPERVISOR_OPTIONS}
-        onChange={(supervisor) => onPrefsChange({ supervisor })} groupName={`${groupNamePrefix}-supervisor`} />
       <CollapsibleChoiceCards label="Exploration" hint={EXPLORATION_HINT} value={prefs.explorationCount} options={EXPLORATION_OPTIONS}
         onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`}
         below={<ExplorationArchetypes />} />

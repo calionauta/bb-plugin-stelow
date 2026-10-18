@@ -9,7 +9,6 @@ export type CardCreateInput = {
   attachments: Array<{ path: string; type: "localFile" | "localImage" }>;
   intent: string;
   quality?: string;
-  supervisor?: string;
   explorationCount?: number;
   explorationHybrid?: boolean;
   redFirst?: string;
@@ -96,7 +95,7 @@ export type CardsCreateDeps = {
     cardId: string,
     slug: string,
     intent: string,
-    knobs: { quality: string; supervisor: string; explorationCount: number; explorationHybrid: boolean },
+    knobs: { quality: string; explorationCount: number; explorationHybrid: boolean },
     reviewGates: string[],
   ) => Promise<Seed>;
   researchStrategy: (id: string) => ReturnType<typeof import("../lib/research-strategies.mjs").researchStrategyById>;

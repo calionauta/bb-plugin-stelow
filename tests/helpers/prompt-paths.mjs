@@ -86,7 +86,7 @@ const BUILD_CONTEXT = {
   stateDir: "/repo/.stelow/2026-10-05/sw-card_probe",
   intent: CARD.intent,
   managedWorktree: true,
-  knobs: { quality: "production", supervisor: "high", explorationCount: 3, explorationHybrid: true },
+  knobs: { quality: "production", explorationCount: 3, explorationHybrid: true },
   reviewGates: "[spec, interface, tech]",
   reviewRung: "Product Spec + Interface + Tech Review",
   instructions: "Preset instructions:\nstay narrow\n",
