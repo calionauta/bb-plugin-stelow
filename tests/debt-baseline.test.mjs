@@ -123,7 +123,6 @@ const inheritedBaseline = [
   // HEAD counterpart to compare against. It is listed here because this
   // assertion mirrors the gate's output exactly, and an entry that is in one and
   // not the other fails whether it is debt or not.
-  "tests/question-surface-collapse.test.mjs: 465 lines (relocated from components/ui/dialog.tsx)",
 ];
 
 function git(...command) {

@@ -1,13 +1,10 @@
 /**
- * One prose cut, one collapsed description, one panel-less batch, one recovered
- * batch behind a disclosure. The change this file red-teams, as behaviour:
+ * The collapsed description, the panel-less batch, and the recovered one.
  *
- *  R1  ONE exported truncation rule (limit 140) serves the card description AND
- *      an option's glance. At or under the limit nothing moves; over it the
- *      FIRST SENTENCE wins when one ends inside the limit, the word boundary
- *      wins when none does, and a passage with no whitespace and no terminator
- *      still leaves a non-null tail. "Over the limit" may never come back whole,
- *      and head + tail may lose nothing but boundary whitespace.
+ * Split out of question-surface-collapse.test.mjs when that file crossed the
+ * 400-line budget: the prose TRUNCATION rule is pure and lives in its own file
+ * (question-prose-summary.test.mjs); everything here is component topology.
+ *
  *  R2  the description renders COLLAPSED: head visible, tail behind the shared
  *      SUMMARY_LINK disclosure, no disclosure when nothing is hidden, and the
  *      pencil reachable while collapsed.
@@ -58,7 +55,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PROSE_SUMMARY_LIMIT, questionCopy, splitProseSummary } from "../lib/question-presentation.mjs";
+import { questionCopy } from "../lib/question-presentation.mjs";
 import { codeOf } from "./helpers/source-code.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,7 +67,6 @@ const batchCode = codeOf(read("components/conversation/question-batch.tsx"));
 const headingCode = codeOf(read("components/conversation/batch-question-heading.tsx"));
 const bodyCode = codeOf(read("components/conversation/batch-answer-body.tsx"));
 const controlCode = codeOf(read("components/detail/prompt-edit-control.tsx"));
-const optionCode = codeOf(read("components/conversation/batch-options.tsx"));
 
 /** One function's own source, from `open` up to (not including) `close`. */
 const blockOf = (source, open, close) => {
@@ -86,186 +82,6 @@ const customAndSkip = blockOf(bodyCode, "function CustomAndSkip(", "export funct
 const expiredCode = codeOf(read("components/conversation/expired-questions-section.tsx"));
 const expiredSection = expiredCode.slice(expiredCode.indexOf("export function ExpiredQuestionsSection("));
 assert.ok(expiredSection.length > 0, "ExpiredQuestionsSection must exist — this pin reads its body");
-
-/* ------------------------------------------------------------------ R1 --- */
-
-/**
- * Fixtures chosen for their hostility. Lengths derive from PROSE_SUMMARY_LIMIT,
- * so a change to the limit moves the fixtures with it rather than silently
- * making one of them short enough to pass for the wrong reason.
- */
-const WALL = "w ".repeat(400);
-const ROWS = "word\n".repeat(50);
-const HOSTILE = [
-  ["one giant token, no whitespace at all", "z".repeat(1400)],
-  ["a long token with no terminator", "y".repeat(PROSE_SUMMARY_LIMIT * 4)],
-  ["a wall of words", WALL],
-  ["newline-separated rows", ROWS],
-  ["tab-separated cells", "cell\t".repeat(80)],
-  ["carriage-return rows", "row\r\n".repeat(60)],
-  ["a very short first sentence then a wall", `Ok. ${"x".repeat(600)}`],
-  ["several short sentences", `One. Two! Three? ${"y".repeat(300)}`],
-  ["a long first sentence with no terminator", "word ".repeat(120)],
-  ["first sentence ending at the limit", `${"a".repeat(139)}. tail after the cut`],
-  ["leading whitespace then one token", `${" ".repeat(60)}${"b".repeat(300)}`],
-  ["a word longer than half the limit, then one more", `${"x".repeat(150)} tail`],
-  ["only whitespace, over the limit", " ".repeat(PROSE_SUMMARY_LIMIT * 2)],
-  ["one character over the limit", "a".repeat(PROSE_SUMMARY_LIMIT + 1)],
-  ["over the limit and ending in whitespace", `${"x".repeat(150)} `],
-];
-
-test("R1: at or under the limit nothing moves and there is no tail", () => {
-  for (const [name, text] of [
-    ["empty", ""],
-    ["one character", "a"],
-    ["exactly the limit", "a".repeat(PROSE_SUMMARY_LIMIT)],
-    ["a short sentence", "Wait for the other thread to land, then retry."],
-  ]) {
-    assert.deepEqual(
-      splitProseSummary(text),
-      { head: text, tail: null },
-      `${name} passes through whole with tail === null; a disclosure that hides nothing is a cost this rule must not add`,
-    );
-  }
-});
-
-test("R1: over the limit always leaves a door, and head plus tail is the whole passage", () => {
-  for (const [name, text] of HOSTILE) {
-    assert.ok(text.length > PROSE_SUMMARY_LIMIT, `${name} really exceeds the limit — the fixture proves the assertion`);
-    const { head, tail } = splitProseSummary(text);
-    assert.notEqual(
-      tail,
-      null,
-      `${name}: a passage over the limit must leave a door. Returning it whole hands the row the 1,000-character blob `
-      + "this limit exists to keep out, and no input is exempt — not a token with no whitespace, not a wall",
-    );
-    // "A door" is the null check, not a non-empty tail: a passage that is
-    // nothing but whitespace, and one whose only break is its final space, both
-    // leave an empty tail — correctly, because there is nothing left to hide.
-    // What must never happen is inline == everything, which is this comparison.
-    assert.ok(head.length < text.length, `${name}: an over-limit passage can never be fully inline`);
-    assert.ok(text.startsWith(head), `${name}: the head is a prefix of the input, never invented or re-flowed`);
-    if (head.trim().length > 0) {
-      // Three properties, because any one alone is passable on broken logic:
-      // the head starts the passage, the tail ends it, and together they carry
-      // every non-whitespace character.
-      assert.ok(text.endsWith(tail), `${name}: the tail reaches the end, so the disclosure is not a fragment`);
-      assert.equal(
-        `${head}${tail}`.replace(/\s+/g, ""),
-        text.replace(/\s+/g, ""),
-        `${name}: a reader who opens the disclosure continues the sentence they were reading — no word is dropped`,
-      );
-      assert.match(
-        text.slice(head.length, text.length - tail.length),
-        /^\s*$/,
-        `${name}: the residue between the two cuts is boundary whitespace, never content`,
-      );
-    }
-  }
-});
-
-test("R1: the first sentence inside the window is the head, whole", () => {
-  // UPDATED after the UX critique (2026-10-18) found this rule's real defect:
-  // a terminator 2-4 characters in ("1. Land the schema…", "e.g. the pin is
-  // stale…", "Ok. <wall>") was honoured as the writer's cut and handed the
-  // reader a one- or two-character head — a summary that says nothing, hiding
-  // the request behind a disclosure nobody has a reason to open. The rule is
-  // now "the first sentence, when it leaves at least two words behind"; a
-  // one-word candidate falls through to the word-boundary cut instead. These
-  // cases used to assert "Ok.", "One." and "Wait..." and were the failing
-  // pins that surfaced the defect.
-  for (const [name, text, expected] of [
-    ["one-word sentences are not a summary", `Ok. ${"x".repeat(600)}`, null],
-    ["a numbered list lead is not a summary", `1. ${"z".repeat(400)}`, null],
-    ["an abbreviation is not a summary", `e.g. ${"k".repeat(400)}`, null],
-    ["an ellipsis alone is not a summary", `Wait... ${"s".repeat(300)}`, null],
-    ["several sentences: the first real one is the cut", `One two! Three? ${"y".repeat(300)}`, "One two!"],
-    ["a closing quote belongs to the sentence", `He said "go." then ${"q".repeat(300)}`, 'He said "go."'],
-    ["a closing bracket belongs to the sentence", `See (item one.) then ${"r".repeat(300)}`, "See (item one.)"],
-    ["a decimal point does not end a sentence", `Version 1.2 ships soon. ${"w".repeat(400)}`, "Version 1.2 ships soon."],
-  ]) {
-    const { head, tail } = splitProseSummary(text);
-    if (expected === null) {
-      assert.ok(
-        head.trim().split(/\s+/).length >= 2,
-        `${name}: the head must carry words, not a lone terminator — got ${JSON.stringify(head)}`,
-      );
-    } else {
-      assert.equal(
-        head,
-        expected,
-        `${name}: the writer's own cut is the head — a mid-condition fragment is what the first-sentence rule replaced`,
-      );
-    }
-    assert.ok(tail !== null && tail.length > 0, `${name}: the rest is one disclosure away`);
-  }
-});
-
-test("R1: without a sentence in the window the cut follows the word, never amputating", () => {
-  const run = "word ".repeat(120);
-  for (const [name, text] of [["a wall of words", WALL], ["newline rows", ROWS], ["a long sentence-less run", run]]) {
-    const { head } = splitProseSummary(text);
-    assert.equal(
-      head,
-      text.slice(0, PROSE_SUMMARY_LIMIT).trimEnd(),
-      `${name}: with no sentence to cut on, the head is the window cut back to its boundary — not the next whitespace `
-      + "past the limit and not a mid-word amputation",
-    );
-    assert.match(text[head.length] ?? "", /\s/, `${name}: the head ends AT a word boundary, on a whitespace character`);
-    assert.doesNotMatch(head, /\s$/, `${name}: and carries no trailing whitespace into the collapsed line`);
-  }
-  // A token longer than half the limit must round UP to the next whitespace,
-  // so the reader is not handed less than the limit they were promised; with no
-  // whitespace anywhere, the hard cut is the only door left.
-  assert.deepEqual(
-    splitProseSummary(`${"x".repeat(150)} tail`),
-    { head: "x".repeat(150), tail: "tail" },
-    "the head keeps the whole long word instead of being amputated just under the limit",
-  );
-  const unbreakable = "z".repeat(1400);
-  const cut = splitProseSummary(unbreakable);
-  assert.equal(cut.head, "z".repeat(PROSE_SUMMARY_LIMIT), "an unbreakable passage is hard-cut at the limit, not returned whole");
-  assert.equal(cut.head.length + cut.tail.length, unbreakable.length, "nothing is dropped, not even here");
-});
-
-test("R1: a non-string degrades to an empty head instead of throwing", () => {
-  for (const value of [null, undefined, 42, 0, true, {}, [], Number.NaN]) {
-    assert.doesNotThrow(() => splitProseSummary(value), `${String(value)} must not throw — this is called during render`);
-    assert.deepEqual(
-      splitProseSummary(value),
-      { head: "", tail: null },
-      `${String(value)} renders as nothing, with no disclosure for text that does not exist`,
-    );
-  }
-});
-
-test("R1: one exported rule at 140, and both prose surfaces read it", () => {
-  const presentation = read("lib/question-presentation.mjs");
-  assert.equal(PROSE_SUMMARY_LIMIT, 140, "the limit is the single named number both surfaces cut at");
-  const secondRule = presentation.match(/export (?:const|function) (?!PROSE_SUMMARY_LIMIT)\w*(?:PREVIEW|TRUNC|SUMMARY_LIMIT)\w*/g) ?? [];
-  assert.deepEqual(
-    secondRule,
-    [],
-    "a second truncation rule is the drift this consolidation removed: two rungs on one card cut the same prose "
-    + `differently. Found: ${secondRule.join(", ")}`,
-  );
-  assert.equal(
-    (presentation.match(/OPTION_DESCRIPTION_PREVIEW_LIMIT|splitOptionDescriptionPreview/g) ?? []).length,
-    0,
-    "the 240/option-only rule is gone, not aliased",
-  );
-  assert.match(
-    read("lib/question-presentation.d.mts"),
-    /export declare const PROSE_SUMMARY_LIMIT: number;/,
-    "the type declaration names the rule, so a consumer cannot import a stale name and still compile",
-  );
-  // The wiring that makes it ONE rule rather than two equal limits: the option
-  // glance reaches the same function, and so does the card's own description,
-  // which used to render 1,500-4,000 characters in full.
-  assert.match(optionCode, /splitProseSummary\(description\)/, "the option glance truncates through the shared rule");
-  assert.match(promptRead, /splitProseSummary\(prompt\)/, "and so does the card's description");
-});
-
 /* ------------------------------------------------------------------ R2 --- */
 test("R2: the description renders collapsed, tail behind the shared disclosure", () => {
   assert.match(
