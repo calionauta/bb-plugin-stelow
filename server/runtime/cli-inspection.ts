@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { playbookEntries, renderPlaybook } from "../../lib/playbook.mjs";
+import { recipeOutputs } from "../../lib/recipe-catalog.mjs";
+import { stageRecipeId } from "../../lib/workflow-vocabulary.mjs";
 import { renderStatusLine, type QuestionCount, type StatusBoardLine } from "../../lib/question-store.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
@@ -53,6 +55,12 @@ type InspectionDeps = {
   readText: (path: string) => Promise<string | null>;
   researchStrategySkill: (id: string) => string | null;
   exploreTechnique: (id: string) => { skill: string; artifactFile: string } | null;
+  /**
+   * The card's most recent run FOR THIS STAGE, or null when that stage has
+   * never run. Stage-scoped on purpose: the root and the output list are
+   * printed as one answer, so they must describe one run.
+   */
+  latestRunForStage: (cardId: string, stage: string) => { artifactRoot: string; recipeId: string } | null;
 };
 
 type InspectionCommand = (
@@ -152,17 +160,35 @@ async function withQuestionCounts(
 
 function playbookPaths(
   card: WorkerCard,
+  stage: string,
   stateDir: string | null,
   root: string,
   deps: InspectionDeps,
-): { statePath: string; strategySkill: string | null; exploreSkill: string | null;
-  researchIndexPath: string | null; exploreArtifactPath: string | null } {
+): { statePath: string; stateDir: string | null; strategySkill: string | null; exploreSkill: string | null;
+  researchIndexPath: string | null; exploreArtifactPath: string | null;
+  runArtifactRoot: string | null; runOutputs: string[] } {
   const statePath = stateDir ? join(stateDir, "state.md") : join(root, "state.md");
   const technique = card.kind === "explore"
     ? deps.exploreTechnique(card.explore_stage ?? "")
     : null;
+  // The stage's own recipe, so the declared outputs are the ones this stage
+  // will write. The stage is read from state.md by the caller for build cards,
+  // but the catalog maps stage -> recipe, and a stage with no recipe is a
+  // direct-execution stage that writes no artifact of its own.
+  const recipeId = stageRecipeId(stage);
+  // The root and the outputs must describe the SAME run. Reading the root from
+  // the newest run of any stage while listing the current stage's declared
+  // outputs pairs a `verification` directory with `audit` filenames — which is
+  // exactly the archaeology this is meant to end, wearing a confident label.
+  // So the run is the current stage's, and when that stage has never run there
+  // is no run section at all: nothing to say beats saying it wrong.
+  const run = deps.latestRunForStage(card.id, stage);
   return {
     statePath,
+    // The dir every fixed-name file lives in, so `playbook` can name them.
+    // Only a card with a verified state dir gets one; without it the entry
+    // list stays exactly what it was.
+    stateDir,
     strategySkill: card.kind === "research"
       ? deps.researchStrategySkill(card.research_strategy ?? "")
       : null,
@@ -173,6 +199,10 @@ function playbookPaths(
     exploreArtifactPath: stateDir && technique
       ? join(stateDir, technique.artifactFile)
       : null,
+    runArtifactRoot: run?.artifactRoot ?? null,
+    // The run's own recipe wins over the stage's, so a card whose stage and run
+    // ever disagree still lists the files that run actually wrote.
+    runOutputs: recipeOutputs(run?.recipeId ?? recipeId ?? ""),
   };
 }
 
@@ -186,13 +216,16 @@ function playbookResult(
   const entries = playbookEntries({
     kind: card.kind,
     stage,
+    stateDir: paths.stateDir,
     statePath: paths.statePath,
+    workspaceRoot: root,
     transitionsPath: join(root, "skills/stelow-workflow-orchestrator/references/transitions.md"),
     skillsDir: deps.skillsDir,
     strategySkill: paths.strategySkill,
     exploreSkill: paths.exploreSkill,
     researchIndexPath: paths.researchIndexPath,
     exploreArtifactPath: paths.exploreArtifactPath,
+    run: { artifactRoot: paths.runArtifactRoot, outputs: paths.runOutputs },
   }, existsSync);
   return { exitCode: 0, stdout: renderPlaybook(entries) };
 }
@@ -217,12 +250,15 @@ async function playbookCommand(
   if (card.dir_hash && !stateDir) {
     return { exitCode: 1, stderr: OWNERSHIP_UNVERIFIED };
   }
-  let stage = card.stage;
-  const paths = playbookPaths(card, stateDir, workspace.path, deps);
-  if (card.kind === "build") {
-    const blob = await deps.readText(paths.statePath);
-    stage = textStage(blob) || card.stage;
-  }
+  // Resolve the stage BEFORE building the paths. `state.md` is the source of
+  // truth for a build card's current stage, and the run lookup is stage-scoped
+  // — computing paths from the card's (possibly stale) `stage` column would
+  // name the previous stage's run.
+  const statePath = stateDir ? join(stateDir, "state.md") : join(workspace.path, "state.md");
+  const stage = card.kind === "build"
+    ? textStage(await deps.readText(statePath)) || card.stage
+    : card.stage;
+  const paths = playbookPaths(card, stage, stateDir, workspace.path, deps);
   return playbookResult(card, stage, paths, workspace.path, deps);
 }
 

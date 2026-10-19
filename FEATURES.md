@@ -510,7 +510,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Each track owns its preset band (build phases, research, explore),
   so changing one default never leaks into another. Manage agent
   presets groups bands by track (Research, Explore, Build) instead of a
-  flat phase list. Run knobs + your review gates stay where they
+  flat phase list. **Model tiers are bands of their own.** Upstream marks
+  every stage with a `model_hint` (`economy`/`standard`/`best`) and the
+  router grouped by *phase*, so one preset served `planning` — which holds
+  both `architecture` (best) and `gate` (economy). The hint is now a band
+  consulted ahead of the phase band, under its own "Model tiers" group;
+  a pinned tier wins for the stages declaring it and an unset tier falls
+  through to the phase preset, so leaving the group empty preserves the
+  previous routing exactly. Measured on this host, 23% of stage time sat
+  in `economy` stages on the default preset. See
+  [docs/model-tier-economics.md](./docs/model-tier-economics.md).
+  Run knobs + your review gates stay where they
   belong (per card in New issue → Settings, mirrored in the Build setup
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
@@ -1979,6 +1989,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   calls transient, within the same bounded budget — classified errors never
   consult it, and every miss keeps fail-fast. Preset-tier reviews the stage
   model hint in shadow only: agreement is logged, presets never change.
+  **The hint is not routed on.** Bands group stages by phase, so one preset
+  serves `planning` — which contains `architecture` (`best`) and `gate`
+  (`economy`) at once. Measured on a live host that put 23% of stage time in
+  `economy` stages on the default preset. The cost case, the Prewalk
+  comparison it was measured against, and the repair order are in
+  [docs/model-tier-economics.md](./docs/model-tier-economics.md).
   Artifact criteria ask evidence sufficiency separately from outcomes: a
   confident absence of checkable evidence marks every criterion
   unverifiable without spending their calls. Point saves refuse an
@@ -2383,6 +2399,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   ordered reading list for its current stage as exact paths — workers
   read what they are given instead of discovering skills through shell
   pipelines. Missing files fail loud, never silently dropped.
+  **It also names the run and the card's receipts.** The current stage's
+  artifact root and every file its recipe declares (`tasks[].output`) are
+  printed as full paths, so a worker never resolves them itself. Verified
+  against the 87 runs on disk: 149 of the 150 files actually written are
+  declared. The fixed-name files in the state dir are named from one
+  registry (`lib/state-dir-files.mjs`): `state.md`, `session.log`,
+  `audit.md`, `audit-trail.md`, `invariants.json`, `scope-map.json`,
+  `context/recon-receipt.json` (the one file a recipe writes but does not
+  declare), the four gate receipts from `gate-vocabulary.ts`, the state
+  dir's subdirectory layout, and the workspace-root `stelow.json`.
+  Validated against the live threads: 215 of 216 state-dir path
+  references (99.5%) are now named. Conditional receipts carry no
+  missing-file verdict, and without a verified state dir the rows are
+  omitted rather than guessed, because a confidently wrong path is worse
+  than a search.
+  The native reconciliation message names each staging → canonical copy
+  the same way, instead of the old "register them at their canonical
+  paths" that never wrote the paths down.
 - **Exceptional card split** (`bb stelow ask --tag split`, `bb stelow split`,
   `lib/split-proposal.mjs`). The default is one focused card with scopes;
   triage (or Prioritization, before its choice is committed) may propose a

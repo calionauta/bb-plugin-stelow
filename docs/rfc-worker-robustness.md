@@ -65,6 +65,43 @@ would remove whole bug classes instead of guarding them.
    (leakguard blocks, `show <name>` fails) and wasteful (observed: whole
    turns burned on discovery). The host knows the exact paths; it should
    tell instead of letting the worker search.
+
+   **Measured 2026-10-19: the same gap survives for paths.** `bb stelow
+   playbook` fixed skill discovery, but the worker still cannot be told
+   where its own run wrote. Across all 19 live worker threads, 392 of 3348
+   commands (11.7%) mention a path the host owns, and 353 of them (10.5%)
+   are only a path lookup with no status check attached — the largest
+   target being a run directory or an `exec_` id (213). The host already
+   holds both halves of the answer (`execution_runs.artifact_root` and the
+   recipe catalog's declared task outputs); nothing surfaces them.
+
+   Worth stating precisely, because the first draft of this entry
+   overstated it: naming the root does not stop a worker from `find`-ing
+   *inside* it, and 184 of 225 run-dir commands were exactly that. That half
+   needs the steps named as tasks.
+
+   The **fixed-name half is now closed**: `lib/state-dir-files.mjs` is the
+   single registry of what a card keeps at a known name in a known directory
+   (`state.md`, `session.log`, `audit.md`, `audit-trail.md`,
+   `invariants.json`, `scope-map.json`, `context/recon-receipt.json`, the four
+   gate receipts from `server/runtime/gate-vocabulary.ts`, the subdirectory
+   layout, and the workspace-root `stelow.json`), and `bb stelow playbook`
+   prints all of it. Validated against the live threads: **215 of 216
+   state-dir path references (99.5%) are now named**; the one that is not is a
+   worker reading a `transitions.md` that never existed in its state dir,
+   which is the failure this fix removes.
+
+   Three rules keep it honest: a conditional receipt carries no missing-file
+   verdict, the layout is one row rather than a dozen, and without a verified
+   state dir or workspace root nothing is invented — a confidently wrong path
+   is worse than the search it replaces.
+
+   Still open: a worker that wants the file list of one **specific run** still
+   enumerates it (184 of 225 run-dir commands), and `.registered.json` is a
+   receipt the host writes rather than a recipe artifact. Both need the steps
+   named as tasks. Coverage measurement, the limit, and the repair order:
+   [`docs/model-tier-economics.md`](./model-tier-economics.md).
+
 7. **14 CLI subcommands, one flat namespace.** The worker must learn
    `status/ask/seed/advance/doctor/schema/sync-scopes/lock/config/
    preview/fan-out/verify/preset` and which resolve card context (only

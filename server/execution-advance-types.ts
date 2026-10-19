@@ -42,7 +42,7 @@ export type AdvanceDeps = {
   updateCard: (cardId: string, fields: Record<string, unknown>) => void;
   recordStageEvent: (cardId: string, stage: string) => void;
   recordExecutionEntry: (cardId: string, evidence: string, transition: "execution-refused" | "execution-entered") => void;
-  getReliablePreset: (band: string, cardId: string) => { id: string } | null;
+  getReliablePreset: (band: string | string[], cardId: string) => { id: string } | null;
   getCardPresetId: (cardId: string) => string;
   scheduleRespawn: (cardId: string, presetId: string) => void;
   /** Tier shadow, shadow-only: records hint agreement, never changes the swap. */

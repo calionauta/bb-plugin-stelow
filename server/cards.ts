@@ -59,7 +59,7 @@ type CardsDeps = {
   githubAutomationEnabled: () => boolean;
   store: ReturnType<typeof createCardStore>;
   strategyList: (row: WorkerCard) => string[];
-  getReliablePreset: (band: string, cardId: string) => Preset;
+  getReliablePreset: (band: string | string[], cardId: string) => Preset;
   fetchPendingQuestions: (threadId: string | null) => Promise<unknown[]>;
   openExpiredQuestionIds: (cardId: string) => string[];
 };

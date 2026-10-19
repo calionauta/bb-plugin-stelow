@@ -84,6 +84,21 @@ function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
         .catch(() => null),
     researchStrategySkill: core.trackCapabilities.researchStrategySkill,
     exploreTechnique: core.trackCapabilities.exploreTechnique,
+    // The card's most recent run FOR THIS STAGE. Not the newest run of any
+    // stage: the root and the declared outputs are printed as one answer, so
+    // pairing a `verification` directory with `audit` filenames would be the
+    // archaeology this replaces, wearing a confident label.
+    latestRunForStage: (cardId: string, stage: string) => {
+      const latest = core.db
+        .prepare(
+          "SELECT artifact_root, recipe_id FROM execution_runs"
+          + " WHERE card_id = ? AND stage = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(cardId, stage) as { artifact_root?: string; recipe_id?: string } | undefined;
+      return latest?.artifact_root
+        ? { artifactRoot: latest.artifact_root, recipeId: latest.recipe_id ?? "" }
+        : null;
+    },
   };
 }
 

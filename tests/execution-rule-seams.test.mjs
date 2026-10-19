@@ -32,7 +32,7 @@ const RUN = {
   argsText: JSON.stringify({ context: {}, localRunId: "local-1", recipeId: "plan-critique" }),
   adapter: "bb-workflows",
   workspaceId: "workspace-1",
-  artifactRoot: "workspace-1/.stelow/run",
+  artifactRoot: "workspace-1/.stelow/runs/local-1",
   originThreadId: "thread-1",
 };
 
@@ -139,7 +139,7 @@ const BOUNDARY = {
   createExecutionRun(fresh, { ...RUN, runId: "run-1", now: 100 });
   transitionExecutionRun(fresh, "local-1", "running", { nativeStatus: "running" });
   for (const path of paths) {
-    files.set(`workspace-1/.stelow/run/${path}`, path.endsWith(".json")
+    files.set(`workspace-1/.stelow/runs/local-1/${path}`, path.endsWith(".json")
       ? JSON.stringify({ findings: [], questions: [], verdict: "pass" })
       : "report");
   }
@@ -149,16 +149,35 @@ const BOUNDARY = {
   assert.equal(getExecutionRun(fresh, "local-1").normalizedStatus, "running", "an unregistered run is not finished");
   assert.equal(asked.length, 1);
   assert.match(asked[0], /\.registered\.json/);
+  // The request must name the DESTINATION, not just the staging root. The old
+  // wording said "register them at their canonical paths" without ever writing
+  // them, which is how workers ended up answering a question the host had
+  // already answered — 247 of 3348 live commands reach for a run dir or an
+  // `exec_` id. Staging lives at `<stateDir>/runs/<id>/<relative>`, so each
+  // canonical target is that same relative path under `<stateDir>`.
+  assert.match(
+    asked[0],
+    /Destinations: .*critiques\/critique-report\.md -> workspace-1\/\.stelow\/critiques\/critique-report\.md/,
+    "the registration request names the canonical path each staged artifact is copied to",
+  );
+  // A staging root that does NOT carry the `runs/<id>` shape yields no
+  // destinations rather than a confident wrong path: naming the wrong file is
+  // worse than the archaeology this replaces.
+  assert.doesNotMatch(
+    asked[0],
+    /runs\/local-1\/critiques\/critique-report\.md -> /,
+    "the destination is never derived from the staging path itself",
+  );
   // Negative control: the completion event already exists, so the receipt is
   // not requested a second time — one request per run, not one per reconcile.
   await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
   assert.equal(asked.length, 1);
 
   // A receipt naming another run is not this run's receipt.
-  files.set("workspace-1/.stelow/run/.registered.json", JSON.stringify({ runId: "other", outputs: paths }));
+  files.set("workspace-1/.stelow/runs/local-1/.registered.json", JSON.stringify({ runId: "other", outputs: paths }));
   await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
   assert.notEqual(getExecutionRun(fresh, "local-1").normalizedStatus, "succeeded");
-  files.set("workspace-1/.stelow/run/.registered.json", JSON.stringify({ runId: "local-1", outputs: paths }));
+  files.set("workspace-1/.stelow/runs/local-1/.registered.json", JSON.stringify({ runId: "local-1", outputs: paths }));
   await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
   assert.equal(getExecutionRun(fresh, "local-1").normalizedStatus, "succeeded");
 }
