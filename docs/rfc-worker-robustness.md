@@ -96,10 +96,20 @@ would remove whole bug classes instead of guarding them.
    state dir or workspace root nothing is invented — a confidently wrong path
    is worse than the search it replaces.
 
-   Still open: a worker that wants the file list of one **specific run** still
-   enumerates it (184 of 225 run-dir commands), and `.registered.json` is a
-   receipt the host writes rather than a recipe artifact. Both need the steps
-   named as tasks. Coverage measurement, the limit, and the repair order:
+   **Enumeration and the copy dance are closed as well.** The host now lists a
+   run directory (`run-file` rows: 150 files across the 71 run dirs here,
+   including the ones no recipe declares), and it performs the artifact
+   registration itself instead of asking the model to `cp` validated files and
+   `printf` a receipt — 27 worker commands copied out of a run dir and 16 were
+   the full find/cp/printf dance. `lib/artifact-registration.mjs` is the pure
+   plan; the reconciler writes the receipt last, so its presence still means
+   "registered", and a root that cannot be mapped parks the card as
+   `needs_input` rather than guessing.
+
+   Nothing in this entry is open now. What remains of the original idea is the
+   part that was never a path problem: a step whose *result* only a model can
+   produce has to be named as a task before it can be routed anywhere, and that
+   is proposal C in
    [`docs/model-tier-economics.md`](./model-tier-economics.md).
 
 7. **14 CLI subcommands, one flat namespace.** The worker must learn

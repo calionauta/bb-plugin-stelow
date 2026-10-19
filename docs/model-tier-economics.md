@@ -270,14 +270,26 @@ the first tool call instead of after a hunt. That is the part that survives even
 where the count below is small: a command removed is not just its tokens, it is
 the round trip around it.
 
-**What it does not fix, stated plainly.** Naming a root does not stop a worker
-from `find`-ing *inside* it, and 184 of 225 run-dir commands were exactly that —
-a worker that wants to know which files a specific run wrote still enumerates
-them rather than reading a list. That half needs the steps *named as tasks*
-(proposal C below), or a subcommand that returns the answer. What was closed is
-the layer above it: the worker is told the root, the receipts, the layout, and
-the recipe's declared outputs, so the enumeration it still performs starts from
-the right directory with a known file list to check against.
+**And the enumeration inside it is closed too.** Naming the root stopped a
+worker from searching for the directory, but 95 commands still enumerated
+*inside* one — `find <run> -type f`, `ls -R` — to learn what a specific run had
+written. The host owns that directory, so it lists it: `bb stelow playbook` now
+prints a `run-file` row per file actually present, next to the `run-output` rows
+the recipe declares. Across the 71 run dirs on this host that is 150 files
+named, including the two that no recipe declares.
+
+**And the copy dance is gone entirely.** The reconciler validated the staged
+artifacts and knew both paths, then asked the *model* to copy them out and
+`printf` a receipt — the most expensive component in the system performing a
+deterministic rename. Measured: 27 worker commands copied out of a run dir and
+16 of those were the full find → `for f in …; do cp …; done` → `printf` dance.
+`lib/artifact-registration.mjs` is now the pure plan (which copies, what the
+receipt says) and the reconciler performs it host-side in one pass, writing the
+receipt last so its presence still means "registered". All 87 runs on disk
+resolve to a staging root, so the host never has to guess; a root that does not
+carry the `runs/<id>` shape parks the card as `needs_input` with the reason on
+it, because that is a filesystem problem a human can fix and an automated path
+cannot.
 
 **The receipts were the other half, and they are now named too.** The first
 pass stopped at run directories and left a whole class uncovered: the files that
@@ -367,7 +379,9 @@ its own tier).
 
 Its cost is the honest one: a task must have a contract, so the ad-hoc `grep`,
 `ls` and `db-surgery` commands have to be **named and typed** before they can be
-routed. That is work — and it is also the fix, because a named step is one the
+routed — and the ones that only moved files around have already left, because
+the host does those itself now. What remains is genuinely work a model might be
+needed for, which is a much shorter list. That is work — and it is also the fix, because a named step is one the
 host can run deterministically without a model at all. Which is the real
 answer: `bb stelow audit-trail`, `bb stelow verify --tests` and friends cost no
 tokens, and **free beats cheap**.

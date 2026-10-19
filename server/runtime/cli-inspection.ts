@@ -61,6 +61,16 @@ type InspectionDeps = {
    * printed as one answer, so they must describe one run.
    */
   latestRunForStage: (cardId: string, stage: string) => { artifactRoot: string; recipeId: string } | null;
+  /**
+   * The files actually present in a run directory, relative to it.
+   *
+   * The declared outputs say what a run SHOULD write; this says what it DID.
+   * Naming the root stopped a worker from searching for the directory, but 184
+   * of 225 run-dir commands then enumerated inside it — so the host lists them,
+   * because it owns the directory and the worker does not need to learn that
+   * with `find`.
+   */
+  listRunFiles: (artifactRoot: string) => Promise<string[]>;
 };
 
 type InspectionCommand = (
@@ -166,7 +176,7 @@ function playbookPaths(
   deps: InspectionDeps,
 ): { statePath: string; stateDir: string | null; strategySkill: string | null; exploreSkill: string | null;
   researchIndexPath: string | null; exploreArtifactPath: string | null;
-  runArtifactRoot: string | null; runOutputs: string[] } {
+  runArtifactRoot: string | null; runOutputs: string[]; runPresent: string[] } {
   const statePath = stateDir ? join(stateDir, "state.md") : join(root, "state.md");
   const technique = card.kind === "explore"
     ? deps.exploreTechnique(card.explore_stage ?? "")
@@ -203,6 +213,8 @@ function playbookPaths(
     // The run's own recipe wins over the stage's, so a card whose stage and run
     // ever disagree still lists the files that run actually wrote.
     runOutputs: recipeOutputs(run?.recipeId ?? recipeId ?? ""),
+    // What is actually on disk, filled in by the async caller below.
+    runPresent: [] as string[],
   };
 }
 
@@ -225,7 +237,11 @@ function playbookResult(
     exploreSkill: paths.exploreSkill,
     researchIndexPath: paths.researchIndexPath,
     exploreArtifactPath: paths.exploreArtifactPath,
-    run: { artifactRoot: paths.runArtifactRoot, outputs: paths.runOutputs },
+    run: {
+      artifactRoot: paths.runArtifactRoot,
+      outputs: paths.runOutputs,
+      present: paths.runPresent,
+    },
   }, existsSync);
   return { exitCode: 0, stdout: renderPlaybook(entries) };
 }
@@ -259,6 +275,12 @@ async function playbookCommand(
     ? textStage(await deps.readText(statePath)) || card.stage
     : card.stage;
   const paths = playbookPaths(card, stage, stateDir, workspace.path, deps);
+  // Listing a directory the host owns, so the worker does not have to. Failures
+  // are silent: a run whose staging was already cleaned up has nothing to list,
+  // and that is not an error worth a message.
+  if (paths.runArtifactRoot) {
+    paths.runPresent = await deps.listRunFiles(paths.runArtifactRoot).catch(() => []);
+  }
   return playbookResult(card, stage, paths, workspace.path, deps);
 }
 

@@ -37,6 +37,7 @@ const baseDeps = {
   // No run named, so the playbook prints no run rows — the shape every
   // pre-native install has, and the case a null must stay silent for.
   latestRunForStage: () => null,
+  listRunFiles: async () => [],
 };
 
 function deps(overrides = {}) {
@@ -85,6 +86,42 @@ test("inspection family preserves playbook state and doctor ownership inputs", a
 // asking for the newest run of any stage pairs a `verification` directory with
 // `audit` filenames — the archaeology the section exists to end, wearing a
 // confident label. The query must therefore be stage-scoped.
+// The run-file rows: what a run actually wrote, listed by the host. The declared
+// outputs answer "what should be here"; this answers "what is here", which is
+// the question that made workers run `find <run> -type f` — 184 of 225 run-dir
+// commands across the live threads.
+test("playbook lists what a run actually wrote", async () => {
+  const withFiles = createInspectionCommand({
+    ...deps({}),
+    latestRunForStage: () => ({
+      artifactRoot: "/workspace/.stelow/card-1/runs/exec_now",
+      recipeId: "verification",
+    }),
+    listRunFiles: async () => ["verification/tests.json", "notes/scratch.md"],
+  });
+  const listed = await withFiles(["playbook", "--card", "card-1"], {});
+  assert.match(
+    listed.stdout,
+    /run-file: \/workspace\/\.stelow\/card-1\/runs\/exec_now\/notes\/scratch\.md/,
+    "a file the run wrote but no recipe declares is still named",
+  );
+  assert.match(listed.stdout, /run-file: .*verification\/tests\.json/, "declared files appear as present too");
+
+  // A listing that fails must not break the playbook: staging may already be
+  // cleaned up, and that is not an error worth a message.
+  const broken = createInspectionCommand({
+    ...deps({}),
+    latestRunForStage: () => ({
+      artifactRoot: "/workspace/.stelow/card-1/runs/exec_gone",
+      recipeId: "verification",
+    }),
+    listRunFiles: async () => { throw new Error("gone"); },
+  });
+  const survived = await broken(["playbook", "--card", "card-1"], {});
+  assert.equal(survived.exitCode, 0, "an unlistable run dir degrades instead of failing the playbook");
+  assert.match(survived.stdout, /run: \/workspace\/\.stelow\/card-1\/runs\/exec_gone/, "the root is still named");
+});
+
 test("playbook pairs the run root with the run that produced it", async () => {
   const asked = [];
   const run = createInspectionCommand({

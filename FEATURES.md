@@ -2410,10 +2410,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   declare), the four gate receipts from `gate-vocabulary.ts`, the state
   dir's subdirectory layout, and the workspace-root `stelow.json`.
   Validated against the live threads: 215 of 216 state-dir path
-  references (99.5%) are now named. Conditional receipts carry no
-  missing-file verdict, and without a verified state dir the rows are
-  omitted rather than guessed, because a confidently wrong path is worse
-  than a search.
+  references (99.5%) are now named. It also lists a run directory's real
+  contents (`run-file` rows, 150 files across the 71 run dirs here), so a
+  worker never enumerates one. Conditional receipts carry no missing-file
+  verdict, and without a verified state dir the rows are omitted rather
+  than guessed, because a confidently wrong path is worse than a search.
+- **Host-side artifact registration** (`lib/artifact-registration.mjs`).
+  A validated native run's staged artifacts are copied to their canonical
+  homes and their receipt written by the host, in one pass, instead of
+  asking the model to `cp` them — 27 worker commands copied out of a run
+  dir and 16 were the full find/cp/printf dance. The receipt is written
+  last, so its presence still means "registered"; a root that cannot be
+  mapped parks the card as `needs_input` with the reason on it, because a
+  filesystem problem is one a human can fix and an automated path cannot.
   The native reconciliation message names each staging → canonical copy
   the same way, instead of the old "register them at their canonical
   paths" that never wrote the paths down.
