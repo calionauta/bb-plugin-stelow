@@ -1097,6 +1097,33 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   record them together); split proposals keep their exclusivity, where a
   keep choice contradicts deliveries. The "Other" box is now a note box:
   "Note — or your own answer instead".
+- **One choice means one** (`lib/question-single-pick.mjs`). The note/pick fix
+  above took single-select exclusivity with it: the renderer announced
+  "choose one" (`role="radiogroup"`) while the handler appended every pick, so
+  two mutually exclusive options could be submitted together and reached the
+  worker as two separate decisions. Choosing a second option now replaces the
+  first (and re-picking the current one clears it), and the server refuses a
+  batch that arrives with two declared picks — so a stale bundle or a retried
+  request cannot slip past the UI. A pick plus a note still passes, which is
+  the composability the earlier fix was for; the guard counts declared option
+  labels, so free text can never trip it.
+- **A radio stays a menu, not a questionnaire** (`lib/ask-shape.mjs`). The
+  option ceiling and the recommendation rule used to apply only to tagged
+  scope confirms, so any other question could carry an unbounded list — one
+  critique card compressed eight findings into a single-select with seven rows,
+  five of them marked "(Recommended)". Now every ask is checked: a radio over
+  six options is refused (with the multi-select redirect named), and a
+  single-select question may recommend only one of its own options, because a
+  marker that appears on most rows tells the reader nothing. Multi-select
+  confirms are untouched — seven or twelve rows is normal for "keep these IN?".
+- **A disabled submit says why** (`lib/question-progress.mjs`). The submit
+  button is disabled by two independent conditions, but only the needs-note
+  refusal had copy: an unanswered batch showed a dead button with no stated
+  cause, and the progress counters that used to carry "N questions remain"
+  were removed with the panel frame. The footer now names how many questions
+  are still open, and names the door the reader actually has: answering, and
+  skipping only where the skip control is rendered (the recovery form shows
+  none, so it never promises one).
 - **Gate receipts, one writer** (`server/runtime/gate-vocabulary.ts`). A gate is
   approved by its receipt file under `.stelow/approvals/<dirHash>/`
   (`gate-approved.md`, `int-gate-approved.md`, `plan-gate-approved.md`,

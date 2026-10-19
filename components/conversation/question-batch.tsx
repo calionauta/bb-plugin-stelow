@@ -342,6 +342,8 @@ function StepperSurface({
         copy={copy}
         busy={busy}
         submitLabel={submitLabel}
+        isDone={isDone}
+        canSkip={allowSkip}
         onSubmit={onSubmit}
       />
       <BatchKeyOverlay open={keys.showKeys} onClose={keys.closeKeys} />

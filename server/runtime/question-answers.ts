@@ -8,6 +8,13 @@ import {
   expiredQuestionId,
 } from "../../lib/question-evidence.mjs";
 import { expandInteractionQuestions, formatBatchContinuation, groupBatchAnswers } from "../../lib/question-batch.mjs";
+import {
+  answersFor,
+  exclusivePickError,
+  expiredAnswerRefusal,
+  liveQuestionShapes,
+  slotsOf,
+} from "../../lib/question-exclusivity.mjs";
 import { recordSplitAnswer } from "../../lib/split-proposal.mjs";
 import type { ExecutionRun } from "../../lib/execution-run-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -18,7 +25,7 @@ type Decision = { question: string; answers: string[] };
 type RecordedDecision = Decision & { contract: string | null };
 type PendingAsk = { id: string; payload?: { title?: string } };
 type Result = { ok: boolean; answered: number; error: string | null };
-type OpenRow = { id: string; thread_id: string; question: string; multiple: unknown; kind: unknown };
+type OpenRow = { id: string; thread_id: string; question: string; multiple: unknown; kind: unknown; options?: unknown };
 type AnswerRow = OpenRow & { answers: string[] };
 
 /**
@@ -110,10 +117,21 @@ async function respondToLiveAsks(
   const pendingIds = asks.map((ask) => ask.id);
   const pending = new Set(pendingIds);
   const text = questionText(asks);
+  const shapes = liveQuestionShapes(asks);
+  const groups = [...groupBatchAnswers(answers)].filter(([interactionId]) => pending.has(interactionId));
+  // The single-choice rule first, across the WHOLE batch, before a single
+  // interaction is answered: responding is the point of no return, and a
+  // refusal after half the batch landed would leave the worker resumed on a
+  // partial decision set. `exclusivePickError` reads the same rule the
+  // recovery door reads.
+  const overPicked = exclusivePickError(
+    groups.flatMap(([interactionId, value]) => slotsOf(interactionId, value, shapes)),
+    groups.flatMap(([interactionId, value]) => answersFor(interactionId, value)),
+  );
+  if (overPicked) throw new Error(overPicked);
   const decisions: Decision[] = [];
   const answeredIds = new Set<string>();
-  for (const [interactionId, value] of groupBatchAnswers(answers)) {
-    if (!pending.has(interactionId)) continue;
+  for (const [interactionId, value] of groups) {
     await deps.bb.sdk.threads.interactions.respond({
       threadId: card.worker_thread_id!,
       interactionId,
@@ -235,7 +253,7 @@ async function answerQuestions(
 
 function openExpiredRows(deps: QuestionAnswersDeps, cardId: string): OpenRow[] {
   return deps.db.prepare(
-    "SELECT id, thread_id, question, multiple, kind FROM expired_questions WHERE card_id = ? AND answered = 0",
+    "SELECT id, thread_id, question, multiple, kind, options FROM expired_questions WHERE card_id = ? AND answered = 0",
   ).all(cardId) as OpenRow[];
 }
 
@@ -316,6 +334,8 @@ async function answerExpiredQuestions(
   const rows = answerRows(openRows, input.answers);
   const partial = partialBatchRefusal(openRows, rows);
   if (partial) return partial;
+  const overPicked = expiredAnswerRefusal(openRows, input.answers);
+  if (overPicked) return refusal(overPicked);
   const decisions = commitExpiredAnswers(deps, input.cardId, rows);
   deps.recordSplitAnswer(deps.db, input.cardId, decisions);
   deps.markInboxQuestionsAnswered(

@@ -22,6 +22,8 @@ export declare function expandInteractionQuestions(interaction: { id: string; ti
 export declare function splitQuestionId(questionId: string): { interactionId: string; index: number };
 export declare function preselectedAnswers(questions: unknown): Record<string, string[]>;
 export declare function toggleSinglePick(selected: unknown, label: string): string[];
+export declare function pickedLabels(answers: unknown, optionLabels: unknown): string[];
+export declare function exclusivePickRefusal(input: { question?: string; multiple?: unknown; answers: unknown; optionLabels: unknown }): string | null;
 export declare function attachOptionFlag(groups: unknown, arg: string): string | null;
 export declare function groupBatchAnswers(items: Array<{ questionId: string; answers: string[] }>): Map<string, { kind: "single"; answers: string[] } | { kind: "batch"; answers: string[][] }>;
 export declare function formatBatchContinuation(decisions: Array<{ question: string; answers: string[] }>): string;
