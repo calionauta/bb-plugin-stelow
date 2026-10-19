@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.84.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.83.0...v0.84.0) (2026-10-19)
+
+
+### Features
+
+* collapse the card description, and answer a question batch from the keyboard ([#381](https://github.com/calionauta/bb-plugin-stelow/issues/381)) ([69d8a1a](https://github.com/calionauta/bb-plugin-stelow/commit/69d8a1a9c759e49317d1eded4e648ad4644138c1))
+* make one choice mean one, and stop the ask surface drifting ([#386](https://github.com/calionauta/bb-plugin-stelow/issues/386)) ([312ce4c](https://github.com/calionauta/bb-plugin-stelow/commit/312ce4c628214fb254d4f2f54e261f49ca5be767))
+
 ## [0.83.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.82.0...v0.83.0) (2026-10-18)
 
 
