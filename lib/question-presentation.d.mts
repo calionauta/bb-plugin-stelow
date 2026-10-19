@@ -37,6 +37,7 @@ export declare function submitBlockReason(
 export declare function incompleteBatchReason(
   questions: unknown,
   isResolved: unknown,
+  canSkip?: unknown,
 ): string | null;
 // An approval is a decision after reading, not a request to alter the
 // document. All other choices — especially Request/Review changes — keep

@@ -62,6 +62,13 @@ for (const groups of [[], null, undefined, "nope", 42, {}]) {
   assert.equal(askShapeRefusal({ groups }), null,
     `groups=${JSON.stringify(groups)} returns null, not a throw: unreadable input must never crash the ask handler`);
 }
+// The ARGUMENT itself, not just `groups`: the first version destructured the
+// parameter, so `askShapeRefusal(null)` threw while every other degenerate
+// input degraded to a pass-through — an asymmetry that aborts the handler.
+for (const argument of [null, undefined, 7, "nope", []]) {
+  assert.equal(askShapeRefusal(argument), null,
+    `askShapeRefusal(${JSON.stringify(argument)}) returns null, not a throw: the argument is as untrusted as its contents`);
+}
 assert.equal(askShapeRefusal({ groups: [null, undefined, "x", 7] }), null,
   "non-object groups are skipped, not counted: they have no options to measure");
 assert.equal(askShapeRefusal({ groups: [{ question: "Which?" }] }), null,

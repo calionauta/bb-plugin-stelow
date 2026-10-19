@@ -296,8 +296,9 @@ function FooterButtons({
  * The submit button is disabled by `!sel.complete || blockReason !== null`, but
  * only the refusal half used to render a sentence — so an unanswered batch
  * showed a dead button with no stated cause. `incompleteBatchReason` is that
- * missing half, and it names the door (answer it, or skip it) because the answer
- * is still the reader's to give.
+ * missing half, and it names the door the reader actually has: `canSkip`
+ * travels with it, because the recovery form renders no skip control and a
+ * sentence promising one would name a door that is not on the page.
  */
 export function BatchFooter({
   sel,
@@ -306,6 +307,7 @@ export function BatchFooter({
   busy,
   submitLabel,
   isDone,
+  canSkip,
   onSubmit,
 }: {
   sel: AnswerFooterState & AnswerBodyState;
@@ -314,12 +316,13 @@ export function BatchFooter({
   busy: boolean;
   submitLabel: string;
   isDone: (id: string) => boolean;
+  canSkip: boolean;
   onSubmit: (answers: string[][]) => void;
 }) {
   const current = questions[Math.min(sel.index, questions.length - 1)];
   if (!current) return null;
   const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
-  const incompleteReason = incompleteBatchReason(questions, isDone);
+  const incompleteReason = incompleteBatchReason(questions, isDone, canSkip);
   // The reason is stated TWICE on purpose, and a UX review flagged the
   // duplication before this note existed.
   //

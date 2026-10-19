@@ -1121,7 +1121,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   refusal had copy: an unanswered batch showed a dead button with no stated
   cause, and the progress counters that used to carry "N questions remain"
   were removed with the panel frame. The footer now names how many questions
-  are still open, and names the door — answer it, or skip it.
+  are still open, and names the door the reader actually has: answering, and
+  skipping only where the skip control is rendered (the recovery form shows
+  none, so it never promises one).
 - **Gate receipts, one writer** (`server/runtime/gate-vocabulary.ts`). A gate is
   approved by its receipt file under `.stelow/approvals/<dirHash>/`
   (`gate-approved.md`, `int-gate-approved.md`, `plan-gate-approved.md`,

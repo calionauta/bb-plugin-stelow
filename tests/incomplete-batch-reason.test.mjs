@@ -49,15 +49,30 @@ assert.match(incompleteBatchReason(questions("a", "b", "c", "d", "e"), resolvedE
   "and it recounts as more questions are resolved");
 assert.match(incompleteBatchReason(questions("a", "b"), noneResolved), /\b2\b/, "no answers yet reports the full count");
 
-// --- The exit must survive ---
+// --- The exit must survive, and must be a door that exists ---
 
 // A reason with no exit is a deadlock with a good error message. The reader must
-// be told they can answer OR skip — a "1 question remains." with no verb would
-// leave the disabled button exactly as unexplained as before this function.
+// be told how to unblock the button — but only with a control that is actually
+// on the page. The recovery (expired) form renders no skip control, so the
+// default (canSkip omitted) must NOT promise one; a caller that knows skip is
+// rendered asks for it explicitly. Both directions are pinned here because the
+// first version of this function always said "or skip it", which named a door
+// the expired form does not draw.
 assert.match(one, /answer/i, "the reason names answering as the way out");
-assert.match(one, /skip/i, "the reason names skipping as the alternative: dropping 'skip' would hide the only exit when the reader cannot answer");
 assert.match(two, /answer/i, "the plural reason names answering as the way out");
-assert.match(two, /skip/i, "the plural reason keeps the skip exit too");
+assert.doesNotMatch(one, /skip/i,
+  "the default sentence must NOT offer skipping: the recovery form renders no "
+  + "skip control, and naming an absent door is the dead end this sentence exists to prevent");
+assert.doesNotMatch(two, /skip/i, "the plural default is equally careful");
+
+// When the caller says skip is rendered, the sentence offers it.
+const oneSkippable = incompleteBatchReason([{ id: "q1" }], noneResolved, true);
+const twoSkippable = incompleteBatchReason([{ id: "a" }, { id: "b" }], noneResolved, true);
+assert.match(oneSkippable, /skip/i,
+  "with canSkip the reader is told skipping works: it is the only exit when they cannot answer");
+assert.match(twoSkippable, /skip/i, "the plural skippable sentence keeps the skip exit too");
+assert.match(oneSkippable, /\b1\b/, "and it still names the count");
+assert.match(twoSkippable, /\b2\b/, "and so does the plural one");
 
 // --- Unusable input never throws ---
 
@@ -81,4 +96,4 @@ assert.match(incompleteBatchReason([null, { id: "q1" }, 7], noneResolved), /\b1\
 assert.match(incompleteBatchReason([{ options: [] }], noneResolved), /\b1\b/,
   "an entry with no id and a false predicate still counts as incomplete");
 
-console.log("incomplete batch reason test ok: count, singular/plural split and the answer-or-skip exit pinned");
+console.log("incomplete batch reason test ok: count, singular/plural split, and the exit named only when the control exists");
