@@ -23,7 +23,7 @@ import type { WorkerCard } from "../../workers-types.js";
 
 export const ASK_USAGE =
   "Usage: bb stelow ask --thread <thr_id> [--tag split|scope-adjust] --question <text> [--multiple] "
-  + "--option <label> [--selected] [--needs-note] [--desc <text>] [--preview <text>] [--artifact <path>]...";
+  + "--option <label> [--selected] [--recommended] [--needs-note] [--desc <text>] [--preview <text>] [--artifact <path>]...";
 
 /** Machine tags a worker ask can carry. `split` owns split mechanics;
  * `scope-adjust` marks scope IN/OUT confirms for the shape gate. */
@@ -44,6 +44,9 @@ export type AskOption = {
   // Conditional options (--needs-note): submit waits for the note box.
   // Same sparseness as selected — explicit true travels, absence is off.
   needsNote?: boolean;
+  // The AI's recommendation (--recommended) as a field rather than only as a
+  // phrase in the label, so the form can count, sort and preselect it.
+  recommended?: boolean;
 };
 
 export type AskGroup = {
@@ -88,6 +91,7 @@ export function parseAskIntent(
       artifact: option.artifact,
       ...(option.selected === true ? { selected: true as const } : {}),
       ...(option.needsNote === true ? { needsNote: true as const } : {}),
+      ...(option.recommended === true ? { recommended: true as const } : {}),
     })),
     contract: group.contract ?? null,
   }));

@@ -12,6 +12,7 @@ export declare interface AskOption {
   artifact: { path: string; display?: string } | null;
   selected?: boolean;
   needsNote?: boolean;
+  recommended?: boolean;
 }
 export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[]; contract: string | null }>; error?: undefined } | { groups?: undefined; error: string };
 export declare function cleanOptions(raw: unknown): AskOption[];

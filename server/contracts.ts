@@ -103,14 +103,6 @@ export const scopeSummarySchema = z.object({
 /** @deprecated Alias only. Run knobs replaced the appetite ladder. */
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 export const qualitySchema = z.enum(["production", "experimental"]);
-/**
- * The retired supervision knob (`low|med|high`), kept for one job only: the
- * board defaults are stored in a kv row written before the knob was removed,
- * and `boardWorkflowDefaultsSchema` is `.strict()` — dropping the key here
- * would reject the whole row and silently reset the review gates the operator
- * chose. Absorbed and ignored, never required, never emitted.
- */
-export const supervisorSchema = z.enum(["low", "med", "high"]);
 export const explorationCountSchema = z.number().int().min(1).max(5);
 /** Red-first acceptance gate. Optional everywhere: absent means the
  * quality-derived default applies downstream, never an invented mode. */
@@ -130,8 +122,6 @@ export const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGa
 export const boardWorkflowDefaultsSchema = z
   .object({
     quality: qualitySchema,
-    /** Absorbed legacy key (see supervisorSchema); absence is the new normal. */
-    supervisor: supervisorSchema.optional(),
     explorationCount: explorationCountSchema,
     reviewMode: z.string(),
     reviewGates: z.array(reviewGateAtomSchema).default([]),
@@ -139,7 +129,16 @@ export const boardWorkflowDefaultsSchema = z
     appetite: appetiteSchema.optional(),
     redFirst: redFirstSchema.optional(),
   })
-  .strict();
+  // Tolerant, not strict, and deliberately generic: this schema reads a kv row
+  // written by an older build, so the row can carry keys this version retired.
+  // Naming each retired key here was the old approach and it rotted — every
+  // retirement needed a new optional field and a docstring explaining that the
+  // field means nothing, which is legacy kept alive to parse legacy. zod's
+  // default strips unknown keys while still validating the ones it knows, so a
+  // stale row parses, its unknown keys vanish, and the operator's review gates
+  // survive. A malformed KNOWN value still fails, so this is not a lax schema —
+  // only unknown keys are forgiven.
+  .strip();
 
 /** Legacy appetite → knobs. Rigor always strongest; breadth keeps old intent. */
 export const LEGACY_APPETITE_DEFAULTS = {
@@ -243,6 +242,11 @@ export const askOptionSchema = z.object({
   // for the note box. Lost the same way `selected` was, so the marker and
   // the field-level refusal never reached a reader served by this contract.
   needsNote: z.boolean().optional(),
+  // The recommendation as DATA, not only as a phrase in `label` (issue #384).
+  // Counted by `askShapeRefusal` for the one-per-radio rule, and what lets the
+  // form sort, preselect, or offer "take the recommendations" as one action.
+  // Sparse like its siblings: absence means "not recommended".
+  recommended: z.boolean().optional(),
 });
 
 export const workflowSchema = z.object({
@@ -252,8 +256,6 @@ export const workflowSchema = z.object({
   status: trackableStatusSchema,
   stage: z.string(),
   quality: z.string(),
-  /** Absorbed legacy key: tracking entries seeded before the knob retired. */
-  supervisor: z.string().optional(),
   explorationCount: z.number(),
   explorationHybrid: z.boolean(),
   /** Deprecated alias passthrough for old tracking entries. */

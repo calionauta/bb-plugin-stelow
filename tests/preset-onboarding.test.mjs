@@ -218,7 +218,7 @@ function mountDialog({ opened = [], active = true } = {}) {
     intro: "Presets decide the model each worker runs with.",
     active,
     secondTitle: "Start from a boarding default",
-    secondBody: h("p", null, "Quality and supervisor defaults for new cards."),
+    secondBody: h("p", null, "Quality and breadth defaults for new cards."),
     onOpenPresets: () => opened.push("presets"),
   }));
   return opened;
@@ -229,7 +229,7 @@ assert.ok(screen.getByText("Choose an agent preset"), "the first step is the tra
 assert.ok(screen.getByText("Step 1 of 3"), "a fresh three-step track counts its steps");
 fireEvent.click(screen.getByRole("button", { name: "Next" }));
 assert.ok(screen.getByText("Start from a boarding default"), "the optional defaults step has its own title");
-assert.ok(screen.getByText("Quality and supervisor defaults for new cards."), "and its own body");
+assert.ok(screen.getByText("Quality and breadth defaults for new cards."), "and its own body");
 fireEvent.click(screen.getByRole("button", { name: "Next" }));
 assert.ok(screen.getByText("Stay in touch"), "the last step is the contact view");
 assert.ok(screen.getByRole("button", { name: "Done" }), "and it ends with Done rather than Next");
@@ -246,7 +246,7 @@ render(h(PresetOnboardingDialog, {
   intro: "Presets decide the model each worker runs with.",
   active: true,
   secondTitle: "Start from a boarding default",
-  secondBody: h("p", null, "Quality and supervisor defaults for new cards."),
+  secondBody: h("p", null, "Quality and breadth defaults for new cards."),
   onOpenPresets: () => sharedOpened.push("presets"),
 }));
 assert.ok(screen.getByText("Start from a boarding default"), "shared completion opens the defaults step directly");
