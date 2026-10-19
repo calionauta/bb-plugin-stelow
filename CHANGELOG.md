@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.85.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.84.0...v0.85.0) (2026-10-19)
+
+
+### Features
+
+* remove the retired knob instead of carrying it, and make the recommendation data ([#387](https://github.com/calionauta/bb-plugin-stelow/issues/387)) ([c279cbd](https://github.com/calionauta/bb-plugin-stelow/commit/c279cbdcad37e1739c9918d9473acaf9c59b2b7f))
+
 ## [0.84.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.83.0...v0.84.0) (2026-10-19)
 
 
