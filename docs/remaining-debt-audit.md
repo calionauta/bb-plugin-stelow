@@ -1226,7 +1226,7 @@ rather than about the symptom.
 
 > **Historical note (knobs refactor):** this audit describes the Lean/Core/Complete
 > appetite ladder as it existed at audit time. The ladder has since been replaced
-> by explicit run knobs (quality, supervisor, exploration count + hybrid); legacy
+> by explicit run knobs (quality, exploration count + hybrid); legacy
 > appetite values map once to knobs. The audit's reasoning below is preserved as
 > written — only the vocabulary moved.
 

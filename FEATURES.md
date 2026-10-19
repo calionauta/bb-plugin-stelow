@@ -1935,10 +1935,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
   Legacy appetite defaults map once to knobs (production, breadth 2/3/5).
-  The retired supervision knob is absorbed on read and ignored: it set a
-  checkpoint cadence nothing enforced, priced at a full headless harness
-  spawn per check, while the acceptance contract (red-first, freeze_sha,
-  baseline) already proved the same work at close.
+  Rows written by an older build are read tolerantly: a key this version
+  no longer has is dropped, while every value the schema still declares is
+  validated as strictly as before. That is a property of the reader, not a
+  list of retired keys, so the next retirement needs no migration code.
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
   `testDecisionApi`, `decision_api_config` table). One decision endpoint
   for every decision router, configured once in Manage agent presets.

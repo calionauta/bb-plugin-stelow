@@ -8,7 +8,6 @@ import {
   explorationCountSchema,
   qualitySchema,
   redFirstSchema,
-  supervisorSchema,
   reviewModeInputSchema,
   cardStatusSchema,
   scopeSummarySchema,
@@ -260,9 +259,10 @@ export const cardRpcContract = {
   boardWorkflowDefaults: {
     experimental_description: "Board defaults: run knobs and review gates for new cards",
     input: NO_INPUT,
-    /** Omits the absorbed legacy key: this is what the host reads, and a key
-     * that is never emitted must not be advertised as present. */
-    output: boardWorkflowDefaultsSchema.omit({ supervisor: true }),
+    /** The stored shape carries no retired keys: readers of persisted rows are
+     * tolerant of them (see `boardWorkflowDefaultsSchema`), so nothing has to be
+     * advertised here for old data to keep parsing. */
+    output: boardWorkflowDefaultsSchema,
   },
   createCard: {
     experimental_description: "Create a build card and optionally start its triage worker",
@@ -282,12 +282,6 @@ export const cardRpcContract = {
         attachments: z.array(attachmentSchema).max(20).default([]),
         intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"),
         quality: qualitySchema.default("production"),
-        /**
-         * Absorbed, not advertised: a client built before the knob retired
-         * still sends it, and `.strict()` would refuse the whole call — the
-         * same reasoning as the board-defaults row. Ignored on the way in.
-         */
-        supervisor: supervisorSchema.optional(),
         explorationCount: explorationCountSchema.default(3),
         redFirst: redFirstSchema.optional(),
         /** Deprecated alias; when present without knobs it maps once to knobs. */
