@@ -21,7 +21,13 @@ export declare function playbookEntries(
      * relative to that root. Both together or neither: a root with no declared
      * outputs still names the directory the stage writes into.
      */
-    run?: { artifactRoot: string | null; outputs: string[] } | null;
+    run?: {
+      artifactRoot: string | null;
+      /** Recipe-declared outputs, relative to the root. */
+      outputs: string[];
+      /** Files actually present in the run dir, relative to the root. */
+      present?: string[];
+    } | null;
   },
   exists: (path: string) => boolean,
 ): PlaybookEntry[];

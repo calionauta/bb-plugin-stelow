@@ -51,6 +51,31 @@ export function registerStelowCommand(deps: CliSurfaceDeps): void {
 /** The inspection command: reads, never writes, and refuses what it cannot. */
 type InspectionConfig = Parameters<typeof createInspectionCommand>[0];
 
+/**
+ * The files inside one run directory, relative to it.
+ *
+ * The host owns the directory, so it enumerates: the declared outputs say what a
+ * run SHOULD write, this says what it DID. `.registered.json` is filtered out
+ * because it is the host's own receipt, not a run artifact the worker reads.
+ */
+async function listRunFiles(
+  bb: CliSurfaceDeps["bb"],
+  artifactRoot: string,
+): Promise<string[]> {
+  const listed = await bb.sdk.files.listPaths({
+    path: artifactRoot,
+    includeFiles: true,
+    includeDirectories: false,
+  });
+  const prefix = `${artifactRoot.replace(/[/\\]+$/, "")}/`;
+  return (Array.isArray(listed?.paths) ? listed.paths : [])
+    .map((entry: string | { path?: string }) =>
+      typeof entry === "string" ? entry : String(entry?.path ?? ""))
+    .map((path: string) => (path.startsWith(prefix) ? path.slice(prefix.length) : path))
+    .filter((path: string) => path.length > 0 && path !== ".registered.json")
+    .sort();
+}
+
 function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
   const { bb, core } = deps;
   const ERRORS = core.ERRORS;
@@ -84,10 +109,22 @@ function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
         .catch(() => null),
     researchStrategySkill: core.trackCapabilities.researchStrategySkill,
     exploreTechnique: core.trackCapabilities.exploreTechnique,
-    // The card's most recent run FOR THIS STAGE. Not the newest run of any
-    // stage: the root and the declared outputs are printed as one answer, so
-    // pairing a `verification` directory with `audit` filenames would be the
-    // archaeology this replaces, wearing a confident label.
+    ...runSeams(core),
+  };
+}
+
+/**
+ * The two run seams the playbook reads: the card's latest run for one stage, and
+ * the files inside a run directory.
+ *
+ * Stage-scoped on purpose. The root and the declared outputs are printed as one
+ * answer, so pairing a `verification` directory with `audit` filenames would be
+ * the archaeology this replaces, wearing a confident label.
+ */
+function runSeams(core: CliSurfaceDeps["core"]) {
+  return {
+    // The host lists the run directory so the worker does not `find` it.
+    listRunFiles: (artifactRoot: string) => listRunFiles(core.bb, artifactRoot),
     latestRunForStage: (cardId: string, stage: string) => {
       const latest = core.db
         .prepare(
