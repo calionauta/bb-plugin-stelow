@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { bandForCardKindStage, isWorkerPresetStale, liveWorkerCards } from "../lib/preset-staleness.mjs";
+import { bandForCardKindStage, isWorkerPresetStale, liveWorkerCards, presetBandsForCardKindStage, tierBandForStage } from "../lib/preset-staleness.mjs";
 import { refreshRestartPending } from "../lib/worker-ledger.mjs";
 import { resolveReliablePreset } from "../lib/reliable-preset.mjs";
 
@@ -98,4 +98,65 @@ assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'li
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'archived'").get().preset_restart_pending, 0, "archived cards are never touched");
 assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'workerless'").get().preset_restart_pending, 0, "workerless cards are never touched");
 
-console.log("preset staleness test ok: band mapping, live filtering, cascade composition");
+// --- Model-hint routing -----------------------------------------------------
+// Upstream marks every stage with a model_hint (economy/standard/best), and the
+// router grouped by PHASE instead — so one preset served `planning`, which holds
+// both `architecture` (best) and `gate` (economy). Measured on a live host that
+// put 23% of stage time in economy stages on the default preset. The hint is now
+// a band of its own, listed AHEAD of the phase band, so a pinned tier wins and an
+// unpinned one falls through to exactly the phase preset it got before.
+assert.deepEqual(
+  presetBandsForCardKindStage("build", "architecture"),
+  ["best", "planning"],
+  "a best-hinted stage offers its tier first, then its phase",
+);
+assert.deepEqual(
+  presetBandsForCardKindStage("build", "gate"),
+  ["economy", "planning"],
+  "gate and architecture share a phase but not a tier",
+);
+assert.deepEqual(presetBandsForCardKindStage("build", "no-such-stage"), ["analysis"], "an unknown stage yields one band, never a hint");
+assert.deepEqual(presetBandsForCardKindStage("research", "research"), ["research"], "research owns its band and consults no hint");
+assert.deepEqual(presetBandsForCardKindStage("explore", "explore"), ["explore"], "explore owns its band and consults no hint");
+assert.equal(tierBandForStage("triage"), "economy", "a declared hint resolves to its tier");
+assert.equal(tierBandForStage("not-a-stage"), null, "an unknown stage declares no tier");
+
+// The chain is additive, which is why this change cannot re-route an install
+// that pinned nothing: the first band that resolves wins, so an unset tier row
+// falls through to the phase preset it already had.
+const chain = ["preset_tier", "preset_phase"];
+const pick = (overrides) => resolveReliablePreset({
+  cardPin: null,
+  reliableOverride: null,
+  bandPreset: chain,
+  defaultPreset: "preset_default",
+  ...overrides,
+}).presetId;
+assert.equal(
+  pick({ bandPreset: [null, "preset_phase"] }),
+  "preset_phase",
+  "an unpinned tier falls through to the phase band",
+);
+assert.equal(pick({}), "preset_tier", "a pinned tier beats the phase band");
+assert.equal(pick({ cardPin: "preset_pin" }), "preset_pin", "a card pin still beats every band, tier included");
+assert.equal(
+  pick({ reliableOverride: "preset_reliable" }),
+  "preset_reliable",
+  "the reliable override still beats every band, tier included",
+);
+
+// A tier-band change must reach the cards whose stage declares it, and the phase
+// band must still reach them too — both are keys into one table. The fixture's
+// live build cards sit at `triage`, which declares economy.
+assert.deepEqual(
+  liveWorkerCards(db, ["economy"]).map((row) => row.id).sort(),
+  ["live-build", "live-pinned"],
+  "a tier change reaches the cards whose stage declares that tier",
+);
+assert.deepEqual(liveWorkerCards(db, ["best"]), [], "a tier no live card declares matches nothing");
+assert.deepEqual(
+  liveWorkerCards(db, ["analysis"]).map((row) => row.id).sort(),
+  ["live-build", "live-pinned"],
+  "the same cards are still reached by their phase band",
+);
+console.log("preset staleness test ok: band mapping, live filtering, cascade composition, tier routing");

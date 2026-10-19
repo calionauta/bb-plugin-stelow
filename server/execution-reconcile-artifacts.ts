@@ -263,14 +263,41 @@ function receiptNamesRun(content: string, runId: string, paths: string[]): boole
 }
 
 function registrationRequest(run: ExecutionRun, paths: string[], note = ""): string {
+  // Name the DESTINATION, not just the staging root. The old wording said
+  // "register them at their canonical paths" without ever writing those paths,
+  // so the worker answered a question the host already had the answer to — with
+  // `config get state_dir`, `ls`, `grep` and `find` over a run directory. The
+  // canonical path is the staging path minus its `runs/<id>` segment, which is
+  // how the staging root was built (`execution-native-prepare`), so it is derived
+  // here rather than asked for.
+  const canonical = paths.map((path) => {
+    const target = canonicalArtifactPath(run.artifactRoot, path);
+    return target ? `${path} -> ${target}` : path;
+  });
   return [
     `The native ${run.recipeId} run produced validated staging artifacts under ${run.artifactRoot}.`,
-    "Register them at their canonical paths, then write",
+    `Copy each one to its canonical path, then write`,
     `${join(run.artifactRoot, ".registered.json")} with `
     + `{"runId":"${run.id}","outputs":${JSON.stringify(paths)}}.`,
+    canonical.length > 0 ? `Destinations: ${canonical.join("; ")}.` : "",
     "Do not advance the card before that receipt exists.",
     note,
-  ].join(" ");
+  ].filter(Boolean).join(" ");
+}
+
+/**
+ * The state-dir path a staging artifact is copied to.
+ *
+ * Staging lives at `<stateDir>/runs/<exec id>/<relative>`, so the canonical
+ * home is that same relative path under `<stateDir>`. Returns null when the
+ * root does not carry the staging shape rather than guessing — a wrong path
+ * would send the worker to the wrong file with full confidence, which is worse
+ * than the archaeology it replaces.
+ */
+function canonicalArtifactPath(artifactRoot: string, relative: string): string | null {
+  const staging = /^(.*)[\\/]runs[\\/][^\\/]+$/.exec(artifactRoot);
+  if (!staging) return null;
+  return join(staging[1], relative);
 }
 
 function record(value: unknown): Record<string, unknown> {

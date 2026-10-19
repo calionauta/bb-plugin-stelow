@@ -48,11 +48,21 @@ export function createPresetSelectionAccessors(
   return {
     getPresetForCard,
     getPresetForBand,
-    getReliablePresetForBand(band: string, cardId: string): PresetRow {
+    /**
+     * Reliable-tier resolution for a band or a band chain.
+     *
+     * A chain is a stage's tier band followed by its phase band. Only the band
+     * step consults the chain, so a card pin and the reliable override keep
+     * beating every band exactly as before, and the chain itself only decides
+     * which band row answers — the first one that has a preset pinned. Absent
+     * tier rows therefore fall through to the phase band, which is why pinning
+     * a tier is strictly additive.
+     */
+    getReliablePresetForBand(band: string | string[], cardId: string): PresetRow {
       const resolved = resolveReliablePreset({
         cardPin: assignedPreset(db, cardId)?.preset_id ?? null,
         reliableOverride: lookups.getReliablePresetId(),
-        bandPreset: bandPresetId(db, band),
+        bandPreset: firstBandPresetId(db, band),
         defaultPreset: null,
       });
       return lookups.getPresetById(resolved.presetId ?? "") ?? getPresetForCard(cardId);
@@ -91,6 +101,23 @@ function insertFallbackDefault(db: PresetDb, now: () => number): void {
 
 function bandPresetId(db: PresetDb, band: string): string | null {
   return presetIdFor(db, "stage_presets", "band", band);
+}
+
+/**
+ * The first band in a chain that has a preset pinned, or null.
+ *
+ * A chain is a stage's tier band followed by its phase band, so this is where
+ * the model-hint layer becomes additive: an unpinned tier falls through to the
+ * phase preset the install already had, and only a band somebody actually
+ * configured can change what a worker spawns on.
+ */
+function firstBandPresetId(db: PresetDb, chain: string | string[]): string | null {
+  const bands = Array.isArray(chain) ? chain : [chain];
+  for (const band of bands) {
+    const pinned = bandPresetId(db, band);
+    if (pinned) return pinned;
+  }
+  return null;
 }
 
 function singletonPresetId(

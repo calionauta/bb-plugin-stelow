@@ -28,6 +28,12 @@ const PHASE_GROUPS = [
   { track: "Build", bands: ["analysis", "planning", "execution", "review"] },
 ];
 const KNOWN_BANDS = new Set(PHASE_GROUPS.flatMap((group) => group.bands));
+// The model tiers upstream declares per stage (`stages.yaml` `model_hint`).
+// Listed after the phase bands because they are the finer control: a pinned
+// tier wins for the stages that declare it, and an unset tier falls through to
+// the phase — so leaving this group empty is exactly the behaviour installs had
+// before it existed.
+const TIER_GROUP = { track: "Model tiers", bands: ["economy", "standard", "best"] };
 const RELIABLE_DELEGATED_GUIDANCE =
   "Demanding delegated work — automation drafts, research fan-out, " +
   "any burst the worker keeps rewriting. Runs with tools: pick a strong preset.";
@@ -190,7 +196,7 @@ export function PresetManagerBandRouting(props: PresetManagerBandRoutingProps) {
   return (
     <>
       <div className="grid gap-3">
-        {PHASE_GROUPS.map((group) => (
+        {[...PHASE_GROUPS, TIER_GROUP].map((group) => (
           <div key={group.track} className="space-y-2">
             <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {group.track}

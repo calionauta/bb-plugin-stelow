@@ -17,7 +17,10 @@
 // same operations. One sentence everywhere so workers discover the
 // sync-scopes/lock/config equivalents instead of failing on the path.
 export const CLI_EQUIVALENTS =
-  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, and stage playbook paths — never discover them with `bb skill list \
+  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, "
+  + "your state dir's receipts (audit.md, audit-trail.md, "
+  + "invariants.json, scope-map.json, recon-receipt.json) and stage paths "
+  + "— never discover them with `bb skill list \
 | awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the \
 `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never \
 run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers \
