@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.86.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.85.0...v0.86.0) (2026-10-20)
+
+
+### Features
+
+* give a scheduled visit its own cheap gate, and use it once per state ([#389](https://github.com/calionauta/bb-plugin-stelow/issues/389)) ([32e15c4](https://github.com/calionauta/bb-plugin-stelow/commit/32e15c4695a11c023d6866c256d4ed437af50d64))
+
 ## [0.85.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.84.0...v0.85.0) (2026-10-19)
 
 
