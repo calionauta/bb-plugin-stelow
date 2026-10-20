@@ -14,8 +14,8 @@ import {
 // One list row for all tracks: Build geometry standard, context per meta.
 assert.match(
   trackLists,
-  /function TrackListRow\(\{ card, meta, onOpen, onOpenThread \}/,
-  "all three list views share one row",
+  /function TrackListRow\(\{ card, meta, onOpen, onOpenThread, selection \}/,
+  "all three list views share one row, and the selection mode is threaded through it rather than forked",
 );
 assert.match(
   trackLists,

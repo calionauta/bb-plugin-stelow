@@ -58,12 +58,26 @@ export type ListCard = {
   exploreStage?: string | null;
 };
 
+/**
+ * The board's selection mode, threaded through the list view.
+ *
+ * Optional on purpose: Research and Explore render the same rows without it, so
+ * a track that has no bulk action reserves no space for one. When it is absent
+ * the row opens the card, exactly as before.
+ */
+type ListSelection = {
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelection: (cardId: string) => void;
+};
+
 type ListProps = {
   groups: Record<string, ListCard[]>;
   collapsed: Record<string, boolean>;
   onToggle: (column: string) => void;
   onOpenCard: (card: ListCard) => void;
   onOpenThread: (threadId: string) => void;
+  selection?: ListSelection;
 };
 
 const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS as readonly string[];
@@ -121,45 +135,78 @@ function ListRowStatus({ card }: { card: ListCard }) {
   );
 }
 
-function TrackListRow({ card, meta, onOpen, onOpenThread }: {
+function TrackListRow({ card, meta, onOpen, onOpenThread, selection }: {
   card: ListCard;
   meta: string | null;
   onOpen: () => void;
   onOpenThread: (threadId: string) => void;
+  selection?: ListSelection;
 }) {
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
+  const selecting = selection?.selectMode === true;
+  const selected = selecting && selection.selectedIds.has(card.id);
+  const activate = selecting ? () => selection.onToggleSelection(card.id) : onOpen;
   return (
     <button
       ref={returnFocusRef}
       type="button"
-      onClick={onOpen}
+      onClick={activate}
       onKeyDown={(event) => openWorkerThread(event, card, onOpenThread)}
-      title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"}
-      aria-label={`Open card ${card.displayName}.`}
+      title={selecting
+        ? "Add this card to the selection"
+        : card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"}
+      aria-label={selecting
+        ? `${selected ? "Deselect" : "Select"} card ${card.displayName}.`
+        : `Open card ${card.displayName}.`}
+      aria-pressed={selecting ? selected : undefined}
       className={[
         "flex min-h-11 w-full cursor-pointer flex-col items-stretch gap-1.5 border-b p-3 text-left",
         "last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2",
         "focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3",
+        selected ? "bg-primary/5" : "",
       ].join(" ")}
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
+        {selecting ? (
+          <span
+            aria-hidden
+            className={
+              "mt-1 size-4 shrink-0 rounded border transition "
+              + (selected ? "border-primary bg-primary" : "border-border bg-transparent")
+            }
+          />
+        ) : null}
         <span className={rowTone(card)} />
-        <span className="min-w-0 flex-1">
-          <strong className="block break-words text-sm leading-5">{card.displayName}</strong>
-          <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
-            {card.projectName}{meta ? ` · ${meta}` : ""}
-            {showScopeStrip(card) ? (
-              <>
-                {" · "}
-                <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
-                {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
-              </>
-            ) : null}
-          </span>
-        </span>
+        <ListRowIdentity card={card} meta={meta} />
       </span>
       <ListRowStatus card={card} />
     </button>
+  );
+}
+
+/**
+ * What the row is about: its name, then one muted context line.
+ *
+ * The context line carries the project, the track's own meta, and - only when the
+ * card has scopes - the progress strip with its elapsed time. It is its own
+ * component because the row around it keeps growing branches (selection, status
+ * chips, keyboard) and this half never changes with them.
+ */
+function ListRowIdentity({ card, meta }: { card: ListCard; meta: string | null }) {
+  return (
+    <span className="min-w-0 flex-1">
+      <strong className="block break-words text-sm leading-5">{card.displayName}</strong>
+      <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
+        {card.projectName}{meta ? ` · ${meta}` : ""}
+        {showScopeStrip(card) ? (
+          <>
+            {" · "}
+            <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
+            {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
+          </>
+        ) : null}
+      </span>
+    </span>
   );
 }
 
@@ -182,7 +229,7 @@ function showDoingNow(card: ListCard): boolean {
     && (card.doingNow?.length ?? 0) > 0;
 }
 
-function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor, onOpenCard, onOpenThread }: {
+function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor, onOpenCard, onOpenThread, selection }: {
   groups: Record<string, ListCard[]>;
   collapsed: Record<string, boolean>;
   onToggle: (column: string) => void;
@@ -191,6 +238,7 @@ function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor,
   metaFor: (card: ListCard) => string | null;
   onOpenCard: (card: ListCard) => void;
   onOpenThread: (threadId: string) => void;
+  selection?: ListSelection;
 }) {
   return (
     <div className="space-y-5">
@@ -208,6 +256,7 @@ function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor,
             onToggle={onToggle}
             onOpenCard={onOpenCard}
             onOpenThread={onOpenThread}
+            selection={selection}
           />
         );
       })}
@@ -215,7 +264,7 @@ function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor,
   );
 }
 
-function ListGroup({ column, label, cards, collapsed, metaFor, onToggle, onOpenCard, onOpenThread }: {
+function ListGroup({ column, label, cards, collapsed, metaFor, onToggle, onOpenCard, onOpenThread, selection }: {
   column: string;
   label: string;
   cards: ListCard[];
@@ -224,6 +273,7 @@ function ListGroup({ column, label, cards, collapsed, metaFor, onToggle, onOpenC
   onToggle: (column: string) => void;
   onOpenCard: (card: ListCard) => void;
   onOpenThread: (threadId: string) => void;
+  selection?: ListSelection;
 }) {
   const action = collapsed ? `Expand ${label}` : `Collapse ${label}`;
   return (
@@ -255,6 +305,7 @@ function ListGroup({ column, label, cards, collapsed, metaFor, onToggle, onOpenC
               meta={metaFor(card)}
               onOpen={() => onOpenCard(card)}
               onOpenThread={onOpenThread}
+              selection={selection}
             />
           ))}
         </div>
@@ -286,6 +337,7 @@ export function TrackList({ metaFor, ...props }: ListProps & {
       onToggle={props.onToggle}
       onOpenCard={props.onOpenCard}
       onOpenThread={props.onOpenThread}
+      selection={props.selection}
       columns={columns ?? LIGHTWEIGHT_COLUMNS}
       labels={labels ?? LIGHTWEIGHT_LABELS}
       metaFor={metaFor}

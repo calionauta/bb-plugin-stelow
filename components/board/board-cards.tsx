@@ -151,36 +151,65 @@ type BoardCardProps = {
   card: BoardCardItem;
   onOpen: () => void;
   selected?: boolean;
+  /** The board is in select mode: the tile toggles instead of opening. */
+  selectMode?: boolean;
   onToggleSelection?: (cardId: string) => void;
 };
 
-function CardShell({ card, ariaNoun, selected, onOpen, children }: {
+/**
+ * One tile surface, in one of two modes.
+ *
+ * In select mode the card is a checkbox with a title: the whole tile toggles the
+ * selection and nothing opens. That is deliberately different from the normal
+ * mode, where the tile opens the card — the two actions used to share one
+ * target, which is why the checkbox had to `stopPropagation` on every click and
+ * why selecting a card felt like fighting the tile.
+ *
+ * `onToggleSelection` being present IS the mode: a surface that offers selection
+ * always offers the toggle with it, so a tile cannot paint a checkbox nobody
+ * wired. Every caller that does not pass it (the Bucket and hill galleries, the
+ * list and hill views, Research and Explore) reserves no space for a control it
+ * does not have.
+ */
+function CardShell({ card, ariaNoun, selected, selectMode, onToggleSelection, onOpen, children }: {
   card: BoardCardItem;
   ariaNoun: string;
   selected?: boolean;
+  selectMode?: boolean;
+  onToggleSelection?: (cardId: string) => void;
   onOpen: () => void;
   children: ReactNode;
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const open = useCallback(() => onOpen(), [onOpen]);
+  const toggleSelection = useCallback(() => {
+    onToggleSelection?.(card.id);
+  }, [card.id, onToggleSelection]);
   const openThread = useCallback(() => {
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
+  const activate = selectMode ? toggleSelection : open;
+  const label = selectMode
+    ? `${selected ? "Deselect" : "Select"} ${card.displayName}.`
+    : `Open ${ariaNoun} ${card.displayName}.`;
   return (
     <div
       role="button"
       tabIndex={0}
       ref={returnFocusRef}
-      onClick={open}
+      onClick={activate}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
-        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(); }
+        else if (!selectMode && (event.key === "w" || event.key === "W")) { event.preventDefault(); openThread(); }
       }}
-      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
+      title={selectMode
+        ? "Click to add this card to the selection"
+        : card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}${selected ? " ring-1 ring-primary" : ""}`}
-      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
+      aria-label={label}
+      aria-pressed={selectMode ? Boolean(selected) : undefined}
     >
       {children}
     </div>
@@ -199,16 +228,19 @@ function CardResumeFooter({ card }: { card: BoardCardItem }) {
   );
 }
 
-export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCardProps) {
+export function BoardCard({ card, onOpen, selected, selectMode, onToggleSelection }: BoardCardProps) {
+  const selecting = selectMode === true && typeof onToggleSelection === "function";
   return (
     <CardShell
       card={card}
       ariaNoun="card"
       selected={selected}
+      selectMode={selecting}
+      onToggleSelection={onToggleSelection}
       onOpen={onOpen}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        {typeof onToggleSelection === "function" ? (
+      <div className={`flex min-w-0 items-start ${selecting ? "gap-2" : ""}`}>
+        {selecting ? (
           <BoardCardSelect
             cardId={card.id}
             displayName={card.displayName}
@@ -232,14 +264,24 @@ export function BoardCard({ card, onOpen, selected, onToggleSelection }: BoardCa
 
 
 /**
- * The multi-select checkbox, inline at the head of the tile's flex row — in
- * flow, never floating. It used to be `absolute left-2 top-2`, a 44px opaque
- * box drawn over the title's first lines, so the card's most important text
- * read through a translucent checkbox. An overlay can always drift back over
- * content; a flex item cannot overlap by construction — it pushes content
- * aside instead. Compact (32px) on purpose: the whole tile already opens the
- * card, so this is a secondary bulk action for a dense kanban, not a primary
- * touch target. The label stops propagation so checking never opens.
+ * The multi-select checkbox, rendered ONLY in select mode.
+ *
+ * It is inline at the head of the tile's flex row — in flow, never floating. An
+ * earlier version was `absolute left-2 top-2`, a 44px opaque box drawn over the
+ * title's first lines, so the card's most important text read through a
+ * translucent checkbox; an overlay can always drift back over content, while a
+ * flex item cannot overlap by construction.
+ *
+ * What changed is not its size but its existence. Painted unconditionally, it
+ * claimed `size-8` plus a `gap-2` out of a 176–256px content box — 15–18% of
+ * every tile, every moment — and its own 34px of top-aligned height set the
+ * first line of every short title. All of that to arm a bulk bar that appears
+ * only after a reader has already clicked something. In a mode it costs nothing
+ * in the state that is true 100% of the time.
+ *
+ * It still `stopPropagation`s, because the label and the input both sit inside a
+ * tile that is now itself a toggle: without it, one click on the box would
+ * toggle twice and land where it started.
  */
 function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
   cardId: string;
