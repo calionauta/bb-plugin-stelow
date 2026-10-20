@@ -24,3 +24,17 @@ export declare function pausedActivityLabel(card: {
   needsAttention?: boolean;
   lastError?: string | null;
 }): { label: string; detail: string } | null;
+
+/**
+ * How long an idle card has been waiting, or null when it is not idle.
+ * A compact duration (`2d 4h`), never an absolute date: the tile row it lands
+ * in is one line wide, and a locale timestamp overflows it.
+ */
+export declare function idleDurationLabel(
+  card: {
+    activity: string;
+    lastIdleAt?: number | null;
+    updatedAt?: number | null;
+  },
+  now?: number,
+): string | null;

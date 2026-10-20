@@ -3,13 +3,12 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
-import { errorActivityLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
-import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
+import { errorActivityLabel, idleDurationLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
+import { cardCanResume, cardNeedsReview } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { orderedDoingNow } from "../../lib/doing-now.mjs";
 import {
   ActivityPill,
-  AttentionChip,
   BuildStatusPills,
   DoingNowPill,
   ErrorChip,
@@ -18,7 +17,6 @@ import {
   LightweightStatusPills,
   ReviewChip,
   ScopeStrip,
-  attentionLabel,
 } from "../dashboard/build-status-pills";
 import type { rpcContract } from "../../server";
 
@@ -60,45 +58,81 @@ export function CardRetryButton({ cardId, label }: { cardId: string; label: stri
   );
 }
 
+/**
+ * The chips that say what is happening to this card, one per state.
+ *
+ * Extracted from `CardMetaRows` because the list of chips is the part that
+ * grows: every chip costs a line of conditional and the render function was on
+ * its size budget before the pause fix needed a comment in it.
+ */
+function CardAlertChips({ card, stopped, paused }: {
+  card: BoardCardItem;
+  stopped: { label: string; detail: string } | null;
+  paused: { label: string; detail: string } | null;
+}) {
+  return (
+    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+      {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
+      {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
+      {card.integrationPending ? (
+        <IntegrationPendingChip
+          label={card.integrationPending.label}
+          detail={card.integrationPending.detail}
+        />
+      ) : null}
+      {card.activity === "running" || card.activity === "awaiting-answer" ? (
+        <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} />
+      ) : null}
+      {cardNeedsReview(card) ? <ReviewChip /> : null}
+    </div>
+  );
+}
+
+/**
+ * The project line, and how long the card has been waiting beside it.
+ *
+ * The wait used to be `· Idle since 10/19/2026, 3:01:31 AM` in a `shrink-0`
+ * span, which is wider than the 240px column's content box: it could not
+ * shrink, could not wrap, and took the project name out of the card with it.
+ * Now it is a compact duration (`idleDurationLabel`) and it is the part that
+ * yields — `truncate` on the wrapper, `shrink` on the span — with the exact
+ * timestamp on the element's own title, where a reader who needs the instant
+ * will look for it.
+ */
+function CardContextRow({ card }: { card: BoardCardItem }) {
+  const idleFor = idleDurationLabel(card);
+  const exact = Number.isFinite(card.updatedAt) ? new Date(card.updatedAt).toLocaleString() : "unknown";
+  return (
+    <div className="mt-2 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+      <span className="min-w-0 truncate">{card.projectName}</span>
+      {idleFor ? (
+        <span className="ml-auto shrink truncate" title={`Idle since ${exact}`}>{idleFor}</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function CardMetaRows({ card }: { card: BoardCardItem }) {
   const stopped = errorActivityLabel(card);
   const paused = pausedActivityLabel(card);
+  // ONE chip per state. A paused card used to wear two — `Paused` from
+  // `pausedActivityLabel` and `Paused. Resume it.` from an amber attention
+  // chip — because both were fed by the same `cardIsStalled` predicate and
+  // neither knew the other had already said it. The pause chip survives
+  // because it carries the recovery sentence on hover; the amber channel stays
+  // on the border, which is the surface that still has something new to say
+  // (see `liveBorderClass`).
   const showAlerts =
     stopped != null ||
     paused != null ||
-    cardShowsAttention(card) ||
     card.integrationPending != null ||
     card.activity === "running" ||
     card.activity === "awaiting-answer" ||
     cardNeedsReview(card);
   return (
     <>
-      {showAlerts ? (
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
-          {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
-          {cardShowsAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
-          {card.integrationPending ? (
-            <IntegrationPendingChip
-              label={card.integrationPending.label}
-              detail={card.integrationPending.detail}
-            />
-          ) : null}
-          {card.activity === "running" || card.activity === "awaiting-answer" ? (
-            <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} />
-          ) : null}
-          {cardNeedsReview(card) ? <ReviewChip /> : null}
-        </div>
-      ) : null}
-      <div
-        className="mt-2 flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground"
-        title={`Project: ${card.projectName}${card.activity === "idle" ? ` · Idle since ${new Date(card.updatedAt).toLocaleString()}` : ""}`}
-      >
-        <span className="truncate">{card.projectName}</span>
-        {card.activity === "idle" ? (
-          <span className="shrink-0">· Idle since {new Date(card.updatedAt).toLocaleString()}</span>
-        ) : null}
-      </div>
+      {showAlerts ? <CardAlertChips card={card} stopped={stopped} paused={paused} /> : null}
+      <CardContextRow card={card} />
     </>
   );
 }

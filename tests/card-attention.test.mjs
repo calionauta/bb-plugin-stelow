@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { cardCanResume, cardIsTerminal, cardNeedsReview, cardShowsAttention } from "../lib/card-attention.mjs";
+import { cardIsStalled } from "../lib/card-stall.mjs";
+import { pausedActivityLabel } from "../lib/detail-presentation.mjs";
 import { workerActionPolicy } from "../lib/worker-action-policy.mjs";
 
 const active = {
@@ -58,6 +60,26 @@ assert.equal(
 assert.equal(cardShowsAttention(active), true, "idle attention has no duplicate activity chip");
 assert.equal(cardShowsAttention({ ...active, activity: "awaiting-answer" }), false, "the waiting pill replaces the attention chip");
 assert.equal(cardShowsAttention({ ...active, activity: "error" }), false, "the error pill replaces the attention chip");
+
+// --- one predicate, three readers ------------------------------------------
+// The pause chip, the Resume button and the amber channel all ask "is this card
+// stalled on a person?". They used to each write the predicate out, agree, and
+// render the same stall twice. Now they share `cardIsStalled`, and this is the
+// guard that keeps them sharing it: a reader that stops agreeing is a reader
+// that will one day light a chip with no button behind it.
+assert.equal(cardIsStalled(active), true, "an idle, attended card is stalled");
+assert.equal(cardShowsAttention(active), cardIsStalled(active),
+  "the amber channel reads the shared predicate, not a copy of it");
+assert.equal(pausedActivityLabel(active) !== null, cardIsStalled(active),
+  "the pause chip reads the shared predicate, not a copy of it");
+assert.equal(cardCanResume(active), cardIsStalled(active),
+  "the Resume button reads the shared predicate, not a copy of it — a chip without its button is a dead end");
+for (const activity of ["held", "error", "awaiting-answer", "running"]) {
+  const card = { ...active, activity };
+  assert.equal(cardIsStalled(card), false, `a ${activity} card is not stalled on a person`);
+  assert.equal(pausedActivityLabel(card), null,
+    `a ${activity} card wears no pause chip — the chip and the predicate are the same answer`);
+}
 assert.equal(cardNeedsReview({ status: "completed", hasPendingReview: true }), true, "a completed card with unread review asks for review");
 assert.equal(cardNeedsReview({ status: "in-progress", hasPendingReview: true }), false, "unfinished work never asks for completion review");
 

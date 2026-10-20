@@ -161,9 +161,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   publication: the panel offers it precisely because it cannot fetch or push.
   The reading comes from the `publication_events` ledger and never from a live
   `git` call, because the board lists every card and a per-card git invocation
-  would turn a scroll into a spawn. The chip is amber, matching
-  `AttentionChip`: both mean this card wants a person, and a reader who learned
-  one tone should not have to learn a second for the same call to action.
+  would turn a scroll into a spawn. The chip is amber: it means this card wants
+  a person, the same tone the pause chip and the host-read marker use, so a
+  reader who learned one tone does not have to learn a second for the same call
+  to action.
 - **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
   A card whose worker halts recorded `activity: "error"` and put its reason in
   a comment the board never renders, so the board showed the amber attention
@@ -433,9 +434,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   same ordered pills: board location, lifecycle state, worker state, then
   workflow type. The components and tones are shared; a generic “Status”
   label and the stage-as-status variant are not shown on the board, so a
-  card reads the same way before and after opening it. Tiles and the
-  breadcrumb name the card's project in one muted line — context without
-  clutter; list rows already carried it.
+  card reads the same way before and after opening it. One state, one chip:
+  a stalled card wears exactly one — a paused card is never `Paused` *and*
+  `Paused. Resume it.` on the same tile, which is what happened while two
+  components each read the same stall predicate and neither knew the other had
+  already said it. The predicate itself lives in `lib/card-stall.mjs`
+  (`cardIsStalled`) and is read by the chip, the amber border and the Resume
+  button alike, so a chip can never appear without its button behind it — a
+  chip with no action is a dead end, and a button nobody was told about is a
+  click nobody makes. Tiles and the breadcrumb name the card's project in one
+  muted line — context without clutter; list rows already carried it. A stalled
+  card's line also carries how long it has been waiting, as a compact duration
+  (`2d 4h`, `idleDurationLabel`) measured from `last_idle_at` — the clock the
+  host already uses to decide the card needs attention, not `updated_at`, which
+  a sync poll bumps without the card having moved. The exact timestamp is on the
+  element's own title: `Idle since 10/19/2026, 3:01:31 AM` in a `shrink-0` span
+  was wider than the 240px column's content box, so it could not shrink, could
+  not wrap, and took the project name out of the tile with it.
 - **Bucket** (`components/board/card-gallery.tsx`; one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
   leaving it is what starts the card. The Bucket renders nowhere as a column — each track header offers it
   as a button (count included) opening an expanded gallery modal — fixed
