@@ -305,6 +305,9 @@ function cardProgress(
   return {
     presetOverridden: hasPresetOverride(deps.db, card.id),
     updatedAt: card.updated_at,
+    // The stall's own clock, beside the row's write time — the open card and
+    // the board tile now measure a wait from the same field.
+    lastIdleAt: card.last_idle_at ?? null,
     stallCount: stallCount(deps.db, card.id),
     scopeSummary: scopeSummary(parts.scopes),
     workerPresetId: card.worker_preset_id,

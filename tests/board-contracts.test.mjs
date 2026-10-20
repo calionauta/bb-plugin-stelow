@@ -23,27 +23,45 @@ assert.match(
   "every list adapter renders the shared row",
 );
 
-// Attention chip parity: tiles and rows share one component, and the chip
-// renders only when the activity pill doesn't already say it — "Waiting
-// for you" plus "Answer required" read as the same state twice.
-assert.match(
+// One chip per state, on both surfaces.
+//
+// A stalled card used to wear TWO chips — `Paused` from pausedActivityLabel and
+// `Paused. Resume it.` from the amber AttentionChip — because both were fed by
+// the same predicate and neither knew the other had already spoken. The board
+// said one state twice, on the narrowest row in the product. What this pins is
+// the REFUSAL: the amber attention chip is gone, so it cannot come back as a
+// "harmless" second call site, and each surface renders the pause chip at
+// exactly one place.
+assert.doesNotMatch(
   buildStatusPills,
-  /export function AttentionChip\(\{ label \}/,
-  "one attention chip serves tiles and rows",
+  /export function AttentionChip/,
+  "the attention chip that duplicated the pause chip is deleted, not merely unused — an exported "
+  + "component with no caller is how it got reintroduced the first time",
 );
+assert.doesNotMatch(
+  `${boardCards}\n${trackLists}`,
+  /<AttentionChip/,
+  "a tile or row rendering a second chip for the same stall is the regression this pins",
+);
+// The slice is the tile's CHIP component, not `CardMetaRows`: the chips were
+// extracted when the list outgrew a 50-line function, and pinning the render
+// function would have read zero pause chips while the tile rendered one.
+const tileChips = boardCards.slice(
+  boardCards.indexOf("function CardAlertChips"),
+  boardCards.indexOf("function CardContextRow"),
+);
+const pauseSites = (source) => (source.match(/<PausedChip /g) ?? []).length;
+assert.equal(
+  pauseSites(tileChips),
+  1,
+  "one pause chip per tile: two is the same fact told twice, zero is a stall the reader cannot see",
+);
+// The lightweight list row swaps `ActivityPill` for the pause chip rather than
+// stacking them, because the pill already says `Paused` for every idle card.
 assert.match(
   boardCards,
-  /<AttentionChip label=\{attentionLabel\(card\.activity\)\} \/>/,
-  "tiles render the shared chip",
-);
-const metaRows = boardCards.slice(
-  boardCards.indexOf("export function CardMetaRows"),
-  boardCards.indexOf("export function CardHeading"),
-);
-assert.match(
-  metaRows,
-  /cardShowsAttention\(card\)/,
-  "tiles chip only what the pill doesn't already state",
+  /pausedActivityLabel\(card\)/,
+  "the tile's pause chip is fed by the shared label, not by a locally rebuilt condition",
 );
 
 // Focused-card keyboard: Enter/Space opens the card, W opens its worker
@@ -92,15 +110,30 @@ const listRowStatus = trackLists.slice(
   trackLists.indexOf("function ListRowStatus"),
   trackLists.indexOf("function TrackListRow"),
 );
-assert.match(
-  listRowStatus,
-  /showAttention\(card\) \? <AttentionChip label=\{attentionLabel\(card\.activity\)\}/,
-  "rows follow the same rule — no duplicate state pair",
+assert.equal(
+  pauseSites(listRowStatus),
+  1,
+  "one pause chip per list row, for the same reason as the tile",
 );
 assert.match(
+  listRowStatus,
+  /\{paused \? null : <ActivityPill activity=\{card\.activity\} \/>\}/,
+  "a paused row suppresses the generic `Paused` pill instead of printing the state twice — the pair "
+  + "that made one stall read as two chips",
+);
+assert.doesNotMatch(
   trackLists,
-  /!\[(?:"|')awaiting-answer(?:"|'), (?:"|')error(?:"|')\]\.includes\(card\.activity\)/,
-  "row attention suppression covers both terminal wait and error states",
+  /showAttention\(/,
+  "the row's attention predicate is deleted with the chip it fed; a leftover predicate is a door with no room",
+);
+// The pair of predicates that used to disagree about what a stall is lives in
+// one module now (`lib/card-stall.mjs`), so a row cannot suppress the generic
+// pill on a condition the chip was not fed by. Asserted here as the wiring, and
+// in tests/card-attention.test.mjs as the behaviour.
+assert.match(
+  trackLists,
+  /pausedActivityLabel\(card\)/,
+  "the row's chip and its suppression come from one label, so they cannot disagree",
 );
 assert.match(
   trackLists,

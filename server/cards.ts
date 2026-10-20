@@ -125,6 +125,26 @@ function queryCards(
   return (where ? statement.all(...values) : statement.all()) as WorkerCard[];
 }
 
+/**
+ * The two timestamps the board reads, and they are different questions.
+ *
+ * `updatedAt` is when the row was last written — a sync poll moves it without
+ * the card having moved, so it orders the board but says nothing about how long
+ * a card has waited. `lastIdleAt` is when the worker stopped producing, which
+ * is what `idleDurationLabel` measures and what the host already uses to decide
+ * the card needs attention at all (`attentionState` above). Both travel so the
+ * tile can answer "how long has this been sitting" from the stall's own clock.
+ */
+function idleClock(row: WorkerCard) {
+  return { updatedAt: row.updated_at, lastIdleAt: row.last_idle_at ?? null };
+}
+
+/** The name a card's context line shows; an exploratory card has no project. */
+function projectLabel(projectNames: Map<string, string>, row: WorkerCard): string {
+  if (row.workspace_kind === "exploratory") return "Exploratory work";
+  return projectNames.get(row.project_id) ?? row.project_id;
+}
+
 async function enrichCard(
   deps: CardsDeps,
   workspaceFor: (card: WorkerCard) => Promise<Workspace | null>,
@@ -143,7 +163,7 @@ async function enrichCard(
     prompt: row.prompt,
     intent: row.intent,
     projectId: row.project_id,
-    projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectNames.get(row.project_id) ?? row.project_id),
+    projectName: projectLabel(projectNames, row),
     workspaceKind: row.workspace_kind,
     workspacePath: row.workspace_path,
     environmentLabel: row.environment_label ?? null,
@@ -167,7 +187,7 @@ async function enrichCard(
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
-    updatedAt: row.updated_at,
+    ...idleClock(row),
     stallCount: stallCount(deps.db, row.id),
     scopeSummary: scopeTally(summary),
     doingNow: summary.doingNow,

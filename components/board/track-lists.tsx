@@ -1,16 +1,15 @@
 import { DisclosureChevron } from "../disclosure";
 import { formatDuration } from "../../lib/card-metrics.mjs";
+import { relativeTime } from "../../lib/relative-time.mjs";
 import { orderedDoingNow } from "../../lib/doing-now.mjs";
 import {
   ActivityPill,
-  AttentionChip,
   IntegrationPendingChip,
   DoingNowPill,
   ErrorChip,
   PausedChip,
   ReviewChip,
   ScopeStrip,
-  attentionLabel,
 } from "../dashboard/build-status-pills";
 import {
   buildListMeta,
@@ -28,7 +27,7 @@ import {
   LIGHTWEIGHT_VISIBLE_COLUMNS,
 } from "../../lib/tracks.mjs";
 import { useReturnFocus } from "./use-return-focus";
-import { errorActivityLabel, pausedActivityLabel } from "../../lib/detail-presentation.mjs";
+import { errorActivityLabel, idleDurationLabel, pausedActivityLabel } from "../../lib/detail-presentation.mjs";
 
 type ScopeSummary = {
   scopesDone: number;
@@ -91,12 +90,22 @@ function openWorkerThread(
 function ListRowStatus({ card }: { card: ListCard }) {
   const stopped = errorActivityLabel(card);
   const paused = pausedActivityLabel(card);
+  const idleFor = idleDurationLabel(card);
+  // The exact instant, on hover only. The visible stamp is relative — `3d ago`,
+  // or the stall's own duration when there is one — because a locale timestamp
+  // is the widest thing a row can carry and the least useful thing on it.
+  const exactUpdated = Number.isFinite(card.updatedAt)
+    ? new Date(card.updatedAt).toLocaleString()
+    : "unknown";
   return (
     <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-      <ActivityPill activity={card.activity} />
+      {/* One chip per state. `ActivityPill` says `Paused` for every idle card;
+          `PausedChip` says it only for a stall a person can clear. Rendering
+          both, plus the amber attention chip, was the same fact three times on
+          one row — and the row is where space is scarcest. */}
+      {paused ? null : <ActivityPill activity={card.activity} />}
       {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
       {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
-      {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
       {card.integrationPending ? (
         <IntegrationPendingChip
           label={card.integrationPending.label}
@@ -105,7 +114,9 @@ function ListRowStatus({ card }: { card: ListCard }) {
       ) : null}
       {showDoingNow(card) ? <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /> : null}
       {pendingReview(card) ? <ReviewChip /> : null}
-      <span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span>
+      <span className="shrink-0 whitespace-nowrap" title={exactUpdated}>
+        {idleFor ?? relativeTime(card.updatedAt)}
+      </span>
     </span>
   );
 }
@@ -164,10 +175,6 @@ function rowTone(card: ListCard): string {
   if (pendingReview(card)) return "mt-1 size-2 shrink-0 rounded-full bg-emerald-500";
   if (card.activity === "running") return "mt-1 size-2 shrink-0 rounded-full bg-primary";
   return "mt-1 size-2 shrink-0 rounded-full bg-muted-foreground/40";
-}
-
-function showAttention(card: ListCard): boolean {
-  return card.needsAttention && !["awaiting-answer", "error"].includes(card.activity);
 }
 
 function showDoingNow(card: ListCard): boolean {

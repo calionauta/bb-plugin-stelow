@@ -122,12 +122,6 @@ export function ReviewChip({ label = "Ready for review" }: { label?: string }) {
   return <span title="Open this card to clear it." className={cls}>{label}</span>;
 }
 
-export function attentionLabel(activity: string): string {
-  if (activity === "awaiting-answer") return "Answer required";
-  if (activity === "error") return "Worker failed";
-  return "Paused. Resume it.";
-}
-
 // One component owns the transient activity vocabulary everywhere it appears.
 // Build summaries choose only the human-waiting state; active work is a live
 // border, while lightweight cards can opt into their compact activity pill.
@@ -172,25 +166,24 @@ export function ReadMissPill() {
   );
 }
 
-// One attention chip for tiles and list rows alike: amber dot + action
-// label ("Answer required", "Worker failed", "Paused. Resume it."). Callers
-// show it only when the activity pill doesn't already say it — the pair
-// must never read as the same state twice.
-export function AttentionChip({ label }: { label: string }) {
-  return <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-    <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-    <span>{label}</span>
-  </span>;
-}
-
 /**
  * A card whose worker ran out of work and is waiting for the user.
  *
- * Amber, like the attention chip it appears alongside — this is a "needs
- * you" state, not a failure. It is a separate component rather than a branch
- * inside the attention chip because the two say different things: attention
- * means a specific known thing is outstanding, pause means the worker simply
- * stopped producing and the user has to decide what to do about it.
+ * Amber, and it is the ONLY chip a stalled card wears. There used to be a
+ * second, `AttentionChip`, rendering beside it with the label "Paused. Resume
+ * it." — same predicate, same call to action, same card, two chips. The pair
+ * was justified as "attention means a specific known thing is outstanding,
+ * pause means the worker simply stopped", which was true of the words and
+ * false of the code: both were fed by `cardIsStalled`, so the only state either
+ * could ever render was the same one. One of them had to go, and this one
+ * survived because it has somewhere to put the sentence: `detail` is the hover
+ * text naming both recovery options, which a chip with no `detail` prop cannot
+ * carry.
+ *
+ * The amber CHANNEL still exists and still means "this card wants a person" —
+ * it lives on the card's border (`liveBorderClass`), where it was already doing
+ * that job. What was redundant was saying it twice on the same row, not having
+ * two ways to say it.
  */
 export function PausedChip({ label, detail }: { label: string; detail: string }) {
   return (
@@ -228,10 +221,11 @@ export function ErrorChip({ label, detail }: { label: string; detail: string }) 
 /**
  * What a finished card still owes its repository.
  *
- * Amber is the same tone as AttentionChip on purpose: both mean "this card
- * wants a person", and a reader who learns one tone should not have to learn
- * a second for the same call to action. The difference is in the text, not
- * the color — the label names the missing step.
+ * Amber is the same tone as the pause and host-read channels on purpose: all
+ * three mean "this card wants a person", and a reader who learns one tone
+ * should not have to learn a second for the same call to action. The
+ * difference is in the text, not the colour — the label names the missing
+ * step.
  */
 export function IntegrationPendingChip({ label, detail }: { label: string; detail: string }) {
   return (
