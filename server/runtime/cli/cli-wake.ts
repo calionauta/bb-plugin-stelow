@@ -1,4 +1,4 @@
-import { shouldWake } from "../../../lib/wake-gate.mjs";
+import { shouldWake, wakeFingerprint } from "../../../lib/wake-gate.mjs";
 import {
   noCardInContext,
   scanCardId,
@@ -38,12 +38,39 @@ const USAGE = "Usage: bb stelow wake [--card <card_id>] [--json]";
  *     case "$out" in *wakeAgent*) echo "$out"; exit 0 ;; esac
  *     bb automation run "$WORKER_ID" --project "$PROJECT"
  *
+ * The pair has one schedule, not two: the worker automation is created with
+ * `--disabled` and the sentinel's cadence is the only thing that starts it.
+ * Left on its own schedule the worker still pays a turn every tick and the gate
+ * changes nothing.
+ *
+ * The gate also remembers the state it last woke a visit for, per card, and
+ * refuses a repeat on an unchanged card. Without that it would answer "idle, so
+ * yes" every tick, and an idle card whose worker keeps parking without advancing
+ * a stage would be visited every 20 minutes forever — the same loop, one
+ * sentinel later. A stage advance, a question, a new error or any other change
+ * to the card's own fields is a new state and earns a new visit; the idle
+ * timestamp alone is not, because the end of a visit is what moves it.
+ *
  * A missing card is a loud exit 2, never a silent skip. A gate that skipped on a
  * misconfiguration (wrong card id, a renamed branch, a worker run outside its
  * thread) would hide the automation forever, and "the loop stopped and nothing
  * said why" is the failure mode this whole change exists to remove.
  */
 export function createWakeCommand(deps: CliDeps): CliCommandFn {
+  // The last state this gate woke a visit for, per card.
+  //
+  // In memory, like `createScopeProgressSync`'s fingerprints, and for the same
+  // reason: a plugin reload forgets it and costs exactly one extra visit, which
+  // is a cheaper failure than persisting a cost guard across a boundary where
+  // it has no meaning — a card whose row looked identical before a restart is
+  // still identical after, and the restart itself is not evidence that a visit
+  // would find something new. It lives in the command's closure, not at module
+  // scope, so two hosts (or two tests) never share a memory of one card.
+  //
+  // Kept here rather than in `lib/wake-gate.mjs` because the decision stays
+  // pure: the module is told "this exact state was already visited" and does not
+  // own a clock, a map, or the lifetime of either.
+  const visited = new Map<string, string>();
   return async (argv, ctx) => {
     if (argv[0] !== "wake") return null;
     const args = argv.slice(1);
@@ -53,14 +80,26 @@ export function createWakeCommand(deps: CliDeps): CliCommandFn {
     if (!scanned.cardId) return noCardInContext();
     const card = deps.getCard(scanned.cardId);
     if (!card) return unknownCard(scanned.cardId);
-    return verdictFor(deps, card, json);
+    return verdictFor(deps, card, json, visited);
   };
 }
 
-function verdictFor(deps: CliDeps, card: WorkerCard, json: boolean): CliResult {
+function verdictFor(
+  deps: CliDeps,
+  card: WorkerCard,
+  json: boolean,
+  visited: Map<string, string>,
+): CliResult {
+  const print = wakeFingerprint({
+    status: card.status,
+    activity: card.activity,
+    stage: card.stage,
+    lastError: card.last_error,
+  });
   const { wake, reason } = shouldWake({
     status: card.status,
     activity: card.activity,
+    stage: card.stage,
     lastError: card.last_error,
     lastIdleAt: card.last_idle_at,
     now: deps.now(),
@@ -70,10 +109,18 @@ function verdictFor(deps: CliDeps, card: WorkerCard, json: boolean): CliResult {
     // reporting, so its presence IS the "host is not answering" verdict and this
     // read does not need a second threshold to disagree with.
     readUnreachable: card.read_miss_since != null,
+    unchangedSinceVisit: visited.get(card.id) === print,
   });
+  // Recorded only on a wake: the memory means "a turn was already spent on this
+  // exact state". A refusal spends nothing, so it must not claim one was spent —
+  // the next tick would then skip a state nobody ever looked at.
+  if (wake) visited.set(card.id, print);
 
   if (json) {
-    return { exitCode: 0, stdout: JSON.stringify({ wake, reason, cardId: card.id }, null, 2) };
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({ wake, reason, cardId: card.id }, null, 2),
+    };
   }
   // The host's silent-skip contract, and the only line this command prints for
   // a refusal. Kept to exactly this shape: the automations plugin parses the

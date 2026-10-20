@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MAX_WASTED_VISITS, shouldWake } from "../lib/wake-gate.mjs";
+import { MAX_RESUME_ATTEMPTS, shouldWake, wakeFingerprint } from "../lib/wake-gate.mjs";
 
 // The wake gate: should a scheduled visit spend a model turn on this card?
 //
@@ -55,7 +55,7 @@ test("an idle card whose resume budget is spent does not wake: stuck, not chatty
   const verdict = shouldWake({
     status: "in-progress",
     activity: "idle",
-    autoCount: MAX_WASTED_VISITS,
+    autoCount: MAX_RESUME_ATTEMPTS,
   });
   assert.equal(verdict.wake, false);
   assert.match(verdict.reason, /resume budget is spent/);
@@ -63,8 +63,55 @@ test("an idle card whose resume budget is spent does not wake: stuck, not chatty
 
 test("the budget boundary is exact: one below wakes, exactly at the cap does not", () => {
   const base = { status: "in-progress", activity: "idle" };
-  assert.equal(shouldWake({ ...base, autoCount: MAX_WASTED_VISITS - 1 }).wake, true);
-  assert.equal(shouldWake({ ...base, autoCount: MAX_WASTED_VISITS }).wake, false);
+  assert.equal(shouldWake({ ...base, autoCount: MAX_RESUME_ATTEMPTS - 1 }).wake, true);
+  assert.equal(shouldWake({ ...base, autoCount: MAX_RESUME_ATTEMPTS }).wake, false);
+});
+
+test("a state the last visit already saw does not wake again", () => {
+  const verdict = shouldWake({
+    status: "in-progress",
+    activity: "idle",
+    stage: "build",
+    unchangedSinceVisit: true,
+  });
+  assert.equal(verdict.wake, false);
+  assert.match(verdict.reason, /has not moved since the last visit/);
+  // The reason has to name the state, or a reader cannot tell "nothing changed"
+  // from "the gate is broken".
+  assert.match(verdict.reason, /idle at build/);
+});
+
+test("the unchanged refusal never replaces a more specific one", () => {
+  const verdict = shouldWake({
+    status: "in-progress",
+    activity: "awaiting-answer",
+    unchangedSinceVisit: true,
+  });
+  assert.equal(verdict.wake, false);
+  assert.match(verdict.reason, /waiting on a human answer/, "cause beats the gate's own memory");
+});
+
+test("the fingerprint follows what a visit could change and ignores what a visit moves", () => {
+  const base = { status: "in-progress", activity: "idle", stage: "build", lastError: null };
+  assert.equal(wakeFingerprint(base), wakeFingerprint({ ...base }), "the same state is the same key");
+  assert.notEqual(wakeFingerprint(base), wakeFingerprint({ ...base, stage: "review" }), "a stage advance is news");
+  assert.notEqual(wakeFingerprint(base), wakeFingerprint({ ...base, activity: "running" }), "a live turn is news");
+  assert.notEqual(wakeFingerprint(base), wakeFingerprint({ ...base, lastError: "boom" }), "a failure is news");
+  assert.notEqual(wakeFingerprint(base), wakeFingerprint({ ...base, status: "completed" }), "a status move is news");
+});
+
+test("an idle card at a new state wakes even if a visit already happened at the old one", () => {
+  const before = wakeFingerprint({ status: "in-progress", activity: "idle", stage: "build" });
+  const after = wakeFingerprint({ status: "in-progress", activity: "idle", stage: "review" });
+  // The command compares these and passes the boolean; this asserts the two
+  // halves agree, so a fingerprint that ignored the stage cannot pass here.
+  const verdict = shouldWake({
+    status: "in-progress",
+    activity: "idle",
+    stage: "review",
+    unchangedSinceVisit: before === after,
+  });
+  assert.equal(verdict.wake, true);
 });
 
 test("a running card does not wake: the visit would race the live turn", () => {
@@ -96,7 +143,7 @@ test("an error wakes only while automatic attempts remain", () => {
     status: "in-progress",
     activity: "idle",
     lastError: "boom",
-    autoCount: MAX_WASTED_VISITS,
+    autoCount: MAX_RESUME_ATTEMPTS,
   });
   assert.equal(spent.wake, false);
   assert.match(spent.reason, /needs a person/);
@@ -116,7 +163,7 @@ test("every verdict carries a reason, because a silent skip is unactionable", ()
     { status: "completed", activity: "idle" },
     { status: "in-progress", activity: "awaiting-answer" },
     { status: "in-progress", activity: "running" },
-    { status: "in-progress", activity: "idle", autoCount: MAX_WASTED_VISITS },
+    { status: "in-progress", activity: "idle", autoCount: MAX_RESUME_ATTEMPTS },
     { status: "in-progress", activity: "idle", autoCount: 0 },
   ];
   for (const sample of samples) {

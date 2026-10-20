@@ -29,6 +29,7 @@ function fixtureCard(overrides = {}) {
     id: "card_1",
     status: "in-progress",
     activity: "idle",
+    stage: "build",
     last_error: null,
     last_idle_at: 1_000,
     auto_continue_count: 0,
@@ -38,14 +39,29 @@ function fixtureCard(overrides = {}) {
 }
 
 function run(card, argv = [], ctx = {}) {
-  const cards = card ? new Map([[card.id, card]]) : new Map();
+  return harness(card).run(argv, ctx);
+}
+
+/**
+ * One command instance, callable across ticks — the only way to test the gate's
+ * memory, since the memory lives in that instance.
+ */
+function harness(initial) {
+  const cards = new Map();
+  if (initial) cards.set(initial.id, initial);
   const deps = {
     now: () => 2_000,
     getCard: (id) => cards.get(id),
     getCardByWorkerThread: (threadId) =>
       [...cards.values()].find((entry) => entry.worker_thread_id === threadId),
   };
-  return createWakeCommand(deps)(argv, { threadId: null, projectId: "proj_1", ...ctx });
+  const command = createWakeCommand(deps);
+  return {
+    setCard(card) {
+      cards.set(card.id, card);
+    },
+    run: (argv = [], ctx = {}) => command(argv, { threadId: null, projectId: "proj_1", ...ctx }),
+  };
 }
 
 test("a refusal prints exactly the host's silent-skip line", async () => {
@@ -108,4 +124,53 @@ test("a card found through the calling thread needs no --card flag", async () =>
   const result = await run(card, ["wake"], { threadId: "thr_1" });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /parked idle/);
+});
+
+test("a card that has not moved since its last visit is skipped on the next tick", async () => {
+  // The gap this closes: before the memory, an idle card answered "yes" on
+  // every tick, so the sentinel would wake the worker every 20 minutes for as
+  // long as the worker kept parking without advancing — the same loop the gate
+  // exists to break, one sentinel later.
+  const gate = harness(fixtureCard());
+  const first = await gate.run(["wake", "--card", "card_1"]);
+  assert.equal(first.stdout, "card parked idle for 1s with an unfinished stage");
+
+  const second = await gate.run(["wake", "--card", "card_1"]);
+  assert.equal(second.exitCode, 0);
+  assert.equal(second.stdout, '{"wakeAgent": false}');
+});
+
+test("a stage advance after a visit earns a new one", async () => {
+  const gate = harness(fixtureCard());
+  await gate.run(["wake", "--card", "card_1"]);
+
+  gate.setCard(fixtureCard({ stage: "review" }));
+  const next = await gate.run(["wake", "--card", "card_1"]);
+  assert.notEqual(next.stdout, '{"wakeAgent": false}');
+  assert.match(next.stdout, /parked idle/);
+});
+
+test("a failure appearing after a visit earns a new one", async () => {
+  const gate = harness(fixtureCard());
+  await gate.run(["wake", "--card", "card_1"]);
+
+  gate.setCard(fixtureCard({ last_error: "boom" }));
+  const next = await gate.run(["wake", "--card", "card_1"]);
+  assert.match(next.stdout, /card has an error/);
+});
+
+test("a refusal does not erase what the last visit saw", async () => {
+  // The memory records spent turns, not observations. A refusal spends none, so
+  // a card that parks on a human and later returns to the state it was last
+  // visited in is still the state a turn was already spent on.
+  const gate = harness(fixtureCard());
+  await gate.run(["wake", "--card", "card_1"]);
+
+  gate.setCard(fixtureCard({ activity: "awaiting-answer" }));
+  const parked = await gate.run(["wake", "--card", "card_1"]);
+  assert.equal(parked.stdout, '{"wakeAgent": false}');
+
+  gate.setCard(fixtureCard());
+  const after = await gate.run(["wake", "--card", "card_1"]);
+  assert.equal(after.stdout, '{"wakeAgent": false}', "the same state is still the visited one");
 });
