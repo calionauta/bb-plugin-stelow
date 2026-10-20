@@ -8,6 +8,17 @@ import {
 } from "../lib/card-claims.mjs";
 import { startReconciler } from "../server/runtime/reconciler.ts";
 
+const CARD_ROWS = [
+  ["live", "in-progress", "thread-1"],
+  ["done", "completed", null],
+  // A finished card that still carries a worker thread. The old live-card query
+  // stopped at `status != 'archived'`, so this row was selected every tick and
+  // paid a projects.get round trip plus a stelow.json read to discover, again,
+  // that it was finished. It is the shape that made the fix measurable.
+  ["finished", "completed", "thread-2"],
+  ["blocked", "blocked", "thread-3"],
+];
+
 function fixtureDb() {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, status TEXT, worker_thread_id TEXT)");
@@ -23,8 +34,8 @@ function fixtureDb() {
     resolved_at INTEGER, resolved_reason TEXT, severity INTEGER,
     severity_reasons TEXT, occurrences INTEGER
   )`);
-  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live", "in-progress", "thread-1");
-  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("done", "completed", null);
+  const insert = db.prepare("INSERT INTO cards VALUES (?, ?, ?)");
+  for (const row of CARD_ROWS) insert.run(...row);
   ensureCardClaimsTables(db);
   acquireWorkspaceClaims(db, {
     cardId: "crashed", workspacePath: "/repo", files: ["old.ts"], nowMs: 1_000,
@@ -65,13 +76,7 @@ test("reconciler refreshes live cards, releases dead claims, and disposes its ti
   });
   try {
     scheduledTick();
-    assert.deepEqual(calls.synced, ["live"]);
-    assert.deepEqual(calls.scopes, ["live"]);
-    assert.deepEqual(calls.pruned, [["live"]]);
-    assert.deepEqual(calls.notified, [
-      ["/repo", ["old.ts"]],
-      ["/repo", ["done.ts"]],
-    ]);
+    assertLiveCardOnly(calls);
     assert.equal(calls.severity, 1);
     assert.equal(liveClaimsForWorkspace(db, { workspacePath: "/repo", nowMs: 10_000 }).length, 0);
     reconciler.dispose();
@@ -83,3 +88,21 @@ test("reconciler refreshes live cards, releases dead claims, and disposes its ti
     if (db.open) db.close();
   }
 });
+
+function assertLiveCardOnly(calls) {
+  // Regression: a card that reached a terminal status must not be synced and
+  // must not have its scope fingerprint read. Selecting on `status != 'archived'`
+  // synced `finished` and `blocked` too, which is a projects.get round trip and a
+  // disk read each, every tick, forever.
+  assert.deepEqual(
+    calls.synced,
+    ["live"],
+    "only the live card is synced; completed and blocked cards carry a thread but no work",
+  );
+  assert.deepEqual(calls.scopes, ["live"], "the scope fingerprint is read for the live card alone");
+  assert.deepEqual(calls.pruned, [["live"]]);
+  assert.deepEqual(calls.notified, [
+    ["/repo", ["old.ts"]],
+    ["/repo", ["done.ts"]],
+  ]);
+}

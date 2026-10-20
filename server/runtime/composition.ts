@@ -76,11 +76,12 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
   registerThreadLifecycle(deps.bb, deps);
   reconcileLiveCardsOnStartup(deps.db, deps.syncThreadState);
   void deps.executionReconcile.reconcile();
-  const executionTimer = scheduler.setInterval(() => {
-    if ((deps.db as unknown as { open?: boolean }).open) {
-      void deps.executionReconcile.reconcile();
-    }
-  }, 45_000);
+  // One timer, not two. The execution pass and the card tick both read the same
+  // SQLite handle at the same 45s cadence, so they are one tick: the timer lives
+  // in startReconciler and calls this with the card pass. The execution
+  // reconciler carries its own in-flight guard, so overlapping is already
+  // impossible, and the `db.open` guard on the tick covers the closed-handle
+  // case the execution timer used to check for separately.
   const reconciler = startReconciler({
     db: deps.db,
     bb: deps.bb,
@@ -97,9 +98,8 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
       `Stelow reconciliation ${phase} failed: ${error instanceof Error ? error.message : String(error)}`,
     ),
     scheduler,
-  });
+  }, () => deps.executionReconcile.reconcile());
   deps.bb.onDispose(() => {
-    scheduler.clearInterval(executionTimer);
     reconciler.dispose();
     deps.disposeWorkers();
   });
