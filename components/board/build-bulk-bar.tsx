@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { BulkActionButtons } from "./bulk-action-buttons";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { toast } from "sonner";
 import {
@@ -24,7 +24,11 @@ type Card = {
 type Props = {
   cards: Card[];
   selectedIds: Set<string>;
+  /** The ids this board is showing — the reach of `Select all`. */
+  presentIds: string[];
   onClear: () => void;
+  onSelectAll: () => void;
+  onExit: () => void;
   onSuccess: () => void;
   rpc: {
     call: (
@@ -130,22 +134,40 @@ async function runBulkDelete(eligible: Card[], skipped: BulkPartition["skipped"]
 }
 
 /**
- * The bulk bar, floating at the bottom of the viewport while cards are selected.
+ * The bulk bar, floating at the bottom of the viewport while the board is in
+ * select mode.
  *
  * It used to be a block ABOVE the kanban, in the board's own column, so selecting a card
  * inserted a row into the layout and pushed the board down. A selection is not a layout
  * change: the cards stay where they are and only the actions appear. See
  * lib/bulk-bar-placement.mjs for why it is anchored to the viewport rather than the board,
  * and for the safe-area handling.
+ *
+ * It renders whenever the MODE is on, not whenever the count is non-zero. That
+ * difference is the whole exit: the bar carries `Done` (leaving the mode), and a
+ * bar that vanished at zero selection would leave a reader with an armed board,
+ * no checkbox outside it, and no visible way back to normal.
+ *
+ * `presentIds` is what the board is currently showing, and it is what
+ * `Select all` may reach. A bulk verb scoped to everything a filter left on
+ * screen is the same promise the archived-column delete makes, and "all" that
+ * silently included cards the reader cannot see would be a wider blast radius
+ * than the button says.
  */
 export function BulkBarSlot({ state }: { state: BuildPanelState }) {
-  if (state.selectedIds.size === 0) return null;
+  if (!state.selectMode) return null;
+  const presentIds = Object.values(state.grouped).flat().map((card) => card.id);
   return (
     <div className={BULK_BAR_SHELL_CLASS} data-bulk-bar>
       <BuildBulkBar
         cards={state.cards as never}
         selectedIds={state.selectedIds}
+        presentIds={presentIds}
         onClear={state.clearSelection}
+        onSelectAll={() => presentIds.forEach((id) => {
+          if (!state.selectedIds.has(id)) state.toggleSelection(id);
+        })}
+        onExit={state.exitSelectMode}
         onSuccess={() =>
           state.rpc.call("listCards", {}).catch(() => undefined)
         }
@@ -195,7 +217,7 @@ function useBulkActions({ selected, rpc, onClear, onSuccess }: {
   };
 }
 
-export function BuildBulkBar({ cards, selectedIds, onClear, onSuccess, rpc }: Props) {
+export function BuildBulkBar({ cards, selectedIds, presentIds, onClear, onSelectAll, onExit, onSuccess, rpc }: Props) {
   const count = selectedIds.size;
   const selected = selectedCards(cards, selectedIds);
   const actions = useBulkActions({ selected, rpc, onClear, onSuccess });
@@ -214,6 +236,7 @@ export function BuildBulkBar({ cards, selectedIds, onClear, onSuccess, rpc }: Pr
     <div className={BULK_BAR_SURFACE_CLASS} data-bulk-bar-surface>
       <BulkActionButtons
         count={count}
+        present={presentIds.length}
         pending={pending}
         startEligible={partitioned.start.eligible.length}
         archiveEligible={partitioned.archive.eligible.length}
@@ -221,60 +244,12 @@ export function BuildBulkBar({ cards, selectedIds, onClear, onSuccess, rpc }: Pr
         onStart={() => setConfirm("start")}
         onArchive={() => setConfirm("archive")}
         onDelete={() => setConfirm("delete")}
+        onSelectAll={onSelectAll}
         onClear={onClear}
+        onExit={onExit}
       />
       <BulkConfirmDialogs specs={specs} onClose={() => setConfirm(null)} />
     </div>
-  );
-}
-
-/**
- * The four bar buttons: one per bulk verb plus Clear. Labels carry live
- * counts, and a verb with nothing eligible stays disabled rather than
- * erroring after the click.
- */
-function BulkActionButtons({ count, pending, startEligible, archiveEligible, deleteEligible, onStart, onArchive, onDelete, onClear }: {
-  count: number;
-  pending: "start" | "archive" | "delete" | null;
-  startEligible: number;
-  archiveEligible: number;
-  deleteEligible: number;
-  onStart: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <>
-      <span className="text-sm font-medium">{count} selected</span>
-      <Button
-        variant="outline"
-        className="min-h-11 cursor-pointer"
-        disabled={pending !== null || startEligible === 0}
-        onClick={onStart}
-      >
-        {pending === "start" ? "Starting…" : `Start (${startEligible})`}
-      </Button>
-      <Button
-        variant="outline"
-        className="min-h-11 cursor-pointer"
-        disabled={pending !== null || archiveEligible === 0}
-        onClick={onArchive}
-      >
-        {pending === "archive" ? "Archiving…" : `Archive (${archiveEligible})`}
-      </Button>
-      <Button
-        variant="destructive"
-        className="min-h-11 cursor-pointer"
-        disabled={pending !== null || deleteEligible === 0}
-        onClick={onDelete}
-      >
-        {pending === "delete" ? "Deleting…" : `Delete (${deleteEligible})`}
-      </Button>
-      <Button variant="ghost" className="min-h-11 cursor-pointer" onClick={onClear}>
-        Clear
-      </Button>
-    </>
   );
 }
 

@@ -36,8 +36,11 @@ function buildViewState(state: ReturnType<typeof useBuildPanelState>, rpc: Retur
     githubAuthMissing: state.data.githubStatus?.pluginAvailable === true
       && state.data.githubStatus.ghOk === false,
     githubAutomationEnabled: state.data.githubAutomationEnabled,
+    selectMode: state.selectMode,
+    enterSelectMode: state.enter,
+    exitSelectMode: state.exit,
     selectedIds: state.selectedIds,
-    toggleSelection: state.toggleSelection,
+    toggleSelection: state.toggle,
     clearSelection: state.clearSelection,
     toggleProject: state.toggleProject,
     toggleStage: state.toggleStage,

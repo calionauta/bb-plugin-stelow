@@ -1699,6 +1699,29 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `.stelow` run files (no orphaned artifacts on disk); Git checkouts are
   never touched, so code changes survive the delete — the confirm dialog
   states exactly that.
+- **Multi-select is a mode, not a checkbox on every tile**
+  (`hooks/use-selection-mode.ts`, `components/board/select-mode-toggle.tsx`).
+  Build cards carry no selection control until someone asks for one. The
+  checkbox used to be painted on every tile: `size-8` plus a `gap-2` inside a
+  `p-3` tile in a `minmax(240px, 320px)` track, which is 40px out of a 176–256px
+  content box — 15–18% of every card, all the time, plus its own 34px of
+  top-aligned height setting the first line of every short title. And it was not
+  "always available" either: it rendered on the Build kanban only, while the
+  list, the hill, Research, Explore and the Bucket gallery had no multi-select
+  at all. One quiet control in the header (`ListTodo`, 44px, `aria-pressed`)
+  enters the mode; in it, the whole tile is the target and clicking toggles
+  instead of opening, which removes the collision that made the checkbox
+  `stopPropagation` on every click. Three exits and three invariants:
+  **Done** on the floating bar (which now renders while the mode is on rather
+  than while the count is non-zero, because it carries the only visible exit),
+  `Esc`, and switching view — each clears the selection, so a bulk bar and its
+  reserved 96px of board padding cannot outlive the surface that drew them. The
+  selection is also pruned against the cards the board is actually rendering: a
+  card archived, deleted or filtered away used to keep its id, leaving a bar
+  that read "3 selected" with every verb disabled. **Select all** names its reach
+  — the cards the filters left on the board — the same blast radius the delete
+  confirm dialog states. Research and Explore pass no selection, so a track with
+  no bulk action reserves no space for one.
 - **Delete all archived, scoped to the filter**
   (`deleteArchivedCards`, `lib/board-filter-label.mjs`,
   `lib/bulk-delete-outcome.mjs`). The Archived column of every board carries a

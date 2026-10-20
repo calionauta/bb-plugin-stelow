@@ -6,8 +6,7 @@ import {
   BUILD_BOARD_COLUMN_LABELS,
   BUILD_BOARD_VISIBLE_COLUMNS,
 } from "../../lib/workflow-vocabulary.mjs";
-import { FiltersBar } from "../board/board-filters";
-import { ViewToggle } from "../board/board-view-toggle";
+import { BuildControlStrip } from "./build-control-strip";
 import { BuildList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
 import { archivedDeleteProps } from "../board/archived-delete-props";
@@ -23,24 +22,6 @@ import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import type { BuildPanelState } from "./build-panel-types";
 
-const INTENT_OPTIONS = [
-  { value: "all", label: "All types" },
-  ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label })),
-];
-const STATUS_OPTIONS = [
-  { value: "all", label: "Any status" },
-  ...BUILD_BOARD_VISIBLE_COLUMNS.map((column) => ({
-    value: column,
-    label: BUILD_BOARD_COLUMN_LABELS[column] ?? column,
-  })),
-];
-const ACTIVITY_OPTIONS = [
-  { value: "all", label: "Any activity" },
-  { value: "idle", label: "idle" },
-  { value: "running", label: "running" },
-  { value: "awaiting-answer", label: "awaiting-answer" },
-  { value: "error", label: "error" },
-];
 
 type Props = {
   state: BuildPanelState;
@@ -191,68 +172,62 @@ function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
   );
 }
 
-function BuildFilters({
-  state,
-  onAttention,
-}: {
-  state: BuildPanelState;
-  onAttention: () => void;
-}) {
-  return (
-    <div className="flex items-start gap-2 border-b pb-3">
-      <div className="min-w-0 flex-1">
-        <FiltersBar
-          projects={state.projects}
-          stageOptions={[...state.stageOptions]}
-          filterProjectIds={state.projectIds}
-          filterStages={state.stages}
-          filterIntents={state.intents}
-          filterStatuses={state.statuses}
-          filterActivities={state.activities}
-          intentOptions={INTENT_OPTIONS}
-          statusOptions={STATUS_OPTIONS}
-          activityOptions={ACTIVITY_OPTIONS}
-          filterAttention={state.attention}
-          onProjectToggle={state.toggleProject}
-          onStageToggle={state.toggleStage}
-          onIntentToggle={state.toggleIntent}
-          onStatusToggle={state.toggleStatus}
-          onActivityToggle={state.toggleActivity}
-          onAttention={onAttention}
-          onReset={state.reset}
-        />
-      </div>
-      <ViewToggle
-        view={state.viewMode}
-        track="build"
-        onChange={state.setViewMode}
-        label="Build cards view"
-      />
-    </div>
-  );
-}
-
 function BuildBoardView({
   state,
   onOpenCard,
   onOpenThread,
 }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
+  return (
+    <>
+      {/* The bar lives HERE, not inside the kanban. The select mode reaches two
+          surfaces — the board and the list — and the bar is the only visible exit
+          from it. Rendered from inside `BuildBoardKanban`, selecting in list view
+          armed the mode with no bar, no `Done` and no `Select all`: the exit
+          existed only on the one view the reader had just left. */}
+      <BulkBarSlot state={state} />
+      <BuildSurface state={state} onOpenCard={onOpenCard} onOpenThread={onOpenThread} />
+    </>
+  );
+}
+
+/** Which view renders, and what it needs to reserve for the bar above. */
+function BuildSurface({
+  state,
+  onOpenCard,
+  onOpenThread,
+}: {
+  state: BuildPanelState;
+  onOpenCard: Props["onOpenCard"];
+  onOpenThread: Props["onOpenThread"];
+}) {
   if (state.viewMode === "list") {
     return (
-      <BuildList
-        groups={state.grouped}
-        collapsed={state.collapsedListGroups}
-        onToggle={state.toggleListGroup}
-        onOpenCard={(card) => onOpenCard(card, card.id)}
-        onOpenThread={onOpenThread}
-      />
+      // The list reserves the same strip the kanban does. The bar floats over
+      // whatever is under it, and without this it covered the last rows of a list
+      // the reader had just selected from.
+      <div className={boardBottomPadding(state.selectMode)}>
+        <BuildList
+          groups={state.grouped}
+          collapsed={state.collapsedListGroups}
+          onToggle={state.toggleListGroup}
+          onOpenCard={(card) => onOpenCard(card, card.id)}
+          onOpenThread={onOpenThread}
+          selection={{
+            selectMode: state.selectMode,
+            selectedIds: state.selectedIds,
+            onToggleSelection: state.toggleSelection,
+          }}
+        />
+      </div>
     );
   }
   if (state.viewMode === "hill") {
-    const cards = Object.values(state.grouped).flat();
+    // The hill renders neither a checkbox nor the bar's verbs, so the mode is
+    // disarmed on arrival. The bar is still mounted above, so the two surfaces
+    // cannot disagree about whether an exit exists.
     return (
       <HillBoard
-        cards={cards}
+        cards={Object.values(state.grouped).flat()}
         onOpenCard={(card) => onOpenCard(card, card.id)}
       />
     );
@@ -261,8 +236,9 @@ function BuildBoardView({
 }
 
 /**
- * The kanban grid itself: view-mode routing above decides list/hill/kanban,
- * and this owns only the grid plus the selection bar above it.
+ * The kanban grid itself. View routing and the selection bar above it live in
+ * `BuildBoardView`, because the bar belongs to the MODE and the mode reaches more
+ * than this view.
  */
 function BuildBoardKanban({ state, onOpenCard }: {
   state: BuildPanelState;
@@ -271,7 +247,6 @@ function BuildBoardKanban({ state, onOpenCard }: {
   const onConfirm = useDeleteArchivedCards(state.rpc);
   return (
     <>
-      <BulkBarSlot state={state} />
       <div
         data-testid="kanban-board"
         // Two layouts, chosen by breakpoint — see lib/kanban-layout.mjs for why a phone
@@ -279,7 +254,7 @@ function BuildBoardKanban({ state, onOpenCard }: {
         className={[
           // The bottom padding reserves the strip the floating bulk bar occupies, and only
           // while it is present: an unselected board keeps its full height.
-          `flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain ${boardBottomPadding(state.selectedIds.size > 0)}`,
+          `flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain ${boardBottomPadding(state.selectMode)}`,
           "md:grid md:snap-none md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden",
         ].join(" ")}
         style={{
@@ -332,6 +307,7 @@ function BuildBoardColumn(props: {
           card={card}
           onOpen={() => onOpenCard(card, card.id)}
           selected={state.selectedIds.has(card.id)}
+          selectMode={state.selectMode}
           onToggleSelection={state.toggleSelection}
         />
       )}
@@ -366,10 +342,7 @@ export function BuildPanelView(props: Props) {
         onAttention={() => state.setAttention(true)}
       />
       <GithubAuthNotice enabled={state.githubAuthMissing} />
-      <BuildFilters
-        state={state}
-        onAttention={() => state.setAttention(true)}
-      />
+      <BuildControlStrip state={state} onAttention={() => state.setAttention(true)} />
       {state.cards.length === 0 && !state.loading ? (
         <EmptyBuildState onNewIssue={props.onNewIssue} />
       ) : null}

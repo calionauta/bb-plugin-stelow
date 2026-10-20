@@ -50,18 +50,34 @@ const BulkBarSlot = loadComponent("components/board/build-bulk-bar.tsx", "BulkBa
   "../../lib/bulk-eligibility.mjs": bulkEligibility,
   "../../lib/bulk-delete-batch.mjs": bulkDeleteBatch,
   "../../lib/bulk-bar-placement.mjs": { BULK_BAR_SHELL_CLASS, BULK_BAR_SURFACE_CLASS },
+  "./bulk-action-buttons": { BulkActionButtons: marker("BulkActionButtons") },
 });
 
+// Selection is a MODE now, so the bar's presence is a function of the mode and
+// not of the count. See tests/selection-mode.test.mjs for why: a bar gated on the
+// count disappeared exactly when the reader needed its exit.
 const selectedState = (ids) => ({
   cards: [...ids].map((id) => ({
     id, displayName: id, status: "in-progress", activity: "running", workerThreadId: null,
   })),
+  grouped: { inbox: [], analysis: [...ids].map((id) => ({ id })) },
+  selectMode: true,
   selectedIds: new Set(ids),
   clearSelection: () => {},
+  exitSelectMode: () => {},
+  toggleSelection: () => {},
   rpc: { call: async () => ({}) },
 });
 
-assert.equal(BulkBarSlot({ state: selectedState([]) }), null, "no selection renders no bar");
+assert.equal(
+  BulkBarSlot({ state: { ...selectedState([]), selectMode: false } }),
+  null,
+  "outside select mode no bar renders, even with a stale id set: that combination is what reserved 96px of nothing",
+);
+assert.ok(
+  BulkBarSlot({ state: selectedState([]) }),
+  "an armed board with nothing selected still shows the bar, because this is the only visible way out of the mode",
+);
 const shell = BulkBarSlot({ state: selectedState(["card_1"]) });
 assert.equal(
   shell.props.className,
@@ -128,6 +144,8 @@ const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "
   "../../lib/bulk-bar-placement.mjs": { boardBottomPadding },
   "../board/board-filters": { FiltersBar: marker("FiltersBar") },
   "../board/board-view-toggle": { ViewToggle: marker("ViewToggle") },
+  "../board/select-mode-toggle": { SelectModeToggle: marker("SelectModeToggle") },
+  "./build-control-strip": { BuildControlStrip: marker("BuildControlStrip") },
   "../board/track-lists": { BuildList: marker("BuildList") },
   "../board/board-column": { BoardColumn: marker("BoardColumn") },
   "../board/archived-delete-props": { archivedDeleteProps: () => undefined },
@@ -142,7 +160,7 @@ const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "
   "../../lib/utils": { cn: (...values) => values.filter(Boolean).join(" ") },
 });
 
-const boardFor = (selectedIds) => {
+const boardFor = (selectedIds, { selectMode = true, viewMode = "board" } = {}) => {
   slotCalls = 0;
   const state = {
     cards: [],
@@ -150,7 +168,8 @@ const boardFor = (selectedIds) => {
     githubAutomationEnabled: false,
     githubAuthMissing: false,
     loading: false,
-    viewMode: "board",
+    selectMode,
+    viewMode,
     projectIds: [],
     stageOptions: [],
     stages: [],
@@ -173,6 +192,8 @@ const boardFor = (selectedIds) => {
     toggleColumn() {},
     toggleListGroup() {},
     setViewMode() {},
+    enterSelectMode() {},
+    exitSelectMode() {},
   };
   const tree = renderTree(BuildPanelView({
     state,
@@ -193,13 +214,22 @@ const boardFor = (selectedIds) => {
 const withSelection = boardFor(["card_1"]);
 assert.ok(
   withSelection.className.includes(boardBottomPadding(true)),
-  "the board asks for its bottom padding from the selection, not from a constant",
+  "the board asks for its bottom padding from the mode, not from a constant",
 );
-assert.ok(!withSelection.className.includes(boardBottomPadding(false)), "and only the selected state reserves the strip");
+assert.ok(!withSelection.className.includes(boardBottomPadding(false)), "and only the armed state reserves the strip");
 assert.equal(withSelection.slots, 1, "the bar slot still renders once, in the board view");
 
-const empty = boardFor([]);
-assert.ok(empty.className.includes(boardBottomPadding(false)), "an unselected board reserves nothing");
+// The strip follows the MODE. A stale id set on a board that is not selecting is
+// the exact drift that reserved space under a bar nobody had opened.
+const staleIds = boardFor(["card_1"], { selectMode: false });
+assert.ok(
+  !staleIds.className.includes(boardBottomPadding(true)),
+  "ids left over from a previous selection reserve nothing once the mode is off",
+);
+
+// An unarmed board — not "zero selected", which is a different state now.
+const empty = boardFor([], { selectMode: false });
+assert.ok(empty.className.includes(boardBottomPadding(false)), "a board outside select mode reserves nothing");
 assert.ok(!empty.className.includes(boardBottomPadding(true)), "so the floating strip is not left as a permanent gap");
 
 console.log("bulk bar placement ok: floating, centred, safe-area aware, and out of the board's flow");

@@ -15,6 +15,7 @@ import {
   usePersistentCollapsedGroups,
 } from "../panel/panel-state-hooks";
 import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
+import { useSelectionMode } from "../../hooks/use-selection-mode";
 import {
   filterAndGroupBuildCards,
   reviewGatesAfterDefaults,
@@ -215,17 +216,11 @@ export function useBuildPanelState(rpc: BuildRpc, projectId: string | null) {
     ...current,
     [column]: !current[column],
   }));
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const toggleSelection = useCallback((cardId: string) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(cardId)) next.delete(cardId);
-      else next.add(cardId);
-      return next;
-    });
-  }, []);
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-  const selection = { selectedIds, toggleSelection, clearSelection };
+  // Selection is a MODE, and the ids are pruned against what this board actually
+  // renders. Both rules are explained where they live: see
+  // `hooks/use-selection-mode.ts`.
+  const presentIds = useMemo(() => Object.values(filters.grouped).flat().map((card) => card.id), [filters.grouped]);
+  const selection = useSelectionMode(presentIds, viewMode);
   return {
     ...data,
     ...preferences,
