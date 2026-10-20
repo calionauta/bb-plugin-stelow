@@ -85,7 +85,11 @@ async function assertLifecycleBehavior(host, calls) {
   ]);
   assert.deepEqual(calls.sync, ["card-live"]);
   assert.equal(calls.execution, 1);
-  assert.equal(host.timers.length, 2);
+  // One timer, not two. The execution pass and the card tick read the same
+  // SQLite handle at the same 45s cadence, so they are one tick: a second timer
+  // was a second wake-up for the same work. The assertion is here so that
+  // re-splitting them has to delete a test that says why not.
+  assert.equal(host.timers.length, 1, "the card tick and the execution pass share one timer");
   assert.ok(host.timers.every(({ delay }) => delay === 45_000));
   host.events.get("thread.idle")({ thread: { id: "thread-live" } });
   host.events.get("thread.failed")({
@@ -99,18 +103,18 @@ async function assertLifecycleBehavior(host, calls) {
 
 async function assertTimerAndDisposalBehavior(host, calls) {
   host.db.open = true;
+  // The one tick runs the card pass AND the execution pass.
   host.timers[0].run();
   await Promise.resolve();
   assert.equal(calls.execution, 2);
+  assert.equal(calls.severity, 1, "the reconciler tick drives severity");
   host.db.open = false;
   host.timers[0].run();
   await Promise.resolve();
   assert.equal(calls.execution, 2, "closed databases do not reconcile");
-  host.db.open = true;
-  host.timers[1].run();
-  assert.equal(calls.severity, 1, "the reconciler tick drives severity");
+  assert.equal(calls.severity, 1, "a closed database skips the card pass too");
   host.disposals[0]();
-  assert.deepEqual(host.cleared, host.timers, "disposal clears both timers");
+  assert.deepEqual(host.cleared, host.timers, "disposal clears the timer");
   assert.equal(calls.workersDisposed, 1);
   assert.equal(host.disposals.length, 1, "workers are disposed exactly once");
 }

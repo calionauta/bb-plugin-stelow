@@ -25,6 +25,7 @@ import { createStorageCommand } from "./cli-storage.js";
 import { createVerifyCommand } from "./cli-verify.js";
 import { createVerifyDelegationCommand } from "./cli-verify-delegation.js";
 import { createVerifyTasksCommand } from "./cli-verify-tasks.js";
+import { createWakeCommand } from "./cli-wake.js";
 import type { CliCommandFn, CliResult, CliRunContext } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 
@@ -60,6 +61,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createGapTriageCommand(deps),
     createScopeApproveCommand(deps),
     createDecideCommand(deps),
+    createWakeCommand(deps),
     ...createDelegatedCommands(deps),
   ];
 }

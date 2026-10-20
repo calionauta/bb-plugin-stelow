@@ -119,6 +119,12 @@ export const stelowCliCommands: CliCommand[] = [
     "bb stelow verify-delegation [--card <card_id>] [--json]",
   ),
   command("gap-triage", "Second-opinion escalated critique gaps via the judge (advisory, read-only)", "bb stelow gap-triage [--card <card_id>] [--json]"),
+  command(
+    "wake",
+    "Whether a scheduled visit should spend a model turn on this card (read-only, free)",
+    "bb stelow wake [--card <card_id>] [--json]",
+    "(prints {\"wakeAgent\": false} when the tick should be skipped, else the reason it should not)",
+  ),
   command("preset", "Manage agent presets", "bb stelow preset list|add|remove|assign"),
   command("help", "Show help for a subcommand", "bb stelow help [command]"),
 ];

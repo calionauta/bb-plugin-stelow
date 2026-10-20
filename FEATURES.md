@@ -2223,6 +2223,36 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   report instead of silently weakening the verdict. The impact×effort
   matrix and gap→scope conversion stay deterministic; `DONE_PROTOCOL`
   points the worker here before `done`. Read-only, never a gate.
+- **`bb stelow wake` (the scheduled-visit gate, `lib/wake-gate.mjs`).**
+  Whether a scheduled visit should spend a model turn on this card, answered
+  from the card's own row — no host round trip beyond what the caller already
+  holds, no model, no network. Built for the pair that filed
+  bb-plugin-stelow#385: a `bb automation` in `agent` mode costs a full turn
+  (~70k tokens, 30–54 tool calls, measured) even when the visit concludes
+  "nothing changed", and the only cheap half available was `script` mode, which
+  knows nothing about a card. A script-mode sentinel now runs
+  `bb stelow wake --card <id>` for free and wakes the agent-mode worker only on
+  a wake verdict. The pair carries one schedule, not two: the worker automation
+  is created with `--disabled` and the sentinel's `bb automation run` is the only
+  thing that starts it — left on its own cadence the worker still pays a turn per
+  tick and the gate changes nothing. Refusals print exactly
+  `{"wakeAgent": false}`, which the host records as a silent skipped tick; a wake prints its reason so the run history
+  says why the turn was worth spending. A missing or unknown card is a loud
+  exit 2 — a gate that skipped on a misconfiguration would hide the automation
+  forever. Refusal order is the design: a terminal card, then a card parked
+  waiting on a human (the measured case, and the one where every other signal
+  reads "idle and ready"), then an unreadable host, then the shared
+  auto-continue budget — past it an idle park or an error means the worker is
+  stuck, not chatty, and another visit is the loop itself. Last of all comes the
+  changed-since guard: the gate remembers the state it last woke a visit for
+  (status, stage, activity, failure) and refuses a repeat on an unchanged card,
+  so an idle worker that keeps parking without advancing is visited once per
+  state instead of once per tick. The idle timestamp is deliberately not part
+  of that fingerprint — the end of a visit is what moves it. Read-only, never a
+  gate on real work.
+  Not to be confused with the retired supervision knob: that asked the worker
+  to re-read its own work on a cadence, and was removed in 0.83.0. This asks
+  whether anyone should visit a card at all.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
