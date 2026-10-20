@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.87.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.86.0...v0.87.0) (2026-10-20)
+
+
+### Features
+
+* selection is a mode, so a card reserves nothing for it ([#392](https://github.com/calionauta/bb-plugin-stelow/issues/392)) ([2954339](https://github.com/calionauta/bb-plugin-stelow/commit/29543397bac3bb1eabb6d5b06a924d72d087c835))
+
+
+### Bug Fixes
+
+* a paused card wears one chip, and its wait is a duration that fits ([#391](https://github.com/calionauta/bb-plugin-stelow/issues/391)) ([0f15a46](https://github.com/calionauta/bb-plugin-stelow/commit/0f15a46c990805dac1bb11d2199574f13f6b7f03))
+
 ## [0.86.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.85.0...v0.86.0) (2026-10-20)
 
 
