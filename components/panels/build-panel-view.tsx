@@ -177,27 +177,57 @@ function BuildBoardView({
   onOpenCard,
   onOpenThread,
 }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
+  return (
+    <>
+      {/* The bar lives HERE, not inside the kanban. The select mode reaches two
+          surfaces — the board and the list — and the bar is the only visible exit
+          from it. Rendered from inside `BuildBoardKanban`, selecting in list view
+          armed the mode with no bar, no `Done` and no `Select all`: the exit
+          existed only on the one view the reader had just left. */}
+      <BulkBarSlot state={state} />
+      <BuildSurface state={state} onOpenCard={onOpenCard} onOpenThread={onOpenThread} />
+    </>
+  );
+}
+
+/** Which view renders, and what it needs to reserve for the bar above. */
+function BuildSurface({
+  state,
+  onOpenCard,
+  onOpenThread,
+}: {
+  state: BuildPanelState;
+  onOpenCard: Props["onOpenCard"];
+  onOpenThread: Props["onOpenThread"];
+}) {
   if (state.viewMode === "list") {
     return (
-      <BuildList
-        groups={state.grouped}
-        collapsed={state.collapsedListGroups}
-        onToggle={state.toggleListGroup}
-        onOpenCard={(card) => onOpenCard(card, card.id)}
-        onOpenThread={onOpenThread}
-        selection={{
-          selectMode: state.selectMode,
-          selectedIds: state.selectedIds,
-          onToggleSelection: state.toggleSelection,
-        }}
-      />
+      // The list reserves the same strip the kanban does. The bar floats over
+      // whatever is under it, and without this it covered the last rows of a list
+      // the reader had just selected from.
+      <div className={boardBottomPadding(state.selectMode)}>
+        <BuildList
+          groups={state.grouped}
+          collapsed={state.collapsedListGroups}
+          onToggle={state.toggleListGroup}
+          onOpenCard={(card) => onOpenCard(card, card.id)}
+          onOpenThread={onOpenThread}
+          selection={{
+            selectMode: state.selectMode,
+            selectedIds: state.selectedIds,
+            onToggleSelection: state.toggleSelection,
+          }}
+        />
+      </div>
     );
   }
   if (state.viewMode === "hill") {
-    const cards = Object.values(state.grouped).flat();
+    // The hill renders neither a checkbox nor the bar's verbs, so the mode is
+    // disarmed on arrival. The bar is still mounted above, so the two surfaces
+    // cannot disagree about whether an exit exists.
     return (
       <HillBoard
-        cards={cards}
+        cards={Object.values(state.grouped).flat()}
         onOpenCard={(card) => onOpenCard(card, card.id)}
       />
     );
@@ -206,8 +236,9 @@ function BuildBoardView({
 }
 
 /**
- * The kanban grid itself: view-mode routing above decides list/hill/kanban,
- * and this owns only the grid plus the selection bar above it.
+ * The kanban grid itself. View routing and the selection bar above it live in
+ * `BuildBoardView`, because the bar belongs to the MODE and the mode reaches more
+ * than this view.
  */
 function BuildBoardKanban({ state, onOpenCard }: {
   state: BuildPanelState;
@@ -216,7 +247,6 @@ function BuildBoardKanban({ state, onOpenCard }: {
   const onConfirm = useDeleteArchivedCards(state.rpc);
   return (
     <>
-      <BulkBarSlot state={state} />
       <div
         data-testid="kanban-board"
         // Two layouts, chosen by breakpoint — see lib/kanban-layout.mjs for why a phone

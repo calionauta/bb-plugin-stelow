@@ -40,6 +40,7 @@ const bulkBar = code("components/board/build-bulk-bar.tsx");
 // The buttons were extracted when the bar file reached its line budget; the rule
 // they carry did not move, so the pin follows the code that carries it.
 const bulkButtons = code("components/board/bulk-action-buttons.tsx");
+const trackLists = code("components/board/track-lists.tsx");
 const strip = code("components/panels/build-control-strip.tsx");
 const gallery = code("components/board/card-gallery.tsx");
 const selectionHook = code("hooks/use-selection-mode.ts");
@@ -138,6 +139,90 @@ test("the bar renders whenever the mode is on, and carries the exit", () => {
   assert.ok(
     bulkButtons.includes('label="Done"'),
     "leaving the mode is a named control on the bar, not another checkbox",
+  );
+});
+
+test("the bar and its exit reach every surface the mode reaches", () => {
+  // Gap found in review: the bar was rendered from inside the KANBAN, but the
+  // mode also reaches the list. Selecting in list view armed the mode with no bar,
+  // no `Done`, no `Select all` — the exit existed only on the view the reader had
+  // just left.
+  assert.ok(
+    panelView.includes("<BulkBarSlot state={state} />"),
+    "the bar is mounted by the view router, not by one view",
+  );
+  // ONE mount, above the view router — which is stronger than three: a branch
+  // added later cannot forget it, because no branch renders its own.
+  const boardView = panelView.slice(
+    panelView.indexOf("function BuildBoardView("),
+    panelView.indexOf("function BuildSurface("),
+  );
+  const mounts = boardView.split("<BulkBarSlot state={state} />").length - 1;
+  assert.equal(
+    mounts,
+    1,
+    "the bar mounts once, above the branch, so every view inherits the exit instead of re-declaring it",
+  );
+  assert.ok(
+    boardView.indexOf("<BulkBarSlot") < boardView.indexOf("<BuildSurface"),
+    "and it mounts BEFORE the surface, so it cannot be conditional on which one rendered",
+  );
+  // And it is gone from the kanban component, where it used to be the only mount.
+  const kanban = panelView.slice(
+    panelView.indexOf("function BuildBoardKanban("),
+    panelView.indexOf("function BuildBoardColumn("),
+  );
+  assert.ok(
+    !kanban.includes("<BulkBarSlot"),
+    "the kanban no longer owns it: a bar inside one view is the bug this pins",
+  );
+});
+
+test("the list reserves the strip the floating bar occupies", () => {
+  // The bar floats over whatever is under it. The kanban reserved `pb-24`; the
+  // list did not, so a selection made from the list had the bar covering the last
+  // rows — the surface where its verbs were reachable and the cards were not.
+  const listBranch = panelView.slice(
+    panelView.indexOf('if (state.viewMode === "list")'),
+    panelView.indexOf('if (state.viewMode === "hill")'),
+  );
+  assert.ok(
+    listBranch.includes("boardBottomPadding(state.selectMode)"),
+    "the list body reserves the bar's strip in select mode",
+  );
+  assert.ok(
+    listBranch.includes("<BuildList"),
+    "and the reservation wraps the list itself, not a sibling",
+  );
+});
+
+test("W does not navigate away from a selection in progress", () => {
+  // The kanban tile already refused W in select mode; the list row did not, so
+  // pressing it there opened a worker thread and left the reader mid-selection on
+  // a screen that no longer showed the cards.
+  assert.ok(
+    trackLists.includes("if (selecting) return;"),
+    "the list row's keyboard handler stands down in select mode",
+  );
+  assert.ok(
+    trackLists.includes("openWorkerThread(event, card, onOpenThread);"),
+    "while still opening the thread outside it",
+  );
+});
+
+test("Escape belongs to a dialog before it belongs to the mode", () => {
+  // Both the confirm dialog and the mode bind the document. An Escape meant for
+  // "cancel this delete" closed the dialog AND disarmed the mode, discarding the
+  // selection the reader was confirming.
+  assert.ok(
+    selectionHook.includes('[role="dialog"]'),
+    "the mode's Escape handler yields to an open dialog",
+  );
+  const dialogCheck = selectionHook.indexOf('[role="dialog"]');
+  const exitCall = selectionHook.indexOf("exit();", dialogCheck);
+  assert.ok(
+    exitCall > dialogCheck,
+    "and the guard runs before the exit, which is the ordering that matters",
   );
 });
 

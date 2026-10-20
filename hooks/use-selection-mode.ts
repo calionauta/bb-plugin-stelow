@@ -90,6 +90,13 @@ function useModeExit(mode: boolean, viewMode: string | undefined, exit: () => vo
     if (!mode) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // Escape belongs to whatever is on top of the mode first. A confirm
+      // dialog binds its own document listener, so without this an Escape meant
+      // for "cancel this delete" both closed the dialog AND disarmed the mode,
+      // throwing away the selection the reader was in the middle of confirming.
+      // Radix and this repo's `Dialog` mark their overlay `role="dialog"`; a
+      // dialog that is open owns the key.
+      if (document.querySelector('[role="dialog"]') !== null) return;
       event.preventDefault();
       exit();
     };

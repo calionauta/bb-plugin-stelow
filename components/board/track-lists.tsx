@@ -151,14 +151,11 @@ function TrackListRow({ card, meta, onOpen, onOpenThread, selection }: {
       ref={returnFocusRef}
       type="button"
       onClick={activate}
-      onKeyDown={(event) => openWorkerThread(event, card, onOpenThread)}
-      title={selecting
-        ? "Add this card to the selection"
-        : card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"}
-      aria-label={selecting
-        ? `${selected ? "Deselect" : "Select"} card ${card.displayName}.`
-        : `Open card ${card.displayName}.`}
-      aria-pressed={selecting ? selected : undefined}
+      onKeyDown={(event) => {
+        if (selecting) return;
+        openWorkerThread(event, card, onOpenThread);
+      }}
+      {...rowAffordance(card, selecting, selected)}
       className={[
         "flex min-h-11 w-full cursor-pointer flex-col items-stretch gap-1.5 border-b p-3 text-left",
         "last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2",
@@ -182,6 +179,26 @@ function TrackListRow({ card, meta, onOpen, onOpenThread, selection }: {
       <ListRowStatus card={card} />
     </button>
   );
+}
+
+/**
+ * What the row says about itself in each mode.
+ *
+ * In select mode a row is a checkbox: it names the selection action and
+ * announces itself as pressed. Outside it, a row opens the card and `W` opens the
+ * worker thread. W is refused inside the mode, matching the kanban tile — pressing
+ * it there would navigate away from a selection the reader is building.
+ */
+function rowAffordance(card: ListCard, selecting: boolean, selected: boolean) {
+  return {
+    title: selecting
+      ? "Add this card to the selection"
+      : card.workerThreadId ? "Open card · W opens the worker thread" : "Open card",
+    "aria-label": selecting
+      ? `${selected ? "Deselect" : "Select"} card ${card.displayName}.`
+      : `Open card ${card.displayName}.`,
+    "aria-pressed": selecting ? selected : undefined,
+  };
 }
 
 /**
