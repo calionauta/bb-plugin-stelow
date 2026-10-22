@@ -33,6 +33,9 @@ None pending — all operator guides migrated (see above).
   tracked for the v1 cleanup.
 - `release-incidents.md` — war stories behind the `AGENTS.md` release rules
   (evidence, never rules).
+- `release-runbook.md` — release procedures (cadence, squash typing,
+  recovery, verification, frozen 0.3 line); the discipline stays in
+  `AGENTS.md`.
 - `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md`,
   `width1-sequential-pilot.md`, `research-architecture-implementation-plan.md`
   — plans and pilot records, kept for their measurements, not as behaviour.
