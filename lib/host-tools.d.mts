@@ -18,3 +18,8 @@ export declare function beginToolInstall(errors: Record<string, string>, id: Hos
 export declare function finishToolInstall(errors: Record<string, string>, id: HostToolId, error: unknown): Record<string, string>;
 export declare function clearToolError(errors: Record<string, string>, id: HostToolId): Record<string, string>;
 export declare function mergeToolStatuses(previous: HostToolStatus[] | null, next: unknown): HostToolStatus[] | null;
+export declare function missingToolIds(tools: unknown): HostToolId[];
+export declare function installAllTools(
+  call: (id: HostToolId) => Promise<{ ok: boolean; log?: string } | null | undefined>,
+  ids: unknown,
+): Promise<{ ok: HostToolId[]; failed: Record<string, string> }>;

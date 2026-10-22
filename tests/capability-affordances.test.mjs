@@ -174,6 +174,7 @@ test("About carries the capability panel in its tree", () => {
     "./plugin-update-status": { PluginUpdateStatus: () => null },
     "./update-badge": { UpdateBadge: () => null },
     "./workflow-dependency-card": { WorkflowDependencyCard: () => null },
+    "./diagram-renderer-card": { DiagramRendererCard: () => null },
     "./capability-panel": { CapabilityPanel: capabilityPanel },
   };
   const AboutPanel = loadComponent("components/settings/about-panel.tsx", "AboutPanel", stubs);

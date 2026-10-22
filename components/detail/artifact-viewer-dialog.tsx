@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Markdown,
+  UrlLink,
   experimental_SourceCode as SourceCode,
   experimental_FileLink as FileLink,
   useRpc,
@@ -9,6 +10,9 @@ import { toast } from "sonner";
 import type { ArtifactViewerMode } from "../conversation/batch-types";
 import { OptionSection } from "./option-section";
 import { MOCKUP_SANDBOX, artifactRenderKind } from "../../lib/artifact-render.mjs";
+import { PELE_PLAYGROUND } from "../../lib/diagram-strategy.mjs";
+import { derivedDiagram } from "../../lib/artifact-diagram.mjs";
+import { MermaidDiagram } from "./mermaid-diagram";
 import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
@@ -150,12 +154,29 @@ export function ArtifactContent({ file, content, truncated, loadError, loading, 
   // renders as a broken layout presented as evidence, which is worse than the
   // source it would otherwise have shown. Only a complete file is a page.
   const asMockup = kind === "html" && !truncated;
+  // A truncated file never derives a diagram: a partial map, a cut fence, or
+  // a half-written projection would render a hole as a decision. Only a
+  // complete file is a picture; the truncation note below says so.
+  const derived = derivedDiagram(path, content, { truncated });
   return (
     <div ref={scrollRef} className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
       {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
       {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
       {!loading && !loadError && content !== null ? (
-        kind === "markdown" ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
+        derived ? (
+          <div className="space-y-2">
+            <MermaidDiagram source={derived.mermaid} title={`${path} — derived diagram`} />
+            {kind === "markdown"
+              ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
+              : <SourceCode content={content} path={path || "file.txt"} />}
+            <p className="text-xs text-muted-foreground">
+              {derived.caption}{" "}
+              <UrlLink href={PELE_PLAYGROUND} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground">
+                Open in pele.run playground ↗
+              </UrlLink>
+            </p>
+          </div>
+        ) : kind === "markdown" ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
           : asMockup ? <MockupFrame html={content} title={`${path} — interface mockup`} />
             : <SourceCode content={content} path={path || "file.txt"} />
       ) : null}

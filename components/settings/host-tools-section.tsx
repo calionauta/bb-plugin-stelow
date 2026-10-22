@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
-import { HOST_TOOLS } from "../../lib/host-tools.mjs";
+import { HOST_TOOLS, missingToolIds } from "../../lib/host-tools.mjs";
 import type { HostToolId, HostToolMeta, HostToolStatus } from "../../lib/host-tools.mjs";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
@@ -186,13 +187,53 @@ function NpxTools() {
   );
 }
 
-export function HostToolsSection({ tools, onInstall, installingId, errors }: {
+function InstallAllRow({ missing, busy, onInstallAll }: {
+  missing: HostToolId[];
+  busy: boolean;
+  onInstallAll: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {confirming ? (
+        <>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => { setConfirming(false); onInstallAll(); }}
+            title={`Install ${missing.length} missing tool${missing.length === 1 ? "" : "s"} now`}
+          >
+            {busy ? "Installing…" : `Confirm install (${missing.length})`}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => setConfirming(true)}
+          title="Install every missing tool in panel order"
+        >
+          Install all missing ({missing.length})
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export function HostToolsSection({ tools, onInstall, onInstallAll, installingId, errors }: {
   tools: HostToolStatus[] | null;
   onInstall: (id: HostToolId) => void;
+  onInstallAll?: () => void;
   installingId: string | null;
   errors: Record<string, string>;
 }) {
   const byId = new Map((tools ?? []).map((tool) => [tool.id, tool]));
+  const missing = tools ? missingToolIds(tools) : [];
+  const busy = installingId !== null;
   return (
     <section className="space-y-2">
       <h2 className="text-base font-semibold text-foreground">Optional tools</h2>
@@ -211,6 +252,9 @@ export function HostToolsSection({ tools, onInstall, installingId, errors }: {
         <p className="text-xs text-muted-foreground">Checking host tools…</p>
       ) : (
         <div className="space-y-2">
+          {onInstallAll && missing.length > 0 ? (
+            <InstallAllRow missing={missing} busy={busy} onInstallAll={onInstallAll} />
+          ) : null}
           {HOST_TOOLS.map((meta) => (
             <HostToolCard
               key={meta.id}

@@ -11,7 +11,7 @@
  * for workers to read, and lib/transition-facts.mjs audits offline that it
  * matches the catalog.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { sep } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
@@ -24,6 +24,49 @@ import { legalMoves } from "../../lib/workflow-moves.mjs";
 import { array } from "./values.js";
 import type { WorkerCard } from "../workers-types.js";
 import { join } from "./root-paths.js";
+
+/**
+ * Cardless `advance` re-root. `seed` writes per-workflow dirs
+ * `.stelow/<date>/<dir>/state.md`, but the cardless path ran the helper in
+ * project-root mode, so every seeded legacy workflow read as "missing state —
+ * reseed". Exactly one match re-roots to it; zero keeps the old project-root
+ * behavior; several refuse — guessing would advance the wrong workflow.
+ */
+export type LegacyStateSearch =
+  | { kind: "single"; stateDir: string }
+  | { kind: "ambiguous"; count: number }
+  | { kind: "none" };
+
+export function findSingleLegacyStateDir(rootPath: string): LegacyStateSearch {
+  // NOTE: the local join() takes exactly (root, relative) — build multi-level
+  // paths as one relative string, or segments are silently dropped.
+  let dates: string[];
+  try {
+    dates = readdirSync(join(rootPath, ".stelow"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return { kind: "none" };
+  }
+  const hits: string[] = [];
+  for (const date of dates) {
+    let dirs: string[];
+    try {
+      dirs = readdirSync(join(rootPath, `.stelow/${date}`), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      continue;
+    }
+    for (const dir of dirs) {
+      const stateDir = join(rootPath, `.stelow/${date}/${dir}`);
+      if (existsSync(join(stateDir, "state.md"))) hits.push(stateDir);
+    }
+  }
+  if (hits.length === 1) return { kind: "single", stateDir: hits[0] };
+  if (hits.length > 1) return { kind: "ambiguous", count: hits.length };
+  return { kind: "none" };
+}
 
 /**
  * What a state-directory lookup learned, kept apart because "the records

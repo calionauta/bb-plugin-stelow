@@ -20,6 +20,7 @@ import {
   normalizeReviewGates,
 } from "../../../lib/review-gates.mjs";
 import { seedWorkflow } from "../workflow-seeding.js";
+import { findSingleLegacyStateDir } from "../workflow-state.js";
 import { flowMetrics } from "../flow-metrics.js";
 import { buildFlowCoverage } from "../flow-coverage.js";
 import type { FlowCoverage } from "../flow-coverage.js";
@@ -300,9 +301,18 @@ function advanceStage(deps: RpcSurfacesDeps) {
     if (!rootPath) {
       return { stage: "", stdout: "", error: "Project workspace path is unavailable." };
     }
-    const guard = await core.ensureProjectArtifacts(bb, rootPath);
+    const legacy = findSingleLegacyStateDir(rootPath);
+    if (legacy.kind === "ambiguous") {
+      return {
+        stage,
+        stdout: "",
+        error: `${legacy.count} legacy workflows under .stelow — leave exactly one to advance it from the CLI.`,
+      };
+    }
+    const stateDir = legacy.kind === "single" ? legacy.stateDir : null;
+    const guard = await core.ensureProjectArtifacts(bb, rootPath, stateDir ?? undefined);
     if (guard) return { stage, stdout: "", error: guard };
-    const result = await core.runHelper(["advance", stage], rootPath);
+    const result = await core.runHelper(["advance", stage], rootPath, stateDir ?? undefined);
     if (result.code !== 0) {
       return {
         stage,

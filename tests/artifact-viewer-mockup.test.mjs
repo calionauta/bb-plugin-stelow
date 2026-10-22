@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import * as artifactRender from "../lib/artifact-render.mjs";
+import * as artifactDiagram from "../lib/artifact-diagram.mjs";
+import { PELE_PLAYGROUND } from "../lib/diagram-strategy.mjs";
 import { findElementByType, loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 /**
@@ -39,6 +41,7 @@ const ArtifactContent = loadComponent(
     },
     "@get-bb/plugin-sdk/app": {
       Markdown: marker("markdown"),
+      UrlLink: marker("url-link"),
       experimental_SourceCode: marker("source-code"),
       experimental_FileLink: marker("file-link"),
       useRpc: () => ({ call: async () => ({}) }),
@@ -52,6 +55,11 @@ const ArtifactContent = loadComponent(
         return artifactRender.artifactRenderKind(path);
       },
     },
+    "../../lib/diagram-strategy.mjs": { PELE_PLAYGROUND },
+    "../../lib/artifact-diagram.mjs": {
+      derivedDiagram: (...args) => artifactDiagram.derivedDiagram(...args),
+    },
+    "./mermaid-diagram": { MermaidDiagram: marker("mermaid-diagram") },
     "@/components/ui/button": { Button: marker("button") },
     "@/components/ui/dialog": {
       Dialog: marker("dialog"),
@@ -123,3 +131,109 @@ const code = render({ file: { display: "main.ts", path: "main.ts" }, content: "c
 assert.ok(findElementByType(code, "source-code"), "an unclassified file renders as source");
 
 console.log("artifact viewer wiring ok: a mockup is looked at, a document is read, and the sandbox is the shared one");
+
+// --- A derived diagram (`.mmd`) renders the diagram branch, not plain source.
+// Asked of the RENDERED tree, like the mockup pin above: the viewer has to ask
+// `artifactRenderKind` for the decision (the spy), and the `.mmd` branch has
+// to be the `MermaidDiagram` element with the source beside it — a viewer that
+// renders the file as source alone keeps the spy green and fails here, because
+// no `mermaid-diagram` element ever appears. The playground link reads the
+// shared constant through the same sentinel shape as the sandbox: a hand-typed
+// URL in the viewer cannot pass as the module's value.
+//
+// This block carries its own loadComponent with the full stub set (notably
+// `./mermaid-diagram` and the diagram-strategy constant), so it does not
+// depend on the stub set above.
+const PELE_PLAYGROUND_SENTINEL = "https://pele-run-sentinel.example/playground";
+assert.match(PELE_PLAYGROUND_SENTINEL, /^https:\/\//, "the sentinel stays a plausible link");
+
+const mmdKindCalls = [];
+const MmdArtifactContent = loadComponent(
+  "components/detail/artifact-viewer-dialog.tsx",
+  "ArtifactContent",
+  {
+    react: {
+      useEffect: () => {},
+      useRef: (initial) => ({ current: initial }),
+      useState: (initial) => [initial, () => {}],
+    },
+    "@get-bb/plugin-sdk/app": {
+      Markdown: marker("markdown"),
+      UrlLink: marker("url-link"),
+      experimental_SourceCode: marker("source-code"),
+      experimental_FileLink: marker("file-link"),
+      useRpc: () => ({ call: async () => ({}) }),
+    },
+    sonner: { toast: { message: () => {}, error: () => {}, success: () => {} } },
+    "./option-section": { OptionSection: () => null },
+    "../../lib/artifact-render.mjs": {
+      MOCKUP_SANDBOX: SANDBOX_SENTINEL,
+      artifactRenderKind: (path) => {
+        mmdKindCalls.push(path);
+        return artifactRender.artifactRenderKind(path);
+      },
+    },
+    "../../lib/diagram-strategy.mjs": { PELE_PLAYGROUND: PELE_PLAYGROUND_SENTINEL },
+    "../../lib/artifact-diagram.mjs": {
+      derivedDiagram: (...args) => artifactDiagram.derivedDiagram(...args),
+    },
+    "./mermaid-diagram": { MermaidDiagram: marker("mermaid-diagram") },
+    "@/components/ui/button": { Button: marker("button") },
+    "@/components/ui/dialog": {
+      Dialog: marker("dialog"),
+      DialogContent: marker("dialog-content"),
+      DialogDescription: marker("dialog-description"),
+      DialogFooter: marker("dialog-footer"),
+      DialogHeader: marker("dialog-header"),
+      DialogTitle: marker("dialog-title"),
+    },
+  },
+);
+
+function renderMmd(props) {
+  return renderTree(MmdArtifactContent({
+    file: null,
+    content: null,
+    truncated: false,
+    loadError: null,
+    loading: false,
+    scrollRef: undefined,
+    ...props,
+  }));
+}
+
+mmdKindCalls.length = 0;
+const mmd = renderMmd({
+  file: { display: "scope.mmd", path: "scope.mmd" },
+  content: "flowchart TD\n  A-->B",
+});
+const mmdDiagram = findElementByType(mmd, "mermaid-diagram");
+assert.ok(mmdDiagram, "a .mmd file renders the MermaidDiagram branch, not plain source alone");
+assert.equal(mmdDiagram.props.source, "flowchart TD\n  A-->B", "the branch receives the file's own source");
+assert.match(String(mmdDiagram.props.title), /scope\.mmd/, "the branch names the diagram it shows");
+assert.ok(findElementByType(mmd, "source-code"), "the source stays beside the diagram");
+const mmdLink = findElementByType(mmd, "url-link");
+assert.ok(mmdLink, "the branch links the playground");
+assert.equal(
+  mmdLink.props.href,
+  PELE_PLAYGROUND_SENTINEL,
+  "the link reads the shared constant, not a hand-typed URL",
+);
+assert.deepEqual(
+  mmdKindCalls,
+  ["scope.mmd"],
+  "and the branch is chosen through the shared kind, called on the document's own path",
+);
+
+// Plain source stays plain: the diagram branch is exclusive to the kind.
+mmdKindCalls.length = 0;
+const mmdPlain = renderMmd({ file: { display: "main.ts", path: "main.ts" }, content: "const x = 1;" });
+assert.equal(
+  findElementByType(mmdPlain, "mermaid-diagram"),
+  null,
+  "a non-diagram file never takes the diagram branch",
+);
+assert.ok(findElementByType(mmdPlain, "source-code"), "it still reads as code");
+assert.deepEqual(mmdKindCalls, ["main.ts"], "through the same shared kind");
+
+console.log("artifact viewer wiring ok: a .mmd renders the diagram branch beside its source, through the shared kind");

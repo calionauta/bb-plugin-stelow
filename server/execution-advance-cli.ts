@@ -35,6 +35,7 @@ type CliAdvanceDeps = Pick<
 
 const USAGE = "Usage: bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>";
 import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
+import { findSingleLegacyStateDir } from "./runtime/workflow-state.js";
 
 type ParsedCli = { projectId: string | null; dryRun: boolean; json: boolean; stage: string | undefined };
 
@@ -75,10 +76,18 @@ export async function advanceCli(
   const rootPath = workspace?.path ?? await deps.projectRoot(parsed.projectId);
   if (!rootPath) return { exitCode: 1, stderr: workspaceUnavailable(USAGE) };
   const stateDir = card?.dir_hash ? await deps.stateDir(card, rootPath) : null;
-  const guard = await deps.ensureArtifacts(rootPath, stateDir, Boolean(card?.dir_hash));
+  const legacy = !card && !stateDir ? findSingleLegacyStateDir(rootPath) : null;
+  if (legacy?.kind === "ambiguous") {
+    return {
+      exitCode: 1,
+      stderr: `${legacy.count} legacy workflows under .stelow — leave exactly one to advance it from the CLI.`,
+    };
+  }
+  const resolvedStateDir = stateDir ?? (legacy?.kind === "single" ? legacy.stateDir : null);
+  const guard = await deps.ensureArtifacts(rootPath, resolvedStateDir, Boolean(card?.dir_hash));
   if (guard) return { exitCode: 1, stderr: guard };
   if (card) {
-    const questionGuard = await deps.questionGate(card, stateDir);
+    const questionGuard = await deps.questionGate(card, resolvedStateDir);
     if (questionGuard) return { exitCode: 1, stderr: questionGuard };
   }
   const prepared = card
@@ -86,13 +95,13 @@ export async function advanceCli(
       card,
       stage: parsed.stage,
       rootPath,
-      stateDir,
+      stateDir: resolvedStateDir,
       dryRun: parsed.dryRun,
       includeRework: true,
     })
     : { route: null, note: "", evidence: "" };
   if ("error" in prepared) return { exitCode: 1, stderr: prepared.error };
-  return runAdvance(deps, services, parsed, parsed.stage, card, rootPath, stateDir, prepared);
+  return runAdvance(deps, services, parsed, parsed.stage, card, rootPath, resolvedStateDir, prepared);
 }
 
 async function runAdvance(

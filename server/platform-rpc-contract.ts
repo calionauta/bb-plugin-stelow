@@ -274,6 +274,15 @@ export const platformRpcContract = {
       tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })),
     }),
   },
+  diagramRendererStatus: {
+    experimental_description: "Bundled pele renderer: whether diagrams render inline in this install",
+    input: NO_INPUT,
+    output: z.object({
+      present: z.boolean(),
+      version: z.string().nullable(),
+      detail: z.string(),
+    }),
+  },
   workflowDependencyStatus: {
     experimental_description: "Report whether BB Workflows is installed, enabled, and available for Stelow execution",
     input: NO_INPUT,
