@@ -187,6 +187,8 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     nextStages: deps.parseNextStages(card.stage, {
       intent: card.intent,
       reviewPolicy: reviewPolicyOf(parts.stageSkips),
+      quality: parts.stageSkips.quality,
+      explorationCount: parts.stageSkips.explorationCount,
     }),
     githubLink: readGithubLink(deps.db, card.id),
   };

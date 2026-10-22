@@ -173,12 +173,19 @@ export function stateRootOf(stateDir: string | null): string | null {
  */
 export function parseNextStages(
   currentStage: string,
-  options: { intent?: string | null; reviewPolicy?: string | string[] | null } = {},
+  options: {
+    intent?: string | null;
+    reviewPolicy?: string | string[] | null;
+    quality?: string | null;
+    explorationCount?: string | number | null;
+  } = {},
 ): string[] {
   return legalMoves({
     intent: options.intent ?? "",
     reviewPolicy: options.reviewPolicy ?? null,
     stage: currentStage,
+    quality: options.quality ?? null,
+    explorationCount: options.explorationCount ?? null,
   }).allowed;
 }
 

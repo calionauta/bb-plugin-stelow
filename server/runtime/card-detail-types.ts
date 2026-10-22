@@ -46,7 +46,12 @@ export type CardDetailDeps = {
   workspaceRelative: (rootPath: string, path: string) => string | null;
   parseNextStages: (
     stage: string,
-    options: { intent?: string | null; reviewPolicy?: string | string[] | null },
+    options: {
+      intent?: string | null;
+      reviewPolicy?: string | string[] | null;
+      quality?: string | null;
+      explorationCount?: string | number | null;
+    },
   ) => string[];
   getReliablePreset: (band: string | string[], cardId: string) => Preset;
   strategyList: (card: WorkerCard) => string[];
