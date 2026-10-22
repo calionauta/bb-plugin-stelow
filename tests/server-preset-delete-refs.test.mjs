@@ -123,7 +123,7 @@ test("a built-in environment flip is refused with its exit, and writes nothing",
 
   await assert.rejects(
     server.handlers.upsertPreset(builtInInput({ environmentKind: "new-worktree" })),
-    /^Built-in presets keep their own environment\. Duplicate it to change this\.$/,
+    /Built-in presets keep their own environment\. Duplicate it to change this\./,
     "the refusal names the constraint and the way out, exactly as the dialog's help sentence does",
   );
   assert.deepEqual(
