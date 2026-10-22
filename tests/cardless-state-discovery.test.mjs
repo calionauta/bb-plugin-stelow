@@ -1,6 +1,6 @@
 /**
  * Cardless `advance` used to run the helper in project-root mode, so every
- * seeded legacy workflow (`.stelow/<date>/<dir>/state.md`) read as "missing
+ * seeded cardless workflow (`.stelow/<date>/<dir>/state.md`) read as "missing
  * state — reseed". `findSingleLegacyStateDir` is the re-root rule: exactly one
  * match re-roots to it, zero keeps the old behavior, several refuse — guessing
  * would advance the wrong workflow.
@@ -10,7 +10,7 @@
  * SDK shim below registers, since static imports resolve before it). Fixture
  * trees live under `os.tmpdir()`, never in the repo.
  */
-import "./legacy-sdk-shim.mjs";
+import "./cardless-sdk-shim.mjs";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,7 +25,7 @@ after(() => {
 });
 
 function fixtureRoot() {
-  const root = mkdtempSync(join(tmpdir(), "stelow-legacy-"));
+  const root = mkdtempSync(join(tmpdir(), "stelow-cardless-"));
   roots.push(root);
   return root;
 }
@@ -73,4 +73,4 @@ test("a non-date dir is ignored even when it holds a state.md", () => {
   assert.deepEqual(findSingleLegacyStateDir(root), { kind: "none" });
 });
 
-console.log("legacy state discovery ok: single re-roots, none keeps project root, several name the count");
+console.log("cardless state discovery ok: single re-roots, none keeps project root, several name the count");

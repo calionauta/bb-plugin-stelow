@@ -1,24 +1,24 @@
 import { z } from "zod";
 
 /**
- * The cardless workflow entries (legacy): they seed and advance a workflow
- * without a card. Split out of the lifecycle contract so that file stays under
- * the 400-line budget. The object is spread back into it, so the wire shape and
+ * The cardless workflow entries: they seed and advance a workflow without a
+ * card. Split out of the lifecycle contract so that file stays under the
+ * 400-line budget. The object is spread back into it, so the wire shape and
  * every method key are unchanged.
  */
-export const legacyWorkflowRpcContract = {
+export const cardlessWorkflowRpcContract = {
   startWorkflow: {
-    experimental_description: "Start a cardless workflow thread (legacy entry)",
+    experimental_description: "Start a cardless workflow thread (cardless entry)",
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000) }).strict(),
     output: z.object({ threadId: z.string() }),
   },
   advance: {
-    experimental_description: "Advance a cardless workflow (legacy entry)",
+    experimental_description: "Advance a cardless workflow (cardless entry)",
     input: z.object({ projectId: z.string().nullable(), stage: z.string().min(1).max(40) }).strict(),
     output: z.object({ stage: z.string(), stdout: z.string(), error: z.string().nullable() }),
   },
   ensureWorkflow: {
-    experimental_description: "Seed state files for a cardless workflow (legacy entry)",
+    experimental_description: "Seed state files for a cardless workflow (cardless entry)",
     input: z
       .object({
         projectId: z.string().nullable(),
