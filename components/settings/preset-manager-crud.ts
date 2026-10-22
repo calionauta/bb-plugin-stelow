@@ -17,6 +17,12 @@ type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 export type PresetManagerCrud = PresetFormState & {
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  /** The preset awaiting delete confirmation, if any. Set from the row,
+    confirmed or dismissed by the delete dialog. */
+  pendingDelete: PresetManagerPreset | null;
+  requestDelete: (preset: PresetManagerPreset) => void;
+  cancelDelete: () => void;
+  confirmDelete: () => void;
   save: () => Promise<void>;
   remove: (preset: PresetManagerPreset) => Promise<void>;
   setDefault: (preset: PresetManagerPreset) => Promise<void>;
@@ -41,14 +47,24 @@ export function usePresetManagerCrud({
 }): PresetManagerCrud {
   const form = usePresetFormState(presets, open);
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PresetManagerPreset | null>(null);
+  const remove = (preset: PresetManagerPreset) => runPresetAction(
+    rpc, preset, "deletePreset", setBusy, form.setMessage, onChanged,
+  );
 
   return {
     ...form,
     busy, setBusy,
+    pendingDelete,
+    requestDelete: (preset: PresetManagerPreset) => setPendingDelete(preset),
+    cancelDelete: () => setPendingDelete(null),
+    confirmDelete: () => {
+      const target = pendingDelete;
+      setPendingDelete(null);
+      if (target) void remove(target);
+    },
     save: () => savePreset(rpc, { state: form, setBusy, setMessage: form.setMessage, onChanged }),
-    remove: (preset: PresetManagerPreset) => runPresetAction(
-      rpc, preset, "deletePreset", setBusy, form.setMessage, onChanged,
-    ),
+    remove,
     setDefault: (preset: PresetManagerPreset) => runPresetAction(
       rpc, preset, "setDefaultPreset", setBusy, form.setMessage, onChanged,
     ),
