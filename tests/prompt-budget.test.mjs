@@ -12,6 +12,12 @@ import {
   sharedAcrossPaths,
   composedBudget,
 } from "../lib/prompt-budget.mjs";
+import {
+  CLAUSE_CHAR_CEILINGS,
+  clauseBudgetFindings,
+  clausesWithoutCeiling,
+} from "../lib/prompt-clause-budgets.mjs";
+import { BUILDER_CLAUSES, CLAUSE_ORDER } from "../server/runtime/workflow-shared.ts";
 
 /**
  * The prompt budget, pinned.
@@ -110,6 +116,69 @@ assert.ok(
   shared.duplicatedChars > 0,
   "the duplication measurement found real duplication — a zero here means the detector stopped matching, not that the prompts converged",
 );
+
+// --- Per-clause ceilings: name the clause, not the victim path. -------------
+// The path ceilings above catch a prompt growing; they cannot say WHICH clause
+// grew, and the smallest path always fails first. Measured when this table was
+// introduced: 11,700 of the reseed prompt's 12,490 chars were verbatim clause
+// text, so a sentence added to `doneProtocol` reported "reseed exceeds by 1".
+// True, and useless. These ceilings name the cause.
+{
+  const texts = { ...clauseTexts(), ...BUILDER_CLAUSES };
+  const { overBudget, unbudgeted, loose } = clauseBudgetFindings(texts);
+
+  assert.deepEqual(overBudget, [], `no shared clause exceeds its own char ceiling. Over: ${overBudget.join("; ")}`);
+
+  // Every budgeted clause must resolve to a real clause text, or the ceiling
+  // guards nothing. A rename that orphans an entry is a silent pass.
+  assert.deepEqual(
+    unbudgeted,
+    [],
+    `every clause ceiling must resolve to a real clause. Unresolved: ${unbudgeted.join(", ")}`,
+  );
+
+  // The other direction: a clause that renders in a prompt but has NO ceiling
+  // escapes the budget entirely, which is how a clause reaches 2,479 chars
+  // without anyone deciding it should.
+  const rendered = Object.keys(texts);
+  const ceilingless = clausesWithoutCeiling(rendered);
+  assert.deepEqual(
+    ceilingless,
+    [],
+    `every clause in the bag declares a char ceiling. Missing: ${ceilingless.join(", ")}`,
+  );
+
+  // Ratchet: a ceiling is not headroom. If a clause shrank, the ceiling must be
+  // lowered in the same commit — otherwise the slack silently becomes a budget
+  // for the next author. This asserts the table is not looser than reality.
+  assert.deepEqual(loose, [], `clause ceilings track reality, not headroom. Loose: ${loose.join("; ")}`);
+}
+
+// --- The render order and the size contract are the same list. -------------
+// The order the builder renders in and the keys the ceilings are written
+// against have to be one set: a clause rendered but unbudgeted is invisible,
+// and a ceiling for a clause that is never rendered guards nothing.
+{
+  const texts = { ...clauseTexts(), ...BUILDER_CLAUSES };
+  const rendered = CLAUSE_ORDER.map((clause) => clause);
+  assert.deepEqual(
+    rendered.filter((clause) => !(clause in texts)),
+    [],
+    "the render order names a clause the bag does not carry",
+  );
+  const unbudgeted = rendered.filter((clause) => !(clause in CLAUSE_CHAR_CEILINGS));
+  assert.deepEqual(
+    unbudgeted,
+    [],
+    `every rendered clause declares a char ceiling. Missing: ${unbudgeted.join(", ")}`,
+  );
+  const bagNotRendered = Object.keys(texts).filter((clause) => !rendered.includes(clause));
+  assert.deepEqual(
+    bagNotRendered,
+    [],
+    `the bag carries a clause the builder never renders: ${bagNotRendered.join(", ")}`,
+  );
+}
 
 // --- The clauses are single-owner in the source tree. -----------------------
 // The rendered-prompt assertions live in `prompt-path-contract`; this is the
