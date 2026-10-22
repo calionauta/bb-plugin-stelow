@@ -33,7 +33,6 @@
     "lib/trackable-evidence.mjs:evidenceConditions": 74,
     "server/runtime/cli/cli-bundle-writer.ts:writeBundle": 68,
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
-    "server/runtime/workflow-seeding.ts:seedWorkflow": 72,
     "server/scopes.ts:runScopeCommand": 87,
     "tests/server-drafting.test.mjs:harness": 83,
     "components/creation/create-build-dialog.tsx:useCreateBuildSubmit": 57

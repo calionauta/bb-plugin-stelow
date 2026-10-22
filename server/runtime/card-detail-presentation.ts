@@ -131,6 +131,18 @@ function detailFileOccupancy(
   return { isolated: answer.isolated, lines: answer.lines, shared: answer.shared };
 }
 
+/**
+ * The review policy the moves are computed under.
+ *
+ * The gate set wins when the card carries one: it is the finer policy, and
+ * the ladder rung is only its legacy spelling. A card with neither reads as
+ * Auto — the same default the seed writes.
+ */
+function reviewPolicyOf(stageSkips: DetailParts["stageSkips"]): string | string[] {
+  if (stageSkips.reviewGates !== undefined) return stageSkips.reviewGates;
+  return stageSkips.reviewMode ?? "Auto";
+}
+
 export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
   const { card, workspace } = parts;
   const openQuestions = parts.pending.length + parts.expired.length;
@@ -172,7 +184,10 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     workerHistory: parts.workerHistory,
     executionRuns: deps.executionLifecycle.detailList(card.id),
     fileEnvironmentId: parts.fileEnvironmentId,
-    nextStages: deps.parseNextStages(workspace.path, card.stage),
+    nextStages: deps.parseNextStages(card.stage, {
+      intent: card.intent,
+      reviewPolicy: reviewPolicyOf(parts.stageSkips),
+    }),
     githubLink: readGithubLink(deps.db, card.id),
   };
 }

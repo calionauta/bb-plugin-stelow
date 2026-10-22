@@ -129,23 +129,43 @@ transitionsFs.writeFileSync(
 const shapeRow = STAGE_TRANSITIONS.shape;
 const expectedShape = [...shapeRow.next, ...shapeRow.accept, ...shapeRow.reject, ...shapeRow.rework];
 assert.deepEqual(
-  [...parseNextStages(tableRoot, "shape")].sort(),
+  [...parseNextStages("shape")].sort(),
   [...new Set(expectedShape)].sort(),
   "shape moves come from the catalog, not the stub markdown",
 );
-assert.ok(!parseNextStages(tableRoot, "shape").includes("plan"), "the stub's bogus 'plan' edge is ignored");
+assert.ok(!parseNextStages("shape").includes("plan"), "the stub's bogus 'plan' edge is ignored");
 const auditRow = STAGE_TRANSITIONS.audit;
 const expectedAudit = [...auditRow.next, ...auditRow.accept, ...auditRow.reject, ...auditRow.rework];
 assert.deepEqual(
-  [...parseNextStages(tableRoot, "audit")].sort(),
+  [...parseNextStages("audit")].sort(),
   [...new Set(expectedAudit)].sort(),
   "the terminal stage answers from the catalog",
 );
-assert.deepEqual(parseNextStages(tableRoot, "unknown"), [], "an unlisted stage offers no moves");
+assert.deepEqual(parseNextStages("unknown"), [], "an unlisted stage offers no moves");
+
+// The projection applies the intent route and the review mode, the same
+// rule the helper enforces. Without them the panel offered moves the helper
+// then refused: `diff-gate` in Auto, where the stage does not run.
 assert.deepEqual(
-  [...parseNextStages(null, "shape")].sort(),
-  [...new Set(expectedShape)].sort(),
-  "vocabulary needs no workspace root — the catalog is the source",
+  parseNextStages("context", { intent: "feature", reviewPolicy: "Auto" }).sort(),
+  ["setup", "shape"].sort(),
+  "the intent route keeps the move behind and the immediate next stage only",
+);
+assert.ok(
+  !parseNextStages("verification", { intent: "feature", reviewPolicy: "Auto" }).includes("diff-gate"),
+  "diff-gate does not run in Auto, so the panel must not offer it",
+);
+assert.ok(
+  parseNextStages("verification", { intent: "feature", reviewPolicy: "Auto" }).includes("audit"),
+  "the successor of a stage that does not run is the move",
+);
+assert.ok(
+  parseNextStages("planning", { intent: "feature", reviewPolicy: "Auto" }).includes("execution"),
+  "plan-gate does not run in Auto, so planning moves straight to execution",
+);
+assert.ok(
+  !parseNextStages("int-gate", { intent: "feature", reviewPolicy: "Auto" }).includes("architecture"),
+  "selection runs in Auto (the agent decides), so it is not bypassed",
 );
 transitionsFs.rmSync(tableRoot, { recursive: true, force: true });
 

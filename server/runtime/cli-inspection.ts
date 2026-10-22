@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { TRANSITIONS_REF } from "../plugin-paths.js";
 import { existsSync } from "node:fs";
 import { playbookEntries, renderPlaybook } from "../../lib/playbook.mjs";
 import { recipeOutputs } from "../../lib/recipe-catalog.mjs";
@@ -231,7 +232,9 @@ function playbookResult(
     stateDir: paths.stateDir,
     statePath: paths.statePath,
     workspaceRoot: root,
-    transitionsPath: join(root, "skills/stelow-workflow-orchestrator/references/transitions.md"),
+    // The synced contract, not the workspace copy: the workspace copy is a
+    // convenience for the workers that read it, and it can lag a sync.
+    transitionsPath: TRANSITIONS_REF,
     skillsDir: deps.skillsDir,
     strategySkill: paths.strategySkill,
     exploreSkill: paths.exploreSkill,

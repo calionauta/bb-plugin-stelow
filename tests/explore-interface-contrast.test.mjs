@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
+import { TECHNIQUE_CATALOG, techniqueById } from "../lib/technique-catalog.mjs";
 import { contractForExplore } from "../lib/artifact-contracts.mjs";
 import { validateExplore } from "../lib/artifact-validation.mjs";
 import { exploreArtifactFile } from "../lib/research-artifacts.mjs";

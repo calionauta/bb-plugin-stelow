@@ -112,7 +112,6 @@ const inheritedBaseline = [
   // so `source-debt.json` no longer carries it and the gate requires the
   // waiver dropped rather than left as a stale record.
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
-  "server/runtime/workflow-seeding.ts:seedWorkflow#1: 72 lines (relocated from server.ts: 74)",
   "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
   // Paid: the deferred-creation callback in tests/server-cards.test.mjs was
   // 82 lines because it built its whole harness inline. The harness is now

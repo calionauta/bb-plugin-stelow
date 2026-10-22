@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RESEARCH_STRATEGIES } from "../lib/research-strategies.mjs";
-import { TECHNIQUE_CATALOG } from "../lib/stage-catalog.mjs";
+import { TECHNIQUE_CATALOG } from "../lib/technique-catalog.mjs";
 import { createTrackPrompts } from "../server/runtime/track-prompts.ts";
 import { createTrackCapabilities } from "../server/runtime/track-capabilities.ts";
 

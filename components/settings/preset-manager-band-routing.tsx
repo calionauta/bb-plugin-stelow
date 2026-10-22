@@ -1,3 +1,4 @@
+import { PRESET_TIERS } from "../../lib/preset-staleness.mjs";
 import type { ManagerRpc } from "./decision-api-types";
 import type {
   BandPresetEntry,
@@ -33,7 +34,10 @@ const KNOWN_BANDS = new Set(PHASE_GROUPS.flatMap((group) => group.bands));
 // tier wins for the stages that declare it, and an unset tier falls through to
 // the phase — so leaving this group empty is exactly the behaviour installs had
 // before it existed.
-const TIER_GROUP = { track: "Model tiers", bands: ["economy", "standard", "best"] };
+// The tier bands come from the one list the routing reads, not from a
+// second copy of the three strings: a tier added upstream would otherwise
+// route cards to a band the manager cannot show.
+const TIER_GROUP = { track: "Model tiers", bands: [...PRESET_TIERS] };
 const RELIABLE_DELEGATED_GUIDANCE =
   "Demanding delegated work — automation drafts, research fan-out, " +
   "any burst the worker keeps rewriting. Runs with tools: pick a strong preset.";

@@ -44,7 +44,10 @@ export type CardDetailDeps = {
     prompt: string,
   ) => Promise<Array<{ path: string; display: string; absolutePath: string }>>;
   workspaceRelative: (rootPath: string, path: string) => string | null;
-  parseNextStages: (sourcePath: string | null, stage: string) => string[];
+  parseNextStages: (
+    stage: string,
+    options: { intent?: string | null; reviewPolicy?: string | string[] | null },
+  ) => string[];
   getReliablePreset: (band: string | string[], cardId: string) => Preset;
   strategyList: (card: WorkerCard) => string[];
   flowTimes: (card: WorkerCard) => { leadMs: number | null; cycleMs: number | null };

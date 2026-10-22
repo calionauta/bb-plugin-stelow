@@ -20,7 +20,7 @@ import {
   workflowEntryForOwner,
   workflowStateRelativeDir,
 } from "../../lib/workflow-state-identity.mjs";
-import { STAGE_TRANSITIONS } from "../../lib/workflow-catalog.mjs";
+import { legalMoves } from "../../lib/workflow-moves.mjs";
 import { array } from "./values.js";
 import type { WorkerCard } from "../workers-types.js";
 import { join } from "./root-paths.js";
@@ -158,27 +158,28 @@ export function stateRootOf(stateDir: string | null): string | null {
 }
 
 /**
- * Every stage the canonical catalog routes the current one to. Used to
- * offer the human the moves the workflow actually allows, so the panel
- * never advertises a stage the catalog rejects.
+ * Every stage the workflow may actually move to from the current one.
  *
- * Pure projection of STAGE_TRANSITIONS: no workspace reads, no markdown
- * parsing. `rootPath` is retained (unused) so existing callers keep their
- * shape; a null root still offers no moves.
+ * Used to offer the human the moves the workflow allows, so the panel never
+ * advertises a stage the state machine refuses.
+ *
+ * The projection used to read the catalog's transition rows and offer every
+ * target — no intent route, no review mode. So the panel offered
+ * `diff-gate` in Auto, where the stage does not exist, and `planning` at
+ * `context` on a bugfix, where the route does not go; the worker was
+ * refused by the helper seconds later. `lib/workflow-moves.mjs` applies the
+ * same rule the helper enforces, and a parity test runs the pinned helper
+ * over every triple to keep the two from drifting.
  */
 export function parseNextStages(
-  _rootPath: string | null,
   currentStage: string,
+  options: { intent?: string | null; reviewPolicy?: string | string[] | null } = {},
 ): string[] {
-  const row = (STAGE_TRANSITIONS as Record<string, { next: string[]; accept: string[]; reject: string[]; rework: string[] }>)[currentStage];
-  if (!row) return [];
-  const seen = new Set<string>();
-  for (const key of ["next", "accept", "reject", "rework"] as const) {
-    for (const target of row[key] ?? []) {
-      if (typeof target === "string" && target) seen.add(target);
-    }
-  }
-  return Array.from(seen);
+  return legalMoves({
+    intent: options.intent ?? "",
+    reviewPolicy: options.reviewPolicy ?? null,
+    stage: currentStage,
+  }).allowed;
 }
 
 /**

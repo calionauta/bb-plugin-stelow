@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { presetBandsForCardKindStage } from "../../lib/preset-staleness.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
-import { techniqueById } from "../../lib/stage-catalog.mjs";
+import { techniqueById } from "../../lib/technique-catalog.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { freshStatusForReseed, resolveReseedIntent } from "../../lib/workflow-intent-policy.mjs";
 import type { PresetRow } from "../presets.js";

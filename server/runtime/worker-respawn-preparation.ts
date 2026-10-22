@@ -1,7 +1,7 @@
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
 import { roundFileName, roundTimestamp } from "../../lib/research-rounds.mjs";
-import { techniqueById } from "../../lib/stage-catalog.mjs";
+import { techniqueById } from "../../lib/technique-catalog.mjs";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { PresetParams, RespawnOptions, RespawnPreparation } from "../workers.js";
 import type { WorkerCard } from "../workers-types.js";
