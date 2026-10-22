@@ -2,7 +2,9 @@ import { readdirSync } from "node:fs";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { loadAboutLogo } from "../../lib/about-logo.mjs";
+import { PELE_INSTALL, PELE_PIN } from "../../lib/diagram-strategy.mjs";
 import { installTool, toolStatus } from "./tool-installers.js";
+import { createDiagramRendererHandlers } from "./diagram-renderer.js";
 import type { ToolProbeResult, ToolRunResult } from "./tool-installers.js";
 import { createUiDesignMcpHandlers } from "./ui-design-mcp.js";
 import { createAgentGraphCapabilityHandlers } from "./agent-graph-capability.js";
@@ -139,8 +141,14 @@ export function createPlatformHandlers(deps: PlatformDeps) {
   const workflowDependency = createWorkflowDependencyHandlers({ runBbCli: runHostBbCli });
   const agentGraphCapability = createAgentGraphCapabilityHandlers({ runBbCli: runHostBbCli });
   const uiDesignMcp = createUiDesignMcpHandlers({ homeDir: deps.homeDir, bb: deps.bb });
+  const diagramRenderer = createDiagramRendererHandlers({
+    loadPele: () => import("pele"),
+    pinned: PELE_PIN,
+    installCommand: PELE_INSTALL,
+  });
   return {
     buildInfo: () => buildInfo(deps),
+    diagramRendererStatus: () => diagramRenderer.diagramRendererStatus(),
     applyPluginUpdate: () => applyPluginUpdate(deps),
     checkPluginUpdate: async () => {
       await deps.refreshPluginUpdate(true);

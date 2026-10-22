@@ -343,6 +343,7 @@ test("platform exposes the complete public RPC handler set", () => {
     "applyPluginUpdate",
     "buildInfo",
     "checkPluginUpdate",
+    "diagramRendererStatus",
     "enableWorkflowDependency",
     "installTool",
     "installWorkflowDependency",

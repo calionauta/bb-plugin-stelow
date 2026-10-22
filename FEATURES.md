@@ -1311,6 +1311,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   runs without reaching the reader's bb session. A truncated file is
   shown as source instead, because a partial page is a broken layout
   presented as evidence — and it says so rather than failing silently.
+  A derived diagram source (`.mmd` — breadboard projections) renders inline
+  with the bundled pele renderer (exact pin v1.8.0 in `dependencies`, so bb
+  installs it together with the plugin — no user install step) with the source
+  kept beside it; `scope-map.json` (and drafts) derives its flowchart the same
+  way at view time (`scopeMapToFlowchart` in `lib/scope-map-diagram.mjs` — the
+  map is the source of truth, dangling dependencies and id collisions refuse
+  into source), and diagrammable Markdown (spec-tech, architecture, interface)
+  renders its first fenced ```mermaid block only when the renderer accepts it
+  (`extractFencedMermaid`, `supports()`-gated at view time;
+  `derivedDiagram` in `lib/artifact-diagram.mjs` owns the decision).
+  `breadboard.json` deliberately derives nothing client-side: its canonical
+  `.mmd`/`.html` views already exist beside it. The sibling `.html` page stays
+  the durable view (`diagramRendererStatus` RPC reports bundled-vs-absent in the
+  About tab's Diagram renderer card).
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
@@ -1368,7 +1382,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   install anytime, everything degrades silently without them. Each row
   also offers one-click install (explicit consent, an isolated installer
   environment, `~/.local/bin`, verified by re-probe) with per-row error + log, plus
-  one-click reinstall-as-update for installed tools. Every install path is pinned
+  one-click reinstall-as-update for installed tools, plus "Install all missing"
+  behind an inline confirm (explicit consent again; sequential in panel order,
+  one failure never hides the tools behind it — `installAllTools` in
+  `lib/host-tools.mjs`). Every install path is pinned
   by the plugin and the pin is enforced: a versioned script URL plus the script's
   own SHA-256 (sem, ripwire), a named npm or Go version (ast-grep, cymbal), or —
   where upstream publishes no checksum for the script — the script's SHA-256 with
