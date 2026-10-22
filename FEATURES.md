@@ -3644,6 +3644,24 @@ build path fail a test rather than quietly skip the protocols, and
 null-versus-zero rule so an optimization target cannot be redefined instead of
 improved.
 
+**A prompt clause is budgeted, so a growth names the clause and not the path.**
+The per-path ceilings above catch a prompt growing, but they cannot say WHICH
+clause grew, and the smallest path always fails first: measured on this commit,
+11,700 of the reseed prompt's 12,490 characters are verbatim shared clause
+text, so a sentence added to `doneProtocol` reported "reseed exceeds the
+ceiling by 1" — true, and useless, because it named a path instead of a cause.
+`lib/prompt-clause-budgets.mjs` is the missing half: a character ceiling per
+clause, keyed on the bag's own protocol key, so the table and the bag cannot
+drift into two vocabularies. The ceilings ratchet the way `scripts/source-debt.json`
+does — a clause that shrinks must have its ceiling tightened in the same commit,
+because a ceiling nobody lowers is a ceiling that quietly becomes a budget.
+
+The render order moved out of the builder and into `CLAUSE_ORDER` beside the
+bag, so "what a prompt contains" and "what a prompt costs" are one list
+instead of two. The rendered prompt is byte-identical to before: the order
+was already correct, it was just written in a place that could not be
+checked against anything.
+
 The fast loop is `npm run test:fast` (~0.7s, five pure test files in one process),
 for when the full suite's ~400 separate node processes are not what you want to
 wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
