@@ -46,7 +46,12 @@ assert.match(source, /contractId/, "rendered workflow propagates the contract ID
 assert.match(source, /boundaryId/, "rendered workflow propagates the boundary ID");
 assert.match(source, /answerSchema/, "rendered workflow propagates the answer schema");
 const realRecipe = recipeById("interface-contrast");
-assert.equal(realRecipe.tasks[0].human_boundary, "coordinator", "real Interface Contrast recipe owns a coordinator boundary");
+// By FIELD, not by index: the recipe gained the proposal tasks upstream, so
+// the decision task is no longer the first one. Where the boundary sits is a
+// contract; which array index it occupies is not.
+const decisionTask = realRecipe.tasks.find((task) => task.human_boundary === "coordinator");
+assert.ok(decisionTask, "real Interface Contrast recipe owns a coordinator boundary");
+assert.equal(decisionTask.id, "contrast", "the decision task is the one that waits");
 const realSource = renderInlineWorkflowScript(realRecipe, { localRunId: "exec-real" });
 assert.match(realSource, /contractId/, "real Interface Contrast renderer propagates the contract ID");
 assert.match(realSource, /boundaryId/, "real Interface Contrast renderer propagates the boundary ID");

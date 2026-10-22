@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { recipeById } from "../lib/recipe-catalog.mjs";
 import {
-  activeRecipeTasks,
   applyRouteContext,
   effectiveRecipeWidth,
   hasCoordinatorHumanBoundary,
@@ -37,18 +36,38 @@ assert.equal(effectiveRecipeWidth(scopeMap, {}), 1, "scope-map is one task");
 assert.equal(effectiveRecipeWidth(critique, {}), 1, "plan-critique is a chain");
 assert.equal(effectiveRecipeWidth(alternatives, {}), 1, "alternatives is a chain when fanout holds");
 
-// A collapsed fan-out cascades: count 1 skips the root and its dependents.
-const collapsed = runnableRecipeTasks(alternatives, { explorationCount: 1 });
+// Breadth controls the COUNT of proposals, never whether proposals happen.
+// Upstream gated the producer on fan-out, and the decide chain depends on it:
+// at breadth 1 the cascade skipped the whole recipe, so the interface gate and
+// the contrast ran nothing. The fix keeps the chain whole; this is the pin.
+assert.equal(
+  effectiveRecipeWidth(alternatives, { explorationCount: 1 }),
+  1,
+  "the alternatives chain runs at breadth 1 (one proposal), not zero tasks",
+);
 assert.deepEqual(
-  collapsed.active.map((task) => task.id),
+  runnableRecipeTasks(alternatives, { explorationCount: 1 }).skipped,
   [],
-  "count 1 leaves no runnable alternatives task",
+  "no alternatives task is skipped at breadth 1",
 );
-assert.equal(effectiveRecipeWidth(alternatives, { explorationCount: 1 }), 0, "collapsed width is zero");
-assert.ok(
-  activeRecipeTasks(alternatives, {}).length > collapsed.active.length,
-  "default context keeps the fanout task",
+
+// The cascade itself is still the mechanism a conditional task relies on, so
+// it is pinned on a synthetic recipe instead of a stage recipe that must never
+// collapse.
+const conditional = {
+  tasks: [
+    { id: "root", when: "exploration_supports_fanout", depends_on: [] },
+    { id: "middle", when: "always", depends_on: ["root"] },
+    { id: "tail", when: "always", depends_on: ["middle"] },
+  ],
+};
+assert.deepEqual(
+  runnableRecipeTasks(conditional, { explorationCount: 1 }).active,
+  [],
+  "a skipped root cascades to its dependents",
 );
+assert.equal(effectiveRecipeWidth(conditional, { explorationCount: 1 }), 0, "a collapsed recipe has zero width");
+assert.equal(effectiveRecipeWidth(conditional, { explorationCount: 3 }), 1, "the same recipe runs once breadth returns");
 
 // Conditional UI scope narrows verification from 2 to 1.
 assert.equal(effectiveRecipeWidth(verification, { uiScopePresent: true }), 2, "verification fans out with UI scope");
@@ -69,11 +88,16 @@ assert.equal(
 );
 assert.equal(
   nativeFor(alternatives, { explorationCount: 1 }).mode,
+  "native",
+  "breadth 1 still runs the proposal chain natively, not an empty workflow",
+);
+assert.equal(
+  applyRouteContext({ mode: "native" }, conditional, { explorationCount: 1 }).mode,
   "coordinator-sequential",
   "zero-width work falls back instead of running an empty workflow",
 );
 assert.equal(
-  nativeFor(alternatives, { explorationCount: 1 }).effectiveWidth,
+  applyRouteContext({ mode: "native" }, conditional, { explorationCount: 1 }).effectiveWidth,
   0,
   "the fallback names its width",
 );

@@ -18,7 +18,8 @@ const valid = {
   fixedConstraints: [{ name: "safety", value: "warn before commit", source: "simulation" }],
   criteria: ["scan cost", "accessibility"],
   evidence: [{ source: "simulation", reference: "case-1", claim: "split context improves scanning" }],
-  options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+  options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+    wireframe: "[ sketch ]" }],
   nextAction: "Continue to the bounded comparison.",
 };
 assert.equal(

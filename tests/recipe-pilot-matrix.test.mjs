@@ -124,7 +124,8 @@ function validContents(recipe) {
     fixedConstraints: [{ name: "safety", value: "preserve warning", source: "simulation" }],
     criteria: ["scan cost", "accessibility"],
     evidence: [{ source: "simulation", reference: "pilot", claim: "split view is testable" }],
-    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" }],
     nextAction: "Record the pilot selection.",
   };
   return Object.fromEntries(recipe.tasks.map((task) => [

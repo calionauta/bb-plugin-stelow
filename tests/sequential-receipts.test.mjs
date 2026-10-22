@@ -18,7 +18,23 @@ assert.deepEqual(
 );
 assert.deepEqual(plan.skipped, [], "nothing skipped under default context");
 
-const collapsed = sequentialTaskPlan(alternatives, { explorationCount: 1 });
+// Breadth 1 still plans the proposal chain: the decide tasks depend on it, so
+// gating the producer on fan-out used to skip the whole recipe.
+assert.equal(
+  sequentialTaskPlan(alternatives, { explorationCount: 1 }).width,
+  1,
+  "breadth 1 still plans the alternatives chain",
+);
+
+// The cascade is the mechanism a conditional task relies on; pinned on a
+// synthetic recipe so the example cannot be "fixed" by changing a real one.
+const conditional = {
+  tasks: [
+    { id: "root", when: "exploration_supports_fanout", depends_on: [] },
+    { id: "tail", when: "always", depends_on: ["root"] },
+  ],
+};
+const collapsed = sequentialTaskPlan(conditional, { explorationCount: 1 });
 assert.equal(collapsed.width, 0, "collapsed plan has zero width");
 assert.ok(collapsed.skipped.length > 0, "collapsed tasks are reported as skipped");
 
@@ -44,8 +60,8 @@ assert.deepEqual(
 );
 
 const partial = collectSequentialReceipts({
-  recipe: alternatives,
-  contents: { "interfaces/alternatives.json": " " },
+  recipe: conditional,
+  contents: {},
   context: { explorationCount: 1 },
 });
 assert.ok(

@@ -23,8 +23,10 @@ const receipt = {
     { source: "fixture", reference: "accessibility-constraint", claim: "keyboard path must remain complete" },
   ],
   options: [
-    { id: "split-context", primaryValue: "split view", relatedValues: [], compatibility: "valid" },
-    { id: "ghost-whole", primaryValue: "crop with ghost whole", relatedValues: [], compatibility: "valid" },
+    { id: "split-context", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" },
+    { id: "ghost-whole", primaryValue: "crop with ghost whole", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" },
   ],
   nextAction: "Present both retained-context options at the Interface gate.",
 };

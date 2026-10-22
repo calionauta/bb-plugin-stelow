@@ -28,8 +28,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   itemRequired("options"),
-  ["id", "primaryValue", "compatibility"],
-  "options carry the same required trio the validator checks",
+  ["id", "primaryValue", "compatibility", "wireframe"],
+  "options carry the same required quartet the validator checks",
 );
 assert.deepEqual(
   schema.properties.evidence.items.properties.source.enum,
@@ -77,7 +77,7 @@ const looseReceipt = {
   fixedConstraints: [{ id: "read-only", value: "no mutations" }],
   criteria: ["one", "two"],
   evidence: [{ description: "looked at the code" }],
-  options: [{ id: "A", primaryValue: "keep", compatibility: "valid" }],
+  options: [{ id: "A", primaryValue: "keep", compatibility: "valid", wireframe: "+------+\n| keep |\n+------+" }],
   nextAction: "proceed",
 };
 const issues = validateInterfaceContrastReceipt(looseReceipt);
@@ -100,6 +100,17 @@ const good = {
   evidence: [{ source: "measured", reference: "git diff", claim: "no writes" }],
 };
 assert.deepEqual(validateInterfaceContrastReceipt(good), [], "a receipt satisfying the schema also satisfies the validator");
+
+// The sketch is what the interface gate reviews. The schema has always been
+// able to require it; the runtime gate did not, so a card could reach the gate
+// with a blank preview and the human picked on labels alone.
+assert.ok(
+  validateInterfaceContrastReceipt({
+    ...good,
+    options: [{ id: "A", primaryValue: "keep", compatibility: "valid" }],
+  }).some((issue) => issue === "options[0] must carry a wireframe — the interface gate is a visual review"),
+  "an option without a wireframe is rejected by the runtime gate",
+);
 
 // The seven fields the schema declared that the validator used to accept
 // blind. Each assertion below is a field a reader acts on: a receipt that
