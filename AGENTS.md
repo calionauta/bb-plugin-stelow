@@ -296,6 +296,12 @@ inverting the behavior before trusting it green.
   anything runs.
 - Touch targets are `min-h-11`; every clickable gets `cursor-pointer`
   (Tailwind v4 does not imply it); text fields keep the text cursor.
+- A disabled control is not a protection. The RPC and the CLI reach the same
+  handler the dialog calls, so a refusal that lives only in the UI is a
+  promise either of them can break — enforce it at the save boundary and
+  assert the refusal shape in a server test. Precedent: the built-in preset
+  environment (the dialog disables it *and* `upsertPreset` refuses the
+  write, covered by `server-preset-delete-refs.test.mjs`).
 
 ## Releases
 
