@@ -33,7 +33,7 @@ const TRANSITIONS = join(root, "skills", "stelow-workflow-orchestrator", "refere
 const MODES = Object.keys(WORKFLOW_ROUTES.review_modes ?? {});
 
 /** The helper's own answer for one triple. Runs the real script. */
-function helperMoves({ intent, reviewMode, stage }) {
+function helperMoves({ intent, reviewMode, stage, quality = "production", explorationCount = "3" }) {
   const dir = mkdtempSync(join(tmpdir(), "stelow-moves-"));
   try {
     const stateDir = join(dir, ".stelow", "2026-01-01", "sw-test");
@@ -47,8 +47,8 @@ function helperMoves({ intent, reviewMode, stage }) {
         `current_stage: ${stage}`,
         "status: active",
         "config:",
-        "  quality: production",
-        "  exploration_count: 3",
+        `  quality: ${quality}`,
+        `  exploration_count: ${explorationCount}`,
         `  review_mode: ${reviewMode}`,
         "  product_type: software",
         "stages:",
@@ -138,6 +138,33 @@ for (const [reviewMode, gates] of Object.entries(LEGACY_REVIEW_MODE_TO_GATES)) {
  * happens and produces the artifacts the next stage reads. Bypassing it
  * would hand the next stage a prose interface with no graph.
  */
+/**
+ * The stage policy: the same rule the helper enforces and the published
+ * matrix is rendered from. The panel must agree with the helper about it
+ * too, or the panel offers a move the helper refuses.
+ */
+for (const quality of ["production", "experimental"]) {
+  for (const explorationCount of ["1", "3"]) {
+    for (const reviewMode of ["Auto", "Product Spec + Interface + Tech Review + Code Diff"]) {
+      const knobs = { intent: "feature", reviewMode, quality, explorationCount };
+      const projected = legalMoves({
+        intent: "feature",
+        reviewPolicy: reviewMode,
+        stage: "setup",
+        quality,
+        explorationCount,
+      });
+      const helper = helperMoves({ ...knobs, stage: "setup" });
+      const label = `${quality}/${explorationCount}/${reviewMode}`;
+      assert.deepEqual(
+        [...projected.allowed].sort(),
+        [...helper.allowed].sort(),
+        `the panel and the helper disagree about the moves from setup (${label})`,
+      );
+    }
+  }
+}
+
 const autoSelection = legalMoves({ intent: "feature", reviewPolicy: "Auto", stage: "int-gate" });
 assert.ok(
   autoSelection.allowed.includes("selection"),
