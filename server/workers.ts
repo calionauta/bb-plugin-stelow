@@ -5,7 +5,7 @@ import { needsNaming } from "../lib/card-naming.mjs";
 import { clearPresetStaleness, recordWorkerThread } from "../lib/worker-ledger.mjs";
 import { resetSpawnRetry } from "../lib/spawn-retry.mjs";
 import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
-import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
+import { presetBandsForCardKindStage } from "../lib/preset-staleness.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
@@ -47,7 +47,7 @@ export type WorkerDeps = {
   updateCard: (cardId: string, fields: Record<string, unknown>) => void;
   comment: (cardId: string, body: string) => void;
   getPreset: (presetId: string) => Preset | null;
-  getReliablePreset: (band: string, cardId: string) => Preset;
+  getReliablePreset: (band: string | string[], cardId: string) => Preset;
   presetParams: (preset: Preset) => PresetParams;
   prepareRespawn: (
     card: WorkerCard,
@@ -132,7 +132,7 @@ async function fresh(
   if (reason === "start" && card.worker_thread_id) {
     return { ok: false, error: "This card already has a worker thread." };
   }
-  const effective = deps.getReliablePreset(bandForCardKindStage(card.kind, card.stage), cardId);
+  const effective = deps.getReliablePreset(presetBandsForCardKindStage(card.kind, card.stage), cardId);
   const previousThreadId = card.worker_thread_id;
   const result = await respawn(respawnDeps(deps), cardId, effective.id, reason);
   if (!result.ok) return { ok: false, error: result.error ?? null };

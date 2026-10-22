@@ -54,6 +54,11 @@ const inheritedBaseline = [
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —
   // 74→57 and 119→111 — which is why the recorded values are the lower ones.
   "components/settings/plugin-update-status.tsx:PluginUpdateStatus#1: 54 lines (baseline 54)",
+  // Split out of PresetManagerBandRouting when the model-tier group was added:
+  // the router function carries both halves, so the delegated-work section is
+  // its own symbol rather than a fourth branch inside one long render.
+  "components/settings/preset-manager-band-routing.tsx:PresetManagerBandRouting#1: 68 lines (baseline 68)",
+  "components/settings/preset-manager-band-routing.tsx:PresetManagerDelegatedWork#1: 84 lines (baseline 84)",
   "components/settings/preset-onboarding.tsx:PresetOnboardingDialog#1: 51 lines (baseline 53)",
   "components/settings/workflow-dependency-card.tsx:WorkflowDependencyCard#1: 67 lines (recorded 67)",
   // The drawer shell gained a second edge (`side`), which pushed it to 184 lines; the

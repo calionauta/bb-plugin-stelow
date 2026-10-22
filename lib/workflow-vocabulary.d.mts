@@ -18,6 +18,8 @@ export declare const BUILD_BOARD_COLUMN_LABELS: Record<string, string>;
 export declare const PHASE_ENTRY_STAGES: Record<WorkflowPhase, string>;
 export declare const STAGE_BANDS: Record<string, string[]>;
 export declare const STAGE_TO_BAND: Record<string, string>;
+/** The recipe a stage's execution runs, or null for direct execution. */
+export declare function stageRecipeId(stage: string): string | null;
 export declare function buildBoardColumnFor(card: { status: string; stage: string; workerThreadId?: string | null }): string;
 export declare function stageLabel(stage: string): string;
 export declare function stageSkill(stage: string): string | null;

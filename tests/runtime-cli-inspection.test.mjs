@@ -34,6 +34,10 @@ const baseDeps = {
   readText: async () => "current_stage: execution\n",
   researchStrategySkill: () => null,
   exploreTechnique: () => null,
+  // No run named, so the playbook prints no run rows — the shape every
+  // pre-native install has, and the case a null must stay silent for.
+  latestRunForStage: () => null,
+  listRunFiles: async () => [],
 };
 
 function deps(overrides = {}) {
@@ -74,6 +78,80 @@ test("inspection family preserves playbook state and doctor ownership inputs", a
     root: "/workspace",
     stateDir: "/workspace/.stelow/card-1",
   }]);
+});
+
+// The root and the declared outputs are printed as ONE answer, so they must come
+// from ONE run. A card left the board where the newest run belonged to the
+// previous stage (verification) while the card already sat in the next (audit);
+// asking for the newest run of any stage pairs a `verification` directory with
+// `audit` filenames — the archaeology the section exists to end, wearing a
+// confident label. The query must therefore be stage-scoped.
+// The run-file rows: what a run actually wrote, listed by the host. The declared
+// outputs answer "what should be here"; this answers "what is here", which is
+// the question that made workers run `find <run> -type f` — 184 of 225 run-dir
+// commands across the live threads.
+test("playbook lists what a run actually wrote", async () => {
+  const withFiles = createInspectionCommand({
+    ...deps({}),
+    latestRunForStage: () => ({
+      artifactRoot: "/workspace/.stelow/card-1/runs/exec_now",
+      recipeId: "verification",
+    }),
+    listRunFiles: async () => ["verification/tests.json", "notes/scratch.md"],
+  });
+  const listed = await withFiles(["playbook", "--card", "card-1"], {});
+  assert.match(
+    listed.stdout,
+    /run-file: \/workspace\/\.stelow\/card-1\/runs\/exec_now\/notes\/scratch\.md/,
+    "a file the run wrote but no recipe declares is still named",
+  );
+  assert.match(listed.stdout, /run-file: .*verification\/tests\.json/, "declared files appear as present too");
+
+  // A listing that fails must not break the playbook: staging may already be
+  // cleaned up, and that is not an error worth a message.
+  const broken = createInspectionCommand({
+    ...deps({}),
+    latestRunForStage: () => ({
+      artifactRoot: "/workspace/.stelow/card-1/runs/exec_gone",
+      recipeId: "verification",
+    }),
+    listRunFiles: async () => { throw new Error("gone"); },
+  });
+  const survived = await broken(["playbook", "--card", "card-1"], {});
+  assert.equal(survived.exitCode, 0, "an unlistable run dir degrades instead of failing the playbook");
+  assert.match(survived.stdout, /run: \/workspace\/\.stelow\/card-1\/runs\/exec_gone/, "the root is still named");
+});
+
+test("playbook pairs the run root with the run that produced it", async () => {
+  const asked = [];
+  const run = createInspectionCommand({
+    ...deps({}),
+    latestRunForStage: (cardId, stage) => {
+      asked.push([cardId, stage]);
+      // Only the card's CURRENT stage has a run. The fixture's state.md says
+      // `current_stage: execution`, which is what playbook reads — the card's
+      // own `stage` column is not the source here.
+      return stage === "execution"
+        ? { artifactRoot: "/workspace/.stelow/card-1/runs/exec_now", recipeId: "verification" }
+        : null;
+    },
+  });
+
+  const playbook = await run(["playbook", "--card", "card-1"], {});
+  assert.equal(playbook.exitCode, 0);
+  assert.deepEqual(asked, [["card-1", "execution"]], "the run query is scoped to the card's stage");
+  assert.match(playbook.stdout, /run: \/workspace\/\.stelow\/card-1\/runs\/exec_now/);
+  // Outputs come from the RUN's recipe, not the stage's: if those ever disagree
+  // the files the run actually wrote are still the ones named.
+  assert.match(playbook.stdout, /run-output: \/workspace\/\.stelow\/card-1\/runs\/exec_now\/verification\/tests\.json/);
+
+  // A stage that has never run prints no run rows at all — never a bare output
+  // pointing at a directory nothing above it named. Driven through a seam that
+  // answers null for every stage, which is what a never-run card looks like.
+  const neverRan = createInspectionCommand({ ...deps({}), latestRunForStage: () => null });
+  const bare = await neverRan(["playbook", "--card", "card-1"], {});
+  assert.equal(bare.exitCode, 0);
+  assert.doesNotMatch(bare.stdout, /^run(-output)?: /m, "no run for this stage means no run section");
 });
 
 test("inspection family preserves card failure exit codes and usage", async () => {

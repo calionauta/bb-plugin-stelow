@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { bandForCardKindStage } from "../../lib/preset-staleness.mjs";
+import { presetBandsForCardKindStage } from "../../lib/preset-staleness.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
 import { techniqueById } from "../../lib/stage-catalog.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
@@ -58,7 +58,7 @@ type ReseedDeps = {
   }) => Promise<SeedResult>;
   getPresetById: (presetId: string) => PresetRow | null;
   pinCardPreset: (cardId: string, presetId: string) => boolean;
-  getReliablePreset: (band: string, cardId: string) => PresetRow;
+  getReliablePreset: (band: string | string[], cardId: string) => PresetRow;
   presetParams: (preset: PresetRow) => PresetParams;
   strategyList: (card: WorkerCard) => string[];
   strategyRounds: (card: WorkerCard) => Array<{ id: string; file: string }>;
@@ -191,7 +191,7 @@ function resolvePreset(
   card: WorkerCard,
 ): PresetRow | { error: string } {
   if (!presetId) {
-    return deps.getReliablePreset(bandForCardKindStage(card.kind, card.stage), cardId);
+    return deps.getReliablePreset(presetBandsForCardKindStage(card.kind, card.stage), cardId);
   }
   const preset = deps.getPresetById(presetId);
   if (!preset || !deps.pinCardPreset(cardId, preset.id)) {

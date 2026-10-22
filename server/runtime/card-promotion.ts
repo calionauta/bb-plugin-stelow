@@ -14,7 +14,7 @@ type PromotionDeps = {
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   recoverySnapshot: (card: WorkerCard) => Promise<Recovery>;
-  getReliablePreset: (band: string, cardId: string) => PresetRow;
+  getReliablePreset: (band: string | string[], cardId: string) => PresetRow;
   getCardPreset: (cardId: string) => PresetRow;
   respawn: (
     cardId: string,
