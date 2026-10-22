@@ -87,5 +87,5 @@ export function buildWorkerRestartPrompt(input: RestartPromptInput): string {
     intentAndOrder(input),
     `${input.instructions ? `Preset instructions:\n${input.instructions}\n` : ""}Request:\n${input.card.prompt}`,
   ].join("\n\n");
-  return buildWorkflowPrompt(protocols, tail);
+  return buildWorkflowPrompt(protocols, tail, { path: "restart" });
 }

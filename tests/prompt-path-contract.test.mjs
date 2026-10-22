@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { PATH_CONTRACTS, clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import { USER_INPUT_CONTRACT } from "../server/runtime/plugin-protocols.ts";
 import { clausesPresent, missingClauses, normalizeClause, pinnedSentenceDiff, sharedAcrossPaths } from "../lib/prompt-budget.mjs";
+import { CLAUSE_PROTOCOL_KEYS, pathOwesClause } from "../lib/prompt-clause-budgets.mjs";
+
+/** Budget clauses are keyed by CONST name; the bag by protocol key. */
+const CLAUSE_KEY_BY_PROTOCOL = Object.fromEntries(
+  Object.entries(CLAUSE_PROTOCOL_KEYS).map(([constName, protocolKey]) => [protocolKey, constName]),
+);
 
 /**
  * Every spawn path carries every clause it owes, measured on the rendered
@@ -52,12 +58,41 @@ for (const name of pathNames) {
 // Presence is decided by the clause's own first sentence. A token scan cannot
 // distinguish `%USER_INPUT_CONTRACT%` that rendered the clause from the same
 // token that rendered "" — which is exactly the drift that shipped.
+// The obligations are DECLARED per path (`lib/prompt-clause-budgets.mjs`), not
+// assumed equal. A path that omits a clause must say so, and this reads that
+// declaration rather than restating it — otherwise "every path owes everything"
+// becomes the assertion, and a legitimate omission can never be made without
+// deleting the guard that protects it.
 const missingByPath = {};
 for (const [name, owed] of Object.entries(PATH_CONTRACTS)) {
-  const owedClauses = Object.fromEntries(owed.map((clause) => [clause, clauses[clause]]));
+  const owedClauses = Object.fromEntries(
+    owed
+      .filter((clause) => pathOwesClause(name, CLAUSE_KEY_BY_PROTOCOL[clause] ?? clause))
+      .map((clause) => [clause, clauses[clause]]),
+  );
   const missing = missingClauses(paths[name], owedClauses);
   if (missing.length > 0) missingByPath[name] = missing;
 }
+
+// The other direction, which is the one the omission makes dangerous: a clause a
+// path does NOT owe must be absent. Without this, a typo in the obligations
+// table would silently drop a clause from a path that needs it — the exact
+// regression the presence check exists for, wearing the omission's clothes.
+const wronglyPresent = {};
+for (const [name, owed] of Object.entries(PATH_CONTRACTS)) {
+  for (const clause of owed) {
+    const key = CLAUSE_KEY_BY_PROTOCOL[clause] ?? clause;
+    if (pathOwesClause(name, key)) continue;
+    if (clausesPresent(paths[name], { [clause]: clauses[clause] })[clause] === true) {
+      (wronglyPresent[name] ??= []).push(clause);
+    }
+  }
+}
+assert.deepEqual(
+  wronglyPresent,
+  {},
+  `a clause a path does not owe must not render. Unexpected: ${JSON.stringify(wronglyPresent)}`,
+);
 assert.deepEqual(
   missingByPath,
   {},

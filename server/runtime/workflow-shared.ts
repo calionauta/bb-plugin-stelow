@@ -15,6 +15,8 @@ export type BuildProtocols = {
   userInputContract: string;
 };
 
+import { pathOwesClause } from "../../lib/prompt-clause-budgets.mjs";
+
 export type BuildVariant = "spawn" | "restart" | "reseed";
 
 /**
@@ -30,31 +32,55 @@ export type BuildVariant = "spawn" | "restart" | "reseed";
  * stops handing a clause renders a visibly weaker prompt instead of silently
  * falling back to the const.
  */
-export function buildSharedPrefix(protocols: BuildProtocols): string {
-  return [
-    protocols.workflowIntro,
-    protocols.cardOwnerRules,
-    protocols.workflowSkills,
-    protocols.neverSeed,
-    "Preserve every gate (product, interface, tech plan, diff).",
-    protocols.cliEquivalents,
-    protocols.reconProtocol,
-    protocols.draftProtocol,
-    protocols.turnDiscipline,
-    protocols.commitStyle,
-    protocols.interfacePick,
-    protocols.userInputContract,
-    protocols.commandFailureRule,
-    protocols.doneProtocol,
-    protocols.splitProtocol,
-  ].join("\n\n");
+/**
+ * The clause bag in render order, with the name each clause is budgeted under.
+ *
+ * `null` marks a line the builder owns rather than a caller-supplied protocol,
+ * so the budget table can skip it without a second list.
+ */
+const CLAUSE_ORDER = [
+  ["WORKFLOW_INTRO", "workflowIntro"],
+  ["CARD_OWNER_RULES", "cardOwnerRules"],
+  ["WORKFLOW_SKILLS", "workflowSkills"],
+  ["NEVER_SEED", "neverSeed"],
+  [null, "Preserve every gate (product, interface, tech plan, diff)."],
+  ["CLI_EQUIVALENTS", "cliEquivalents"],
+  ["RECON_PROTOCOL", "reconProtocol"],
+  ["DRAFT_PROTOCOL", "draftProtocol"],
+  ["TURN_DISCIPLINE", "turnDiscipline"],
+  ["COMMIT_STYLE", "commitStyle"],
+  ["INTERFACE_PICK", "interfacePick"],
+  ["USER_INPUT_CONTRACT", "userInputContract"],
+  [null, "commandFailureRule"],
+  ["DONE_PROTOCOL", "doneProtocol"],
+  ["SPLIT_PROTOCOL", "splitProtocol"],
+];
+
+export function buildSharedPrefix(
+  protocols: BuildProtocols,
+  { path }: { path?: BuildVariant } = {},
+): string {
+  const lines = [];
+  for (const [clauseName, source] of CLAUSE_ORDER) {
+    // A path only renders the clauses it owes. `pathOwesClause` reads the
+    // declared table, so this is not a discovery: a clause a path does not owe
+    // renders NOTHING — never a fallback to the const — which is what keeps an
+    // omission visible instead of silently weaker-but-present.
+    if (clauseName && path && !pathOwesClause(path, clauseName)) continue;
+    const text = typeof source === "string" && (source in protocols)
+      ? protocols[source as keyof BuildProtocols]
+      : source;
+    if (text) lines.push(text);
+  }
+  return lines.join("\n\n");
 }
 
 export function buildWorkflowPrompt(
   protocols: BuildProtocols,
   tail: string,
+  options: { path?: BuildVariant } = {},
 ): string {
-  return `${buildSharedPrefix(protocols)}\n\n${tail}`;
+  return `${buildSharedPrefix(protocols, options)}\n\n${tail}`;
 }
 
 export type { BuildVariant as BuildPromptVariant };

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import {
   CHARS_PER_TOKEN,
+  clauseCost,
   estimateTokens,
   normalizeClause,
   promptBudget,
@@ -12,6 +13,7 @@ import {
   sharedAcrossPaths,
   composedBudget,
 } from "../lib/prompt-budget.mjs";
+import { CLAUSE_CHAR_CEILINGS, CLAUSE_PROTOCOL_KEYS } from "../lib/prompt-clause-budgets.mjs";
 
 /**
  * The prompt budget, pinned.
@@ -110,6 +112,64 @@ assert.ok(
   shared.duplicatedChars > 0,
   "the duplication measurement found real duplication — a zero here means the detector stopped matching, not that the prompts converged",
 );
+
+// --- Per-clause ceilings: name the clause, not the victim path. -------------
+// The path ceilings above catch a prompt growing; they cannot say WHICH clause
+// grew, and the smallest path always fails first. Measured when this table was
+// introduced: 11,700 of the reseed prompt's 12,490 chars were verbatim clause
+// text, so a sentence added to `DONE_PROTOCOL` reported "reseed exceeds by 1".
+// True, and useless. These ceilings name the cause.
+{
+  const clauseSizes = clauseTexts();
+  const overBudget = [];
+  const unbudgeted = [];
+  for (const [constName, ceiling] of Object.entries(CLAUSE_CHAR_CEILINGS)) {
+    const protocolKey = CLAUSE_PROTOCOL_KEYS[constName];
+    if (!protocolKey) {
+      unbudgeted.push(constName);
+      continue;
+    }
+    const text = clauseSizes[protocolKey];
+    if (typeof text !== "string") {
+      unbudgeted.push(constName);
+      continue;
+    }
+    const { length } = clauseCost(text);
+    if (length > ceiling) overBudget.push(`${constName}: ${length} chars, ceiling ${ceiling} (+${length - ceiling})`);
+  }
+  assert.deepEqual(overBudget, [], `no shared clause exceeds its own char ceiling. Over: ${overBudget.join("; ")}`);
+
+  // Every budgeted clause must be resolvable to a real clause text, or the
+  // ceiling guards nothing. A rename that orphans an entry is a silent pass.
+  assert.deepEqual(
+    unbudgeted,
+    [],
+    `every clause ceiling must resolve to a real clause. Unresolved: ${unbudgeted.join(", ")}`,
+  );
+
+  // The other direction: a clause that renders in a prompt but has NO ceiling
+  // escapes the budget entirely, which is how a clause reaches 2,479 chars
+  // without anyone deciding it should.
+  const renderedClauses = Object.keys(clauseSizes);
+  const budgetedProtocolKeys = new Set(Object.values(CLAUSE_PROTOCOL_KEYS));
+  const ceilingless = renderedClauses.filter((key) => !budgetedProtocolKeys.has(key));
+  assert.deepEqual(
+    ceilingless,
+    [],
+    `every clause in the bag declares a char ceiling. Missing: ${ceilingless.join(", ")}`,
+  );
+
+  // Ratchet: a ceiling is not headroom. If a clause shrank, the ceiling must be
+  // lowered in the same commit — otherwise the slack silently becomes a budget
+  // for the next author. This asserts the table is not looser than reality.
+  const slack = [];
+  for (const [constName, ceiling] of Object.entries(CLAUSE_CHAR_CEILINGS)) {
+    const text = clauseSizes[CLAUSE_PROTOCOL_KEYS[constName]];
+    const { length } = clauseCost(text);
+    if (ceiling - length > 40) slack.push(`${constName}: ${length} chars but ceiling is ${ceiling} (${ceiling - length} spare — tighten it)`);
+  }
+  assert.deepEqual(slack, [], `clause ceilings track reality, not headroom. Loose: ${slack.join("; ")}`);
+}
 
 // --- The clauses are single-owner in the source tree. -----------------------
 // The rendered-prompt assertions live in `prompt-path-contract`; this is the

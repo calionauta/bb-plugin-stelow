@@ -121,7 +121,9 @@ function buildWorkflowPrompt(input: PromptInput): string {
     doneProtocol: input.protocols.doneProtocol,
     splitProtocol: input.protocols.splitProtocol,
   };
-  return buildSharedWorkflowPrompt(protocols, card);
+  // Declared as the reseed path so a clause a re-seeded worker cannot act on
+  // (the split door, which closes after Prioritization) is not rendered.
+  return buildSharedWorkflowPrompt(protocols, card, { path: "reseed" });
 }
 
 function intentClause(intent: string): string {

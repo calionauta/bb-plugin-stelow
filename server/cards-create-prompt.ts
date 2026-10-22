@@ -76,5 +76,6 @@ export function buildBuildPrompt(
       splitProtocol: rules.splitProtocol,
     },
     tail,
+    { path: "spawn" },
   );
 }
