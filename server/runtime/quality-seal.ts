@@ -10,7 +10,7 @@ import {
 } from "../../lib/research-artifacts.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
 import { evidenceStatus } from "../../lib/research-evidence.mjs";
-import { techniqueById } from "../../lib/stage-catalog.mjs";
+import { techniqueById } from "../../lib/technique-catalog.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type ResearchIndex = { ok: boolean; content?: string } | null;

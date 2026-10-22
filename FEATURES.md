@@ -2793,7 +2793,7 @@ one input, one artifact.*
   default, else board default) with a Configure presets entry; the
   provider/model picked in BB's composer is forwarded to the spawn and
   pinned as the card's preset override when it differs.
-- **Stage catalog** (`TECHNIQUE_CATALOG`, `lib/stage-catalog.mjs`). One entry
+- **Technique catalog** (`TECHNIQUE_CATALOG`, `lib/technique-catalog.mjs`). One entry
   per single-runnable workflow stage (Shape Up, interface alternatives,
   plan critiques, tech planning, codebase/UX critiques, testing
   strategy, execution critique) mapping to its bundled skill. Single

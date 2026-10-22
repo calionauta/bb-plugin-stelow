@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { bandForCardKindStage, isWorkerPresetStale, liveWorkerCards, presetBandsForCardKindStage, tierBandForStage } from "../lib/preset-staleness.mjs";
+import {
+  bandForCardKindStage,
+  isWorkerPresetStale,
+  liveWorkerCards,
+  presetBandsForCardKindStage,
+  PRESET_TIERS,
+  tierBandForStage,
+} from "../lib/preset-staleness.mjs";
+import { STAGE_CATALOG } from "../lib/workflow-catalog.mjs";
 import { refreshRestartPending } from "../lib/worker-ledger.mjs";
 import { resolveReliablePreset } from "../lib/reliable-preset.mjs";
 
@@ -159,4 +167,21 @@ assert.deepEqual(
   ["live-build", "live-pinned"],
   "the same cards are still reached by their phase band",
 );
+// The tier list MIRRORS the catalog's model hints. Upstream adds a tier and
+// the mirror does not know it: every stage with that hint degrades to the
+// phase band (a silent routing change) and the tier never appears as a row
+// in the preset manager. The mirror must fail CI instead of failing quietly.
+const declaredTiers = [
+  ...new Set(
+    STAGE_CATALOG.map((stage) => stage.model_hint).filter(
+      (hint) => typeof hint === "string" && hint.length > 0,
+    ),
+  ),
+].sort();
+assert.deepEqual(
+  declaredTiers,
+  [...PRESET_TIERS].sort(),
+  `the tier mirror drifted from the catalog: the catalog declares ${declaredTiers.join(", ")}`,
+);
+
 console.log("preset staleness test ok: band mapping, live filtering, cascade composition, tier routing");

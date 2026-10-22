@@ -67,13 +67,13 @@ export type ResolvedTrack = {
   research: boolean;
   explore: boolean;
   researchStrategy: ReturnType<typeof import("../lib/research-strategies.mjs").researchStrategyById>;
-  exploreStage: ReturnType<typeof import("../lib/stage-catalog.mjs").techniqueById>;
+  exploreStage: ReturnType<typeof import("../lib/technique-catalog.mjs").techniqueById>;
   intent: string;
   reviewGates: string[];
   reviewRung: string;
   seed: Seed;
 };
-export type ExploreStage = ReturnType<typeof import("../lib/stage-catalog.mjs").techniqueById>;
+export type ExploreStage = ReturnType<typeof import("../lib/technique-catalog.mjs").techniqueById>;
 export type Prepared = {
   displayName: string;
   params: PresetParams;

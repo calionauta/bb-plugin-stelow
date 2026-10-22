@@ -3,7 +3,7 @@ import {
   RESEARCH_STRATEGIES,
   researchStrategyById,
 } from "../../lib/research-strategies.mjs";
-import { TECHNIQUE_CATALOG, techniqueById } from "../../lib/stage-catalog.mjs";
+import { TECHNIQUE_CATALOG, techniqueById } from "../../lib/technique-catalog.mjs";
 
 export type ResearchStrategyEntry = (typeof RESEARCH_STRATEGIES)[number];
 export type TechniqueEntry = (typeof TECHNIQUE_CATALOG)[number];

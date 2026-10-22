@@ -57,13 +57,13 @@ assert.equal(contractForTrackable("track")?.kind, "stage", "track resolves to th
     for (const [stage, row] of Object.entries(STAGE_TRANSITIONS)) {
       const expected = [...new Set([...row.next, ...row.accept, ...row.reject, ...row.rework])].sort();
       assert.deepEqual(
-        [...parseNextStages(scratch, stage)].sort(),
+        [...parseNextStages(stage)].sort(),
         expected,
         `${stage} moves come from the catalog, not the prose mirror beside it`,
       );
     }
-    assert.ok(!parseNextStages(scratch, "shape").includes("plan"), "the stub's bogus 'plan' edge is ignored");
-    assert.deepEqual(parseNextStages(scratch, "unknown"), [], "an unlisted stage offers no moves");
+    assert.ok(!parseNextStages("shape").includes("plan"), "the stub's bogus 'plan' edge is ignored");
+    assert.deepEqual(parseNextStages("unknown"), [], "an unlisted stage offers no moves");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

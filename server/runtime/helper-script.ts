@@ -10,7 +10,7 @@
  */
 import { spawn } from "node:child_process";
 import { join as nodeJoin } from "node:path";
-import { HELPER_SCRIPT } from "../plugin-paths.js";
+import { HELPER_SCRIPT, TRANSITIONS_REF } from "../plugin-paths.js";
 
 export type HelperResult = {
   code: number | null;
@@ -18,9 +18,16 @@ export type HelperResult = {
   stderr: string;
 };
 
-const TRANSITIONS_RELATIVE =
-  "skills/stelow-workflow-orchestrator/references/transitions.md";
-
+/**
+ * The contract the helper enforces against.
+ *
+ * It used to be the WORKSPACE's copy of `transitions.md` — installed once,
+ * only when the workspace lacked it. So a workspace seeded before an
+ * upstream sync kept the old graph forever, and a card that reached a stage
+ * the old graph did not have could not advance at all. The plugin's
+ * vendored copy is the synced, current one; the workspace copy is refreshed
+ * on every seed for the workers that read it.
+ */
 export function runHelper(
   args: string[],
   cwd: string,
@@ -29,7 +36,7 @@ export function runHelper(
   return new Promise((resolveRun) => {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
-      STELOW_TRANSITIONS: nodeJoin(cwd, TRANSITIONS_RELATIVE),
+      STELOW_TRANSITIONS: TRANSITIONS_REF,
     };
     if (stateDir) {
       env.STELOW_STATEDIR = stateDir;

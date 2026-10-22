@@ -13,7 +13,7 @@ import {
   researchVerifyText,
 } from "../../../lib/research-artifacts.mjs";
 import { researchStrategyById } from "../../../lib/research-strategies.mjs";
-import { techniqueById } from "../../../lib/stage-catalog.mjs";
+import { techniqueById } from "../../../lib/technique-catalog.mjs";
 import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { ResearchReadiness } from "../research-artifacts.js";
