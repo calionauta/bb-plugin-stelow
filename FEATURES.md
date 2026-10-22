@@ -1313,8 +1313,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   presented as evidence — and it says so rather than failing silently.
   A derived diagram source (`.mmd` — breadboard projections) renders inline
   with the bundled pele renderer (exact pin v1.8.0 in `dependencies`, so bb
-  installs it together with the plugin — no user install step) with the source
-  kept beside it; `scope-map.json` (and drafts) derives its flowchart the same
+  installs it together with the plugin — no user install step) with pan-and-zoom
+  at view time (buttons, Ctrl/Cmd+wheel at the pointer, drag while zoomed; the
+  plain wheel keeps scrolling the page) and the source kept beside it; `scope-map.json` (and drafts) derives its flowchart the same
   way at view time (`scopeMapToFlowchart` in `lib/scope-map-diagram.mjs` — the
   map is the source of truth, dangling dependencies and id collisions refuse
   into source), and diagrammable Markdown (spec-tech, architecture, interface)
