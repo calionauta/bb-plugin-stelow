@@ -8,6 +8,7 @@ import { EXECUTION_CAPABILITIES, assertCapabilities } from "../lib/execution-ada
 import { requiredOutputPaths, safeArtifactPath, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
 import { evaluateScopeBatchPilot, resolveExecutionRoute } from "../lib/execution-route.mjs";
 import { renderInlineWorkflowScript } from "../server/bb-workflow-bridge.ts";
+import { RECIPE_CONDITIONS } from "../lib/recipe-conditions.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = readJson("tests/fixtures/recipe-pilot-matrix.json");
@@ -15,7 +16,11 @@ const catalog = readJson("data/stelow-recipe-catalog.json");
 const recipes = catalog.recipes ?? [];
 const rows = new Map(manifest.recipes.map((row) => [row.id, row]));
 const knownCapabilities = new Set(EXECUTION_CAPABILITIES);
-const supportedConditions = new Set(["always", "appetite_supports_fanout", "exploration_supports_fanout", "partition_is_safe", "ui_scope_present"]);
+// The conditions a recipe may use, as upstream declares them. This was a
+// hand-written set that had already fallen behind the vocabulary (it was
+// missing `findings_exist`), and a set nobody reconciles is a set that
+// quietly stops describing reality.
+const supportedConditions = new Set(RECIPE_CONDITIONS);
 const artifactContext = { appetite: "Complete", explorationCount: 5, partitionSafe: true, uiScopePresent: true };
 
 function readJson(path) {
