@@ -46,6 +46,11 @@ export function PresetManagerEditor(props: PresetManagerEditorProps) {
         onSetDefault={props.onSetDefault}
         onDelete={props.onDelete}
       />
+      {props.message && !props.formOpen ? (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          {props.message}
+        </p>
+      ) : null}
       <PresetManagerFormView
         form={props.form}
         builtIn={isBuiltInPresetEdit(props.presets, props.form.id)}

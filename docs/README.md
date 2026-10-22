@@ -31,6 +31,13 @@ None pending — all operator guides migrated (see above).
 - `staged-execution-continuity.md`, `restore-dogfood.md` — execution notes.
 - `legacy-compat.md` — every backward-compatibility branch in the boot path,
   tracked for the v1 cleanup.
+- `release-incidents.md` — war stories behind the `AGENTS.md` release rules
+  (evidence, never rules).
+- `release-runbook.md` — release procedures (cadence, squash typing,
+  recovery, verification, frozen 0.3 line); the discipline stays in
+  `AGENTS.md`.
+- `skills-sync-notes.md` — sync triggers, pin provenance, upstream-first
+  repair (failure modes and exact commands).
 - `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md`,
   `width1-sequential-pilot.md`, `research-architecture-implementation-plan.md`
   — plans and pilot records, kept for their measurements, not as behaviour.

@@ -5,16 +5,13 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
-import {
-  PresetManagerBandRouting,
-  PresetManagerDelegatedWork,
-} from "./preset-manager-band-routing";
 import { usePresetManagerAssignments } from "./preset-manager-assignments";
 import { PresetManagerApiSections } from "./preset-manager-api-sections";
 import { usePresetManagerCrud } from "./preset-manager-crud";
+import { PresetManagerDeleteConfirm } from "./preset-manager-delete-confirm";
 import { PresetManagerEditor } from "./preset-manager-editor";
 import { presetManagerRouting } from "./preset-manager-routing-props";
-import { PresetManagerRoutingSection } from "./preset-manager-routing-section";
+import { PresetManagerRoutingSections } from "./preset-manager-routing-sections";
 import type { PresetManagerPreset } from "./preset-manager-types";
 
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
@@ -25,21 +22,6 @@ type PresetManagerDialogProps = {
   rpc: ManagerRpc;
   presets: PresetManagerPreset[];
   onChanged: () => Promise<void>;
-};
-
-const BAND_ROUTING = {
-  title: "Worker preset per track",
-  hint: "phase routing",
-  explanation: "Each track runs on its own preset. Build phases can each override it; "
-    + "the worker switches automatically at phase boundaries. Unset rows fall back to "
-    + "the card preset (or default).",
-};
-
-const DELEGATED_WORK = {
-  title: "Delegated work",
-  hint: "subagent tiers",
-  explanation: "Work the host delegates to subthreads. Empty selects revert to the band "
-    + "preset — except Review, where empty means no reviewer.",
 };
 
 export function PresetManagerDialog({
@@ -75,18 +57,14 @@ export function PresetManagerDialog({
           onNew={crud.startNew}
           onEdit={crud.startEdit}
           onSetDefault={(preset) => void crud.setDefault(preset)}
-          onDelete={(preset) => void crud.remove(preset)}
+          onDelete={(preset) => crud.requestDelete(preset)}
           onToggleForm={() => crud.setFormOpen((current) => !current)}
           onChange={crud.setForm}
           onSave={() => void crud.save()}
           onClose={() => onOpenChange(false)}
         />
-        <PresetManagerRoutingSection {...BAND_ROUTING} {...routing}>
-          <PresetManagerBandRouting {...routing} />
-        </PresetManagerRoutingSection>
-        <PresetManagerRoutingSection {...DELEGATED_WORK} {...routing}>
-          <PresetManagerDelegatedWork {...routing} />
-        </PresetManagerRoutingSection>
+        <PresetManagerDeleteConfirm crud={crud} assignments={assignments} />
+        <PresetManagerRoutingSections routing={routing} />
         <PresetManagerApiSections rpc={rpc} />
       </DialogContent>
     </Dialog>
