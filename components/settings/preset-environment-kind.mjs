@@ -50,7 +50,9 @@ export function isBuiltInPresetEdit(presets, formId) {
  */
 export function environmentKindExplanation({ kind, builtIn }) {
   if (builtIn) {
-    return "Built-in presets keep their own environment. Duplicate it via New preset above — it starts from these settings — flip the worktree option there, then Set default to make it board-wide.";
+    return "Built-in presets keep their own environment. Duplicate it via "
+      + "New preset above — it starts from these settings — flip the worktree "
+      + "option there, then Set default to make it board-wide.";
   }
   if (!isKnownKind(kind)) {
     return `This preset stores an unrecognised environment ("${kind}"), so it is treated as BB's default. Saving rewrites it as the default environment.`;
