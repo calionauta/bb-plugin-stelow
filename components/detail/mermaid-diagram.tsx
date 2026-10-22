@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { PELE_PLAYGROUND } from "../../lib/diagram-strategy.mjs";
 import { ZOOM_STEP, isZoomed, pointerInCanvas, zoomAtPoint } from "../../lib/diagram-zoom.mjs";
+import { Button } from "@/components/ui/button";
 
 type PeleModule = { render: (source: string) => { svg?: string } };
 
@@ -133,10 +134,6 @@ export function MermaidDiagram({ source, title }: { source: string; title: strin
   if (failed) return <RenderFailed />;
   if (!svg) return <p className="text-xs text-muted-foreground">Rendering diagram…</p>;
   const percent = Math.round(zoom.view.scale * 100);
-  const controlClass = [
-    "min-h-11 cursor-pointer rounded-md border border-border bg-card px-2",
-    "text-xs text-foreground hover:border-primary/50",
-  ].join(" ");
   return (
     <div className="relative">
       <div
@@ -163,10 +160,10 @@ export function MermaidDiagram({ source, title }: { source: string; title: strin
         />
       </div>
       <div className="absolute bottom-2 right-2 flex items-center gap-1" role="group" aria-label="Diagram zoom">
-        <button type="button" onClick={zoom.zoomOut} disabled={!svg} title="Zoom out" className={`${controlClass} min-w-11`}>−</button>
+        <Button size="sm" variant="outline" onClick={zoom.zoomOut} disabled={!svg} title="Zoom out">−</Button>
         <span className="min-w-11 text-center text-xs text-muted-foreground" aria-live="off">{percent}%</span>
-        <button type="button" onClick={zoom.zoomIn} disabled={!svg} title="Zoom in" className={`${controlClass} min-w-11`}>+</button>
-        <button type="button" onClick={zoom.reset} disabled={!svg} title="Reset zoom" className={controlClass}>Reset</button>
+        <Button size="sm" variant="outline" onClick={zoom.zoomIn} disabled={!svg} title="Zoom in">+</Button>
+        <Button size="sm" variant="outline" onClick={zoom.reset} disabled={!svg} title="Reset zoom">Reset</Button>
       </div>
     </div>
   );

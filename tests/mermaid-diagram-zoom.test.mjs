@@ -35,6 +35,9 @@ function stubs(useState) {
     "@get-bb/plugin-sdk/app": {
       UrlLink: (props, ...children) => ({ type: "url-link", props, children }),
     },
+    "@/components/ui/button": {
+      Button: (props, ...children) => ({ type: "button", props, children }),
+    },
     "../../lib/diagram-strategy.mjs": { PELE_PLAYGROUND: PELE_PLAYGROUND_SENTINEL },
     "../../lib/diagram-zoom.mjs": zoomLib,
   };
