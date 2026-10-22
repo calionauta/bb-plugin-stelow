@@ -324,12 +324,8 @@ from a laptop.
 **The release PR accumulates. Do not merge it per change.** Land the
 change (branch → PR → squash-merge), and leave the release PR open: the
 next push to `master` refreshes it with the new commit's bump and notes.
-Merge it when you want to cut, not when it first appears. This section
-described the mechanism for a long time and said nothing about cadence,
-which is how one session shipped six releases in a day — v0.74.0 through
-v0.78.1, each technically correct and each a version every install has
-to move through. The mechanism was never the problem; merging on sight
-was. A day of UI work is one minor release, not five.
+Merge it when you want to cut, not when it first appears. A day of UI
+work is one minor release, not five.
 
 A `fix:` on top of a `feat:` still bumps minor while both are pending,
 because release-please takes the highest type in the accumulated set —
@@ -355,10 +351,8 @@ PR owns the version bump.
 body.** Release-please parses its own release PR body to recognise
 that PR as its own. Rewrite that body and it can no longer parse it
 (`could not parse pull request body as a release PR`), stops seeing
-its own release PR as merged, and never publishes the tag. On v0.57.0
-that is exactly what happened: the body was hand-edited to restore a
-feature entry release-please had dropped, and the release silently
-never shipped. The prose belongs in the `CHANGELOG.md` section on the
+its own release PR as merged, and never publishes the tag. The prose
+belongs in the `CHANGELOG.md` section on the
 release branch, which release-please regenerates only when new commits
 arrive, so it survives until the merge. A body edit surviving later
 runs is a different question from whether release-please can still
@@ -370,8 +364,7 @@ it. Run it after any manual tag or release change; the workflow runs
 the same check.
 
 **A release PR's `verify` can sit in `action_required` with zero
-jobs.** Observed four times, always on the release-please branch and
-always intermittent — the same branch also passed cleanly. It is a
+jobs.** It is a
 platform-level approval gate on `pull_request` events, not a test
 failure: the run never starts, so there is nothing to read in the log.
 Approve it and it proceeds:
@@ -407,17 +400,7 @@ This repo sets `squash_merge_commit_title = COMMIT_OR_PR_TITLE` with
 branch is squashed under the **last commit's** subject and the
 individual messages survive in the body. The subject — the only line
 release-please reads for the change type — therefore comes from a
-commit, and the title never types the release. This is not
-hypothetical: PR #211 carried a `feat:` commit and a `fix:` commit
-under a `feat:` title, and master recorded the `fix:`, shipping a
-feature as a patch. PR #157 mixed the design-ref feature with three
-fixes and a sync, and release-please computed 0.56.5 for work that
-had to ship as 0.57.0.
-
-Observed the other way on #361: a 15-commit branch merged with the PR
-title (`Bb/fix question copy realtime`) as the squash subject, carrying
-no conventional type at all — release-please saw nothing to release and
-no release PR opened, which is how a whole batch ships silently. **Name
+commit, and the title never types the release. **Name
 the PR title for the highest change type the branch carries, exactly as
 if it were the squash subject — because it may become exactly that.**
 The `pr-title` workflow fails PRs whose title carries no conventional
@@ -456,6 +439,8 @@ and `BREAKING CHANGE:`) bump the version and appear in the notes;
 prefix ships in no release — message discipline is the release
 process. Keep Settings → General → Automatically delete head branches
 on so merged PRs don't accumulate stale branches.
+
+Incident narratives behind these rules live in `docs/release-incidents.md`.
 
 ## Frozen 0.3 migration line
 
