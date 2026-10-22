@@ -1,10 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
+import { ConfirmActionDialog } from "../confirm-action-dialog";
+import {
+  describePresetDeleteImpact,
+  presetDeleteDescription,
+} from "../../lib/preset-delete-refs.mjs";
 import {
   PresetManagerBandRouting,
   PresetManagerDelegatedWork,
@@ -52,6 +57,7 @@ export function PresetManagerDialog({
   const crud = usePresetManagerCrud({ rpc, presets, onChanged, open });
   const assignments = usePresetManagerAssignments(rpc, open);
   const formRef = useRef<HTMLDivElement | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PresetManagerPreset | null>(null);
 
   useEffect(() => {
     if (crud.formOpen) formRef.current?.scrollIntoView({ block: "nearest" });
@@ -59,7 +65,22 @@ export function PresetManagerDialog({
 
   const routing = presetManagerRouting(rpc, presets, assignments, crud, onChanged);
 
+  // The confirm names what the delete takes with it. Bands, roles and
+  // default-ness are already loaded by the assignments hook; card pins are
+  // not (no usage-count RPC exists), so those stay a post-confirm server
+  // message rather than a pre-confirm claim.
+  const deleteImpact = pendingDelete
+    ? describePresetDeleteImpact(pendingDelete.id, {
+      bands: assignments.bands,
+      generationPreset: assignments.generationPreset,
+      reliablePreset: assignments.reliablePreset,
+      reviewerPreset: assignments.reviewerPreset,
+      isDefault: pendingDelete.isDefault,
+    })
+    : null;
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         fullscreenOnMobile
@@ -75,7 +96,7 @@ export function PresetManagerDialog({
           onNew={crud.startNew}
           onEdit={crud.startEdit}
           onSetDefault={(preset) => void crud.setDefault(preset)}
-          onDelete={(preset) => void crud.remove(preset)}
+          onDelete={(preset) => setPendingDelete(preset)}
           onToggleForm={() => crud.setFormOpen((current) => !current)}
           onChange={crud.setForm}
           onSave={() => void crud.save()}
@@ -90,5 +111,25 @@ export function PresetManagerDialog({
         <PresetManagerApiSections rpc={rpc} />
       </DialogContent>
     </Dialog>
+    <ConfirmActionDialog
+      open={pendingDelete !== null}
+      onOpenChange={(next) => {
+        if (!next) setPendingDelete(null);
+      }}
+      title={pendingDelete ? `Delete preset "${pendingDelete.name}"?` : "Delete preset?"}
+      description={
+        pendingDelete && deleteImpact
+          ? presetDeleteDescription(pendingDelete.name, deleteImpact)
+          : "Removes this agent preset."
+      }
+      confirmLabel="Delete preset"
+      confirmTone="destructive"
+      onConfirm={() => {
+        const target = pendingDelete;
+        setPendingDelete(null);
+        if (target) void crud.remove(target);
+      }}
+    />
+    </>
   );
 }

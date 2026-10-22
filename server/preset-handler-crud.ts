@@ -62,21 +62,36 @@ export function createPresetCrudHandlers(
     if (input.id === null && id === "preset_default") {
       throw new Error("Built-in presets cannot be replaced.");
     }
-    const existing = db.prepare("SELECT built_in FROM presets WHERE id = ?")
-      .get(id) as { built_in: number } | undefined;
+    const existing = db.prepare("SELECT built_in, environment_kind FROM presets WHERE id = ?")
+      .get(id) as { built_in: number; environment_kind: string } | undefined;
     if (existing?.built_in === 1 && input.id !== id) {
       throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
+    }
+    // The dialog disables the environment control for built-ins, but the RPC
+    // is the boundary every writer reaches — the settings form, the CLI, and
+    // any direct caller. Flipping the built-in default's kind would re-route
+    // every auto-started worker and become the inherited kind of every preset
+    // created afterwards, so the refusal lives here rather than in the UI.
+    if (existing?.built_in === 1 && input.environmentKind !== existing.environment_kind) {
+      throw new Error("Built-in presets keep their own environment. Duplicate it to change this.");
     }
     writePreset(db, input, trimmed, id, now());
     return { preset: { id, name: trimmed } };
   }
 
   async function deletePreset({ id }: { id: string }) {
-    const row = db.prepare("SELECT built_in FROM presets WHERE id = ?")
-      .get(id) as { built_in: number } | undefined;
+    const row = db.prepare("SELECT built_in, is_default FROM presets WHERE id = ?")
+      .get(id) as { built_in: number; is_default: number } | undefined;
     if (!row) return { deleted: false, error: deps.errors.presetNotFound };
     if (row.built_in === 1) {
       return { deleted: false, error: "Built-in presets cannot be deleted." };
+    }
+    // Deleting the default would silently promote the oldest remaining row
+    // via the card-resolution fallback, so the delete names its exit instead:
+    // set another default first. Card assignments stay the last check because
+    // they are the one refusal that names a count.
+    if (row.is_default === 1) {
+      return { deleted: false, error: "Preset is the board default. Set another preset as default first." };
     }
     const inUse = countCardAssignments(db, id);
     if (inUse > 0) {

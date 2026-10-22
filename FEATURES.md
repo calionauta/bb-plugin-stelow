@@ -1899,7 +1899,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pair would promise a checkout the card does not get. The field is disabled
   on built-in presets (flipping the built-in default's kind re-routes every
   auto-started worker and is inherited by every preset created afterwards);
-  duplicate one to change it. A preset row shows a `worktree` pill, and New
+  duplicate via New preset above — it starts from the built-in's settings —
+  flip the worktree option there, then Set default to make it board-wide. The
+  built-in environment lock is enforced at the save boundary, not just in the
+  dialog, so RPC and CLI writers meet the same refusal. Deleting a preset asks
+  for confirmation naming what the delete takes with it: band and role pins
+  are removed with the row (cascade), while deleting the board default or a
+  preset assigned to cards is refused until another default is set or the
+  cards are unassigned. A preset row shows a `worktree` pill, and New
   preset inherits the current default's setting. An environment value the
   schema never produced is named in the field's own sentence and refused on
   save rather than sent to the server. Built-ins protected.
