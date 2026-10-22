@@ -11,8 +11,8 @@ tasks:
   depends_on: []
   output: architecture/alternatives.json
   output_schema: schemas/architecture-alternatives.json
+  when: always
   human_boundary: none
-  when: exploration_supports_fanout
   failure_policy: fail
   requirements:
   - fanout
@@ -33,7 +33,7 @@ tasks:
 - id: alternatives-hybrid
   depends_on:
   - alternatives-verify
-  output: architecture/architecture.md
+  output: architecture/alternatives.md
   output_schema: schemas/markdown.json
   human_boundary: none
   skill: stelow-workflow-architecture-alternatives

@@ -35,40 +35,17 @@ jobs:
       - name: Synchronize one immutable upstream revision
         run: |
           test -z "$(git -C upstream status --porcelain)"
-          UPSTREAM_SHA="$(git -C upstream rev-parse HEAD)"
-          test "${#UPSTREAM_SHA}" = 40
           test -f upstream/scripts/stelow
           test -f upstream/product-strategies.json
           test -f upstream/package.json
           test "$(find upstream/skills -mindepth 1 -maxdepth 1 -type d -name 'stelow-*' | wc -l)" -gt 0
-          find skills -mindepth 1 -maxdepth 1 -type d -name 'stelow-*' -exec rm -rf {} +
-          cp -a upstream/skills/. skills/
-          cp upstream/scripts/stelow data/stelow
-          cp upstream/product-strategies.json data/product-strategies.json
-          cp upstream/package.json data/stelow-package.json
-          # The catalog copies under data/ are DERIVED from the synced skills by
-          # lib/workflow-skills-sync.mjs (SINGLE_FILES), and the board reads them
-          # at module load — so a sync that refreshed skills/ but not these left
-          # the UI a release behind. That is how the phase rename shipped
-          # upstream and still rendered as the old label here.
-          # All three are `optional` there: a pin predating the generated
-          # catalogs must preserve the local copy, not fail the sync.
-          for pair in \
-            "skills/stelow-workflow-orchestrator/stage-catalog.json:data/stelow-stage-catalog.json" \
-            "skills/stelow-workflow-orchestrator/recipe-catalog.json:data/stelow-recipe-catalog.json" \
-            "recipes.schema.json:data/stelow-recipes.schema.json"; do
-            src="upstream/${pair%%:*}"; dst="${pair##*:}"
-            if [ -f "$src" ]; then cp "$src" "$dst"; fi
-          done
-          UPSTREAM_SHA="$UPSTREAM_SHA" node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const pkg = JSON.parse(readFileSync("upstream/package.json", "utf8")); if (typeof pkg.version !== "string") throw new Error("upstream package has no version"); writeFileSync("data/stelow-source.json", JSON.stringify({ version: pkg.version, commit: process.env.UPSTREAM_SHA }, null, 2) + "\n");'
-          # The fork ledger qualifies the SAME pin, so it has to move with it:
-          # tests/upstream-hygiene asserts `forks.pin === source.commit` and
-          # fails closed otherwise. Before this line the workflow rewrote the
-          # source pin alone, so every run that had something to sync failed
-          # hygiene and opened no PR — which is why the last sync was done by
-          # hand. Only `pin` and `upstream_version` are rewritten; the forks
-          # themselves are host policy, never upstream content.
-          UPSTREAM_SHA="$UPSTREAM_SHA" node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const p = "data/upstream-forks.json"; const pkg = JSON.parse(readFileSync("upstream/package.json", "utf8")); const ledger = JSON.parse(readFileSync(p, "utf8")); ledger.pin = process.env.UPSTREAM_SHA; ledger.upstream_version = pkg.version; writeFileSync(p, JSON.stringify(ledger, null, 2) + "\n");'
+          # One implementation, shared with the manual path. This used to be a
+          # hand-copied block in YAML and had already drifted: it refreshed
+          # skills, the helper and the catalogs but never data/stelow-assets
+          # (the vendored recipes and schemas the contracts are checked
+          # against). The script pins the revision and syncs everything the
+          # pin names, including the execution assets.
+          node scripts/sync-stelow-assets.mjs --from-checkout upstream
       - name: Verify the candidate
         run: |
           npm ci
@@ -86,7 +63,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add data/stelow data/product-strategies.json data/stelow-package.json data/stelow-source.json data/upstream-forks.json data/stelow-stage-catalog.json data/stelow-recipe-catalog.json data/stelow-recipes.schema.json skills
+          git add data skills
           git commit -m "chore: sync Stelow ${VERSION}"
           git push --force-with-lease origin "$BRANCH"
           if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then

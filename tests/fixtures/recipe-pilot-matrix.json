@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-10-13T10:24:14Z",
+  "validated_at": "2026-10-22T12:23:00Z",
   "host": {
     "name": "bb",
     "version": "0.45.0",
@@ -9,11 +9,11 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "0ded86fc15e2d4c7a76db236d85b458d45bd5992678de92b1a9bf8296317ee74"
+      "sha256": "5951946653ad9539f2963f1fc3e720f3de2650e010a604f35743bf49b5f317a4"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "0ded86fc15e2d4c7a76db236d85b458d45bd5992678de92b1a9bf8296317ee74"
+      "sha256": "5951946653ad9539f2963f1fc3e720f3de2650e010a604f35743bf49b5f317a4"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -39,7 +39,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "bcd1b50aec37297e226db6f5af4d9e4aeaa47673db79e91a6f78afc1fa6e6d57",
+      "source_sha256": "91ef25826d12efdfec90907a52bbeb8b3022b82589e3d3d0950174fe6fae8898",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -48,7 +48,7 @@
       "outputs": [
         "architecture/alternatives.json",
         "architecture/alternatives-verification.json",
-        "architecture/architecture.md"
+        "architecture/alternatives.md"
       ]
     },
     {
@@ -57,7 +57,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "00039c16c82c0a4aa3ed7ff45ef02aeea5c310ab6b9a34b816d872fd21d8e738",
+      "source_sha256": "7c694ba1552cc3a75ab26b0015bb27c4781ffabe7aa87cc0a9afc1510797ffcf",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -66,6 +66,9 @@
         "contrast"
       ],
       "outputs": [
+        "architecture/alternatives.json",
+        "architecture/alternatives-verification.json",
+        "architecture/alternatives.md",
         "architecture/contrast.json",
         "architecture/architecture.md"
       ]
@@ -112,7 +115,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "6f7fb60a3e07fe068a0a905c9721a3a7fcef21dd7863ef6bdef686a7fc0ae07a",
+      "source_sha256": "8aa0eec0bb78c4766d941f7bd3f65a8c05724e476dacfc668cb70782d4e6acdb",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -121,7 +124,7 @@
       "outputs": [
         "interfaces/alternatives.json",
         "interfaces/alternatives-verification.json",
-        "interfaces/interfaces.md"
+        "interfaces/alternatives.md"
       ]
     },
     {
@@ -130,7 +133,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "f52ac4c8a6d7aed01af2c0255037a181076cb2f6b8c093690c8e4c36e4801814",
+      "source_sha256": "745192050c4c4269ceaf40cba226e250f5f834d78e925808fded6370cab6fd73",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -139,6 +142,9 @@
         "contrast"
       ],
       "outputs": [
+        "interfaces/alternatives.json",
+        "interfaces/alternatives-verification.json",
+        "interfaces/alternatives.md",
         "interfaces/contrast.json",
         "interfaces/interfaces.md"
       ]
@@ -306,7 +312,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "9a81b37bcedf261fe68ec2e2b2555a31cfccd2b0ef5bf69bcbfbee7e4d348382",
+      "source_sha256": "3f9e9a031c9d942cbae502b8734b07b3cec8efb097cf22d65fce22dd85db0254",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail",
