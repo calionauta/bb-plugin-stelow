@@ -1,6 +1,3 @@
-/** A band or role pin the delete removes with the row. */
-export type PresetDeleteCascadingRef = string;
-
 export type PresetDeleteImpact = {
   cascading: string[];
   isDefault: boolean;
