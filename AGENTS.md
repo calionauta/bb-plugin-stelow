@@ -73,6 +73,16 @@ are the ones that come back as a red CI five minutes later.
 - Never merge the release PR unreviewed; never widen a recorded marketplace range retroactively — installed plugins track their recorded range, not the listing.
 - Never write non-English code, comments, docs, CHANGELOG, or UI copy; never ship a user-facing feature without its `FEATURES.md`/blueprint entry.
 
+## Stack
+
+- Runtime: Node 22.0 or newer, pinned to the 22 line in `.node-version`;
+  dependencies installed from `package-lock.json`, never global.
+- App: React 19.2 or newer, TypeScript 5.7 or newer, zod 4.3 or newer
+  (exact pins in `package.json`, which is the version of record);
+  host engines `bb >=0.43` and `bbPluginSdk >=0.4.6`.
+- Tests run on better-sqlite3; lint is oxlint, shape is quality:shape
+  (pre-commit hook, CI gate).
+
 ## Owned vs vendored code
 
 - `skills/` is synced from `calionauta/stelow` and overwritten without
