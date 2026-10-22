@@ -29,3 +29,7 @@ npm run --silent quality:shape
 # this exact miss reached a PR as a red verify. The check is ~0.05s of pure
 # node:fs, so it earns its place next to the fast pair.
 node tests/suite-wiring.test.mjs
+# AGENTS.md grows by appending: the budget script fails a commit that leaves
+# the file larger than the stamped ceiling, so growth is a decision with a
+# reason instead of drift. Pure node:fs, same cost class as the wiring check.
+node scripts/check-agents-budget.mjs

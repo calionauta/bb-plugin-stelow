@@ -133,7 +133,7 @@
     "test:preset-reasoning-level": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/preset-reasoning-level.test.mjs tests/preset-reasoning-level-support.test.mjs && node --test tests/migration-ledger-heal.test.mjs",
     "test:runtime-seams": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-seams.test.mjs && node tests/workflow-moves.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-board-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-detail-artifacts.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/runtime-wiring.test.mjs && node tests/seam-coverage-expansion.test.mjs",
     "test:source-shape": "node tests/source-shape.test.mjs && node tests/debt-baseline.test.mjs && node tests/conflict-markers.test.mjs && node --test tests/docs-index.test.mjs",
-    "test:source-budgets": "node tests/source-budgets.test.mjs && node tests/budget-lineage.test.mjs",
+    "test:source-budgets": "node tests/source-budgets.test.mjs && node tests/budget-lineage.test.mjs && node tests/agents-budget.test.mjs",
     "test:completion-review": "node --test tests/completion-review-receipt.test.mjs && node tests/card-acceptance.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/card-acceptance-receipt.test.mjs",
     "test:worktree-reclaim": "node tests/worktree-reclaim-policy.test.mjs && node tests/server-worktree-cleanup.test.mjs",
     "test:publication-reconcile": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/publication-reconcile.test.mjs",
