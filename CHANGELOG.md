@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.88.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.87.0...v0.88.0) (2026-10-22)
+
+
+### Features
+
+* budget each shared prompt clause, so a growth names the clause ([#397](https://github.com/calionauta/bb-plugin-stelow/issues/397)) ([ad426bb](https://github.com/calionauta/bb-plugin-stelow/commit/ad426bbf0c52c46b3727d5a84f26511f8c828b54))
+* land the two feature commits that never got a PR ([#395](https://github.com/calionauta/bb-plugin-stelow/issues/395)) ([88a69fe](https://github.com/calionauta/bb-plugin-stelow/commit/88a69fe5d05effba71371b0c4077ed71a2e5e4a0))
+
+
+### Bug Fixes
+
+* one evaluator for the recipe condition vocabulary ([#400](https://github.com/calionauta/bb-plugin-stelow/issues/400)) ([e667fa6](https://github.com/calionauta/bb-plugin-stelow/commit/e667fa6d572a9516e30388683e02ec578bd36f13))
+* read the phase entry stages from the routes, not a duplicated copy ([#396](https://github.com/calionauta/bb-plugin-stelow/issues/396)) ([dcb82c7](https://github.com/calionauta/bb-plugin-stelow/commit/dcb82c70fb35f09a3f4e95e21a46de3d762a6b24))
+* **stelow:** the panel and the helper answer the same question ([#401](https://github.com/calionauta/bb-plugin-stelow/issues/401)) ([2acb73b](https://github.com/calionauta/bb-plugin-stelow/commit/2acb73b8eacd1631a7d9387ac70800894540a908))
+* **stelow:** the panel reads the stage policy too ([#403](https://github.com/calionauta/bb-plugin-stelow/issues/403)) ([c8da6ec](https://github.com/calionauta/bb-plugin-stelow/commit/c8da6ec3e014d732888ebffaa807f99e4f5a559c))
+
 ## [0.87.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.86.0...v0.87.0) (2026-10-20)
 
 
