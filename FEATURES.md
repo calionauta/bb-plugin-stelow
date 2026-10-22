@@ -2076,7 +2076,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —
-  the refusal redirects to the card's own state dir.
+  the refusal redirects to the card's own state dir. Cardless `advance`
+  re-roots to the single seeded workflow under `.stelow/<date>/<dir>/`
+  (`findSingleLegacyStateDir`); zero keeps project-root behavior, several
+  refuse instead of advancing the wrong one.
 - **Board document read** (`findArtifacts`, `bb stelow status --json`). A
   workflow's documents come from a walk of its whole state dir, not of the
   top level: the layout puts the machine artifacts one level down
