@@ -38,6 +38,71 @@ chooses, records the choice, and moves on.
    (`selected_by: human` with the mode, or `selected_by: llm`). The tech
    planning and execution stages read this file for UI direction.
 
+   Extract the proposal **whole**, not as a summary. The artifact is
+   validated against the alternatives contract (Work Pattern, Philosophy,
+   Trade-Off, State Coverage, the ASCII sketch, at least 800 words), and a
+   thin receipt reads to the host as a missing interface:
+
+   ```bash
+   PROPOSAL_LABEL="{chosen_proposal_label}"  # e.g. "A — Convention Navigator"
+   OUTPUT=".stelow/{YYYY-MM-DD}/{_dir}/interfaces/selected-interface.md"
+
+   awk -v label="$PROPOSAL_LABEL" '
+     /^## Proposal / && !started { started = ($0 ~ label); next }
+     /^## Proposal / && started { exit }
+     started { print }
+   ' ".stelow/{YYYY-MM-DD}/{_dir}/interfaces/alternatives.md" > "$OUTPUT"
+
+   grep -q "Work Pattern" "$OUTPUT" || { echo "ERROR: missing Work Pattern Declaration"; exit 1; }
+   grep -q "Breadboarding" "$OUTPUT" || { echo "ERROR: missing Breadboarding section"; exit 1; }
+   ```
+
+   The skill that generated the proposals does not do this, and must not: it
+   runs once per explored alternative, and only one of those proposals becomes
+   the chosen interface.
+6. **Map the pick into a breadboard** — Write `interfaces/breadboard.json`:
+   the places the user can be in, the affordances in each, and the wiring
+   between them. The prose above says WHAT the interface is; the map says
+   WHERE it is, and it is what the Architecture and Planning stages read when
+   they need the shape of the thing they are building.
+
+   Read `../references/breadboard.md` before writing — it holds the schema
+   (`schemas/breadboard.json`), the blocking test that decides a place, the
+   direction of the two wires, and the checks that catch a map which looks
+   complete and says nothing.
+
+   Then run the checks. They are the difference between a rule in prose and a
+   rule that runs — `advance` runs the same check on this transition and
+   refuses a map with errors, so this pass is how you see the findings before
+   the guard does:
+
+   ```bash
+   scripts/stelow check breadboard \
+     ".stelow/{YYYY-MM-DD}/{_dir}/interfaces/breadboard.json"
+   ```
+
+   Fix every `error` (a wire to an id nobody declares, a duplicate id, a kind
+   that contradicts its prefix, a contract violation). A `gap` is a judgement
+   call: either fix the map, or keep it — the gap is printed on the transition
+   and written into the view, so nothing is hidden.
+
+   Then write the two views — the markdown is what a reader (or the review
+   gate) can actually read, the HTML is the durable picture:
+
+   ```bash
+   node <stelow-checkout>/scripts/render-diagram.mjs breadboard \
+     --input ".stelow/{YYYY-MM-DD}/{_dir}/interfaces/breadboard.json" \
+     --emit-markdown --with-diagram \
+     --out   ".stelow/{YYYY-MM-DD}/{_dir}/interfaces/breadboard.html"
+   ```
+
+   `<stelow-checkout>` is the stelow repository (e.g. `~/repos/stelow`), not
+   the product repo this workflow writes into: the renderer is repo-side
+   tooling, and `install.sh`/the plugin sync do not ship it. The map is the
+   artifact; the views are views. If the render fails or the script is missing,
+   the map still stands and the check (which lives in `scripts/stelow`) still
+   ran — never let a diagram block the pick.
+
 ### Do NOT
 
 - Generate new interface proposals or wireframes here.
@@ -48,5 +113,6 @@ chooses, records the choice, and moves on.
 
 ### Completion
 
-`interfaces/selected-interface.md` written (human answer or agent
-receipt recorded), then advance to Architecture automatically.
+`interfaces/selected-interface.md` and `interfaces/breadboard.json` written
+(human answer or agent receipt recorded), then advance to Architecture
+automatically.

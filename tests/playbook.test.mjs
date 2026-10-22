@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { knownStages, playbookEntries, renderPlaybook, stagePlaybookRelPath } from "../lib/playbook.mjs";
@@ -35,6 +35,7 @@ for (const file of [
   "stelow-workflow-orchestrator/SKILL.md",
   "stelow-workflow-orchestrator/stages/context.md",
   "stelow-workflow-orchestrator/stages/selection.md",
+  "stelow-workflow-orchestrator/stages/int-gate.md",
   "stelow-workflow-orchestrator/stages/interface-selection.md",
   "stelow-workflow-shape-up/SKILL.md",
 ]) {
@@ -54,8 +55,21 @@ const build = buildEntries("shape");
 assert.deepEqual(build.map((entry) => entry.label), ["state", "transitions", "entry", "router", "orchestrator", "stage(shape)"], "build order is fixed: state, transitions, core skills, stage");
 assert.ok(build.every((entry) => entry.missing === false || entry.label === "state" || entry.label === "transitions"), "vendored skill files resolve; workspace files report honestly");
 
-const fallback = buildEntries("int-gate");
-assert.ok(fallback.every((entry) => entry.label !== "stage(int-gate)"), "a stage without a file lists no stage row");
+// `int-gate` gained a dedicated playbook upstream (the interface review moved
+// out of the alternatives skill), so the healthy install lists one row. The
+// contract that still matters is the OTHER half: a stage whose file is absent
+// is REPORTED as missing, never silently dropped.
+const gated = buildEntries("int-gate");
+const gateRow = gated.find((entry) => entry.label === "stage(int-gate)");
+assert.ok(gateRow, "a stage with a playbook lists a stage row");
+assert.equal(gateRow.path, `${skills}/stelow-workflow-orchestrator/stages/int-gate.md`, "stage(int-gate) resolves to the orchestrator stages path");
+assert.equal(gateRow.missing, false, "the vendored int-gate file resolves");
+rmSync(join(skills, "stelow-workflow-orchestrator", "stages", "int-gate.md"));
+const gateGone = buildEntries("int-gate").find((entry) => entry.label === "stage(int-gate)");
+assert.ok(gateGone, "a broken install keeps the row instead of hiding it");
+assert.equal(gateGone.missing, true, "a missing stage file is reported, not dropped");
+assert.ok(renderPlaybook(buildEntries("int-gate")).includes("(missing — broken install"), "the render says the install is broken");
+assert.equal(stagePlaybookRelPath("nope"), null, "a stage the catalog does not know lists no stage row");
 
 const picked = buildEntries("selection");
 const pickedRow = picked.find((entry) => entry.label === "stage(selection)");

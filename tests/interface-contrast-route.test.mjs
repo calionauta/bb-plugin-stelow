@@ -14,7 +14,8 @@ const base = {
   fixedConstraints: [{ name: "scope", value: "approved", source: "simulation" }],
   criteria: ["focus", "accessibility"],
   evidence: [{ source: "simulation", reference: "case", claim: "layout is testable" }],
-  options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+  options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+    wireframe: "[ sketch ]" }],
   nextAction: "Continue the bounded comparison.",
 };
 assert.deepEqual(validateInterfaceContrastReceipt(base), [], "route-compatible receipt is valid");
