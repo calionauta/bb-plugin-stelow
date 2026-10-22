@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { EMPTY_OUTPUT_ERROR } from "../lib/transient-run-retry.mjs";
 import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities } from "../lib/bb-workflow-capabilities.mjs";
+import { recipeConditionHolds } from "../lib/recipe-conditions.mjs";
 
 const execFileAsync = promisify(execFile);
 const bbBin = process.env.BB_CLI || "bb";
@@ -243,23 +244,19 @@ function toWorkflowTask(task: CatalogTask) {
 }
 
 /** Embedded run-condition evaluator, shared by every rendered script.
+ *
+ * The evaluator itself is `recipeConditionHolds` — the same function the
+ * route and artifact layers call — and what is embedded is its SOURCE, not a
+ * transcription of it. A rendered script has to be self-contained (plugin-
+ * bundled paths are not origin-workspace paths), which is why it cannot
+ * import; but a hand-written copy is a second implementation, and this file
+ * held one for years. It disagreed with `lib/execution-artifacts.mjs` about
+ * `appetite_supports_fanout` and with the route layer about
+ * `findings_exist`.
+ *
  * Both fanout gates resolve one rule: an explicit exploration count wins
- * (hybrid whenever count >= 2); a legacy appetite maps Core/Complete to go.
- * Kept as a source string (not a closure) because the rendered script must
- * be self-contained — plugin-bundled paths are not origin-workspace paths. */
-const CONDITION_FN_SOURCE = `const fanoutOk = (ctx) => {
-  const count = Number(ctx?.explorationCount ?? 3);
-  if (Number.isInteger(count)) return count >= 2;
-  return ["Core", "Complete"].includes(ctx?.appetite);
-};
-const condition = (task) => {
-  if (task.when === "always") return true;
-  if (task.when === "appetite_supports_fanout" || task.when === "exploration_supports_fanout") return fanoutOk(input.context);
-  if (task.when === "partition_is_safe") return input.context?.partitionSafe === true;
-  if (task.when === "findings_exist") return Object.values(outputs).some((value) => Array.isArray(value?.findings) && value.findings.length > 0);
-  if (task.when === "ui_scope_present") return input.context?.uiScopePresent === true;
-  throw new Error("Unknown recipe condition: " + task.when);
-};`;
+ * (hybrid whenever count >= 2); a legacy appetite maps Core/Complete to go. */
+const CONDITION_FN_SOURCE = `const condition = (task) => (${recipeConditionHolds.toString()})(task, input.context, outputs);`;
 
 /** Embedded task executor, shared by every rendered script. An empty agent
  * resolution gets one bounded retry (a full re-run costs far more); a
