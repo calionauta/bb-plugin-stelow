@@ -60,14 +60,35 @@ async function readCardDetail(
     return assembleDetail(deps, inputs);
 }
 
+/**
+ * The card's open questions: what the detail renders, and what the activity
+ * projection counts.
+ *
+ * The two answers are deliberately separate. A failed live read is UNKNOWN, so
+ * it renders as nothing to show — there is no form to offer — while the count
+ * comes back null rather than zero, because a zero would read as "the wait
+ * ended, go ahead". Collapsing both into one number is how a poll hiccup used
+ * to look like an answered question.
+ */
+async function readOpenQuestions(deps: CardDetailDeps, card: WorkerCard) {
+  const live = await deps.fetchPendingQuestions(card.worker_thread_id);
+  const pending = live ?? [];
+  const expired = await readOpenExpiredQuestions(deps, card) as Question[];
+  return {
+    pending,
+    expired,
+    openCount: live === null ? null : pending.length + expired.length,
+  };
+}
+
 async function loadDetailInputs(
   deps: CardDetailDeps,
   card: WorkerCard,
   cardId: string,
 ) {
   const comments = readComments(deps.db, cardId);
-  const pending = await deps.fetchPendingQuestions(card.worker_thread_id);
-  const expiredQuestions = await readOpenExpiredQuestions(deps, card) as Question[];
+  const openQuestions = await readOpenQuestions(deps, card);
+  const { pending, expired: expiredQuestions } = openQuestions;
   const workspace = await readWorkspace(deps, card);
   const mentionedFiles = await readMentionedFiles(deps, card, workspace);
   const attachments = readAttachments(deps, card, workspace);
@@ -86,7 +107,7 @@ async function loadDetailInputs(
     workspace.path,
     workspace.hostId,
   );
-  const activity = effectiveActivity(card, pending.length + expiredQuestions.length);
+  const activity = effectiveActivity(card, openQuestions.openCount);
   const preset = deps.getReliablePreset(presetBand(card), card.id);
   const [workerHistory, questionStaleness, hold] = await Promise.all([
     deps.workers.history(cardId),
@@ -250,8 +271,14 @@ function readComments(db: Db, cardId: string) {
   }));
 }
 
-function effectiveActivity(card: WorkerCard, openQuestions: number) {
+function effectiveActivity(card: WorkerCard, openQuestions: number | null) {
   if (card.activity === "error") return "error";
+  // `null` is an UNKNOWN question read, which is neither "a question is
+  // waiting" nor "the wait ended": the card's recorded activity is the last
+  // verified projection, so it stands. A zero would look like "go ahead".
+  if (openQuestions === null) {
+    return card.activity as "idle" | "running" | "awaiting-answer" | "error";
+  }
   if (openQuestions > 0) return "awaiting-answer";
   return card.activity as "idle" | "running" | "awaiting-answer" | "error";
 }

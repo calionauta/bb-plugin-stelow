@@ -35,7 +35,9 @@ export type CardDetailDeps = {
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   syncThreadState: (cardId: string) => Promise<unknown>;
-  fetchPendingQuestions: (threadId: string | null) => Promise<Question[]>;
+  /** `null` is UNKNOWN: the ask read failed, so callers keep the state they
+   * already had rather than reading it as "no questions open". */
+  fetchPendingQuestions: (threadId: string | null) => Promise<Question[] | null>;
   resolveAskOptions: (card: WorkerCard, options: AskOption[]) => Promise<AskOption[]>;
   cardAttachments: (raw: string | null) => Attachment[];
   detectMentionedFiles: (

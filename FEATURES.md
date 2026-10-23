@@ -2568,7 +2568,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else. Per-option evidence opens inside the option row as the shared
+  else. A placeholder ask — an empty question, a probe token like "ping", or
+  a one-letter option label — is refused by `lib/question-gate.mjs`, and
+  `--force` does not override that floor: only the context and evidence gates
+  are forceable, because a probe that can be forced through is a probe that
+  will be, and the person it interrupts cannot tell it was forced. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below. **The question itself
   is not a panel.** The stepper renders as part of the card's hero section,
@@ -3045,6 +3049,28 @@ Host-version note: the 0.43.3 APIs above went live with host 0.43.3 (historical 
 From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
+
+**"No phantom waits" is enforced at the read, not at the render.** Four
+corrections landed as one rule, because each was a surface inventing an answer
+it did not have:
+
+- A card that has finished (`completed` or `archived`) projects no open
+  questions at all — the rule the recovery rows already applied. The hero used
+  to render "Needs your decision to continue / Answer below and the agent
+  resumes on its own" over a finished card, because only the expired-question
+  reader filtered terminality and the live-ask projection did not.
+- A failed live question read is `unknown`, never "0 open". The card detail
+  keeps the activity it already had instead of claiming the wait ended, the
+  board keeps its last verified activity, the execution reconciler does not
+  mark a boundary question as sent, and `bb stelow done` refuses with a
+  retryable exit rather than closing a card over a question it could not see.
+- A research/explore worker that is verifiably running clears the previous
+  `last_error`, as the build projection always did. Only the resume paths used
+  to clear it, so a card that failed once kept telling the reader to reseed,
+  next to a worker that was running and never needed reseeding.
+- A quiet poll completion writes through the same completion writer as
+  `bb stelow done` (`server/runtime/card-completion.ts`), so it cannot keep a
+  stale error or skip the auto-continue reset the explicit path performs.
 
 **A stage is named by its label, on every surface, or not at all.**
 `stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)

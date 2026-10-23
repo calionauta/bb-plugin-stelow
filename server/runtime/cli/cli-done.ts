@@ -55,7 +55,16 @@ export function createDoneCommand(
       return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
     const pending = await deps
       .pendingQuestions(card.worker_thread_id)
-      .catch(() => []);
+      .catch(() => null);
+    // An unreadable question source is UNKNOWN, not zero: closing now could
+    // ship over a question that is still live on the card. Exit 1 is the
+    // transient code the rest of the CLI uses for "retry this once".
+    if (pending === null)
+      return {
+        exitCode: 1,
+        stderr:
+          "Could not verify whether this card has an open question. Retry `done` once; do not assume the card is finished.",
+      };
     if (card.kind === "build")
       return doneBuild(deps, exportRunBundle, card, pending.length > 0);
     if (card.kind === "research")

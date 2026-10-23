@@ -309,7 +309,7 @@ assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides throug
 assert.match(askGateSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
 assert.match(askGateSource, /expiredCount: deps\.openExpiredQuestionIds\(cardId\)\.length,/, "the dispatcher receives the recoverable expired count");
 const doneSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-track.ts"),
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-completion.ts"),
   "utf8",
 );
 const reseedSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed.ts"), "utf8");
@@ -318,7 +318,7 @@ assert.match(reseedSource, /const reset = deps\.resetAutoContinue\(\)/, "reseed 
 assert.equal(
   (doneSource.match(/resetAutoContinue\(\)/g) ?? []).length,
   1,
-  "every done track resets the budget through one shared completion writer",
+  "every done track resets the budget through one shared completion writer (server/runtime/card-completion.ts)",
 );
 assert.match(protocolsSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
