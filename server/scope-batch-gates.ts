@@ -20,6 +20,7 @@ import {
   claimScopeBatchRun,
   finishScopeBatchRun,
   guardScopeBatchWrite,
+  type BatchClaimSteal,
   type BatchScope,
   type ScopeBatchDb,
 } from "./scope-batch.js";
@@ -50,10 +51,10 @@ export function frozenGatesEnabled(env: Record<string, string | undefined> = pro
 export function scopeStartGate(
   db: ScopeBatchDb,
   args: { cardId: string; scopeId: string; workspacePath: string; scopes: BatchScope[] },
-): { ok: true; coordinated: boolean }
+): { ok: true; coordinated: boolean; stolen: BatchClaimSteal[] }
   | { ok: false; code: string; reason: string; conflicts?: unknown; undeclared?: string[] } {
   const batches = batchIdsForCard(db, args.cardId);
-  if (batches.length === 0) return { ok: true, coordinated: false };
+  if (batches.length === 0) return { ok: true, coordinated: false, stolen: [] };
   const batchId = batches[0]!;
   const starting = args.scopes.find((scope) => scopeIdOf(scope) === args.scopeId);
   const siblings = args.scopes.filter((scope) => {
@@ -78,7 +79,7 @@ export function scopeStartGate(
     };
   }
   const files = starting ? batchScopeFiles(starting) : [];
-  if (files.length === 0) return { ok: true, coordinated: true };
+  if (files.length === 0) return { ok: true, coordinated: true, stolen: [] };
   const claimed = claimScopeBatchRun(db, {
     cardId: args.cardId,
     batchId,
@@ -93,7 +94,7 @@ export function scopeStartGate(
       conflicts: claimed.conflicts,
     };
   }
-  return { ok: true, coordinated: true };
+  return { ok: true, coordinated: true, stolen: claimed.stolen };
 }
 
 /**

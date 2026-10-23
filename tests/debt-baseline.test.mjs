@@ -78,7 +78,11 @@ const inheritedBaseline = [
   // oversized and the gate requires it dropped rather than left as a stale
   // waiver. Recorded here as the reason it is absent: the debt is PAID, not
   // waived, and `source-debt.json` no longer carries it either.
-  "lib/card-claims.mjs:acquireScopeClaims#1: 68 lines (recorded 68)",
+  // Paid in the claims-lease slice: the scope-shaped half of the registry
+  // (tag, all-or-nothing acquire, takeover report) moved to `lib/scope-claims.mjs`
+  // and its acquire split into scan/park/write helpers, so `acquireScopeClaims`
+  // is under the function budget and the file is under 400 lines. The gate
+  // requires the waiver dropped rather than left as a stale record.
   "lib/execution-route.mjs:evaluateScopeBatchPilot#1: 75 lines (recorded 75)",
   // The run table's migration ledger grows by one ALTER per schema column by
   // construction — the auto-retry budget column took it from 50 to 51.
@@ -112,7 +116,11 @@ const inheritedBaseline = [
   // so `source-debt.json` no longer carries it and the gate requires the
   // waiver dropped rather than left as a stale record.
   "server/runtime/cli/cli-split.ts:reportSplit#1: 61 lines (recorded 61)",
-  "server/scopes.ts:runScopeCommand#1: 87 lines (recorded 87)",
+  // Down from 87 to 83: the start-gate refusal and the claim-takeover trail moved
+  // to `scopeGateRefusal` here and `trailScopeSteals` in `lib/lock-blocked.mjs`,
+  // so the recorded ceiling falls with the measurement rather than staying at
+  // the old size as headroom to creep back into.
+  "server/scopes.ts:runScopeCommand#1: 83 lines (recorded 83)",
   // Paid: the deferred-creation callback in tests/server-cards.test.mjs was
   // 82 lines because it built its whole harness inline. The harness is now
   // creationHarness/creationDeps/creationDb/creationBb, so no callback in that

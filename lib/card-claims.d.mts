@@ -10,6 +10,7 @@ type Db = {
 };
 export declare const CLAIM_TTL_MS: number;
 export declare function ensureCardClaimsTables(db: Db): void;
+export declare function nextFencing(db: Db, workspacePath: string): number;
 export declare function normalizeClaimPath(raw: unknown): string | null;
 export declare function acquireWorkspaceClaims(db: Db, args: {
   cardId: string;
@@ -31,6 +32,10 @@ export declare function checkWorkspaceClaims(db: Db, args: {
   ttlMs?: number;
   nowMs?: number;
 }): { free: string[]; conflicts: Array<{ file: string; heldBy: string; heldScope: string | null; expiresAt: number }> };
+export declare function renewCardClaims(db: Db, args?: {
+  cardId: string;
+  nowMs?: number;
+}): number;
 export declare function releaseWorkspaceClaims(db: Db, args: {
   cardId: string;
   workspacePath?: string | null;
@@ -71,23 +76,3 @@ export declare function lapsedScopeClaims(db: Db, args: {
   files?: string[];
   nowMs?: number;
 }): boolean;
-export declare function scopeClaimTag(batchId: unknown, scopeId: unknown): string | null;
-export declare function acquireScopeClaims(db: Db, args: {
-  cardId: string;
-  batchId?: string | null;
-  scopeId: string;
-  files: unknown[];
-  effectiveCheckout?: string | null;
-  workspacePath?: string | null;
-  checkoutPath?: string | null;
-  worktreePath?: string | null;
-  sourcePath?: string | null;
-  ttlMs?: number;
-  nowMs?: number;
-}): {
-  ok: boolean;
-  code: "ACQUIRED" | "CONFLICT" | "CLAIM_REQUIRED";
-  acquired: Array<{ file: string; fencing: number; holder: string }>;
-  conflicts: Array<{ file: string; heldBy: string; heldScope: string | null; holder: string; expiresAt: number }>;
-  park: Array<{ file: string; stderr: string; dedupeKey: string; visibility: string }>;
-};

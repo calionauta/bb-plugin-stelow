@@ -51,4 +51,14 @@ export declare function scopeClaimLines(scope?: {
   blockedFiles?: Array<{ file?: string; heldBy?: string } | null> | null;
   claimed?: boolean | null;
   status?: string | null;
-} | null): ScopeClaimRow[];
+} | null): ScopeClaimRow[];export declare function scopeStealSummary(steal: {
+  file: string;
+  previousHolder: string;
+  previousScope?: string | null;
+  scopeId: string;
+}): string;
+export declare function trailScopeSteals(
+  logCardComment: ((cardId: string, target: string, targetId: string, author: "user" | "agent", body: string) => unknown) | null | undefined,
+  cardId: string,
+  stolen: ReadonlyArray<{ file: string; previousHolder: string; previousScope?: string | null; scopeId: string }>,
+): number;

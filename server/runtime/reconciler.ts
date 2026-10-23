@@ -1,5 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { clearClaimWaiters, releaseAllCardClaims, sweepExpiredClaims } from "../../lib/card-claims.mjs";
+import {
+  clearClaimWaiters,
+  releaseAllCardClaims,
+  renewCardClaims,
+  sweepExpiredClaims,
+} from "../../lib/card-claims.mjs";
 import { CLAIM_TERMINAL_STATUSES, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { sweepEventSeverity } from "../../lib/inbox-events.mjs";
 
@@ -95,26 +100,73 @@ function sweepInboxAging(deps: ReconcilerDeps): void {
 }
 
 /**
+ * The cards that currently hold at least one claim, with the three columns the
+ * two passes below disagree about.
+ *
+ * Asking `card_claims` first is what keeps this cheap: the sweep used to read
+ * every card and run an empty SQLite transaction per terminal one — 17 of them
+ * on this fleet, against a table with zero rows, every 45 seconds. A release
+ * or a renewal only means something for a card that HAS claims, so the loop can
+ * only ever see a card with work to do. The join is free-standing rather than a
+ * `WHERE status IN (...)` built from the terminal list: a card that reached a
+ * terminal status and then had its status written back is exactly the state the
+ * release pass exists to correct, and it must not be filtered out by the same
+ * predicate it is there to enforce.
+ */
+function claimHolderCards(deps: ReconcilerDeps): Array<{
+  id: string;
+  status: string;
+  activity: string;
+  worker_thread_id: string | null;
+}> {
+  return deps.db.prepare(
+    `SELECT c.id, c.status, c.activity, c.worker_thread_id FROM cards c
+      WHERE EXISTS (SELECT 1 FROM card_claims cc WHERE cc.card_id = c.id)`,
+  ).all() as Array<{ id: string; status: string; activity: string; worker_thread_id: string | null }>;
+}
+
+/**
+ * Slide the lease of every holder the host still supervises.
+ *
+ * The TTL is a crash detector, not a work limit. A research, explore or build
+ * scope routinely runs past 30 minutes, and a lease that only ever counted down
+ * lapsed under a worker that was still writing those files — handing the
+ * exclusivity it was promised to a card that merely asked for them. Renewal is
+ * what makes the two rules compatible instead of contradictory.
+ *
+ * It is gated on supervision — a worker thread the host owns, a status that is
+ * not terminal, and an activity it has not given up on (`error` is what
+ * `applyFailed` writes once retries are exhausted). A holder that fails any of
+ * those is left exactly as it is: no renewal, so the lease runs out and the
+ * files free up at TTL. Releasing it early instead would be faster and worse —
+ * a worker resumed onto the same stage would find its own claim gone and fail
+ * the done gate with no door back, while a lapsed lease is re-acquired by the
+ * next `scope start` and renewed by the next tick that sees it running again.
+ *
+ * Runs BEFORE the expiry sweep on purpose: a supervised holder must not have
+ * its lease reaped in the same tick that would have extended it.
+ */
+function renewLiveClaims(deps: ReconcilerDeps): void {
+  for (const holder of claimHolderCards(deps)) {
+    if (isClaimTerminal(holder.status)) continue;
+    if (!holder.worker_thread_id || holder.activity === "error") continue;
+    try {
+      renewCardClaims(deps.db, { cardId: holder.id, nowMs: deps.now() });
+    } catch (error) {
+      deps.onError("renew live claims", error);
+    }
+  }
+}
+
+/**
  * Return what terminal cards still hold.
  *
- * The scan used to read every card and then release claims for each terminal
- * one, which ran an empty SQLite transaction per card — 17 of them on this
- * fleet, against a `card_claims` table with zero rows, every 45 seconds. A
- * release only means something for a card that HAS claims, so the query asks
- * that first and the loop can only ever see a card with work to do.
- *
- * The join is left free-standing rather than a `WHERE status IN (...)` built
- * from the terminal list: a card that reached a terminal status and then had
- * its status written back is exactly the state this sweep exists to correct,
- * and it must not be filtered out by the same predicate it is here to enforce.
- * `isClaimTerminal` stays the single owner of "is this terminal".
+ * `isClaimTerminal` stays the single owner of "is this terminal"; the query
+ * that finds holders lives in `claimHolderCards`, next to the renewal pass that
+ * needs the same rows for the opposite decision.
  */
 function releaseTerminalClaims(deps: ReconcilerDeps): void {
-  const holders = deps.db.prepare(
-    `SELECT c.id, c.status FROM cards c
-      WHERE EXISTS (SELECT 1 FROM card_claims cc WHERE cc.card_id = c.id)`,
-  ).all() as Array<{ id: string; status: string }>;
-  for (const holder of holders) {
+  for (const holder of claimHolderCards(deps)) {
     if (!isClaimTerminal(holder.status)) continue;
     let released: ReleasedFile[];
     try {
@@ -148,6 +200,11 @@ export function startReconciler(deps: ReconcilerDeps, reconcileExecution?: () =>
     try { reconcileLiveCards(deps); } catch (error) { deps.onError("reconcile live cards", error); }
     void deps.maybeBumpSeverity();
     sweepInboxAging(deps);
+    // Renewal runs before the sweep on purpose: a holder the host still
+    // supervises must not have its lease reaped in the same tick that would
+    // have extended it, or the renewal would only ever fire for claims nobody
+    // was about to take.
+    try { renewLiveClaims(deps); } catch (error) { deps.onError("renew live claims", error); }
     try { releaseExpiredClaims(deps); } catch (error) { deps.onError("release expired claims", error); }
     try { releaseTerminalClaims(deps); } catch (error) { deps.onError("release terminal claims", error); }
     // Last and non-blocking: the execution pass is async and owns its own

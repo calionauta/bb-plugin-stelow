@@ -6,7 +6,7 @@ import { isPathWithinRoot, resolveWithinRoot } from "../lib/path-jail.mjs";
 import { flagValue } from "../lib/cli-argv.mjs";
 import { scopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { scopeCommandUsage } from "../lib/scope-command.mjs";
-import { scopeClaimTag } from "../lib/card-claims.mjs";
+import { scopeClaimTag } from "../lib/scope-claims.mjs";
 import { scopeClaimTag as partitionScopeClaimTag } from "../lib/scope-partition.mjs";
 import { rowIsOwnScopeClaim } from "../lib/scope-claim-room.mjs";
 import { cacheablePrefix, clauseCost, ruleSentences } from "../lib/prompt-budget.mjs";
