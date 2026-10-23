@@ -2,6 +2,7 @@ import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 const INTENT_VALUES = [
   "new-product",
@@ -32,7 +33,7 @@ export function projectStateMetadata(
   card: WorkerCard,
   stateBlob: string | null,
 ): { intent: string | null; stage: string } {
-  const stage = clean(stateBlob?.match(/^current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+  const stage = clean(parseCurrentStage(stateBlob) ?? undefined) || card.stage;
   const stateName = clean(stateBlob?.match(/^name:\s*(\S+)/m)?.[1]);
   const stateIntent = clean(stateBlob?.match(/^intent:\s*(\S+)/m)?.[1]);
   const intent = card.intent === "unknown" &&

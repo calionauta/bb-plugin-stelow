@@ -10,6 +10,7 @@ import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers.js";
 import type { CliResult, CliRunContext } from "./cli-dispatch.js";
 import { CARD_WORKSPACE_UNAVAILABLE, workspaceUnavailable } from "../../lib/workspace-refusal.mjs";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 type Board = {
   error?: string | null;
@@ -288,7 +289,7 @@ async function playbookCommand(
 }
 
 function textStage(blob: string | null): string | null {
-  return blob?.match(/current_stage:\s*(\S+)/m)?.[1] ?? null;
+  return parseCurrentStage(blob);
 }
 
 async function doctorCommand(
