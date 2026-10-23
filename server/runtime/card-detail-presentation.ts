@@ -10,7 +10,7 @@ import { isDoneStatus } from "../../lib/trackables.mjs";
 import { normalizeKind } from "../../lib/tracks.mjs";
 import { stallCount } from "../../lib/worker-ledger.mjs";
 import { splitActionState } from "../../lib/split-proposal.mjs";
-import { skippedStages } from "../../lib/stage-skips.mjs";
+import { timelineSkips } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
@@ -166,11 +166,10 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
       openQuestions,
       hasWorker: card.worker_thread_id !== null,
     }),
-    stageSkips: skippedStages({
+    stageSkips: timelineSkips({
       kind: normalizeKind(card.kind),
       intent: card.intent,
-      reviewMode: parts.stageSkips.reviewMode,
-      reviewGates: parts.stageSkips.reviewGates,
+      stageSkips: parts.stageSkips,
       sequence: STAGE_SEQUENCE,
     }),
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),

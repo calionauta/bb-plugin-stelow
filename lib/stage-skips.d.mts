@@ -10,4 +10,12 @@ export declare function skippedStages(input: {
   reviewMode?: unknown;
   reviewGates?: unknown;
   sequence: unknown;
+  quality?: unknown;
+  explorationCount?: unknown;
+}): { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> };
+export declare function timelineSkips(input: {
+  kind: unknown;
+  intent: unknown;
+  stageSkips: unknown;
+  sequence: unknown;
 }): { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> };
