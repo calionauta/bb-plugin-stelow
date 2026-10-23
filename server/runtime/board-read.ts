@@ -28,6 +28,7 @@ import { normalizeStatus, workflowScopes } from "../scopes.js";
 import { gateReceiptFor } from "./gate-vocabulary.js";
 import { array, record, text, type LooseRecord } from "./values.js";
 import { join, projectRoot, readJson } from "./root-paths.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 type Workflow = z.infer<typeof workflowSchema>;
 type FilesApi = BbPluginApi["sdk"]["files"];
@@ -237,7 +238,7 @@ async function stageFromState(
   const stateBlob = await bb.sdk.files
     .read({ path: join(rootPath, `.stelow/${created}/${dirHash}/state.md`) })
     .catch(() => null);
-  return text(stateBlob?.content.match(/current_stage:\s*(\S+)/)?.[1]);
+  return text(parseCurrentStage(stateBlob?.content) ?? undefined);
 }
 
 /** Run knobs for one board row: explicit knobs win, legacy appetite maps once. */
