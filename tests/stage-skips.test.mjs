@@ -72,4 +72,29 @@ assert.ok(
   assert.deepEqual(FULL.sort(), [...STAGE_SEQUENCE].sort(), "test route baseline matches canonical sequence");
 }
 
+// S4: the timeline applies the stage policies, not only review modes and gates.
+// Before this, `context` could never be painted skipped, so the panel offered a
+// stage the helper refuses for the same card configuration.
+{
+  const base = {
+    kind: "build",
+    intent: "new-product",
+    reviewMode: "Auto",
+    sequence: FULL,
+    quality: "experimental",
+    explorationCount: 1,
+  };
+  const { skipped } = skippedStages(base);
+  const context = skipped.find((entry) => entry.stage === "context");
+  assert.ok(context, "context is painted skipped for a spike policy");
+  assert.match(context.reason, /run policy/, "the reason names the policy, not the review mode");
+  assert.equal(
+    skippedStages({ ...base, quality: "production", explorationCount: 0 }).skipped.some(
+      (entry) => entry.stage === "context",
+    ),
+    false,
+    "and it is not skipped when the policy does not fire",
+  );
+}
+
 console.log("stage skips test ok: rules, fail-opens, transitions.md cross-check");
