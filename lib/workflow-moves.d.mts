@@ -16,3 +16,8 @@ export declare function legalMoves(input: {
   quality?: string | null;
   explorationCount?: string | number | null;
 }): { allowed: string[]; forward: string[] };
+
+export declare function policyConditionHolds(
+  condition: Record<string, unknown>,
+  knobs: Record<string, unknown>,
+): boolean;
