@@ -20,3 +20,4 @@ export declare function frozenDetailView(snapshot?: unknown, headSha?: unknown):
   freezeSha: string | null;
   currentHeadSha: string | null;
 } | null;
+export declare function verifyCommandEnv(base?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { isDoneStatus } from "../../../lib/trackables.mjs";
+import { verifyCommandEnv } from "../../../lib/audit-verification.mjs";
 import { ERR_WORKSPACE_UNAVAILABLE, noCardInContext, scanCardId, unknownCard, type CliCommandFn, type CliResult } from "./cli-contract.js";
 import {
   decisionApiEnabled,
@@ -207,7 +208,9 @@ function runVerifyCommand(
     execFile(
       bin,
       rest,
-      { cwd, timeout: 60000, maxBuffer: 4 * 1024 * 1024 },
+      // Never inherit NODE_ENV: production breaks react-dom's test build and every
+      // verification run fails, which parks every build card at `audit`.
+      { cwd, env: verifyCommandEnv(), timeout: 60000, maxBuffer: 4 * 1024 * 1024 },
       (error, _stdout) => {
         const code = (error as { code?: unknown } | null)?.code;
         if (error && typeof code !== "number")
