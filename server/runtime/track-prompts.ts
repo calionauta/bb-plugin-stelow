@@ -9,7 +9,6 @@
  */
 
 import { exploreArtifactFile } from "../../lib/research-artifacts.mjs";
-import { USER_INPUT_CONTRACT } from "./plugin-protocols.js";
 
 export type TrackPromptProtocols = {
   cardOwnerRules: string;
@@ -166,8 +165,8 @@ needs-work / unverified (the seal resolves from the host, never from your claim)
 }
 
 
-function researchUserContract(): string {
-  return `${USER_INPUT_CONTRACT} There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked \
+function researchUserContract(contract: string): string {
+  return `${contract} There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked \
 opportunities, STOP and end your turn — the user reviews the index, marks the card Done, and fans opportunities out into build cards. If the user \
 instead confirms specific opportunities in-thread, fan them out yourself ONLY after that structured confirmation: \`bb stelow fan-out --opportunity <id> \
 [--opportunity ...]\` (ids from the index, never prose — the command refuses unknown ids). Stop early when the user archives the card.`;
@@ -185,7 +184,7 @@ function researchWorkerPrompt(
     researchIndexStep(input),
     researchRoundStep(input),
     researchRegistrationStep(input),
-    researchUserContract(),
+    researchUserContract(protocols.userInputContract),
     protocolFooter(protocols),
     researchCardTail(input),
     requestTail(input),
@@ -251,8 +250,8 @@ display="${stage.label}"}\` on its own line — bb renders these as clickable ch
 own line — bb revalidates the file live and renders verified / hypothesis / needs-work / unverified.`;
 }
 
-function exploreUserContract(): string {
-  return `${USER_INPUT_CONTRACT} When the stage deliverable is complete, STOP and end your turn — the user reviews the artifact and marks the card Done. \
+function exploreUserContract(contract: string): string {
+  return `${contract} When the stage deliverable is complete, STOP and end your turn — the user reviews the artifact and marks the card Done. \
 Stop early when the user archives the card.`;
 }
 
@@ -264,7 +263,7 @@ function exploreWorkerPrompt(
     explorePrelude(protocols),
     exploreWorkStep(input),
     exploreArtifactStep(input),
-    exploreUserContract(),
+    exploreUserContract(protocols.userInputContract),
     protocolFooter(protocols),
     exploreCardTail(input),
     requestTail(input),
