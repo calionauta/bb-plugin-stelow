@@ -148,7 +148,13 @@ function MockupFrame({ html, title }: { html: string; title: string }) {
 }
 
 export function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
-  const path = file?.display ?? file?.path ?? "";
+  // `display` is the manifest's human label ("spec tech v1"), never a file
+  // name. Every fixture in the suite spelled the two the same, so the kind was
+  // read from the label for months: a title has no extension, so a document
+  // rendered as source and `derivedDiagram` never saw a Markdown fence either.
+  // Anything that inspects the name asks `path`; the label only labels.
+  const label = file?.display ?? "";
+  const path = file?.path ?? "";
   const kind = artifactRenderKind(path);
   // A truncated page is not the artifact: a mockup cut off mid-document
   // renders as a broken layout presented as evidence, which is worse than the
@@ -165,7 +171,7 @@ export function ArtifactContent({ file, content, truncated, loadError, loading, 
       {!loading && !loadError && content !== null ? (
         derived ? (
           <div className="space-y-2">
-            <MermaidDiagram source={derived.mermaid} title={`${path} — derived diagram`} />
+            <MermaidDiagram source={derived.mermaid} title={`${label || path} — derived diagram`} />
             {kind === "markdown"
               ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
               : <SourceCode content={content} path={path || "file.txt"} />}
@@ -177,7 +183,7 @@ export function ArtifactContent({ file, content, truncated, loadError, loading, 
             </p>
           </div>
         ) : kind === "markdown" ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
-          : asMockup ? <MockupFrame html={content} title={`${path} — interface mockup`} />
+          : asMockup ? <MockupFrame html={content} title={`${label || path} — interface mockup`} />
             : <SourceCode content={content} path={path || "file.txt"} />
       ) : null}
       {truncated ? (
