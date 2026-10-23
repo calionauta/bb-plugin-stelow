@@ -3050,7 +3050,7 @@ From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
 
-**"No phantom waits" is enforced at the read, not at the render.** Three
+**"No phantom waits" is enforced at the read, not at the render.** Four
 corrections landed as one rule, because each was a surface inventing an answer
 it did not have:
 
@@ -3068,6 +3068,9 @@ it did not have:
   `last_error`, as the build projection always did. Only the resume paths used
   to clear it, so a card that failed once kept telling the reader to reseed,
   next to a worker that was running and never needed reseeding.
+- A quiet poll completion writes through the same completion writer as
+  `bb stelow done` (`server/runtime/card-completion.ts`), so it cannot keep a
+  stale error or skip the auto-continue reset the explicit path performs.
 
 **A stage is named by its label, on every surface, or not at all.**
 `stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
