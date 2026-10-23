@@ -89,7 +89,7 @@
     "test:release-published": "node tests/release-published.test.mjs && node tests/release-published-script.test.mjs",
     "test:release-major-claim": "node tests/release-major-claim.test.mjs",
     "test:scope-sync-notice": "node tests/scope-sync-notice.test.mjs",
-    "test:declaration-surface": "node tests/declaration-surface.test.mjs",
+    "test:declaration-surface": "node tests/declaration-surface.test.mjs && node tests/declaration-drift.test.mjs",
     "test:reconcile-honesty": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/execution-reconcile-honesty.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/execution-reconcile-recovery.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/reconcile-observation-once.test.mjs",
     "check:release-published": "node scripts/check-release-published.mjs",
     "test:discard": "node tests/discard-policy.test.mjs",
