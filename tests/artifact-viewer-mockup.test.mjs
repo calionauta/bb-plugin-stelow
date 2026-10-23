@@ -113,6 +113,33 @@ const prose = render({ file: { display: "notes.md", path: "notes.md" }, content:
 assert.ok(findElementByType(prose, "markdown"), "a markdown document renders as prose");
 assert.deepEqual(kindCalls, ["notes.md"], "and its kind, too, comes from the shared module");
 
+// A real card's manifest registers a human `label` ("spec tech v1") beside the
+// file's `path`, and that label becomes the row's `display`. Every fixture above
+// spelled the two the same, so nothing exercised which one the kind is read
+// from — and a viewer that read `display` asked a document's title for its
+// extension. The fixture below supplies no `kind` at all: the extension is the
+// only answer there is, exactly as on the card that shipped as raw text.
+kindCalls.length = 0;
+const labelledPath = "/ws/.stelow/2026-10-23/sw-card_x/plans/spec-tech_v1.md";
+const labelled = render({
+  file: { display: "spec tech v1", path: labelledPath },
+  content: "# Spec\n\nA document under decision.\n",
+});
+assert.ok(
+  findElementByType(labelled, "markdown"),
+  "a .md artifact whose display is a label still renders as prose, never as source",
+);
+assert.equal(
+  findElementByType(labelled, "source-code"),
+  null,
+  "the document is not also rendered as source text",
+);
+assert.deepEqual(
+  kindCalls,
+  [labelledPath],
+  "the kind is derived from the path; a label has no extension and no answer",
+);
+
 const truncated = render({
   file: { display: "mockup.html", path: "mockup.html" },
   content: "<html>",
@@ -208,6 +235,7 @@ const mmd = renderMmd({
   content: "flowchart TD\n  A-->B",
 });
 const mmdDiagram = findElementByType(mmd, "mermaid-diagram");
+
 assert.ok(mmdDiagram, "a .mmd file renders the MermaidDiagram branch, not plain source alone");
 assert.equal(mmdDiagram.props.source, "flowchart TD\n  A-->B", "the branch receives the file's own source");
 assert.match(String(mmdDiagram.props.title), /scope\.mmd/, "the branch names the diagram it shows");
@@ -235,5 +263,26 @@ assert.equal(
 );
 assert.ok(findElementByType(mmdPlain, "source-code"), "it still reads as code");
 assert.deepEqual(mmdKindCalls, ["main.ts"], "through the same shared kind");
+
+// Same split, on the derivation that reads the extension: a labelled Markdown
+// artifact carries its fence, so the diagram has to be derived from the PATH.
+// Fed the label, `derivedDiagram` sees no `.md` and returns nothing — the
+// picture disappears while the source stays, which is half of why a diagram
+// reached the reader only outside the modal.
+const fencedPath = "/ws/.stelow/2026-10-23/sw-card_x/plans/spec-tech_v1.md";
+mmdKindCalls.length = 0;
+const fenced = renderMmd({
+  file: { display: "spec tech v1", path: fencedPath },
+  content: "# Spec\n\n```mermaid\nflowchart TD\n  A-->B\n```\n",
+});
+assert.ok(
+  findElementByType(fenced, "mermaid-diagram"),
+  "a fenced diagram in a labelled .md artifact is still derived and drawn",
+);
+assert.deepEqual(
+  mmdKindCalls,
+  [fencedPath],
+  "the derivation is asked about the path, not the manifest label",
+);
 
 console.log("artifact viewer wiring ok: a .mmd renders the diagram branch beside its source, through the shared kind");
