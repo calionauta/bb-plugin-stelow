@@ -1311,7 +1311,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
   under decision is a layout, and source text is the one thing that cannot
   answer it. The decision is the path alone (`artifactRenderKind` in
-  `lib/artifact-render.mjs`), and a mockup is framed under
+  `lib/artifact-render.mjs`), and the row's manifest label is never consulted —
+  a real card registers `label: spec tech v1` beside its path, and a title has
+  no extension to read, so asking it rendered a document as raw text. A mockup
+  is framed under
   `allow-scripts` without `allow-same-origin`, so a worker-authored page
   runs without reaching the reader's bb session. A truncated file is
   shown as source instead, because a partial page is a broken layout
