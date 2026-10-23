@@ -8,7 +8,7 @@ export interface RecipeWidthRecipe {
   tasks?: readonly RecipeWidthTask[];
   fallback?: { preserves?: readonly string[] } | null;
 }
-export function isRecipeTaskActive(task: RecipeWidthTask, context?: Record<string, unknown>): boolean;
+export function isRecipeTaskActive(task: RecipeWidthTask, context?: Record<string, unknown>, outputs?: Record<string, unknown>): boolean;
 export function activeRecipeTasks(recipe: RecipeWidthRecipe, context?: Record<string, unknown>): RecipeWidthTask[];
 export function runnableRecipeTasks(
   recipe: RecipeWidthRecipe,
