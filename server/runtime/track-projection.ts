@@ -119,5 +119,3 @@ export function createTrackProjection(deps: TrackProjectionDeps) {
     noteAgentOutput: noteAgentOutput.bind(null, deps),
   };
 }
-
-export type TrackProjection = ReturnType<typeof createTrackProjection>;

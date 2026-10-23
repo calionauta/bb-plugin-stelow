@@ -311,5 +311,3 @@ export function createResearchTrackSync(deps: ResearchTrackSyncDeps) {
     syncExplore: (card: WorkerCard) => sweepTrack(deps, card, exploreSettled),
   };
 }
-
-export type ResearchTrackSync = ReturnType<typeof createResearchTrackSync>;

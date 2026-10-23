@@ -115,5 +115,3 @@ export function createPreviewHost(deps: {
 
   return { preview, resolveLocalBin, homeDir, localBinDir };
 }
-
-export type PreviewHost = ReturnType<typeof createPreviewHost>;

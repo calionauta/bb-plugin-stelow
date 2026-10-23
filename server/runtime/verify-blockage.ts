@@ -64,5 +64,3 @@ export function createVerifyBlockageReader(deps: VerifyBlockageDeps) {
     },
   };
 }
-
-export type VerifyBlockageReader = ReturnType<typeof createVerifyBlockageReader>;

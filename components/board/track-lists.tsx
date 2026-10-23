@@ -13,9 +13,7 @@ import {
 } from "../dashboard/build-status-pills";
 import {
   buildListMeta,
-  exploreListMeta,
   pendingReview,
-  researchListMeta,
   showScopeStrip,
 } from "../../lib/board-list-presentation.mjs";
 import {
@@ -360,20 +358,4 @@ export function TrackList({ metaFor, ...props }: ListProps & {
       metaFor={metaFor}
     />
   );
-}
-
-type LightweightListProps = Omit<ListProps, "groups"> & {
-  groups: Record<string, ListCard[]>;
-};
-
-export function ResearchList({ strategyLabelById, ...props }: LightweightListProps & {
-  strategyLabelById: ReadonlyMap<string, string>;
-}) {
-  return <TrackList {...props} metaFor={(card) => researchListMeta(card, strategyLabelById)} />;
-}
-
-export function ExploreList({ stageLabelById, ...props }: LightweightListProps & {
-  stageLabelById: ReadonlyMap<string, string>;
-}) {
-  return <TrackList {...props} metaFor={(card) => exploreListMeta(card, stageLabelById)} />;
 }

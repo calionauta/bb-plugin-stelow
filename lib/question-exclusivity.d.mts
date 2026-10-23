@@ -30,5 +30,4 @@ export declare function slotsOf(
   shapes: Map<string, Omit<QuestionShape, "id">>,
 ): QuestionShape[];
 export declare function answersFor(interactionId: string, value: GroupedAnswer): Answer[];
-export declare function expiredOptionLabels(row: ExpiredRow): string[];
 export declare function expiredAnswerRefusal(openRows: ExpiredRow[], answers: Answer[]): string | null;

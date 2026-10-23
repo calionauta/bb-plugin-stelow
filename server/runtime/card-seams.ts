@@ -278,5 +278,3 @@ async function checklistFor(
     reviewMode: reviewGates ?? reviewMode ?? [],
   });
 }
-
-export type CardSeams = ReturnType<typeof createCardSeams>;

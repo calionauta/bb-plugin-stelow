@@ -43,5 +43,3 @@ export const WORKER_PROTOCOL_CLAUSES = {
   userInputContract: USER_INPUT_CONTRACT,
   commandFailureRule: COMMAND_FAILURE_RULE,
 } as const;
-
-export type WorkerProtocolClauses = typeof WORKER_PROTOCOL_CLAUSES;

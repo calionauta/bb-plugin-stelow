@@ -24,20 +24,16 @@ import { renderSpawnPaths } from "./helpers/prompt-paths.mjs";
  * two fixtures and would break on any legitimate clause edit, while the order is
  * the rule a reviewer can act on and the thing a fix changes.
  *
- * ## Why the order check is skipped rather than failing
+ * ## The order check is asserted, not skipped
  *
- * It is currently red on all three build paths, and that is a product decision
- * rather than a bug to patch: hoisting 10 KB of protocols above the request moves
- * the instructions the model reads FIRST from the request to the boilerplate, and
- * instruction ordering affects compliance. Reordering is likely right — the shared
- * block is identical every time, which is exactly what a cache wants — but it is
- * the kind of change that should be made deliberately, with a look at how workers
- * behave, not folded into a test-writing session.
+ * F2 reordered the three build paths, so the rule asserted below is green on
+ * all three and the skip that used to document the gap is gone. The pre-F2
+ * measurement above stays as the record of what the reordering bought; the
+ * current numbers are printed by the run, not restated here.
  *
- * So the gap is measured and REPORTED on every run instead of being either a
- * broken suite or an unrecorded finding. The negative controls below are real,
- * always-on assertions: they are what keep this file honest, because a position
- * helper that returned -1 for everything would make the skipped check vacuous.
+ * The negative controls below remain real, always-on assertions: they are what
+ * keep this file honest, because a position helper that returned -1 for
+ * everything would make the order check vacuous.
  */
 
 const paths = renderSpawnPaths();
@@ -63,7 +59,7 @@ const BUILD_PATHS = ["spawn", "restart", "reseed"];
 
 /** The share of a build prompt two DIFFERENT cards share, which is what a provider
  * can serve from cache across threads. Measured 0.6% before F2 reordered the three
- * paths and 94-95% after; the floor sits just under the achieved value so a
+ * paths; the floor sits under every pair's current value (the run prints them), so a
  * regression fails instead of printing a smaller number nobody reads. */
 const CROSS_CARD_CACHE_FLOOR = 0.85;
 

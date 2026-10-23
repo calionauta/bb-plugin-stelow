@@ -7,13 +7,15 @@ ships is the shape-gate repair described under *Gate repairs*.
 
 The numbers in the per-area tables are the **pre-split record**: each measured area
 is labelled with what actually shipped, and the tables are kept as the
-before-picture rather than rewritten. The figures in *Status* lines and in
-*Phase 2 result*, *Phase 3 result*, and *Phase 4 result* are current. The gate figures quoted inline
-were re-measured on this branch (`refactor/app-slices-1-11`) with
-`node scripts/check-source-budgets.mjs` and a TypeScript AST census that mirrors
-that gate's traversal. Master values come from `git show origin/master:<path>`.
-The two must agree, or the census does not describe the same shapes the gate
-measures.
+before-picture rather than rewritten. Master values come from
+`git show origin/master:<path>`.
+
+**This file is a phase record, not a live census.** Every count below is what a
+phase measured on `refactor/app-slices-1-11`; the live debt is the ledger in
+`scripts/source-debt.json`, and `tests/debt-baseline.test.mjs` prints the current
+census on every run. A number restated here is evidence of what the branch did,
+never a substitute for that output — and a test pins this file against quoting
+the gate or claiming a present-tense count.
 
 The adversarial review of this phase re-measured every symbol and line range in
 the tables and corrected four of them, listed under *Review corrections*. Three
@@ -456,8 +458,9 @@ prerequisite: R2 cannot be done honestly without it.
    It is deliberately not done from this branch's own phase work: it is a merge,
    and a phase that merges cannot also claim an honest before/after for the
    merge itself. The tree-wide debt the audit deliberately did not measure is
-   untouched by all of this and still pinned — as of Phase 5, 3 oversized files
-   and 47 oversized functions, listed in `tests/debt-baseline.test.mjs`.
+   untouched by all of this and pinned in the ledger that
+   `tests/debt-baseline.test.mjs` reads; that test prints the current census,
+   so this file does not restate it.
 6. ~~**R6 — Only then, consider the budget-checker defects in section 3.**~~
    **DONE.** The split bases and the full-tree fallback are both gone: a
    finding is inherited only through same-file descent, a run-proven move, or a
@@ -556,7 +559,7 @@ too — a repeated label in another scope is not a same-file match.
 
 What this did **not** change: the inherited set on this branch is byte-identical
 before and after (7 entries, same files, same lines, same reasons), and the
-whole-tree census still reports 4 oversized files and 47 oversized functions.
+whole-tree census then reported 4 oversized files and 47 oversized functions.
 No real debt was relying on the loose rule. The ledger was checked against
 `origin/master` while reviewing it: 46 of its 47 function ceilings equal their
 master line count exactly, one (`tests/server-cards.test.mjs:callback#4`, 82) is
@@ -586,8 +589,8 @@ area, with the old path kept as a re-export facade so no consumer moved:
 No function in the split is over the 50-line budget (the longest is
 `contractForBuildArtifact`, 22 lines), so the ledger's function list is unchanged
 by this phase. The file entry `"lib/artifact-contracts.mjs": 428` is deleted from
-`scripts/source-debt.json`; the census now reports **3 oversized files and 47
-oversized functions**, down from 4 and 47.
+`scripts/source-debt.json`; the census reported **3 oversized files and 47
+oversized functions** after the split, down from 4 and 47.
 
 Two data facts the split surfaced, both fixed here rather than carried:
 
@@ -635,8 +638,8 @@ factory became wiring.
 | `lib/preview-runtime.mjs` | 73 | `createPreviewRuntime`, now 22 lines of wiring |
 
 `createPreviewRuntime` 264 → 22 lines and `start` 77 → 20; both ledger entries are
-deleted, so the census now reports **3 oversized files and 45 oversized
-functions** (from 4 and 47). Every function introduced is under the 50-line
+deleted, so the census reported **3 oversized files and 45 oversized
+functions** after the split (from 4 and 47). Every function introduced is under the 50-line
 budget; the longest is `createAppRootResolver` at 41. `lib/preview-runtime.mjs`
 itself went 333 → 73 lines.
 
@@ -1560,9 +1563,9 @@ All five re-run independently on review and confirmed green, with the numbers
 the phase reported: `typecheck` exit 0; `architecture` "no dependency
 violations found (747 modules, 1740 dependencies cruised)"; `quality:shape`
 "source shape ok: 372 source file(s) … no changed line over 160 characters" and
-7 inherited budget entries, no new ones; `npm test` exit 0 ending on
-"debt baseline ok: 3 oversized file(s) and 37 oversized function(s), 7 inherited
-entries, shape gate green". A phase whose only output is a document has an easy
+7 inherited budget entries, no new ones; `npm test` exit 0 ending on the debt
+baseline's own census line (then 3 oversized files, 37 oversized functions,
+7 inherited entries). A phase whose only output is a document has an easy
 claim to fake, so the gate claim was the first thing re-derived rather than
 trusted.
 
@@ -1632,7 +1635,7 @@ before the SDK call in `lib/delegation-map.mjs`, the retry in
 message, and `tests/delegation-map.test.mjs:54-58` pins one site marker per
 call site while `tests/server-drafting.test.mjs:183,231` exercise the field and
 the retry that drops it. Every census figure in the local mirror was re-measured
-and holds: 3 oversized files and 37 oversized functions,
+and held at that commit: 3 oversized files and 37 oversized functions,
 `dialog.tsx` 541, `icon.tsx` 450, `kanban-layout.test.mjs` 401, the largest
 execution slice 233, the largest GitHub slice 293, the largest decision slice
 226, `github-dialog-state.ts` 60, `preset-manager-band-routing.tsx` 351, and all
@@ -1802,9 +1805,9 @@ pair, and folding it into a review of a documentation phase is how a behavior
 change gets reviewed as a doc edit.
 
 Gates on this pass, all re-run after the last commit: `npm run typecheck`
-green; `npm test` exit 0, ending on "debt baseline ok: 3 oversized file(s) and
-37 oversized function(s), 7 inherited entries, shape gate green" — the census
-the sections above report, unchanged; `npm run architecture` clean at 747
+green; `npm test` exit 0, ending on the debt baseline's own census line (then 3
+oversized files, 37 oversized functions, 7 inherited entries) — the census the
+sections above record, unchanged; `npm run architecture` clean at 747
 modules and 1740 dependencies; `npm run quality:shape` green with 7 inherited
 budget entries and no new ones; `npm run duplicates` at 0 exact clones; lint
 at 1 inherited warning. `FEATURES.md` does not move: nothing user-facing

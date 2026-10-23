@@ -213,5 +213,3 @@ export async function listBbThreads(): Promise<unknown[]> {
     return [];
   }
 }
-
-export type SharedCheckoutReader = ReturnType<typeof createSharedCheckoutReader>;

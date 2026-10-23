@@ -2,23 +2,6 @@ import type { ReactNode } from "react";
 import { CreateTrackDialog, EXPLORE_DIALOG_CONFIG, RESEARCH_DIALOG_CONFIG, type TrackDialogConfig } from "../creation/create-track-dialog";
 import { STORAGE_KEYS } from "../../lib/panel-storage.mjs";
 
-export type TrackPresetManagerProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  rpc: any;
-  presets: Array<{ id: string } & Record<string, any>>;
-  onChanged: () => Promise<void>;
-};
-
-export type TrackOnboardingProps = {
-  storageKey: string;
-  title: string;
-  intro: string;
-  onOpenPresets: () => void;
-  active: boolean;
-  showDesignReference?: boolean;
-};
-
 export type TrackDialogsConfig = {
   onboardKey: string;
   onboardTitle: string;

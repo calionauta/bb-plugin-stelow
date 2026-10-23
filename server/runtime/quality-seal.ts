@@ -143,5 +143,3 @@ export function createQualitySeal(deps: QualitySealDeps) {
     return buildSeal(result);
   };
 }
-
-export { UNVERIFIED as unverifiedSeal };

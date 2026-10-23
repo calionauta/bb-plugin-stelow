@@ -34,17 +34,6 @@ export declare function scopeAskRefusal(input: {
   groups: unknown;
 }): string | null;
 
-/* from lib/context-ask-gate.d.mts */
-export declare const CONTEXT_STAGE: string;
-export declare const CONTEXT_SKIP_INTENTS: string[];
-export declare function contextAskGate(input: {
-  kind: unknown;
-  intent: unknown;
-  stage: unknown;
-  tag: unknown;
-  forced: unknown;
-}): { allowed: boolean; error: string | null };
-
 /* from lib/ask-cancel.d.mts */
 export declare const TRANSIENT_CANCEL_REASONS: string[];
 export declare function classifyAskCancel(outcome: string, reason: string | null, requestFailed?: boolean): "persist" | "passthrough";

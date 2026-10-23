@@ -84,15 +84,6 @@ async function probeNativeWorkflow(ref: { projectId: string; threadId: string; w
   }
 }
 
-export function nativeStatusOf(value: unknown): string {
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const status = record.status ?? record.state ?? record.runStatus ?? record.run_status;
-    if (status != null) return String(status);
-  }
-  return String(value ?? "unknown");
-}
-
 export function nativeNeedsInput(value: unknown): { question: string; questionId: string | null; [key: string]: unknown } | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -105,15 +96,6 @@ export function nativeNeedsInput(value: unknown): { question: string; questionId
   const boundaryKeys = ["contractId", "boundaryId", "kind", "shapeVersion", "scopeMapVersion", "answerSchema"];
   const boundary = Object.fromEntries(boundaryKeys.filter((key) => key in fields).map((key) => [key, fields[key]]));
   return { question: question.trim(), questionId: id == null ? null : String(id), ...boundary };
-}
-
-export function normalizeNativeWorkflowStatus(status: string): "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled" {
-  if (status === "needs_input") return "needs_input";
-  if (status === "running" || status === "started") return "running";
-  if (status === "queued" || status === "pending") return "queued";
-  if (status === "succeeded" || status === "completed" || status === "done") return "succeeded";
-  if (status === "cancelled" || status === "canceled" || status === "stopped") return "cancelled";
-  return "failed";
 }
 
 export async function runNativeWorkflow({ workspaceId, projectId, threadId, source, args, resumeRunId }: { workspaceId: string; projectId: string; threadId: string; source: string; args: Record<string, unknown>; resumeRunId?: string | null }): Promise<NativeWorkflowRun> {

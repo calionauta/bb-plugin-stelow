@@ -141,11 +141,6 @@ export const boardWorkflowDefaultsSchema = z
   .strip();
 
 /** Legacy appetite → knobs. Rigor always strongest; breadth keeps old intent. */
-export const LEGACY_APPETITE_DEFAULTS = {
-  Lean: { quality: "production", explorationCount: 2 },
-  Core: { quality: "production", explorationCount: 3 },
-  Complete: { quality: "production", explorationCount: 5 },
-} as const;
 
 export const taskSchema = z.object({
   id: z.string(),

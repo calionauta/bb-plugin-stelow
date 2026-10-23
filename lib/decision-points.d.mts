@@ -4,7 +4,6 @@ export declare const DECISION_POINT_AUTO_CONTINUE: string;
 export declare const DECISION_POINT_INBOX_SEVERITY: string;
 export declare const DECISION_POINT_RETRY_TRANSIENT: string;
 export declare const DECISION_POINT_PRESET_TIER: string;
-export declare const DECISION_POINT_MODES: string[];
 
 export declare const PRESET_JUDGE_POINTS: string[];
 

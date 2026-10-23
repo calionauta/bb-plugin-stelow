@@ -1,10 +1,5 @@
-export declare const QUESTION_ID_SEP: string;
 export declare const QUESTION_KINDS: string[];
 export declare function questionKind(raw: unknown): "standard" | "split";
-export declare const MAX_DESC_CHARS: number;
-export declare const MAX_PREVIEW_CHARS: number;
-export declare const MAX_ARTIFACT_CHARS: number;
-export declare const CONTRACT_ID_PATTERN: RegExp;
 export declare interface AskOption {
   label: string;
   description: string;

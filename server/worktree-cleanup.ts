@@ -149,5 +149,3 @@ export function createWorktreeCleanup(deps: CleanupDeps) {
     },
   };
 }
-
-export type WorktreeCleanup = ReturnType<typeof createWorktreeCleanup>;

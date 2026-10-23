@@ -236,14 +236,16 @@ function buildWorktreeCleanup(core: RuntimeCore) {
 }
 
 /**
- * The two synchronisations, and the lifecycle registration that drives them.
+ * The build thread's sync, and the research/explore sync it owns.
+ *
  * A track's completion contract differs from a build's (a valid index versus
  * a valid stage artifact), so each has its own projection and they agree only
- * on the lifecycle they share.
+ * on the lifecycle they share. The track sync is built ONCE and handed to the
+ * build sync: building it twice gave the two projections separate instances of
+ * the same readers.
  */
 function buildThreadSync(core: RuntimeCore) {
   return {
-    trackSync: buildTrackSync(core),
     syncThreadState: buildBuildSync(core, buildTrackSync(core)),
   };
 }

@@ -10,4 +10,3 @@ export declare function summarizeExcerpts(records: unknown): {
   meaning: Record<ExcerptMode, string>;
 };
 export declare function excerptMetricLine(summary: unknown): string;
-export declare const EXCERPT_MODES: readonly ExcerptMode[];

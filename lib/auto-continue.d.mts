@@ -1,5 +1,4 @@
 export declare const MAX_AUTO_CONTINUES: number;
-export declare const TERMINAL_STAGES: string[];
 export declare const MAX_DONE_NUDGES: number;
 export declare function ensureAutoContinueColumns(db: { prepare(sql: string): { all(): Array<{ name: string }>; }; exec(sql: string): void }): void;
 export declare function shouldAutoContinue(options: {
