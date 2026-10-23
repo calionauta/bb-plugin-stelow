@@ -22,7 +22,12 @@ jobs:
       - run: npm run quality:report
       - run: npm run architecture
       - run: npm test
-      - run: npm run check:pin-provenance
+      # One command for the whole upstream boundary: the tree matches the pin,
+      # the pin was released, the pin answers every declared verb, and the
+      # transition projection agrees with the helper. The audit that produced
+      # this step found two blockers caught by instruments that existed and were
+      # never run together.
+      - run: npm run stelow-audit
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: npm run security:production
