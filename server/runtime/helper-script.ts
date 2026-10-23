@@ -6,11 +6,14 @@
  * to run it in the right directory with the right state, and to report its
  * exit code and streams verbatim. The state directory is passed through the
  * environment rather than as arguments because the helper reads it the same
- * way a worker does.
+ * way a worker does. The verb is checked against the declared set in
+ * `lib/helper-verbs.mjs` before anything spawns: a verb nobody proved cannot
+ * become a silent no-op.
  */
 import { spawn } from "node:child_process";
 import { join as nodeJoin } from "node:path";
 import { HELPER_SCRIPT, TRANSITIONS_REF } from "../plugin-paths.js";
+import { isDeclaredVerb, undeclaredVerbRefusal } from "../../lib/helper-verbs.mjs";
 
 export type HelperResult = {
   code: number | null;
@@ -33,6 +36,18 @@ export function runHelper(
   cwd: string,
   stateDir?: string,
 ): Promise<HelperResult> {
+  const [verb] = args;
+  // Fail closed before spawning. A verb this host never proved against the pin
+  // used to reach bash, which answered `unknown subcommand` — the same exit code
+  // and the same stream shape a real refusal uses, so no caller could tell a
+  // typo from a contract change. The declared set is the only door.
+  if (!isDeclaredVerb(verb)) {
+    return Promise.resolve({
+      code: 2,
+      stdout: "",
+      stderr: undeclaredVerbRefusal(verb),
+    });
+  }
   return new Promise((resolveRun) => {
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),

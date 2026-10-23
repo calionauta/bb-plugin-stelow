@@ -1,8 +1,5 @@
 export declare const TIER_RELIABLE: string;
 export declare const TIER_GENERATION: string;
-export declare const DRAFT_SOURCE_CARD: string;
-export declare const DRAFT_SOURCE_BOARD: string;
-export declare const DRAFT_SOURCE_BAND: string;
 export declare const DRAFT_MAX_CHARS: number;
 export declare const CARD_NAME_MAX_CHARS: number;
 

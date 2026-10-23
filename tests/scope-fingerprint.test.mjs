@@ -92,7 +92,10 @@ test("the progress watch baselines silently, publishes on movement, and prunes",
 
 function reconcilerDb() {
   const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, status TEXT, worker_thread_id TEXT)");
+  // `activity` is here for the claims pass: a renewal is gated on the host not
+  // having given up on the card, and the fixture has to carry the column the
+  // real table carries or every tick reports a missing column.
+  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, status TEXT, worker_thread_id TEXT, activity TEXT)");
   db.exec(`CREATE TABLE inbox_events (
     id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
     summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
@@ -100,9 +103,9 @@ function reconcilerDb() {
     resolved_at INTEGER, resolved_reason TEXT, severity INTEGER,
     severity_reasons TEXT, occurrences INTEGER
   )`);
-  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live_a", "in-progress", "thread-1");
-  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("live_b", "in-progress", "thread-2");
-  db.prepare("INSERT INTO cards VALUES (?, ?, ?)").run("unstarted", "draft", null);
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("live_a", "in-progress", "thread-1", "running");
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("live_b", "in-progress", "thread-2", "idle");
+  db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("unstarted", "draft", null, "idle");
   ensureCardClaimsTables(db);
   return db;
 }

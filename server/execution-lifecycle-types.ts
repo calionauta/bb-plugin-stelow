@@ -15,7 +15,6 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 export type AnswerDecision = { question: string; answers: string[] };
 export type ResumeArgs = { context: Record<string, unknown>; localRunId: string; recipeId: string };
-export type ResumeFailure = { error: string | null };
 export type StartContext = {
   prompt: string;
   intent?: string;

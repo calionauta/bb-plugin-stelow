@@ -91,6 +91,15 @@ async function markThreadRunning(
     const updates: Record<string, unknown> = {
       activity: "running" as const,
       last_assistant_text: lastOutput,
+      // Parity with the build projection (`projectRunningState` in
+      // thread-state-projection.ts), which clears this: a track that is
+      // verifiably running supersedes whatever the last failure said. Without
+      // it the text is permanent on research/explore — only the resume paths
+      // cleared it, so a card that failed once kept telling the reader to
+      // reseed days later, next to a worker that was running and never needed
+      // reseeding. The question-wait branch above deliberately keeps the
+      // shape of `questionWaitUpdates`, which is activity-only on both tracks.
+      last_error: null,
     };
     if (card.status === "pending") updates.status = "in-progress";
     deps.updateCard(card.id, updates);
@@ -119,5 +128,3 @@ export function createTrackProjection(deps: TrackProjectionDeps) {
     noteAgentOutput: noteAgentOutput.bind(null, deps),
   };
 }
-
-export type TrackProjection = ReturnType<typeof createTrackProjection>;

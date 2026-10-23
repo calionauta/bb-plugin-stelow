@@ -25,7 +25,7 @@ export type BoundaryDeps = {
   randomId: (prefix: string) => string;
   fetchPendingQuestions: (
     threadId: string | null,
-  ) => Promise<Array<{ question: string }>>;
+  ) => Promise<Array<{ question: string }> | null>;
   logComment: (cardId: string, targetId: string, body: string) => void;
   notify: CardNotifier;
 };
@@ -72,6 +72,10 @@ export async function reconcileBoundary(
     notifyBoundaryMissing(deps.notify, card, run.recipeId, run.boundaryId);
   }
   const pending = await deps.fetchPendingQuestions(card.worker_thread_id);
+  // An unreadable question source cannot confirm the boundary question reached
+  // the human, so the run stays unsent and the next reconcile retries. Marking
+  // it sent on an unknown would close the one door that asks a person.
+  if (pending === null) return;
   const marker = run.boundaryId;
   if (marker && pending.some((entry) => entry.question.includes(`[Stelow boundary ${marker}]`))) {
     markExecutionNeedsInputSent(deps.db, run.id);

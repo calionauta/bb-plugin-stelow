@@ -72,6 +72,3 @@ export type NativeDeps = {
   stateDir: (card: WorkerCard, rootPath: string) => Promise<string | null>;
   logComment: (cardId: string, targetId: string, body: string) => void;
 };
-
-/** A start request that did not, or did not yet, produce a run. */
-export type StartFailure = { ok: false; run: null; error: string };

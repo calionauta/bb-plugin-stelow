@@ -51,10 +51,17 @@ test("a valid index completes the research card and records the review trail", a
   assert.deepEqual(calls.updates[0], [
     "card-1",
     {
+      // The completion column set now comes from the one writer the CLI paths
+      // use (server/runtime/card-completion.ts): a quiet poll completion also
+      // clears `last_error`, which is the field that used to outlive the
+      // failure on research/explore, and resets the auto-continue budget.
       status: "completed",
       activity: "idle",
+      last_error: null,
       last_assistant_text: "worker said hello",
       last_idle_at: 500_000,
+      auto_continue_count: 0,
+      auto_continue_stage: null,
     },
   ]);
   assert.deepEqual(calls.stages, [["card-1", "done"]], "a Done-column card leaves a done event");
@@ -211,8 +218,11 @@ test("output and staleness repair remain best-effort inside a successful poll", 
   assert.deepEqual(calls.updates[0][1], {
     status: "completed",
     activity: "idle",
+    last_error: null,
     last_assistant_text: null,
     last_idle_at: 1_000_000,
+    auto_continue_count: 0,
+    auto_continue_stage: null,
   });
   assert.deepEqual(calls.stages, [["card-1", "done"]]);
 });

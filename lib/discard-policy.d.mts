@@ -23,9 +23,8 @@ type DiscardEvidence = {
 };
 type DiscardAction = "worktree-drop" | "branch-reset" | "dir-delete";
 export declare const SHARED_BRANCH_PATTERN: RegExp;
-export declare const MAX_PREVIEW_FILES: number;
 export declare function discardEligibility(evidence: Partial<DiscardEvidence>): { eligible: boolean; action: DiscardAction | null; reason: string | null };
-export declare function previewFileSample(changed?: string[], untracked?: string[]): string;
+export declare function previewFileSample(changed?: string[], untracked?: string[], max?: number): string;
 export declare function discardConfirm(evidence: Partial<DiscardEvidence>, action: DiscardAction): { title: string; body: string };
 export declare function discardTrail(action: DiscardAction, evidence: Partial<DiscardEvidence>): string;
 export declare function cleanupEligibility(evidence: Partial<DiscardEvidence>): { eligible: boolean; reason: string | null };

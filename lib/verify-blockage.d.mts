@@ -5,8 +5,6 @@ export type VerifyBlockageRun = {
   headSha: string;
 } | null | undefined;
 
-export declare const VERIFY_BLOCKAGE_STATES: VerifyBlockageState[];
-
 export declare function classifyVerifyBlockage(input: {
   latestRun?: VerifyBlockageRun;
   currentHeadSha?: string | null;

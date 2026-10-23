@@ -5,9 +5,6 @@ import {
 } from "../../lib/research-strategies.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../../lib/technique-catalog.mjs";
 
-export type ResearchStrategyEntry = (typeof RESEARCH_STRATEGIES)[number];
-export type TechniqueEntry = (typeof TECHNIQUE_CATALOG)[number];
-
 export type ExploreTechnique = {
   skill: string;
   artifactFile: string;
@@ -39,5 +36,3 @@ export function createTrackCapabilities() {
     },
   };
 }
-
-export type TrackCapabilities = ReturnType<typeof createTrackCapabilities>;

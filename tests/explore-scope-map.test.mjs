@@ -15,7 +15,7 @@ assert.ok(TECHNIQUE_CATALOG.some((entry) => entry.id === "scope-mapping"), "Scop
 // prompt and proves the worker is told to write the same file the checks resolve.
 const prompts = createTrackPrompts({
   cardOwnerRules: "OWNER RULES",
-  doneProtocol: "DONE",
+  doneProtocolTrack: "DONE",
   reviewProtocol: "REVIEW",
   draftProtocol: "DRAFT",
   userInputContract: "USER INPUT CONTRACT",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { PATH_CONTRACTS, clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
+import { PATH_CONTRACTS, allClauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import { USER_INPUT_CONTRACT } from "../server/runtime/plugin-protocols.ts";
 import { clausesPresent, missingClauses, normalizeClause, pinnedSentenceDiff, sharedAcrossPaths } from "../lib/prompt-budget.mjs";
 
@@ -22,7 +22,9 @@ import { clausesPresent, missingClauses, normalizeClause, pinnedSentenceDiff, sh
  */
 
 const paths = renderSpawnPaths();
-const clauses = clauseTexts();
+// Both bags: a track path owes `doneProtocolTrack`, a build path owes
+// `doneProtocol`, and one lookup has to resolve whichever a path declares.
+const clauses = allClauseTexts();
 
 // The matrix is driven by the declaration, not by a list written here: a sixth
 // spawn path added to the helper is covered the moment it is declared, which is

@@ -15,15 +15,17 @@ Ordered gates, first refusal wins:
    refuses when a live interaction or unanswered expired question already
    shows a form. Reads the provider (`fetchPendingAsks`); a failed read
    refuses too ("retry this same ask once"). `--force` does NOT bypass.
-3. Intent gate (`contextAskGate`, `lib/context-ask-gate.mjs`): kind/
-   intent/stage/tag/forced. Currently fail-open for everything except
-   force/split/kind routing (upstream `context:5` owns the discipline).
-4. Evidence gate (`gateEvidenceGate`, `lib/gate-ask-evidence.mjs`):
+3. Evidence gate (`gateEvidenceGate`, `lib/gate-ask-evidence.mjs`):
    per-option evidence at `selection`, single evidence elsewhere; `--force`
    bypasses.
-5. Split branch (`splitEligibility` + shape checks): validates AND persists
+4. Split branch (`splitEligibility` + shape checks): validates AND persists
    (`split_proposals` row, question rewrite). NOT part of the dispatcher —
    it executes, the dispatcher only decides.
+
+There is no intent gate: upstream `context:5` owns the discipline, and the host
+cannot read its predicate, so an intent refusal here would refuse a path it
+cannot distinguish from the permitted one. (The former `contextAskGate` stub
+always allowed and was deleted.)
 
 ## 2. Phase 1 — Dispatcher (implemented)
 

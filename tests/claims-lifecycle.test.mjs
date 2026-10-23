@@ -8,12 +8,13 @@ import {
   CLAIM_TTL_MS,
   ensureCardClaimsTables,
   liveClaimsForWorkspace,
-  acquireScopeClaims,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
+  renewCardClaims,
   sweepExpiredClaims,
   waitersForFiles,
 } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { matchScopeClaims, scopeClaimRoom } from "../lib/scope-claim-room.mjs";
 import { isClaimTerminal } from "../lib/card-terminal.mjs";
 
@@ -223,6 +224,67 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
     scopeClaimRoom(live, { ownerId: "c1", scopeId: "scope-2", files: ["src/shared.ts"], nowMs: T0 }).held.map((row) => row.file_path),
     ["src/shared.ts"],
     "the holder sees itself as the holder",
+  );
+}
+
+// --- Lease renewal: the heartbeat is a lease extension, not an acquisition ---
+// A claim that only counted down lapsed under a card that was still working:
+// a research or build scope routinely outlives the 30-minute TTL, and its
+// files became takeable mid-run. The reconcile pass renews supervised holders,
+// so exclusivity lasts as long as the work does — without turning the tick
+// into a write amplifier, and without promoting a short `--ttl` to the default.
+{
+  const db = new Database(":memory:");
+  ensureCardClaimsTables(db);
+  const WS = "/repo/renew";
+  const T0 = 9_000_000;
+  const TTL = 60_000;
+  acquireWorkspaceClaims(db, { cardId: "holder", workspacePath: WS, files: ["src/a.ts"], ttlMs: TTL, nowMs: T0 });
+  acquireWorkspaceClaims(db, { cardId: "bystander", workspacePath: WS, files: ["src/b.ts"], ttlMs: TTL, nowMs: T0 });
+  assert.equal(
+    renewCardClaims(db, { cardId: "holder", nowMs: T0 + 20_000 }),
+    0,
+    "a lease above half its length is not rewritten: the heartbeat is not a write per tick",
+  );
+  assert.equal(renewCardClaims(db, { cardId: "holder", nowMs: T0 + 40_000 }), 1, "only the claim that is due is extended");
+  const holder = db.prepare("SELECT acquired_at, expires_at, fencing FROM card_claims WHERE card_id = 'holder'").get();
+  assert.equal(holder.expires_at, T0 + 40_000 + TTL, "the lease slides by its own length, not by a new default");
+  assert.equal(holder.acquired_at, T0, "renewal never rewrites the acquisition time");
+  assert.equal(holder.fencing, 1, "renewal never moves the fencing epoch");
+  const bystander = db.prepare("SELECT expires_at FROM card_claims WHERE card_id = 'bystander'").get();
+  assert.equal(bystander.expires_at, T0 + TTL, "another card's lease is never extended by this heartbeat");
+  assert.equal(
+    liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 + TTL + 1 }).length,
+    1,
+    "the renewed claim is still live past the TTL the original acquire granted",
+  );
+  assert.equal(renewCardClaims(db, { cardId: "", nowMs: T0 + 40_000 }), 0, "junk in extends nothing");
+}
+
+// --- A takeover of a lapsed lease names the holder it took from ------------
+// `acquireScopeClaims` overwrote an expired foreign row and reported it as an
+// ordinary acquisition, so no caller could tell a steal from a clean claim and
+// the previous holder heard about it only by failing later.
+{
+  const db = new Database(":memory:");
+  ensureCardClaimsTables(db);
+  const WS = "/repo/steal";
+  const T0 = 10_000_000;
+  const TTL = 60_000;
+  const first = acquireScopeClaims(db, {
+    cardId: "c1", batchId: "b1", scopeId: "scope-1", files: ["src/a.ts"], workspacePath: WS, ttlMs: TTL, nowMs: T0,
+  });
+  assert.equal(first.ok, true, "the first holder acquires");
+  assert.deepEqual(first.stolen, [], "a clean acquisition steals nothing");
+  const takeover = acquireScopeClaims(db, {
+    cardId: "c2", batchId: "b2", scopeId: "scope-2", files: ["src/a.ts"], workspacePath: WS, ttlMs: TTL, nowMs: T0 + TTL + 1,
+  });
+  assert.equal(takeover.ok, true, "a lapsed lease is takeable — that is what the TTL is for");
+  assert.equal(takeover.acquired.length, 0, "and the file is reported as taken over, not as freshly acquired");
+  assert.deepEqual(
+    takeover.stolen.map((row) => ({ file: row.file, previousHolder: row.previousHolder, previousScope: row.previousScope })),
+    [{ file: "src/a.ts", previousHolder: "c1", previousScope: "b1::scope-1" }],
+    "the takeover names the file, the card and the scope it took from",
   );
 }
 

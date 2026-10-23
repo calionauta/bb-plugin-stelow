@@ -934,8 +934,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   retry loop) and gets a paused Inbox event naming the holder and the
   automatic unlock (release or lease expiry), and the host resumes exactly
   the waiting cards with an agent-only nudge when the files free. Done,
-  archive, cancel, and delete release every claim; expired leases are
-  reaped on the reconcile sweep.
+  archive, cancel, and delete release every claim; a lease held by a card the
+  host still supervises is renewed on the reconcile sweep (a scope that runs
+  past the 30-minute TTL keeps its files), so expiry and therefore the
+  automatic unlock reaches only a holder nobody is watching: a card whose
+  thread is gone, whose retries are exhausted, or that reached a terminal
+  status. A lapsed lease that is taken over is recorded — the acquirer names
+  the previous holder in `stolen[]` and the card gets a trail comment.
 - **A lock is visible on the card, not only in the Inbox.** The open card
   says which files a scope holds, by name, and which file another live card
   is holding from it. It used to say "files claimed" and never say which
@@ -2568,7 +2573,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else. Per-option evidence opens inside the option row as the shared
+  else. A placeholder ask — an empty question, a probe token like "ping", or
+  a one-letter option label — is refused by `lib/question-gate.mjs`, and
+  `--force` does not override that floor: only the context and evidence gates
+  are forceable, because a probe that can be forced through is a probe that
+  will be, and the person it interrupts cannot tell it was forced. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below. **The question itself
   is not a panel.** The stepper renders as part of the card's hero section,
@@ -3046,6 +3055,28 @@ From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
 
+**"No phantom waits" is enforced at the read, not at the render.** Four
+corrections landed as one rule, because each was a surface inventing an answer
+it did not have:
+
+- A card that has finished (`completed` or `archived`) projects no open
+  questions at all — the rule the recovery rows already applied. The hero used
+  to render "Needs your decision to continue / Answer below and the agent
+  resumes on its own" over a finished card, because only the expired-question
+  reader filtered terminality and the live-ask projection did not.
+- A failed live question read is `unknown`, never "0 open". The card detail
+  keeps the activity it already had instead of claiming the wait ended, the
+  board keeps its last verified activity, the execution reconciler does not
+  mark a boundary question as sent, and `bb stelow done` refuses with a
+  retryable exit rather than closing a card over a question it could not see.
+- A research/explore worker that is verifiably running clears the previous
+  `last_error`, as the build projection always did. Only the resume paths used
+  to clear it, so a card that failed once kept telling the reader to reseed,
+  next to a worker that was running and never needed reseeding.
+- A quiet poll completion writes through the same completion writer as
+  `bb stelow done` (`server/runtime/card-completion.ts`), so it cannot keep a
+  stale error or skip the auto-continue reset the explicit path performs.
+
 **A stage is named by its label, on every surface, or not at all.**
 `stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
 is a database key, a CLI argument, and a prompt token — never a word to show a
@@ -3338,6 +3369,29 @@ snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,47
 50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
 threads the cache read 60,386,501 tokens against 54,840,152 fresh.
 
+**The two tracks were the paths that reorder did not reach, and they were the worst
+offenders.** Research and explore interpolated the strategy and the stage in the
+opening sentence of Step 1 — character 823 and 824 — so two cards on different tracks
+shared 7.2% and 9.6% of their prompt while the whole shared contract sat behind the
+value. Their steps now name `<strategy>`, `<stage>`, `<artifact>`, `<round-file>` and
+the other per-card values, and one "Your card values" block at the end defines each
+one once. Measured on two different cards: research 7.2% → **93.0%** of 9,689
+characters (9,015 cacheable, ~169 re-paid tokens of ~2,423) and explore 9.6% →
+**91.8%** of 6,702 (6,152 cacheable, ~149 of ~1,687). The prompts also shrank:
+research 11,414 → 9,690 characters, explore 8,603 → 6,702.
+
+**The completion rule is split per track, so a research worker stops reading about an
+`audit` stage it cannot reach.** `DONE_PROTOCOL` was 2,479 characters, ~2,300 of them
+the build path — the `audit` stage, `verify --tests`, the gap loop, `audit.md`, the run
+bundle — and research and explore read all of it on every spawn while the one sentence
+they owed was buried in the middle. It is three consts now: `DONE_PROTOCOL_CORE`
+(finish with `bb stelow done`, never announce), `DONE_PROTOCOL_TRACK` (178 characters,
+core plus the verify sentence, rendered by both tracks) and `DONE_PROTOCOL` (2,409
+characters, core plus the build payload, rendered by the three build paths). No track
+lost its completion rule and no build path lost one of its own; the assembly is
+asserted in `tests/prompt-budget.test.mjs`, and the cache floor per path in
+`tests/prompt-cache-order.test.mjs` (75% for the tracks, 85% for the builds).
+
 Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
 workers run on) emit no usage event of any kind — 88 events on one such worker, none of
 them a token or context reading — so their cost is unmeasurable from the host and the
@@ -3358,8 +3412,8 @@ them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number w
 largest exactly where the architecture was working, and an optimization loop given
 it would have earned the reduction by deleting protocols from the paths that need
 them, fighting every guard added in this session. `composedDuplicationChars`
-subtracts the clauses first and counts only prose a template authored itself: 2,705
-characters, 15.7% of the 17,180 the templates write, against a naive 41.6% of all
+subtracts the clauses first and counts only prose a template authored itself: 2,118
+characters, 13.0% of the 16,233 the templates write, against a naive 40.8% of all
 rendered text. The naive figure is still reported, labelled `_naive`, because the
 gap between them is the fact worth keeping.
 
@@ -3372,7 +3426,8 @@ stage; research/explore cards complete only after `bb stelow verify` passes"), s
 text the detector called irrelevant was a rule written specifically for those paths,
 and deleting it would have removed the completion rule from every research card. The
 lesson is recorded with the finding: applicability needs the text read, not a marker
-matched.
+matched — and the later split honours it: the routing sentence now lives in
+`DONE_PROTOCOL_TRACK`, which both tracks render, rather than being deleted from them.
 
 **An adversarial review of that fix found two holes it had left, and both are
 closed.** The first: a single request for both usage families with a small limit is
@@ -3522,8 +3577,8 @@ them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number w
 largest exactly where the architecture was working, and an optimization loop given
 it would have earned the reduction by deleting protocols from the paths that need
 them, fighting every guard added in this session. `composedDuplicationChars`
-subtracts the clauses first and counts only prose a template authored itself: 2,705
-characters, 15.7% of the 17,180 the templates write, against a naive 41.6% of all
+subtracts the clauses first and counts only prose a template authored itself: 2,118
+characters, 13.0% of the 16,233 the templates write, against a naive 40.8% of all
 rendered text. The naive figure is still reported, labelled `_naive`, because the
 gap between them is the fact worth keeping.
 
@@ -3536,7 +3591,8 @@ stage; research/explore cards complete only after `bb stelow verify` passes"), s
 text the detector called irrelevant was a rule written specifically for those paths,
 and deleting it would have removed the completion rule from every research card. The
 lesson is recorded with the finding: applicability needs the text read, not a marker
-matched.
+matched — and the later split honours it: the routing sentence now lives in
+`DONE_PROTOCOL_TRACK`, which both tracks render, rather than being deleted from them.
 
 **An adversarial review of that fix found two holes it had left, and both are
 closed.** The first: a single request for both usage families with a small limit is

@@ -62,5 +62,3 @@ export function decisionPointHandlers(ctx: DecisionPointRpcDeps) {
     },
   };
 }
-
-export type DecisionPointHandlers = ReturnType<typeof decisionPointHandlers>;

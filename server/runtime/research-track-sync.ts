@@ -4,6 +4,7 @@ import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import type { ResearchReadiness } from "./research-artifacts.js";
+import { completeCard } from "./card-completion.js";
 import {
   hasIdledLongEnough,
   isOpenTrackCard,
@@ -43,16 +44,6 @@ const RESEARCH_IDLE_NOTE =
   "Idle with unfinished research — retry continues in place, restart begins fresh.";
 const EXPLORE_IDLE_NOTE =
   "Idle with unfinished explore — retry continues in place, restart begins fresh.";
-
-const completionFields = (
-  lastOutput: string | null,
-  idleAt: number,
-): CardUpdate => ({
-  status: "completed",
-  activity: "idle",
-  last_assistant_text: lastOutput,
-  last_idle_at: idleAt,
-});
 
 const idleFields = (lastOutput: string | null, idleAt: number): CardUpdate => ({
   activity: "idle",
@@ -142,12 +133,16 @@ function completeTrack(
   card: WorkerCard,
   lastOutput: string | null,
 ): void {
-  const idleAt = settledIdleAt(card, deps.now);
-  deps.updateCard(card.id, completionFields(lastOutput, idleAt));
-  // Quiet completions record the trail too: a Done-column card without a
-  // done event is invisible to flow metrics. Both tracks share this writer so
-  // the trail cannot drift between them.
-  deps.recordStageEvent(card.id, "done");
+  // One writer for every track: a quiet completion writes the same column set
+  // as `bb stelow done`, so it cannot keep a stale `last_error` — the text that
+  // told a reader to reseed a card whose worker had been running fine — or skip
+  // the auto-continue reset the CLI path performs. The writer records the
+  // `done` stage event itself, which is why a Done-column card still shows up
+  // in flow metrics.
+  completeCard(deps, card.id, {
+    lastAssistantText: lastOutput,
+    idleAt: settledIdleAt(card, deps.now),
+  });
   deps.resolvePausedEvents(card.id, deps.now());
 }
 
@@ -311,5 +306,3 @@ export function createResearchTrackSync(deps: ResearchTrackSyncDeps) {
     syncExplore: (card: WorkerCard) => sweepTrack(deps, card, exploreSettled),
   };
 }
-
-export type ResearchTrackSync = ReturnType<typeof createResearchTrackSync>;

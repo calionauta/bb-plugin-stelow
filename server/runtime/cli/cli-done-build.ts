@@ -19,6 +19,7 @@ import { text } from "../values.js";
 import type { WorkerCard } from "../../workers-types.js";
 import { auditTrailRefusal } from "../card-audit-trail.js";
 import { stateRootOf } from "../workflow-state.js";
+import { parseCurrentStage } from "../../../lib/current-stage.mjs";
 
 const GIT_EVIDENCE_LOST =
   "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended \
@@ -211,7 +212,7 @@ in the intended BB project; this card's state artifacts remain readable for refe
       : null;
     if (!stateBlob)
       return refuse({ exitCode: 1, stderr: OWNERSHIP_UNVERIFIED });
-    currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+    currentStage = text(parseCurrentStage(stateBlob) ?? undefined) || card.stage;
   }
   // Gates read tracked truth (mergePlanned: false): the read-time planned-task
   // merge is display-only, so pre-merge cards keep completing while tracked

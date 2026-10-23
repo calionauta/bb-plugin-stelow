@@ -6,8 +6,11 @@ import { createTrackPrompts } from "../server/runtime/track-prompts.ts";
 import { createTrackCapabilities } from "../server/runtime/track-capabilities.ts";
 
 const PROTOCOLS = {
+  // S7: the field must be a DISTINCT value, or the renderer reading the import
+  // instead of the parameter is invisible to every assertion in this file.
+  userInputContract: "USER-CONTRACT-FIXTURE",
   cardOwnerRules: "OWNER-RULES",
-  doneProtocol: "DONE-PROTOCOL",
+  doneProtocolTrack: "DONE-PROTOCOL",
   reviewProtocol: "REVIEW-PROTOCOL",
   draftProtocol: "DRAFT-PROTOCOL",
 };
@@ -43,14 +46,33 @@ test("the research prompt writes the canonical index shape and the round file", 
   const { researchWorkerPrompt } = createTrackPrompts(PROTOCOLS);
   const prompt = researchWorkerPrompt(RESEARCH_BASE);
   assert.match(prompt, /# Research index\n/);
-  assert.match(prompt, /Card: Pricing landscape/, "the card name travels in the per-card tail, after the shared steps");
   assert.match(prompt, /## Outputs\n\s*\| Strategy \| Round \| Output \| Artifact \| Notes \|/);
-  assert.match(prompt, /## Opportunities\n\s*### Pricing — <today's YYYY-MM-DD date>/);
-  assert.match(prompt, /<workspaceRoot>\/\.stelow\/x\/rounds\/pricing-r1\.md/);
+  assert.match(prompt, /## Opportunities\n\s*### <strategy> — <today's YYYY-MM-DD date>/);
+  // Every per-card value lives in ONE values block after the shared steps, and
+  // the steps refer to it by placeholder. Asserting the placeholder alone would
+  // pass on a prompt that never defines it, so both halves are asserted, plus the
+  // order that makes the cache work (values after the last step).
+  assert.ok(
+    prompt.indexOf("- <card>: Pricing landscape") > prompt.indexOf("Step 4 — register the index"),
+    "the card name travels in the per-card values block, after the shared steps",
+  );
+  for (const expected of [
+    "- <strategy> / <strategy-skill> / <strategy-id>: Pricing / stelow-product-pricing / pricing",
+    "- <round-no> / <round-stamp> / <round-file>: 1 / 20260925-1015 / .stelow/x/rounds/pricing-r1.md",
+    "- <workspaceRoot>: /repo",
+    "- <state-dir>: /repo/.stelow/2026-09-25/abc",
+  ]) {
+    assert.ok(prompt.includes(expected), `the values block defines ${expected}`);
+  }
   assert.match(
     prompt,
-    /pricing-<substep-slug>-r1-20260925-1015\.md/,
-    "fan-out substeps keep the real strategy id in their canonical file name",
+    /<workspaceRoot>\/<round-file>/,
+    "the round target is stated as the placeholder pair the values block resolves",
+  );
+  assert.match(
+    prompt,
+    /<strategy-id>-<substep-slug>-r<round-no>-<round-stamp>\.md/,
+    "the substep filename is built from the placeholders, so two strategies cannot collapse to one name",
   );
   assert.doesNotMatch(prompt, /undefined-<substep-slug>/, "an undefined input never reaches a worker path");
   assert.ok(prompt.includes("OWNER-RULES"), "the card-owner clause comes from the host const");
@@ -84,11 +106,21 @@ test("a previous worker thread is offered as context only when there is one", ()
 test("the explore prompt pins one artifact file and forbids the build pipeline", () => {
   const { exploreWorkerPrompt } = createTrackPrompts(PROTOCOLS);
   const prompt = exploreWorkerPrompt(EXPLORE_BASE);
-  assert.match(prompt, /<state-dir>\/explore-shape-up\.md/);
+  assert.match(prompt, /<state-dir>\/<artifact>/);
   assert.match(prompt, /stage: explore/);
   assert.match(prompt, /there is no triage, no Shape Up pipeline, no stage machine, no gates/);
   assert.match(prompt, /Do NOT run the build workflow skills/);
-  assert.match(prompt, /label: Shape Up/);
+  assert.match(prompt, /label: <stage>/);
+  assert.match(
+    prompt,
+    /- <stage> \/ <stage-skill>: Shape Up \/ stelow-workflow-shape-up/,
+    "the stage the step refers to is defined in the values block",
+  );
+  assert.match(
+    prompt,
+    /- <artifact>: explore-shape-up\.md/,
+    "the deliverable filename is resolved by the catalog and defined in the values block",
+  );
   assert.ok(!prompt.includes("Run `bb stelow done`"), "the done prose lives in the const only");
 });
 
@@ -162,4 +194,21 @@ test("capability lookups read the live catalog, not a startup snapshot", () => {
     TECHNIQUE_CATALOG.pop();
   }
   assert.equal(caps.exploreStage("injected-stage"), null, "the injected technique is gone again");
+});
+
+test("track prompts render userInputContract from the protocols, not from the import", () => {
+  // The field was declared on TrackPromptProtocols, filled by runtime-core, and
+  // read by nobody: research/explore interpolated the imported const directly.
+  // The fixture used to pass that same const, so the two were byte-identical and
+  // no test could tell a parameter from an import.
+  const sentinel = "USER-CONTRACT-FIXTURE";
+  const { researchWorkerPrompt, exploreWorkerPrompt } = createTrackPrompts(PROTOCOLS);
+  assert.ok(
+    researchWorkerPrompt(RESEARCH_BASE).includes(sentinel),
+    "research renders the field it was given",
+  );
+  assert.ok(
+    exploreWorkerPrompt(EXPLORE_BASE).includes(sentinel),
+    "explore renders the field it was given",
+  );
 });

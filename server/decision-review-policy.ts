@@ -25,7 +25,3 @@ export function decisionReviewPolicyHandlers(ctx: DecisionReviewPolicyDeps) {
     },
   };
 }
-
-export type DecisionReviewPolicyHandlers = ReturnType<
-  typeof decisionReviewPolicyHandlers
->;

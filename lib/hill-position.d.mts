@@ -1,5 +1,4 @@
 export declare const HILL_CLUSTER_BUCKET: number;
-export declare const HILL_PLOT: { base: number; span: number; margin: number };
 export declare function hillDotPercent(point: { x?: number; y?: number } | null | undefined): { left: number; bottom: number };
 export declare function hillSvgY(percentBottom: number, viewHeight?: number): number;
 export declare function hillFraction(card: {

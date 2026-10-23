@@ -1,31 +1,18 @@
-import { resetAutoContinue } from "../../../lib/auto-continue.mjs";
 import type { CliDeps } from "./cli-deps.js";
+
+/** The one completion writer moved to `server/runtime/card-completion.ts` so
+ * the research/explore polls can reach it without importing a CLI module. */
+export { completeCard } from "../card-completion.js";
+export type {
+  CompletionDeps,
+  CompletionOptions,
+} from "../card-completion.js";
 
 export type DoneBundle = {
   wrote: boolean;
   dir: string;
   trailer: string[];
 };
-
-/** Completes the card: auto-continue counter reset, board columns, and the
- * stage ledger row. Every track writes through this one writer, so the
- * completion columns cannot drift between build, research, and explore. */
-export function completeCard(
-  deps: CliDeps,
-  cardId: string,
-  options: { stage?: string } = {},
-): void {
-  const reset = resetAutoContinue();
-  deps.updateCard(cardId, {
-    status: "completed",
-    activity: "idle",
-    last_error: null,
-    ...(options.stage ? { stage: options.stage } : {}),
-    auto_continue_count: reset.count,
-    auto_continue_stage: reset.stage,
-  });
-  deps.recordStageEvent(cardId, "done");
-}
 
 /** Completion output: the headline plus the refreshed run bundle the worker
  * must commit with the work. A card with no registered artifacts says so

@@ -15,7 +15,7 @@ assert.equal(allowed.error, null, "a pass carries no error");
 const probe = questionSubstanceGate({ groups: [{ question: "ping", options: [{ label: "a" }, { label: "b" }] }] });
 assert.equal(probe.allowed, false, "the probe that reached a human is refused");
 assert.match(probe.error, /placeholder/, "the refusal names the actual problem");
-assert.match(probe.error, /--force/, "the refusal names the way out");
+assert.match(probe.error, /bb stelow status/, "the refusal names the real exit: read status instead of asking");
 
 // Substance, not a wordlist, is what carries it.
 assert.equal(questionSubstanceGate({ groups: [{ question: "" }] }).allowed, false, "an empty question is refused");
@@ -59,11 +59,24 @@ assert.equal(questionSubstanceGate({ groups: [{ question: "  PING  " }] }).allow
 assert.equal(questionSubstanceGate({ groups: [{ question: "any  update" }] }).allowed, false, "extra internal spacing is normalized");
 
 // Every refusal names a way out — a refusal without an exit is a deadlock
-// with a good error message.
-for (const groups of [[], [{ question: "ping" }], [{ question: "Which one?", options: [{ label: "a" }] }]]) {
+// with a good error message. The exit is the real one (ask the real question,
+// or read status), never `--force`: the floor is absolute, so a refusal that
+// advertised an override would advertise one that does not exist.
+const exits = new Map([
+  ["no question", /Pass --question/],
+  ["placeholder", /bb stelow status/],
+  ["short option", /Give each one a label/],
+]);
+for (const [name, exit] of exits) {
+  const groups = name === "no question"
+    ? []
+    : name === "placeholder"
+      ? [{ question: "ping" }]
+      : [{ question: "Which one?", options: [{ label: "a" }] }];
   const refusal = questionSubstanceGate({ groups });
   assert.equal(refusal.allowed, false, `refuses ${JSON.stringify(groups)}`);
-  assert.match(refusal.error, /--force/, "every substance refusal names the override");
+  assert.match(refusal.error, exit, `the ${name} refusal names its real exit`);
+  assert.doesNotMatch(refusal.error, /--force/, `the ${name} refusal must not advertise an override the floor does not honour`);
 }
 
 // Precedence in the real dispatcher: duplicate wins, and --force overrides the
@@ -82,6 +95,11 @@ assert.match(decideAskGate({ ...base, liveCount: 1 }).reason ?? "", /already pen
 assert.equal(decideAskGate({ ...base, liveCount: 1 }).code, 1, "duplicate keeps its transient code");
 assert.equal(decideAskGate(base).allowed, false, "the floor refuses through the dispatcher");
 assert.equal(decideAskGate(base).code, 2, "a substance refusal is not retried blindly");
-assert.equal(decideAskGate({ ...base, forced: true }).allowed, true, "--force overrides the floor");
+assert.equal(decideAskGate({ ...base, forced: true }).allowed, false,
+  "--force does NOT override the substance floor: the flag reaches the dispatcher, the floor ignores it");
+assert.equal(decideAskGate({ ...base, forced: true }).code, 2,
+  "a forced probe is still a terminal refusal, not a retry");
+assert.match(decideAskGate({ ...base, forced: true }).reason ?? "", /placeholder/,
+  "a forced probe gets the same refusal as an unforced one, so the worker learns why");
 
 console.log("question substance test ok: placeholder questions, degenerate options and the --force boundary pinned");

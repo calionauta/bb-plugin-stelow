@@ -39,8 +39,7 @@ import {
 import { runHelper } from "./helper-script.js";
 import { projectRoot } from "./root-paths.js";
 import { BUILD_INFO } from "../plugin-paths.js";
-import { WORKER_PROTOCOL_CLAUSES } from "./worker-protocol-clauses.js";
-import { REVIEW_PROTOCOL } from "./plugin-protocols.js";
+import { TRACK_PROTOCOL_CLAUSES } from "./track-protocol-clauses.js";
 
 export type RuntimeCore = ReturnType<typeof createRuntimeCore>;
 
@@ -55,13 +54,11 @@ export function createRuntimeCore(bb: BbPluginApi) {
     installedVersion: BUILD_INFO.version,
   });
   const services = createRuntimeServices({ bb, db, now, randomId });
-  const prompts = createTrackPrompts({
-    cardOwnerRules: WORKER_PROTOCOL_CLAUSES.cardOwnerRules,
-    doneProtocol: WORKER_PROTOCOL_CLAUSES.doneProtocol,
-    reviewProtocol: REVIEW_PROTOCOL,
-    draftProtocol: WORKER_PROTOCOL_CLAUSES.draftProtocol,
-    userInputContract: WORKER_PROTOCOL_CLAUSES.userInputContract,
-  });
+  // The tracks carry the NARROWER bag: no stages and no gates means no stage,
+  // advance, split, recon or seed clause, and the track half of the completion
+  // rule instead of the build-only payload. Named as a bag so the set is
+  // declared in one place rather than assembled at this call site.
+  const prompts = createTrackPrompts(TRACK_PROTOCOL_CLAUSES);
   const workers = createWorkerRuntime({ bb, db, now, services, ledger, prompts });
   const deps = { bb, db, now, services, ledger, prompts };
   return {

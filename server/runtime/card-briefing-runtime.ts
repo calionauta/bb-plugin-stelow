@@ -252,5 +252,3 @@ function refusal(error: string) {
     source: null,
   };
 }
-
-export type BriefingRuntime = ReturnType<typeof createBriefingRuntime>;

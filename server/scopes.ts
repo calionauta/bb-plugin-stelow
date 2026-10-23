@@ -16,6 +16,7 @@ import { workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow
 import { array, record, text, type LooseRecord } from "./runtime/values.js";
 import { scopeDoneGate, scopeStartGate } from "./scope-batch-gates.js";
 import type { ScopeBatchDb } from "./scope-batch.js";
+import { trailScopeSteals } from "../lib/lock-blocked.mjs";
 
 export type ScopeStatus =
   | "pending"
@@ -246,6 +247,19 @@ interface ScopeCommandDeps<TCard extends ScopeCliCard> {
    * after it succeeds.
    */
   db?: ScopeBatchDb;
+  /**
+   * Trail writer for a claim that was taken out of a lapsed lease. Optional:
+   * the ledger owns comments, and a harness without one still gets the claim
+   * and still gets the steal in its gate result — what it cannot do is leave
+   * the card a record of it.
+   */
+  logCardComment?: (
+    cardId: string,
+    target: string,
+    targetId: string,
+    author: "user" | "agent",
+    body: string,
+  ) => string;
 }
 
 const SCOPE_TRANSITIONS = {
@@ -281,6 +295,19 @@ async function resolveScopeContext<TCard extends ScopeCliCard>(
   return { card, rootPath, stateDir, guard };
 }
 
+/**
+ * A start-gate refusal, formatted once.
+ *
+ * The `done` gate's refusal is deliberately not folded in: it carries the
+ * helper's stdout forward, and a formatter that could produce either shape
+ * would be the thing it replaced. The conflicts slice is bounded because a
+ * refusal is read on one screen, and the alternative to a bound is a wall.
+ */
+function scopeGateRefusal(gate: { code: string; reason: string; conflicts?: unknown }) {
+  const conflicts = gate.conflicts ? ` ${JSON.stringify(gate.conflicts).slice(0, 500)}` : "";
+  return { exitCode: 1, stderr: `${gate.code}: ${gate.reason}${conflicts}` };
+}
+
 export async function runScopeCommand<TCard extends ScopeCliCard>(
   argv: string[],
   ctx: ScopeCommandContext,
@@ -308,12 +335,8 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
         workspacePath: rootPath,
         scopes: loadCardScopes(rootPath, card.id),
       });
-      if (!gate.ok) {
-        const conflicts = "conflicts" in gate && gate.conflicts
-          ? ` ${JSON.stringify(gate.conflicts).slice(0, 500)}`
-          : "";
-        return { exitCode: 1, stderr: `${gate.code}: ${gate.reason}${conflicts}` };
-      }
+      if (!gate.ok) return scopeGateRefusal(gate);
+      trailScopeSteals(deps.logCardComment, card.id, gate.stolen);
     } catch {
       // Gate infrastructure failures fail open: a broken registry must
       // never park a worker behind a scope it could run.

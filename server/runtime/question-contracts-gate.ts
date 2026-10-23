@@ -4,6 +4,7 @@ import { checkAdvanceContracts } from "../../lib/advance-contracts.mjs";
 import { requiredForStage } from "../../lib/question-contracts.mjs";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Receipt = { path: string; content: string; modifiedAtMs: number | null };
@@ -31,7 +32,7 @@ function requiredContracts(state: string): {
   enteredAt: number;
   contracts: Contract[];
 } | null {
-  const stage = state.match(/^current_stage:\s*(\S+)/m)?.[1]?.trim() ?? "";
+  const stage = parseCurrentStage(state) ?? "";
   const { quality, explorationCount, reviewMode, reviewGates } = parseWorkflowConfig(state, {
     strict: true,
   });

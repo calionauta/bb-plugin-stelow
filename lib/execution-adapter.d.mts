@@ -1,4 +1,3 @@
-export const NORMALIZED_STATES: readonly ["queued", "running", "needs_input", "succeeded", "failed", "cancelled"];
 export const EXECUTION_CAPABILITIES: readonly string[];
 export interface NormalizedRun {
   state: "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled";

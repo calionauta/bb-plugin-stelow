@@ -15,10 +15,6 @@ export declare function frozenAcceptanceReadiness(input?: {
   freezeSha?: unknown;
   headSha?: unknown;
 }): { ready: true; code: null; error: null } | { ready: false; code: string; error: string };
-export declare function checkFrozenBaseline(baseline?: unknown): string | null;
-export declare function checkFrozenTestMap(testMap?: unknown): string | null;
-export declare function checkFrozenRedProof(redProof?: unknown): string | null;
-export declare function checkFrozenSha(freezeSha?: unknown, headSha?: unknown): string | null;
 export declare function frozenDetailView(snapshot?: unknown, headSha?: unknown): {
   frozenTestMap: Array<{ test: string; frozen: boolean; redProof: unknown }>;
   freezeSha: string | null;

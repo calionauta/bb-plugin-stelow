@@ -34,5 +34,3 @@ export function createDecisionSurface(deps: DecisionSurfaceDeps) {
     ) => api.routeConfig(point, config),
   };
 }
-
-export type DecisionSurface = ReturnType<typeof createDecisionSurface>;

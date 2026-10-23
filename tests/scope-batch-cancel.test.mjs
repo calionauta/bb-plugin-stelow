@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import {
-  acquireScopeClaims,
   addClaimWaiters,
   ensureCardClaimsTables,
   liveClaimsForWorkspace,
 } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { activeExecutionRun, createExecutionRun, ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
 import { cancelBatch } from "../lib/scope-batch-cancel.mjs";
 

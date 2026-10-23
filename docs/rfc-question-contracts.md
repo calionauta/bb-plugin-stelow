@@ -158,8 +158,8 @@ Enforcement points (server/execution-advance.ts):
   `questions:` blocks for `shape`/`critique`/`scope`, `gap_verdict` and
   `scope_adjustment` frontmatter receipts, Code Diff coverage, `context:5`
   canonical in transitions, no plan-gate in Scopes. Plugin mirror
-  extended; `contextAskGate` relaxed to the permitted reduced ask;
-  `NON_AUTO_SKIPS` emptied (worker-side `context:5` decides).
+  extended; the host adds no intent gate of its own, so the permitted
+  reduced ask reaches the human (worker-side `context:5` decides).
 - Still pending: advance-time enforcement linkage (P1–P3) — the mirror
   is read by nothing in `advanceCard` yet, deliberately. Wiring it is
   the remaining work; see the handoff below.
