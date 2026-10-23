@@ -2568,7 +2568,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else. Per-option evidence opens inside the option row as the shared
+  else. A placeholder ask — an empty question, a probe token like "ping", or
+  a one-letter option label — is refused by `lib/question-gate.mjs`, and
+  `--force` does not override that floor: only the context and evidence gates
+  are forceable, because a probe that can be forced through is a probe that
+  will be, and the person it interrupts cannot tell it was forced. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below. **The question itself
   is not a panel.** The stepper renders as part of the card's hero section,
