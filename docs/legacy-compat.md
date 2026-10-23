@@ -29,6 +29,15 @@ Rules:
 - Entry format is load-bearing for the test: `## L-NN title`, one
   `- file:`, one or more `- anchor:`, plus `- legacy:` and `- remove-when:`.
 
+**Decision: no v1 gate.** A gate (version stamp, boot refusal, backup,
+reinstall modal, per-entry removal waves) adds a destructive path to delete
+a few dozen lines of idempotent, tested ALTERs — the wrong trade for cleaner
+code. The ensures and this ledger stay; removal reopens only behind a major
+line with assisted migration as an explicit product decision. What keeps this
+honest instead of hopeful: the shared helper's fail-closed refusals are
+pinned in `tests/sqlite-columns.test.mjs`, and every legacy column path is
+exercised against old-schema fixtures, never only against empty databases.
+
 ## L-01 cards columns
 
 - file: `server/core-migrations.ts`
