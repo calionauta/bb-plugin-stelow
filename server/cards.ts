@@ -60,7 +60,9 @@ type CardsDeps = {
   store: ReturnType<typeof createCardStore>;
   strategyList: (row: WorkerCard) => string[];
   getReliablePreset: (band: string | string[], cardId: string) => Preset;
-  fetchPendingQuestions: (threadId: string | null) => Promise<unknown[]>;
+  /** `null` is UNKNOWN (the live ask read failed); a caller must not read it
+   * as "nothing is waiting". */
+  fetchPendingQuestions: (threadId: string | null) => Promise<unknown[] | null>;
   openExpiredQuestionIds: (cardId: string) => string[];
 };
 
@@ -202,6 +204,9 @@ async function liveActivity(
   let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
   if (activity === "error" || !row.worker_thread_id) return activity;
   const pending = await deps.fetchPendingQuestions(row.worker_thread_id);
+  // An unreadable question source is UNKNOWN, not zero: keep the last verified
+  // projection instead of claiming the card has nothing to answer.
+  if (pending === null) return activity;
   return pending.length > 0 || deps.openExpiredQuestionIds(row.id).length > 0
     ? "awaiting-answer"
     : activity;

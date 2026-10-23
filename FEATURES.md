@@ -3050,6 +3050,25 @@ From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
 
+**"No phantom waits" is enforced at the read, not at the render.** Three
+corrections landed as one rule, because each was a surface inventing an answer
+it did not have:
+
+- A card that has finished (`completed` or `archived`) projects no open
+  questions at all — the rule the recovery rows already applied. The hero used
+  to render "Needs your decision to continue / Answer below and the agent
+  resumes on its own" over a finished card, because only the expired-question
+  reader filtered terminality and the live-ask projection did not.
+- A failed live question read is `unknown`, never "0 open". The card detail
+  keeps the activity it already had instead of claiming the wait ended, the
+  board keeps its last verified activity, the execution reconciler does not
+  mark a boundary question as sent, and `bb stelow done` refuses with a
+  retryable exit rather than closing a card over a question it could not see.
+- A research/explore worker that is verifiably running clears the previous
+  `last_error`, as the build projection always did. Only the resume paths used
+  to clear it, so a card that failed once kept telling the reader to reseed,
+  next to a worker that was running and never needed reseeding.
+
 **A stage is named by its label, on every surface, or not at all.**
 `stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
 is a database key, a CLI argument, and a prompt token — never a word to show a

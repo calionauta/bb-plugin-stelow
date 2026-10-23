@@ -152,7 +152,9 @@ export type CliDeps = {
   reviewFilesFor: (
     card: WorkerCard,
   ) => Promise<Array<{ name: string; content: string | null }>>;
-  pendingQuestions: (threadId: string | null) => Promise<PendingQuestions>;
+  /** `null` is UNKNOWN: the ask read failed, and `done` must not close a card
+   * over a question it could not see. */
+  pendingQuestions: (threadId: string | null) => Promise<PendingQuestions | null>;
   pendingAsks: (threadId: string | null) => Promise<PendingAsk[] | null>;
   openExpiredQuestionIds: (cardId: string) => string[];
   askContractChecklist: (

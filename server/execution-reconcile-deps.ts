@@ -33,7 +33,7 @@ export type ReconcileDeps = {
   randomId: (prefix: string) => string;
   getCard: (cardId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<{ path: string } | null>;
-  fetchPendingQuestions: (threadId: string | null) => Promise<ReconcilePendingQuestion[]>;
+  fetchPendingQuestions: (threadId: string | null) => Promise<ReconcilePendingQuestion[] | null>;
   logComment: (cardId: string, targetId: string, body: string) => void;
   publishCard: (cardId: string) => void;
   native: ExecutionNative;
