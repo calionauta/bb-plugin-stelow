@@ -98,9 +98,28 @@ unavailable in this host, do NOT park in chat waiting.";
 // Explicit completion: done-ness was inferred from `audit` + idle, so a
 // narrate-and-stop at audit looked identical to stuck-at-audit. The
 // worker commits with `bb stelow done`; the host verifies in code.
-export const DONE_PROTOCOL =
-  "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at \
-the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` \
+//
+// Split in three because the tracks were paying for machinery they cannot
+// reach: 2,084 of this clause's 2,479 characters are the BUILD completion
+// path (the `audit` stage, the rework loop, `audit.md`, the run bundle), and
+// a research or explore prompt rendered all of it on every spawn while the one
+// sentence it owed — finish only once `verify` passes — sat buried in the
+// middle. `DONE_PROTOCOL_CORE` is the part every worker obeys; the tracks
+// render `DONE_PROTOCOL_TRACK`, and a build path renders `DONE_PROTOCOL`, which
+// is the core plus the build payload. The split is asserted byte-for-byte in
+// `tests/prompt-budget.test.mjs`, so the build prompt cannot change by accident.
+export const DONE_PROTOCOL_CORE =
+  "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop.";
+
+/** The track half: no stages, no gates, no audit — `verify` passing is what
+ * finishes a research or explore card. */
+export const DONE_PROTOCOL_TRACK =
+  `${DONE_PROTOCOL_CORE} Research/explore cards complete only after \`bb stelow verify\` passes.`;
+
+/** The build half: what `done` means on a build card, and the evidence it
+ * demands. Nothing here applies to a track, and no track prompt renders it. */
+export const DONE_PROTOCOL_BUILD =
+  "Build cards complete only at the `audit` stage. Before Build `done`, run `bb stelow verify --tests` \
 from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. \
 Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. Run `bb stelow gap-triage` \
 and, if it dismisses any escalated gap, say so honestly in audit.md (advisory only; the routing below never changes). If the execution critique \
@@ -117,6 +136,10 @@ plus `manifest.md` (SHA pins, gap counts) automatically on every completion and 
 that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit \
 cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, \
 unreadable, newly registered, and uncommitted sources without writing anything.";
+
+/** The build paths' clause: the core rule plus the build-only payload. One
+ * const, so the two halves the tracks were split from stay assembled here. */
+export const DONE_PROTOCOL = `${DONE_PROTOCOL_CORE} ${DONE_PROTOCOL_BUILD}`;
 
 export const RECON_PROTOCOL =
   "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow \

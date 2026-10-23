@@ -46,6 +46,10 @@ None pending — all operator guides migrated (see above).
   Referenced from `FEATURES.md` (presets) and `rfc-worker-robustness.md`
   (fragility #6).
 - `rfc-*.md` — proposals under discussion, not behavior.
+- `audits/` — dated session records: what was measured, what changed, and what
+  was deliberately not done. Evidence, never rules.
+  `2026-10-23-scope-6-record.md` covers the prompt cache economy of the research
+  and explore spawns and the per-track split of the completion rule.
 - `runs/` — per-card execution evidence, never linked from user docs.
 
 ## Rules
