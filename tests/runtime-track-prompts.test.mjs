@@ -6,6 +6,9 @@ import { createTrackPrompts } from "../server/runtime/track-prompts.ts";
 import { createTrackCapabilities } from "../server/runtime/track-capabilities.ts";
 
 const PROTOCOLS = {
+  // S7: the field must be a DISTINCT value, or the renderer reading the import
+  // instead of the parameter is invisible to every assertion in this file.
+  userInputContract: "USER-CONTRACT-FIXTURE",
   cardOwnerRules: "OWNER-RULES",
   doneProtocol: "DONE-PROTOCOL",
   reviewProtocol: "REVIEW-PROTOCOL",
@@ -162,4 +165,21 @@ test("capability lookups read the live catalog, not a startup snapshot", () => {
     TECHNIQUE_CATALOG.pop();
   }
   assert.equal(caps.exploreStage("injected-stage"), null, "the injected technique is gone again");
+});
+
+test("track prompts render userInputContract from the protocols, not from the import", () => {
+  // The field was declared on TrackPromptProtocols, filled by runtime-core, and
+  // read by nobody: research/explore interpolated the imported const directly.
+  // The fixture used to pass that same const, so the two were byte-identical and
+  // no test could tell a parameter from an import.
+  const sentinel = "USER-CONTRACT-FIXTURE";
+  const { researchWorkerPrompt, exploreWorkerPrompt } = createTrackPrompts(PROTOCOLS);
+  assert.ok(
+    researchWorkerPrompt(RESEARCH_BASE).includes(sentinel),
+    "research renders the field it was given",
+  );
+  assert.ok(
+    exploreWorkerPrompt(EXPLORE_BASE).includes(sentinel),
+    "explore renders the field it was given",
+  );
 });
