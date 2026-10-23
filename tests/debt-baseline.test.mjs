@@ -345,6 +345,20 @@ if (shape.status === 0) {
   );
 }
 
+// --- The audit record quotes no gate output and claims no present census. ----
+// `docs/remaining-debt-audit.md` is a phase record of a merged branch. It used
+// to quote this test's own output ("debt baseline ok: 3 oversized file(s) …
+// 7 inherited entries") and to say the census "now reports" a count; by
+// 2026-10-23 the same run printed 2 oversized files, 32 oversized functions and
+// 27 inherited entries with every gate green. A quoted output is evidence that
+// drifts the moment the shape changes, so the record points here instead.
+const auditRecord = readFileSync(join(repositoryRoot, "docs/remaining-debt-audit.md"), "utf8");
+assert.doesNotMatch(
+  auditRecord,
+  /debt baseline ok: \d|the census now reports|still pinned — as of/,
+  "docs/remaining-debt-audit.md must not quote the gate or claim the present census; run this test for the numbers",
+);
+
 console.log(
   `debt baseline ok: ${observedFiles.length} oversized file(s) and ${oversized.length} oversized function(s), `
   + `${inheritedBaseline.length} inherited entries, shape gate green`,

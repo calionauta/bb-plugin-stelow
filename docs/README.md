@@ -26,7 +26,9 @@ None pending — all operator guides migrated (see above).
 
 - `runtime-architecture.md` — server module map and lifecycle boundary.
 - `runtime-integration-2026-09.md` — dated extraction record.
-- `remaining-debt-audit.md` — measured size debt with repair list.
+- `remaining-debt-audit.md` — phase record of a merged branch's size-debt
+  repair; the live census is `scripts/source-debt.json` plus
+  `tests/debt-baseline.test.mjs`, never a number restated there.
 - `artifact-quality-plan.md`, `rendered-ui-audit.md` — quality audits.
 - `staged-execution-continuity.md`, `restore-dogfood.md` — execution notes.
 - `legacy-compat.md` — every backward-compatibility branch in the boot path,
@@ -46,10 +48,9 @@ None pending — all operator guides migrated (see above).
   Referenced from `FEATURES.md` (presets) and `rfc-worker-robustness.md`
   (fragility #6).
 - `rfc-*.md` — proposals under discussion, not behavior.
-- `audits/` — dated session records: what was measured, what changed, and what
-  was deliberately not done. Evidence, never rules.
-  `2026-10-23-scope-6-record.md` covers the prompt cache economy of the research
-  and explore spawns and the per-track split of the completion rule.
+- `audits/` — dated audit and evaluation records, deleted as a unit when stale.
+  `2026-10-23-scope-6-record.md` covers the prompt cache economy of the
+  research and explore spawns and the per-track completion rule.
 - `runs/` — per-card execution evidence, never linked from user docs.
 
 ## Rules

@@ -17,19 +17,19 @@
     },
     {
       "path": "server/bb-workflow-bridge.ts",
-      "sha256": "4eebc7af4cd03a0d51f8d3c24f3db4235f10cdd7d0270599744193e44dda7378"
+      "sha256": "135f0242789d25529e75de5eb3e2c1232041c226c2a9c00c71056a51da6a5bfe"
     },
     {
       "path": "lib/execution-artifacts.mjs",
-      "sha256": "d73b144c70fef679098c8469f09b0be3ea9bbd3f0729ea101d80924ce164983b"
+      "sha256": "7db7bf1c8d8a91ac296ee6b29e1895d5d802c7ce52c24e9b20c21bc4065e066c"
     },
     {
       "path": "lib/execution-route.mjs",
-      "sha256": "22dc8e70b30e75a09731e469fdc3ef963a9c43bb60744961c3aae8fe53fc7b61"
+      "sha256": "0f754925e6245ea329a153151854396fe39ba3fb8be92fa04340118a5873f30d"
     },
     {
       "path": "lib/bb-workflow-capabilities.mjs",
-      "sha256": "5142fbe383d970742690b5cb54d7a180b9926969121c16ac820e1639ee2c97fa"
+      "sha256": "1f677e8733489ad414e0376ed435e725385b8ca9b539bd2a5353c326cb085d10"
     }
   ],
   "recipes": [

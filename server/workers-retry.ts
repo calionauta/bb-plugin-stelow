@@ -147,5 +147,3 @@ export function createWorkerRetry(deps: RetryDeps) {
     dispose: () => dispose(state),
   };
 }
-
-export type { RetryDeps as WorkerRetryDeps };

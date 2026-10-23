@@ -158,5 +158,4 @@ function reportClosedHandle(deps: ReconcileDeps, error: unknown): void {
   }
 }
 
-export type ExecutionReconcile = ReturnType<typeof createExecutionReconcile>;
 export type { ReconcileDeps, ReconcileResult } from "./execution-reconcile-deps.js";

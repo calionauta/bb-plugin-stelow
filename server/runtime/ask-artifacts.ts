@@ -272,5 +272,3 @@ export function createAskArtifacts(deps: AskArtifactsDeps) {
     snapshotQuestionEvidence: snapshotQuestionEvidence.bind(null, deps),
   };
 }
-
-export type AskArtifacts = ReturnType<typeof createAskArtifacts>;

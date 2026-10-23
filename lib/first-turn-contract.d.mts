@@ -1,4 +1,3 @@
-export const FIRST_STAGE: string;
 
 export interface SkillRead {
   skill: string;

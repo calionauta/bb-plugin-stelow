@@ -1,7 +1,6 @@
 // Type declarations for lib/review-verdict.mjs
 
 export declare const MAX_REVIEW_CHARS: number;
-export declare const REVIEW_VERDICTS: string[];
 
 export interface ReviewFinding {
   criterion: string;

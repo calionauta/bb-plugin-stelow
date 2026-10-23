@@ -45,7 +45,6 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
   };
 }
 
-export type ExecutionLifecycle = ReturnType<typeof createExecutionLifecycle>;
 export type {
   AnswerDecision,
   LifecycleDeps,

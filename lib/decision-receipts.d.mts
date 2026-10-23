@@ -1,5 +1,4 @@
 export declare const DECISION_RECEIPTS_FILE: string;
-export declare const DECISION_RECEIPT_SCHEMA_VERSION: number;
 export declare function buildDecisionReceipt(
   input: {
     selectedId?: unknown;

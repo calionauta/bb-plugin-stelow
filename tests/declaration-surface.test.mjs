@@ -10,9 +10,9 @@
  *
  * That is the shape of a lie that costs nothing to maintain and something to
  * find: the next caller imports a rule the panel no longer uses, the type checks,
- * and the behaviour is gone. There are 190 declaration files and 718 declared
- * names here, so "remember to delete the declaration too" is not a practice, it
- * is a hope.
+ * and the behaviour is gone. The corpus is large enough that the run prints its
+ * own file count, so "remember to delete the declaration too" is not a practice,
+ * it is a hope.
  *
  * The check is deliberately narrow: a declared name must be bound in the sibling
  * module, and a name that arrives by import must also leave by export. Both

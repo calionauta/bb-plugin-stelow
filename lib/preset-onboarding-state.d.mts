@@ -18,10 +18,6 @@ export function onboardingInitialDialogState(input: {
 export function onboardingStepAfterNext(step: number, total: number): number;
 export function onboardingStepAfterBack(step: number): number;
 export function readOnboardingComplete(storage: Pick<Storage, "getItem">, storageKey: string): boolean;
-export function persistOnboarding(
-  storage: Pick<Storage, "setItem">,
-  storageKey: string,
-): void;
 export function acknowledgeSharedOnboarding(
   storage: Pick<Storage, "setItem">,
   storageKey: string,

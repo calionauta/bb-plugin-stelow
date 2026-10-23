@@ -1,5 +1,3 @@
-export declare const COMPOSER_PERMISSION_MODES: Array<"accept-edits" | "auto" | "full">;
-export declare const COMPOSER_SERVICE_TIERS: Array<"default" | "fast">;
 export declare type ComposerExecution = {
   providerId?: string;
   model?: string;

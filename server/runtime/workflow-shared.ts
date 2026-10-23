@@ -86,5 +86,3 @@ export function buildWorkflowPrompt(
 ): string {
   return `${buildSharedPrefix(protocols)}\n\n${tail}`;
 }
-
-export type { BuildVariant as BuildPromptVariant };

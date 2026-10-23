@@ -1,4 +1,3 @@
-export declare const DECISION_READS_CAP: number;
 export declare function receiptsForScopes(
   receipts: Array<{ id: string; scopeIds?: unknown; kind?: unknown }>,
   scopes: string[],

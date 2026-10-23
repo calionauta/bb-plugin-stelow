@@ -83,11 +83,6 @@ export function admitScopeBatchRun(scopes: BatchScope[]) {
 
 export { NATIVE_SCOPE_BATCH_PILOT_ALLOWED, SCOPE_BATCH_PILOT_MAX_CONCURRENCY, SCOPE_BATCH_PILOT_TIMEOUT_MS };
 
-export interface ScopeBatchPilotScope {
-  scopeId: string;
-  files: string[];
-}
-
 export interface ScopeBatchPilotReceipt {
   scopeId: string;
   claimVerified: boolean;
@@ -318,11 +313,6 @@ export function batchIdsForCard(db: ScopeBatchDb, cardId: string): string[] {
     if (batchId && !out.includes(batchId)) out.push(batchId);
   }
   return out;
-}
-
-/** True when the card holds any batch-namespaced claim: batch coordination is active. */
-export function isBatchCoordinated(db: ScopeBatchDb, cardId: string): boolean {
-  return batchIdsForCard(db, cardId).length > 0;
 }
 
 export function batchScopeFiles(scope: BatchScope): string[] {

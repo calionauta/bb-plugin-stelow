@@ -58,7 +58,6 @@ export declare function stalenessOf(
 export declare function anyStale(verdicts: unknown): boolean;
 
 /* from lib/question-sync-kick.d.mts */
-export declare const QUESTION_SYNC_KICK_MS: number;
 export declare function syncFreshQuestionInbox(deps: {
   db: any;
   bb: any;

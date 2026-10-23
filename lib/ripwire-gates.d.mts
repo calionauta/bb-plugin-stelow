@@ -1,4 +1,3 @@
-export declare const MAX_GATE_ROWS: number;
 
 export interface TestGateSummary {
   changed: number;

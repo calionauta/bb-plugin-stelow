@@ -166,6 +166,19 @@ assert.ok(
   assert.deepEqual(loose, [], `clause ceilings track reality, not headroom. Loose: ${loose.join("; ")}`);
 }
 
+// --- The budgets module leads with the rule, not a measured share. ---------
+// It used to quote "11,700 of the reseed prompt's 12,490 chars (93.7%)"; by the
+// time this pin was written the same measurement was 11,902 of 12,490 (95.3%).
+// The per-clause ceilings ARE gates; an aggregate restated in prose is not, so it
+// drifts with every clause edit and nothing fails. The run prints the path sizes —
+// point the reader there instead of pasting a number.
+const budgetsSource = readFileSync(join(root, "lib/prompt-clause-budgets.mjs"), "utf8");
+assert.doesNotMatch(
+  budgetsSource,
+  /\b\d[\d,]* of the .*prompt's \d[\d,]* chars\b/,
+  "prompt-clause-budgets must not restate an aggregate size; the run prints the measured sizes",
+);
+
 // --- The render order and the size contract are the same list. -------------
 // The order the builder renders in and the keys the ceilings are written
 // against have to be one set: a clause rendered but unbudgeted is invisible,

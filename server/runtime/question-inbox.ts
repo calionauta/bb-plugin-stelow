@@ -173,5 +173,3 @@ export function createQuestionInbox(deps: QuestionInboxDeps) {
     countOpenQuestions: countOpenQuestions.bind(null, deps),
   };
 }
-
-export type QuestionInbox = ReturnType<typeof createQuestionInbox>;
