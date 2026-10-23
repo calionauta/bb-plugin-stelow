@@ -324,6 +324,7 @@ function scopeCommand(deps: CliSurfaceDeps): ScopeCommand {
     recordTrackableEvent: (event) => {
       recordTrackableEvent(core.db, event);
     },
+    logCardComment: core.ledger.logCardComment,
     // The scope-batch gates are dormant without a database: unit harnesses and
     // any caller that has no batch ledger pass through untouched.
     db: core.db,

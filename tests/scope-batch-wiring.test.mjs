@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { acquireScopeClaims, ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
 import {
   admitScopeBatchRun,

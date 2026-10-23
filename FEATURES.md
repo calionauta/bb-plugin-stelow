@@ -934,8 +934,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   retry loop) and gets a paused Inbox event naming the holder and the
   automatic unlock (release or lease expiry), and the host resumes exactly
   the waiting cards with an agent-only nudge when the files free. Done,
-  archive, cancel, and delete release every claim; expired leases are
-  reaped on the reconcile sweep.
+  archive, cancel, and delete release every claim; a lease held by a card the
+  host still supervises is renewed on the reconcile sweep (a scope that runs
+  past the 30-minute TTL keeps its files), so expiry and therefore the
+  automatic unlock reaches only a holder nobody is watching: a card whose
+  thread is gone, whose retries are exhausted, or that reached a terminal
+  status. A lapsed lease that is taken over is recorded — the acquirer names
+  the previous holder in `stolen[]` and the card gets a trail comment.
 - **A lock is visible on the card, not only in the Inbox.** The open card
   says which files a scope holds, by name, and which file another live card
   is holding from it. It used to say "files claimed" and never say which
