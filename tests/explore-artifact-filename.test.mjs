@@ -57,7 +57,7 @@ assert.equal(exploreArtifactFile(undefined), "explore-undefined.md", "a missing 
 // prompt string the builder returns.
 const prompts = createTrackPrompts({
   cardOwnerRules: "owner rules",
-  doneProtocol: "done protocol",
+  doneProtocolTrack: "done protocol",
   reviewProtocol: "review protocol",
   draftProtocol: "draft protocol",
   userInputContract: "user input contract",

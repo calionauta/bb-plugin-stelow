@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
+import { allClauseTexts, clauseTexts, renderSpawnPaths } from "./helpers/prompt-paths.mjs";
 import {
   CHARS_PER_TOKEN,
   estimateTokens,
@@ -18,6 +18,7 @@ import {
   clausesWithoutCeiling,
 } from "../lib/prompt-clause-budgets.mjs";
 import { BUILDER_CLAUSES, CLAUSE_ORDER } from "../server/runtime/workflow-shared.ts";
+import { DONE_PROTOCOL_CORE } from "../server/runtime/plugin-protocols.ts";
 
 /**
  * The prompt budget, pinned.
@@ -43,13 +44,20 @@ const paths = renderSpawnPaths();
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Measured on 2026-10-05, after the ask contract was de-duplicated into one
- * const. A path that exceeds its ceiling fails here with the delta named. */
+ * const, and re-measured 2026-10-23 when the track prompts were reordered and
+ * the tracks stopped carrying the build completion payload. A path that
+ * exceeds its ceiling fails here with the delta named; the ceilings ratchet
+ * down with the prompts and are never raised to let a change fit.
+ *
+ * The two track numbers are the ones that moved most: research 11,414 -> 9,690
+ * and explore 8,603 -> 6,702, because 2,300 characters of build-only
+ * completion protocol left them and no clause was lost in exchange. */
 const CHAR_CEILINGS = {
-  spawn: 13_500,
-  restart: 13_500,
-  reseed: 12_500,
-  research: 12_000,
-  explore: 9_000,
+  spawn: 13_300,
+  restart: 12_980,
+  reseed: 12_440,
+  research: 9_710,
+  explore: 6_720,
 };
 
 /** The measured cost of each path, so a regression reads as a number rather
@@ -124,7 +132,11 @@ assert.ok(
 // text, so a sentence added to `doneProtocol` reported "reseed exceeds by 1".
 // True, and useless. These ceilings name the cause.
 {
-  const texts = { ...clauseTexts(), ...BUILDER_CLAUSES };
+  // BOTH bags. The table is keyed on clause names from the build bag and the
+  // track bag, and a clause's size does not depend on which path renders it —
+  // so the findings are computed over the union, and an entry that resolves in
+  // neither bag is still reported as unbudgeted.
+  const texts = { ...allClauseTexts(), ...BUILDER_CLAUSES };
   const { overBudget, unbudgeted, loose } = clauseBudgetFindings(texts);
 
   assert.deepEqual(overBudget, [], `no shared clause exceeds its own char ceiling. Over: ${overBudget.join("; ")}`);
@@ -138,8 +150,8 @@ assert.ok(
   );
 
   // The other direction: a clause that renders in a prompt but has NO ceiling
-  // escapes the budget entirely, which is how a clause reaches 2,479 chars
-  // without anyone deciding it should.
+  // escapes the budget entirely, which is how `doneProtocol` reached 2,479
+  // chars without anyone deciding it should.
   const rendered = Object.keys(texts);
   const ceilingless = clausesWithoutCeiling(rendered);
   assert.deepEqual(
@@ -177,6 +189,43 @@ assert.ok(
     bagNotRendered,
     [],
     `the bag carries a clause the builder never renders: ${bagNotRendered.join(", ")}`,
+  );
+}
+
+// --- The completion rule is split by track, and the build half is intact. ---
+// The split exists so a research or explore worker stops reading 2.3 KB about
+// an `audit` stage it can never reach. The risk it creates is the opposite one:
+// a build worker losing a rule because the constant it read was cut in the
+// wrong place. So the assembly is asserted, not eyeballed — the build clause
+// must still be exactly the core rule plus the build payload, and the two halves
+// must not overlap.
+{
+  const build = allClauseTexts().doneProtocol;
+  const track = allClauseTexts().doneProtocolTrack;
+  assert.ok(build.startsWith(DONE_PROTOCOL_CORE), "the build clause opens with the core rule");
+  assert.ok(track.startsWith(DONE_PROTOCOL_CORE), "the track clause opens with the same core rule");
+  assert.ok(
+    build.includes("Build cards complete only at the `audit` stage"),
+    "the build clause keeps the completion stage a build worker is held to",
+  );
+  assert.ok(
+    !build.includes("research/explore cards complete only after"),
+    "the build clause no longer restates a rule that belongs to the tracks",
+  );
+  assert.ok(
+    track.includes("Research/explore cards complete only after `bb stelow verify` passes"),
+    "the track clause carries the completion rule a track worker is held to",
+  );
+  assert.ok(
+    !track.includes("`audit` stage"),
+    "the track clause does not send a research or explore worker to a stage it does not have",
+  );
+  // The size split, so a future edit cannot quietly move build prose into the
+  // track half (which would be a build worker losing a rule, not a track one
+  // gaining it).
+  assert.ok(
+    track.length < DONE_PROTOCOL_CORE.length + 100,
+    `the track half states the core rule and one sentence, nothing else (got ${track.length} chars)`,
   );
 }
 
