@@ -1,7 +1,7 @@
 /**
  * Cardless `advance` through the REAL `advanceCli` with stubbed deps.
  *
- * A cardless run with exactly one legacy workflow (`.stelow/<date>/<dir>/`)
+ * A cardless run with exactly one cardless workflow (`.stelow/<date>/<dir>/`)
  * must re-root the helper to the discovered state dir — and `ensureArtifacts`
  * must see the same dir, or the guard checks a different tree than the helper
  * mutates. Several workflows refuse (exit 1, naming the count, helper never
@@ -12,7 +12,7 @@
  * points at a `tmpdir()` fixture, `ensureArtifacts`/`runHelper` capture, the
  * rest are no-op stubs. Fixtures live under `os.tmpdir()`, never in the repo.
  */
-import "./legacy-sdk-shim.mjs";
+import "./cardless-sdk-shim.mjs";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -27,7 +27,7 @@ after(() => {
 });
 
 function fixtureRoot() {
-  const root = mkdtempSync(join(tmpdir(), "stelow-legacy-cli-"));
+  const root = mkdtempSync(join(tmpdir(), "stelow-cardless-cli-"));
   roots.push(root);
   return root;
 }
@@ -77,7 +77,7 @@ function harness(root, { guard = null, helper = { code: 0, stdout: "advanced", s
 
 const cardless = { threadId: null, projectId: "proj_1" };
 
-test("a single legacy workflow re-roots both the guard and the helper to it", async () => {
+test("a single cardless workflow re-roots both the guard and the helper to it", async () => {
   const root = fixtureRoot();
   const expected = stateAt(root, ".stelow", "2026-10-22", "sw-x");
   const { calls, deps, services } = harness(root);
@@ -97,7 +97,7 @@ test("a single legacy workflow re-roots both the guard and the helper to it", as
   );
 });
 
-test("ambiguous legacy workflows refuse before the helper runs", async () => {
+test("ambiguous cardless workflows refuse before the helper runs", async () => {
   const root = fixtureRoot();
   stateAt(root, ".stelow", "2026-10-22", "sw-a");
   stateAt(root, ".stelow", "2026-10-22", "sw-b");
@@ -106,7 +106,7 @@ test("ambiguous legacy workflows refuse before the helper runs", async () => {
   const result = await advanceCli(deps, services, ["advance", "context"], cardless);
 
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr ?? "", /2 legacy workflows/, "the refusal names the count");
+  assert.match(result.stderr ?? "", /2 cardless workflows/, "the refusal names the count");
   assert.deepEqual(
     calls.filter(([name]) => name === "runHelper"),
     [],
@@ -114,7 +114,7 @@ test("ambiguous legacy workflows refuse before the helper runs", async () => {
   );
 });
 
-test("no legacy workflow runs the helper with no state dir, as before", async () => {
+test("no cardless workflow runs the helper with no state dir, as before", async () => {
   const root = fixtureRoot();
   const { calls, deps, services } = harness(root);
 
@@ -128,4 +128,4 @@ test("no legacy workflow runs the helper with no state dir, as before", async ()
   );
 });
 
-console.log("legacy advance CLI ok: single re-roots guard and helper, ambiguous refuses, none keeps project root");
+console.log("cardless advance CLI ok: single re-roots guard and helper, ambiguous refuses, none keeps project root");

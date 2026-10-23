@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { NO_INPUT } from "./rpc-input.js";
-import { legacyWorkflowRpcContract } from "./legacy-workflow-rpc-contract.js";
+import { cardlessWorkflowRpcContract } from "./cardless-workflow-rpc-contract.js";
 import { BOARD_MOVE_COLUMNS } from "../lib/tracks.mjs";
 import { attachmentSchema, composerExecutionSchema } from "./contracts.js";
 
@@ -363,5 +363,5 @@ export const lifecycleRpcContract = {
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
     output: z.object({ ok: z.boolean(), stdout: z.string(), error: z.string().nullable() }),
   },
-  ...legacyWorkflowRpcContract,
+  ...cardlessWorkflowRpcContract,
 };

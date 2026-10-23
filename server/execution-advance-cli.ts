@@ -80,7 +80,7 @@ export async function advanceCli(
   if (legacy?.kind === "ambiguous") {
     return {
       exitCode: 1,
-      stderr: `${legacy.count} legacy workflows under .stelow — leave exactly one to advance it from the CLI.`,
+      stderr: `${legacy.count} cardless workflows under .stelow — leave exactly one to advance it from the CLI.`,
     };
   }
   const resolvedStateDir = stateDir ?? (legacy?.kind === "single" ? legacy.stateDir : null);

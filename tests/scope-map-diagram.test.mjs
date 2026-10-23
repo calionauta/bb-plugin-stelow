@@ -66,4 +66,66 @@ const second = scopeMapToFlowchart(JSON.parse(JSON.stringify(map)));
 assert.equal(second, first, "the same input twice is byte-identical");
 assert.equal(scopeMapToFlowchart(map), first, "a third render still matches");
 
+// Outcomes render as a second line; absent outcomes stay single-line.
+const outcomeOut = scopeMapToFlowchart({
+  scopes: [
+    { id: "S1", title: "Title", outcome: "first   outcome\nsecond\tline" },
+    { id: "S2", title: "Next", dependsOn: ["S1"] },
+  ],
+});
+assert.ok(outcomeOut.includes('S1["S1: Title<br/>first outcome second line"]'), "outcome renders collapsed as the node second line");
+assert.ok(outcomeOut.includes('S2["S2: Next"]'), "an absent outcome stays a single-line label");
+const bareLine = outcomeOut.split("\n").find((line) => line.includes('S2["'));
+assert.doesNotMatch(bareLine, /<br\/>/, "an absent outcome adds no second line");
+
+// Long outcomes truncate with an ellipsis instead of wrapping the node.
+const truncOut = scopeMapToFlowchart({ scopes: [{ id: "S1", title: "T", outcome: "o".repeat(100) }] });
+const truncLine = truncOut.split("\n").find((line) => line.includes("S1["));
+assert.match(truncLine, /…"\]$/, "a 100-char outcome ends its line with an ellipsis");
+const truncSecond = truncLine.split("<br/>")[1].replace(/…"\]$/, "");
+assert.ok(truncSecond.length <= 63, "the pre-ellipsis part stays within 63 chars");
+
+// Waves group scopes by topological depth: a chain spreads one scope per wave.
+const linearOut = scopeMapToFlowchart({
+  scopes: [
+    { id: "S1", title: "One" },
+    { id: "S2", title: "Two", dependsOn: ["S1"] },
+    { id: "S3", title: "Three", dependsOn: ["S2"] },
+  ],
+});
+for (const n of [1, 2, 3]) assert.ok(linearOut.includes(`subgraph W${n}["Wave ${n}"]`), `a linear S1->S2->S3 draws Wave ${n}`);
+const w1At = linearOut.indexOf("subgraph W1");
+const w2At = linearOut.indexOf("subgraph W2");
+const w3At = linearOut.indexOf("subgraph W3");
+assert.ok(linearOut.indexOf('S1["S1: One"]') > w1At, "S1 sits after the W1 header");
+assert.ok(linearOut.indexOf('S1["S1: One"]') < w2At, "S1 sits before the W2 header");
+assert.ok(linearOut.indexOf('S2["S2: Two"]') > w2At, "S2 sits after the W2 header");
+assert.ok(linearOut.indexOf('S2["S2: Two"]') < w3At, "S2 sits before the W3 header");
+assert.ok(linearOut.indexOf('S3["S3: Three"]') > w3At, "S3 sits after the W3 header");
+
+// A diamond shares Wave 2 across both arms and leaves the tip alone in Wave 3.
+const diamondOut = scopeMapToFlowchart({
+  scopes: [
+    { id: "S1", title: "One" },
+    { id: "S2", title: "Two", dependsOn: ["S1"] },
+    { id: "S3", title: "Three", dependsOn: ["S1"] },
+    { id: "S4", title: "Four", dependsOn: ["S2", "S3"] },
+  ],
+});
+const diaW2 = diamondOut.indexOf("subgraph W2");
+const diaW3 = diamondOut.indexOf("subgraph W3");
+const w2Block = diamondOut.slice(diaW2, diamondOut.indexOf("end", diaW2));
+const w3Block = diamondOut.slice(diaW3, diamondOut.indexOf("end", diaW3));
+assert.ok(w2Block.includes("S2[") && w2Block.includes("S3["), "diamond arms S2 and S3 share Wave 2");
+assert.ok(w3Block.includes('S4["S4: Four"]'), "diamond tip S4 sits in Wave 3");
+assert.ok(!w3Block.includes("S2[") && !w3Block.includes("S3["), "Wave 3 holds S4 alone");
+
+// A dependency cycle refuses the whole view instead of drawing a DAG lie.
+const cycleMap = { scopes: [{ id: "S1", title: "A", dependsOn: ["S2"] }, { id: "S2", title: "B", dependsOn: ["S1"] }] };
+assert.throws(() => scopeMapToFlowchart(cycleMap), /cycle/, "an S1<->S2 cycle throws");
+
+// The waved view stays derived: the same map twice is byte-identical.
+const wavedMap = { scopes: [{ id: "S1", title: "One", outcome: "O1" }, { id: "S2", title: "Two", dependsOn: ["S1"] }] };
+assert.equal(scopeMapToFlowchart(JSON.parse(JSON.stringify(wavedMap))), scopeMapToFlowchart(wavedMap), "the waved map twice is byte-identical");
+
 console.log("scope map diagram ok: nodes, edges, dashed non-current, refusals, and determinism hold");

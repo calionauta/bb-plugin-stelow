@@ -28,7 +28,7 @@ import { join } from "./root-paths.js";
 /**
  * Cardless `advance` re-root. `seed` writes per-workflow dirs
  * `.stelow/<date>/<dir>/state.md`, but the cardless path ran the helper in
- * project-root mode, so every seeded legacy workflow read as "missing state —
+ * project-root mode, so every seeded cardless workflow read as "missing state —
  * reseed". Exactly one match re-roots to it; zero keeps the old project-root
  * behavior; several refuse — guessing would advance the wrong workflow.
  */

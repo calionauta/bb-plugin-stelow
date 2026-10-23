@@ -306,7 +306,7 @@ function advanceStage(deps: RpcSurfacesDeps) {
       return {
         stage,
         stdout: "",
-        error: `${legacy.count} legacy workflows under .stelow — leave exactly one to advance it from the CLI.`,
+        error: `${legacy.count} cardless workflows under .stelow — leave exactly one to advance it from the CLI.`,
       };
     }
     const stateDir = legacy.kind === "single" ? legacy.stateDir : null;
