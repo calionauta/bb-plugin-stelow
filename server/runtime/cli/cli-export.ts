@@ -6,6 +6,7 @@ import {
   type CliResult,
 } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
+import { trailerArtifactCount } from "../../../lib/artifact-manifest.mjs";
 import type { BundleCheck, BundleWrite, ExportRunBundle } from "./cli-bundle-writer.js";
 
 const USAGE =
@@ -89,17 +90,21 @@ function writeResult(
   json: boolean,
   cardId: string,
 ): CliResult {
-  if (!bundle.wrote)
+  if (!bundle.wrote) {
+    const registered = trailerArtifactCount(bundle.trailer);
+    if (registered === 0)
+      return {
+        exitCode: 0,
+        stdout: "No registered artifacts — nothing to bundle.",
+      };
     return {
       exitCode: 0,
-      stdout: `No registered artifacts — nothing to bundle.${
-        bundle.missing.length > 0
-          ? ` (${bundle.missing.length} registered but unreadable: ${
-              bundle.missing.join(", ")
-            })`
-          : ""
-      }`,
+      stdout: [
+        `Nothing readable to bundle yet (${registered} registered in state.md, none copied) — the commit trailer below still names every one:`,
+        ...bundle.trailer,
+      ].join("\n"),
     };
+  }
   const payload = {
     card: cardId,
     dir: bundle.dir,
