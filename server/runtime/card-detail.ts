@@ -16,6 +16,7 @@ import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
 import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
+import { recordContrastQuestions } from "./card-detail-contrast.js";
 import { enrichScopes } from "./card-detail-scopes.js";
 import { assembleDetail } from "./card-detail-presentation.js";
 import { cardLiveRuns } from "./card-live-runs.js";
@@ -107,6 +108,7 @@ async function loadDetailInputs(
     workspace.path,
     workspace.hostId,
   );
+  await recordContrastQuestions(deps, card, workspace.path);
   const activity = effectiveActivity(card, openQuestions.openCount);
   const preset = deps.getReliablePreset(presetBand(card), card.id);
   const [workerHistory, questionStaleness, hold] = await Promise.all([
