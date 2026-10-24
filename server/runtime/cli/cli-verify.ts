@@ -20,6 +20,7 @@ import {
   type CliResult,
   type Refusal,
 } from "./cli-contract.js";
+import { scanWarning } from "./cli-scan-gate.js";
 import type { CliDeps, DocDepth, TestCommand } from "./cli-deps.js";
 import { completionRoot } from "../workflow-state.js";
 import type { WorkerCard } from "../../workers-types.js";
@@ -176,6 +177,7 @@ async function testResult(
   const docDepths = await deps.docDepths(card).catch(() => []);
   const gapLoop = await reworkLoopWarning(deps, card);
   const frozen = await frozenAcceptanceWarning(deps, card).catch(() => "");
+  const scan = await scanWarning(deps, card).catch(() => "");
   if (json)
     return {
       exitCode: run.exitCode,
@@ -194,7 +196,7 @@ async function testResult(
         2,
       ),
     };
-  const warnings = docWarning(docDepths) + gapWarning(gapLoop) + frozen;
+  const warnings = docWarning(docDepths) + gapWarning(gapLoop) + frozen + scan;
   return run.exitCode === 0
     ? {
         exitCode: 0,

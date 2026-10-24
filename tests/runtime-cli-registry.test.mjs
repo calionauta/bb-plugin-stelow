@@ -8,6 +8,7 @@ test("CLI registry keeps unique command names and help wired to the same catalog
   assert.ok(names.includes("status"));
   assert.ok(names.includes("export"));
   assert.ok(names.includes("help"));
+  assert.ok(names.includes("scan"), "the tri-state scan verb is advertised in help");
 
   const result = cliHelpResult(["help", "export"]);
   assert.equal(result.exitCode, 0);

@@ -21,6 +21,7 @@ import { createReviewCommand } from "./cli-review.js";
 import { createRetryRunCommand } from "./cli-retry-run.js";
 import { createSeedCommand } from "./cli-seed.js";
 import { createScopeApproveCommand } from "./cli-scope-approve.js";
+import { createScanCommand } from "./cli-scan.js";
 import { createSplitCommand } from "./cli-split.js";
 import { createStorageCommand } from "./cli-storage.js";
 import { createVerifyCommand } from "./cli-verify.js";
@@ -59,6 +60,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createRetryRunCommand(deps),
     createCriteriaCommand(deps),
     createVerifyTasksCommand(deps),
+    createScanCommand(deps),
     createVerifyDelegationCommand(deps),
     createGapTriageCommand(deps),
     createScopeApproveCommand(deps),

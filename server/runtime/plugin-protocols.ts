@@ -120,7 +120,8 @@ export const DONE_PROTOCOL_TRACK =
  * demands. Nothing here applies to a track, and no track prompt renders it. */
 export const DONE_PROTOCOL_BUILD =
   "Build cards complete only at the `audit` stage. Before Build `done`, run `bb stelow verify --tests` \
-from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. \
+and `bb stelow scan --report` from the final checkout; both record at this Git root and HEAD, \
+and `done` refuses without a clean scan. \
 Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. Run `bb stelow gap-triage` \
 and, if it dismisses any escalated gap, say so honestly in audit.md (advisory only; the routing below never changes). If the execution critique \
 escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in \

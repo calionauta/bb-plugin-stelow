@@ -1,0 +1,22 @@
+export declare const SCAN_EXIT: { CLEAN: 0; FAILED: 1; DID_NOT_RUN: 2 };
+export declare type ScanSeverity = "critical" | "high" | "medium" | "low";
+export declare type ScanFinding = { severity: ScanSeverity; rule: string; file: string; line: number | null };
+export declare type ScanScanner = { name: string; ran: boolean };
+export declare type ScanReport = { scanners: ScanScanner[]; findings: ScanFinding[] };
+export declare type ScanStatus = "clean" | "failed" | "did-not-run";
+export declare type ScanSummary = {
+  status: ScanStatus;
+  exitCode: number;
+  overThreshold: ScanFinding[];
+  missing: string[];
+  findingsCount: number;
+  scanners: ScanScanner[];
+};
+export declare function normalizeSeverity(value: unknown): ScanSeverity | null;
+export declare function parseSarif(content: unknown): ScanReport | null;
+export declare function parseNeutral(content: unknown): ScanReport | null;
+export declare function parseReport(content: unknown, format?: "auto" | "sarif" | "neutral"): ScanReport | null;
+export declare function summarizeScan(input?: { report?: ScanReport | null; failOn?: unknown; requireScanners?: unknown }): ScanSummary;
+export declare function exitCodeForScan(summary: { status?: string } | null | undefined): number;
+export declare function renderScanLine(summary: ScanSummary | null | undefined): string;
+export declare function renderScanSummary(summary: ScanSummary | null | undefined): string;

@@ -144,6 +144,18 @@ function createExecutionTables(db: Db): void {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   db.exec("CREATE INDEX IF NOT EXISTS idx_verification_runs_card ON verification_runs(card_id, created_at DESC)");
+  db.exec(`CREATE TABLE IF NOT EXISTS scan_runs (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    scanners TEXT NOT NULL,
+    git_root TEXT NOT NULL,
+    head_sha TEXT NOT NULL,
+    exit_code INTEGER NOT NULL,
+    report_sha256 TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_scan_runs_card ON scan_runs(card_id, created_at DESC)");
   db.exec(`CREATE TABLE IF NOT EXISTS card_stage_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     card_id TEXT NOT NULL,
