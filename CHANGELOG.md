@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.89.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.88.0...v0.89.0) (2026-10-24)
+
+
+### Features
+
+* derive the contrast questions a matrix is missing ([#418](https://github.com/calionauta/bb-plugin-stelow/issues/418)) ([a26f733](https://github.com/calionauta/bb-plugin-stelow/commit/a26f733b4a47a7d8cb2fdfe71360da513854190a))
+* derive the workflow flow diagram from the transition table ([#414](https://github.com/calionauta/bb-plugin-stelow/issues/414)) ([54c7648](https://github.com/calionauta/bb-plugin-stelow/commit/54c764863d0b35f3ce840d4580735c59fe4ebe55))
+* emit the shaping board as Mermaid block source ([#415](https://github.com/calionauta/bb-plugin-stelow/issues/415)) ([a7585d5](https://github.com/calionauta/bb-plugin-stelow/commit/a7585d559b3a3d45555c12951f1cda7dc813f87b))
+* render derived interface diagrams with bundled pele ([#405](https://github.com/calionauta/bb-plugin-stelow/issues/405)) ([6da7229](https://github.com/calionauta/bb-plugin-stelow/commit/6da7229fa6e23559fe971d3a848bea7921eba237))
+* zoomable derived diagrams, cardless workflow naming ([#407](https://github.com/calionauta/bb-plugin-stelow/issues/407)) ([75851ae](https://github.com/calionauta/bb-plugin-stelow/commit/75851ae6d8e7cc525af01334be1be09ea510281f))
+
+
+### Bug Fixes
+
+* audit repair batch, nine scopes, verified as one tree ([#410](https://github.com/calionauta/bb-plugin-stelow/issues/410)) ([f544224](https://github.com/calionauta/bb-plugin-stelow/commit/f544224915d28681346a78a8eb6bade68cb5fb77))
+* bump zod past GHSA-mrhx-c7xc-m3w5 ([#412](https://github.com/calionauta/bb-plugin-stelow/issues/412)) ([a5a51d6](https://github.com/calionauta/bb-plugin-stelow/commit/a5a51d6e4b5b74e0f8a3d53adedfdae80b2dbe27))
+* confirm preset and automation-rule deletes, harden preset boundaries ([#404](https://github.com/calionauta/bb-plugin-stelow/issues/404)) ([3e0fb50](https://github.com/calionauta/bb-plugin-stelow/commit/3e0fb50812ecd4807983dfbf3d835fab7fc1c65c))
+* derive the artifact render kind from the path, not the manifest label ([#413](https://github.com/calionauta/bb-plugin-stelow/issues/413)) ([4097da6](https://github.com/calionauta/bb-plugin-stelow/commit/4097da69bc27871f78deb2485410f809cd2b3605))
+* the host-tests runner stops inheriting NODE_ENV too ([#417](https://github.com/calionauta/bb-plugin-stelow/issues/417)) ([358d68d](https://github.com/calionauta/bb-plugin-stelow/commit/358d68d554dfe323ce18c51c27ac635665c27d0e))
+* the verification command no longer inherits the host's NODE_ENV ([#411](https://github.com/calionauta/bb-plugin-stelow/issues/411)) ([e9cc99a](https://github.com/calionauta/bb-plugin-stelow/commit/e9cc99a1eb9915e6d13c64f751c77ac9e545e8e2))
+
 ## [0.88.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.87.0...v0.88.0) (2026-10-22)
 
 
