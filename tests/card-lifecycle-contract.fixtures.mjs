@@ -54,6 +54,7 @@ export const cliAskRun = readFileSync(
 export const cliDone = [
   readFileSync(join(root, "server", "runtime", "cli", "cli-done.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "cli", "cli-done-build.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "cli", "cli-scan-gate.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-audit-trail.ts"), "utf8"),
 ].join("\n");
 export const threadProjection = readFileSync(

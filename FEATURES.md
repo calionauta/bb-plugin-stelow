@@ -3066,6 +3066,19 @@ one input, one artifact.*
   reports) are validated against the same stage contracts; audit.md,
   receipts, and unknown files never block. Only a matched document
   that fails depth refuses `done`, with file + expected-vs-found.
+- **Tri-state security scan** (`bb stelow scan --report <path>`,
+  `lib/scan-contract.mjs`). A scan that did not run is not a clean scan:
+  SARIF 2.1.0 or the neutral `{scanners, findings}` format reads as
+  **clean** (exit 0), **failed** (exit 1, findings at `--fail-on`,
+  default high), or **did-not-run** (exit 2 — report missing,
+  unreadable, unknown format, or `--require-scanners` coverage
+  incomplete). The verdict records against the exact Git root + HEAD
+  (`scan_runs`, same shape as `verification_runs`); `done` refuses
+  without a recorded clean scan at this HEAD, with a different next
+  action per state (run the missing scanners vs fix the findings vs
+  re-scan after the audit). `verify --tests` warns the scan state
+  early so it never ambushes at `done`. Operator guide:
+  [docs/security-scans.md](./docs/security-scans.md).
 - **Shared machinery.** Board column components, list view, status
   pill, hero, questions, presets, retry/restart/reseed, worker
   history, inbox, and realtime reuse the Research definitions

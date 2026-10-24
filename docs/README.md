@@ -51,6 +51,9 @@ None pending — all operator guides migrated (see above).
   Prewalk?", plus the model-hint routing gap and the path-archaeology tail.
   Referenced from `FEATURES.md` (presets) and `rfc-worker-robustness.md`
   (fragility #6).
+- `security-scans.md` — the tri-state scan contract (`clean` / `failed` /
+  `did-not-run`), the `scan_runs` ledger, and the done-gate wiring.
+  Referenced from `FEATURES.md` (done gates).
 - `rfc-*.md` — proposals under discussion, not behavior.
 - `audits/*.md` - the dated records as a class; `audits/README.md`
   enumerates them, so a new record needs no second list here.

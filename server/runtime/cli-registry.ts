@@ -79,6 +79,12 @@ export const stelowCliCommands: CliCommand[] = [
     "Verify artifacts, or run the Build card's host-recorded tests",
     "bb stelow verify [--card <card_id>] [--tests] [--json]",
   ),
+  command(
+    "scan",
+    "Record a security report as clean / failed / did-not-run (Build checkout)",
+    "bb stelow scan --report <path> [--format auto|sarif|neutral]",
+    "[--fail-on <severity>] [--require-scanners <a,b>] [--card <card_id>] [--json]",
+  ),
   command("gap-scopes", "Convert escalated gaps into rework scopes (idempotent)", "bb stelow gap-scopes [--card <card_id>]"),
   command(
     "metrics",

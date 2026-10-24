@@ -93,8 +93,13 @@ assert.match(
 );
 assert.match(
   cliDone,
-  /verificationReadiness\(verificationRun, evidence\.git\)/,
+  /verificationReadiness\(run, git\)/,
   "Build completion requires a host-recorded test result at the current Git identity",
+);
+assert.match(
+  cliDone,
+  /scanReadiness\(latestScanRun\(deps, card\.id\), git\)/,
+  "Build completion requires a host-recorded clean scan at the same Git identity — a scan that did not run is not a clean scan",
 );
 assert.match(
   server,
