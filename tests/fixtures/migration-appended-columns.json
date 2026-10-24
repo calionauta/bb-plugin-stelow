@@ -9,6 +9,10 @@
     ["trusted_authors", "TEXT"],
     ["autostart", "INTEGER NOT NULL DEFAULT 0"]
   ],
+  "ask_contracts": [
+    ["premise", "TEXT"],
+    ["reversal_cost", "TEXT"]
+  ],
   "cards": [
     ["preset_restart_pending", "INTEGER NOT NULL DEFAULT 0"],
     ["spawn_retry_count", "INTEGER NOT NULL DEFAULT 0"],

@@ -1,8 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { consumeAskContract } from "../../lib/question-contracts.mjs";
+import { consumeAnsweredContract } from "../../lib/question-contracts.mjs";
+import { commitRecoveryAnswers, recordAnswerTrail } from "../../lib/question-answer-recording.mjs";
+import type { PremiseObserver } from "../../lib/premise-staleness.mjs";
 import { cleanAnswerList } from "../../lib/question-store.mjs";
 import {
-  answerCommentBody,
   answeredCardPatch,
   EXPIRED_QUESTION_ID_PREFIX,
   expiredQuestionId,
@@ -22,7 +23,6 @@ import type { WorkerCard } from "../workers-types.js";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Answer = { questionId: string; answers: string[] };
 type Decision = { question: string; answers: string[] };
-type RecordedDecision = Decision & { contract: string | null };
 type PendingAsk = { id: string; payload?: { title?: string } };
 type Result = { ok: boolean; answered: number; error: string | null };
 type OpenRow = { id: string; thread_id: string; question: string; multiple: unknown; kind: unknown; options?: unknown };
@@ -73,7 +73,14 @@ type QuestionAnswersDeps = {
   syncOpenQuestionInbox: (card: WorkerCard) => Promise<string[] | null>;
   markInboxQuestionsAnswered: (cardId: string, ids: string[]) => void;
   recordSplitAnswer: typeof recordSplitAnswer;
-  consumeAskContract: typeof consumeAskContract;
+  consumeAnsweredContract: typeof consumeAnsweredContract;
+  /**
+   * The card's premise observation (lib/premise-staleness), built from its state
+   * dir. Optional and fail-soft: an unbound reader means no verdict, never a
+   * stale one, so a card mid-rewrite cannot have its answers accused by an
+   * unreadable artifact.
+   */
+  premiseObservation?: (cardId: string) => Promise<PremiseObserver | null>;
   logCardComment: (
     cardId: string,
     targetType: string,
@@ -150,23 +157,27 @@ async function respondToLiveAsks(
   return { decisions, answeredIds, pendingIds };
 }
 
+/**
+ * The trail rule lives in lib/question-answer-recording: both doors write one
+ * entry per answer, and an answer whose premise is gone is recorded as a
+ * decision that no longer rests on anything (see that module's header).
+ */
 function recordContractAnswers(
   deps: QuestionAnswersDeps,
   cardId: string,
   decisions: Decision[],
+  observe: PremiseObserver | null,
+  knownStaleNotes: string[] = [],
 ): void {
-  // One recording rule for both doors (lib/question-evidence): every
-  // answer leaves a trail, and a declared contract is named in it so a grep for
-  // a satisfied contract cannot miss it.
-  const trail = answerCommentBody(
-    decisions.map((decision) => ({
-      ...decision,
-      contract: decision.question
-        ? deps.consumeAskContract(deps.db, cardId, decision.question)
-        : null,
-    })),
-  );
-  if (trail) deps.logCardComment(cardId, "card", cardId, "user", trail);
+  recordAnswerTrail({
+    db: deps.db,
+    cardId,
+    decisions,
+    observe,
+    consume: deps.consumeAnsweredContract,
+    logComment: deps.logCardComment,
+    knownStaleNotes,
+  });
 }
 
 /**
@@ -243,7 +254,12 @@ async function answerQuestions(
     // mislabel them superseded.
     deps.markInboxQuestionsAnswered(input.cardId, [...live.answeredIds]);
     deps.syncPendingQuestionInbox(card, openQuestionIds);
-    recordContractAnswers(deps, input.cardId, live.decisions);
+    recordContractAnswers(
+      deps,
+      input.cardId,
+      live.decisions,
+      await premiseObservation(deps, input.cardId),
+    );
     deps.updateCard(input.cardId, answeredCardPatch(openQuestionIds.length > 0));
     return { ok: true, answered: live.decisions.length, error: null };
   } catch (error) {
@@ -287,21 +303,25 @@ function commitExpiredAnswers(
   deps: QuestionAnswersDeps,
   cardId: string,
   rows: AnswerRow[],
-): RecordedDecision[] {
-  const decisions: RecordedDecision[] = [];
-  deps.db.transaction(() => {
-    for (const row of rows) {
-      decisions.push({
-        question: row.question,
-        answers: row.answers,
-        contract: deps.consumeAskContract(deps.db, cardId, row.question),
-      });
-      deps.db.prepare(
-        "UPDATE expired_questions SET answered = 1 WHERE id = ?",
-      ).run(row.id);
-    }
-  })();
-  return decisions;
+  observe: PremiseObserver | null,
+): { decisions: Decision[]; staleNotes: string[] } {
+  return commitRecoveryAnswers({
+    db: deps.db,
+    cardId,
+    rows,
+    observe,
+    consume: deps.consumeAnsweredContract,
+  });
+}
+
+/** The card's premise observation, read once per answer door. Fail-soft: an
+ * unbound reader or a failed lookup means no verdict, never a stale one. */
+async function premiseObservation(
+  deps: QuestionAnswersDeps,
+  cardId: string,
+): Promise<PremiseObserver | null> {
+  if (!deps.premiseObservation) return null;
+  return await deps.premiseObservation(cardId).catch(() => null);
 }
 
 /** Every open recovery question, refused as one: a partial answer would
@@ -336,8 +356,8 @@ async function answerExpiredQuestions(
   if (partial) return partial;
   const overPicked = expiredAnswerRefusal(openRows, input.answers);
   if (overPicked) return refusal(overPicked);
-  const decisions = commitExpiredAnswers(deps, input.cardId, rows);
-  deps.recordSplitAnswer(deps.db, input.cardId, decisions);
+  const decisions = commitExpiredAnswers(deps, input.cardId, rows, await premiseObservation(deps, input.cardId));
+  deps.recordSplitAnswer(deps.db, input.cardId, decisions.decisions);
   deps.markInboxQuestionsAnswered(
     input.cardId,
     rows.map((row) => expiredQuestionId(row.id)),
@@ -346,7 +366,7 @@ async function answerExpiredQuestions(
   // One recording rule for both doors (lib/question-evidence): this door
   // used to write a differently-spelled comment per question, so a grep for a
   // satisfied contract could miss it.
-  recordContractAnswers(deps, input.cardId, decisions);
+  recordContractAnswers(deps, input.cardId, decisions.decisions, null, decisions.staleNotes);
   // Same stale-error rule as live answers: answering clears the interrupted
   // turn's failure so the recovered card reads coherent.
   deps.updateCard(
@@ -358,10 +378,10 @@ async function answerExpiredQuestions(
   // archives the thread but keeps its expired questions).
   const threadId = card.worker_thread_id ?? rows[0]?.thread_id ?? null;
   if (threadId) {
-    await resumeFromDecisions(deps, input.cardId, threadId, decisions)
+    await resumeFromDecisions(deps, input.cardId, threadId, decisions.decisions)
       .catch(() => undefined);
   }
-  return { ok: true, answered: decisions.length, error: null };
+  return { ok: true, answered: decisions.decisions.length, error: null };
 }
 
 export function createQuestionAnswers(deps: QuestionAnswersDeps) {

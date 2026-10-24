@@ -35,7 +35,7 @@ function harness(expiredRows) {
     syncOpenQuestionInbox: async () => [],
     markInboxQuestionsAnswered: () => undefined,
     recordSplitAnswer: () => undefined,
-    consumeAskContract: () => null,
+    consumeAnsweredContract: () => ({ contract: null, premise: null, verdict: null }),
     logCardComment: (...args) => calls.comments.push(args),
     updateCard: (cardId, fields) => calls.updates.push(fields),
     hasOpenQuestions: () => false,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
+import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { consumeAskContract, normalizeQuestionText, recordAskContracts, validateAskContracts } from "../lib/question-contracts.mjs";
 
 // Normalization is shared by writers and matchers: cosmetic whitespace
@@ -35,6 +36,10 @@ assert.deepEqual(validateAskContracts([{ contractId: "nope" }], []).ok, true, "e
 // Record + consume against real SQLite: exact text match, consume-once,
 // whitespace-insensitive, ordered oldest-first.
 const db = new Database(":memory:");
+// The table as it shipped before the premise existed. The additive migration is
+// what makes the newer reader able to load the older row, so the fixture runs
+// the migration instead of pre-declaring the columns: a hand-written schema
+// here would prove the reader works on a table no install ever had.
 db.exec(`CREATE TABLE ask_contracts (
   id TEXT PRIMARY KEY,
   card_id TEXT NOT NULL,
@@ -43,6 +48,7 @@ db.exec(`CREATE TABLE ask_contracts (
   asked_at INTEGER NOT NULL,
   consumed_at INTEGER
 )`);
+ensureColumns(db, "ask_contracts", [["premise", "TEXT"], ["reversal_cost", "TEXT"]]);
 assert.equal(
   recordAskContracts(db, [
     { id: "a1", cardId: "card_1", question: "Which interface?", contractId: "interface-pick", askedAt: 100 },

@@ -1169,6 +1169,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   is in triage (`updateCardIntent`). After triage, **Card actions →
   Reclassify workflow…** starts a fresh worker from triage on the new route;
   it never changes only the label beneath an existing plan.
+- **A question can name the cell it came from** (`lib/contrast-artifact.mjs`,
+  `lib/premise-staleness.mjs`). The scope stage writes `contrast-matrix.md`
+  into its state directory: places crossed with the states they can be in, each
+  cell listing the affordances a reader can act on there, in one
+  `stelow-contrast` fence. The playbook names the file (the state-dir registry
+  lists it beside `scope-map.json`), and the host parses it back to the exact
+  matrix — a filled matrix asks nothing, a blank cell asks one question, and a
+  shared affordance asks whether it is one feature or two. Every derived
+  question carries two facts it cannot lose on the way to the store: its
+  `premise` (the cell, `cart|paid`, or an artifact line,
+  `artifact:plans/spec-tech.md:118`) and its `reversal_cost` (low/medium/high
+  plus one sentence). A derived question without a premise is refused by name,
+  because a question nobody can locate is a complaint with options. An answer
+  whose premise a rewind removed is still recorded — it was a human decision —
+  but it claims no contract and the answer trail says which cell is gone
+  ("Stale decision: its premise no longer exists (cart|paid)"). Questions
+  recorded before the premise existed keep working untouched; they simply have
+  no ground that a rewind can take away.
 
 ## 4. Follow one card
 *When I open a card, I want the full picture without reading the thread.*

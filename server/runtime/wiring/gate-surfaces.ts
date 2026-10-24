@@ -18,7 +18,8 @@ import { summarizeTimeline } from "../../../lib/card-metrics.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordSplitAnswer } from "../../../lib/split-proposal.mjs";
-import { consumeAskContract } from "../../../lib/question-contracts.mjs";
+import { consumeAnsweredContract } from "../../../lib/question-contracts.mjs";
+import { observeFromCard } from "../../../lib/premise-staleness.mjs";
 import { resetAutoContinue } from "../../../lib/auto-continue.mjs";
 import { workerEnvironment } from "../../workers.js";
 import { cardAttachments } from "../card-files.js";
@@ -120,7 +121,20 @@ function buildQuestionAnswers(
     syncOpenQuestionInbox: questions.syncOpenQuestionInbox,
     markInboxQuestionsAnswered: core.markInboxQuestionsAnswered,
     recordSplitAnswer,
-    consumeAskContract,
+    consumeAnsweredContract,
+    // The premise observation is the card's OWN state dir: a rewind is a file
+    // that changed, so the read has to happen at answer time and against the
+    // workspace the card currently has — never against a snapshot taken when
+    // the question was asked.
+    premiseObservation: async (cardId) => {
+      const card = getCard(cardId);
+      if (!card?.dir_hash) return null;
+      const workspace = await core.cardWorkspace(card).catch(() => null);
+      const rootPath = workspace?.path;
+      if (!rootPath) return null;
+      const stateDir = await core.workflowStateDir(bb, rootPath, card.id, card.dir_hash).catch(() => null);
+      return stateDir ? observeFromCard({ stateDir }) : null;
+    },
     logCardComment: core.ledger.logCardComment,
     updateCard,
     hasOpenQuestions: questions.hasOpenQuestions,

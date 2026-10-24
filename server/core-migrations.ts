@@ -99,6 +99,16 @@ function createQuestionTables(db: Db): void {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   db.exec("CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)");
+  // Additive, and both columns nullable on purpose: every row written before
+  // the contrast wiring keeps loading (a legacy question has no premise and
+  // therefore no ground to lose), while a NEW derived question cannot be
+  // recorded without them (`recordDerivedQuestions` refuses it, naming the
+  // field). `reversal_cost` holds `{"level":"low","why":"…"}` as JSON text so
+  // the level and its sentence stay one fact.
+  ensureColumns(db, "ask_contracts", [
+    ["premise", "TEXT"],
+    ["reversal_cost", "TEXT"],
+  ]);
   db.exec(`CREATE TABLE IF NOT EXISTS question_evidence (
     card_id TEXT NOT NULL,
     artifact_path TEXT NOT NULL,

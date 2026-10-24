@@ -35,4 +35,6 @@ export interface ContrastQuestion {
   reversal_cost: { level: ReversalCostLevel; why: string };
 }
 export declare function assertQuestionFloor(question: ContrastQuestion): ContrastQuestion;
+/** Throws on a model that is not a matrix; returns the model it was given. */
+export declare function assertContrastModel<T extends ContrastModel>(model: T): T;
 export declare function deriveQuestions(model: ContrastModel): ContrastQuestion[];
