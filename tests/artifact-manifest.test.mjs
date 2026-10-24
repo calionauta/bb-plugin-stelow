@@ -89,8 +89,13 @@ assert.deepEqual(
 );
 assert.deepEqual(
   buildArtifactTrailer("card-2", [], null),
-  ["Stelow-Card: card-2", "Stelow-Artifacts: 0"],
-  "empty run still names the card with a zero count",
+  ["Stelow-Card: card-2", "Stelow-Artifacts: 0", "Stelow-Gaps: no execution critique registered"],
+  "empty run names the card with a zero count, and says the gap record was never read instead of printing a zero for it",
+);
+assert.deepEqual(
+  buildArtifactTrailer("card-3", [], { fixed: 0, documented: 3, escalated: 1 }),
+  ["Stelow-Card: card-3", "Stelow-Artifacts: 0", "Stelow-Gaps: 0 fixed / 3 documented / 1 escalated"],
+  "one gap key, one shape: the line is present whether or not the card produced artifacts",
 );
 
 // Run bundle manifest: stable names, SHA pins, missing listed, trailer embedded.
