@@ -33,6 +33,14 @@ alone.
   typed scopes, sequenced by the Stelow planning rules, each with observable
   acceptance criteria, a test map, NFRs and a scope contract; plus the
   execution protocol (baseline, red proof, freeze, verify, record, PR).
+- `2026-10-23-scope-3-record.md` — state honesty, reconstructed after the fact
+  from the three commits of `fix/state-honesty-2026-10-23`. Names the red proofs
+  re-run on the merged tree, and the two acceptance criteria the plan mapped to
+  tests that do not assert them.
+- `2026-10-23-contrast-wiring-record.md` — how the contrast matrix became a card
+  artifact, how a question records the cell or artifact line it came from, and
+  how a rewind invalidates an answer by that premise. Includes what still needs a
+  live card to prove.
 
 Part I of the audit is a translation of its source, so it keeps the source's
 structure — findings, tables, numbering — and a reader can check it against

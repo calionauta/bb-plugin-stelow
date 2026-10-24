@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
 
 const doors = read("server/runtime/question-answers.ts");
+const recording = read("lib/question-answer-recording.mjs");
 const rpcSurfaces = read("server/runtime/wiring/rpc-surfaces.ts");
 const cliSurfaces = read("server/runtime/wiring/cli-surfaces.ts");
 const answerCommand = read("server/runtime/cli/cli-answer.ts");
@@ -62,9 +63,14 @@ assert.match(doors, /if \(rows\.length === openRows\.length\)|partialBatchRefusa
 assert.match(doors, /Still open: \$\{stillOpen\.join\(", "\)\}/, "the partial-batch refusal names exactly which questions are still open");
 
 // The shared recording rule: every answer leaves a trail, and a declared
-// contract is named in it. `doesNotMatch` on the inlined patch is the pin — the
-// drift being guarded was the card patch pasted once per door.
-assert.match(doors, /answerCommentBody\(/, "answers are recorded through the shared trail rule");
+// contract is named in it. The rule has one owner in `lib/` now (it was inline
+// here until the premise verdict made it a behaviour worth testing on its own),
+// so the pin is the delegation: the door must call the owner, and the door must
+// not re-spell the composition. `doesNotMatch` on the inlined patch is the
+// second half — the drift being guarded was the card patch pasted once per door.
+assert.match(doors, /recordAnswerTrail\(\{/, "answers are recorded through the shared trail rule's owner");
+assert.match(recording, /answerCommentBody\(/, "the one trail rule lives in lib/question-answer-recording");
+assert.doesNotMatch(doors, /answerCommentBody\(/, "no door re-spells the trail composition");
 assert.match(doors, /answeredCardPatch\(/, "both doors apply the shared answer card patch");
 assert.doesNotMatch(
   doors,

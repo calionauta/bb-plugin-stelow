@@ -66,7 +66,7 @@ assert.deepEqual(
   build.map((entry) => entry.label),
   [
     "state", "transitions", "session-log", "audit", "audit-trail", "invariants",
-    "scope-map", "recon-receipt", "gate-receipt", "int-gate-receipt",
+    "scope-map", "contrast-matrix", "recon-receipt", "gate-receipt", "int-gate-receipt",
     "plan-gate-receipt", "diff-gate-receipt", "state dirs", "entry", "router",
     "orchestrator",
     "stage(shape)",
@@ -106,7 +106,7 @@ assert.deepEqual(
   research.map((entry) => entry.label),
   [
     "state", "transitions", "session-log", "audit", "audit-trail", "invariants",
-    "scope-map", "recon-receipt", "gate-receipt", "int-gate-receipt",
+    "scope-map", "contrast-matrix", "recon-receipt", "gate-receipt", "int-gate-receipt",
     "plan-gate-receipt", "diff-gate-receipt", "state dirs", "entry", "router",
     "orchestrator",
     "index", "strategy",
