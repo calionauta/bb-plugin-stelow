@@ -13,6 +13,7 @@
  * loudly or a stale checkout would leak.
  */
 import { execFile } from "node:child_process";
+import { verifyCommandEnv } from "../../lib/audit-verification.mjs";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -304,7 +305,12 @@ function runHostTests(
     execFile(
       command.command,
       command.args,
-      { cwd: path, timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 },
+      // Same rule as cli-verify-tasks: never inherit NODE_ENV. Under
+      // production react-dom resolves its production build, `React.act` does
+      // not exist, and every rendering band fails - which parks every build
+      // card at `audit`. This was the SECOND runner with the defect; fixing
+      // only the first left the card red.
+      { cwd: path, env: verifyCommandEnv(), timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         const code =
           error && typeof (error as { code?: unknown }).code === "number"
