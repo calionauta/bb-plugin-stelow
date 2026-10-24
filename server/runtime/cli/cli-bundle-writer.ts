@@ -12,6 +12,7 @@ import {
   staleBundleEntries,
   unbundledSources,
 } from "../../../lib/run-bundle.mjs";
+import { tallyGaps } from "../../../lib/gap-registry.mjs";
 import { readCardStateBlob } from "./cli-card-state.js";
 import { resolveBundleSource } from "../../../lib/bundle-source-path.mjs";
 import { bundleTokenEvidence } from "./cli-bundle-tokens.js";
@@ -357,5 +358,7 @@ async function bundleGapTotals(
 ) {
   const gapState =
     card.kind === "build" ? await deps.gapState(card).catch(() => null) : null;
-  return gapState?.matched ? gapState.totals : null;
+  // The same finding tally `bb stelow gaps` prints, so the bundle's `## Gaps`
+  // line cannot count registry rows while the command counts findings.
+  return gapState?.matched ? tallyGaps(gapState.gaps) : null;
 }

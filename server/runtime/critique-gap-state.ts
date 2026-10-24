@@ -17,12 +17,14 @@ export type CritiqueGapState = {
   failures: string[];
   totals: GapTotals;
   /** Every finding the registry named, with its disposition. The card lists
-   * these; `escalated` is the subset the rework loop consumes. `evidence`
+   * these; `escalated` is the subset the rework loop consumes. `area` is the
+   * grouping key the fleet view asks with, carried from the same parsed row so
+   * no reader has to parse the frontmatter twice. `evidence`
    * carries the cited measurements when the row has an `evidence:` block,
    * null when the finding is unmeasured (fail-open, never a failure).
    * `expires`/`owner` ride documented debt rows; gates decide what a past
    * date means, this state only carries it. */
-  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
+  gaps: Array<{ description: string; resolution: string; area: string | null; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
   escalated: Array<{ description: string; evidence: GapEvidence | null; impact: string | null }>;
   auditGapScopes: AuditGapScope[];
   critiqueText: string;
@@ -45,7 +47,7 @@ type CritiqueDeps = {
 type CritiqueAccumulator = {
   failures: string[];
   totals: GapTotals;
-  gaps: Array<{ description: string; resolution: string; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
+  gaps: Array<{ description: string; resolution: string; area: string | null; evidence: GapEvidence | null; expires: string | null; owner: string | null }>;
   escalated: Array<{ description: string; evidence: GapEvidence | null; impact: string | null }>;
   critiqueTexts: string[];
   /** Kept per round rather than only as text: the joined form cannot say which
@@ -102,6 +104,7 @@ function addRegistryGaps(target: CritiqueAccumulator, content: string) {
       target.gaps.push({
         description: gap.description,
         resolution: gap.resolution,
+        area: gap.area ?? null,
         evidence: evidenceByDescription.get(gap.description) ?? null,
         expires: debtByDescription.get(gap.description)?.expires ?? null,
         owner: debtByDescription.get(gap.description)?.owner ?? null,

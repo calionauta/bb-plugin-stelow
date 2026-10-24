@@ -51,6 +51,12 @@ alone.
   registry the skill documented and the parser refused, and the artifact count
   whose commit trailer was derived from the copied subset. Names the owner kept
   for each, the test that holds it single, and the red proofs.
+- `2026-10-23-gaps-cli-record.md` — `bb stelow gaps`, a read-only view over the
+  same gap registry: the command surface, the reused reader (no second parser,
+  no table, no write), the three red proofs it fails under (a hidden filter, a
+  state directory counted as a card, a view that writes), and the trailer
+  decision that gave the commit one `Stelow-Gaps` key derived from the same
+  finding list the command prints.
 
 Part I of the audit is a translation of its source, so it keeps the source's
 structure — findings, tables, numbering — and a reader can check it against

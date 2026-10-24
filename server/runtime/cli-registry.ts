@@ -120,6 +120,11 @@ export const stelowCliCommands: CliCommand[] = [
   ),
   command("gap-triage", "Second-opinion escalated critique gaps via the judge (advisory, read-only)", "bb stelow gap-triage [--card <card_id>] [--json]"),
   command(
+    "gaps",
+    "What has already been flagged, grouped by area, across the fleet (read-only)",
+    "bb stelow gaps [--card <card_id>] [--area <glob>] [--status documented|escalated] [--json]",
+  ),
+  command(
     "wake",
     "Whether a scheduled visit should spend a model turn on this card (read-only, free)",
     "bb stelow wake [--card <card_id>] [--json]",

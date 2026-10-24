@@ -2,6 +2,7 @@ import {
   buildArtifactTrailer,
   parseArtifactManifest,
 } from "../../../lib/artifact-manifest.mjs";
+import { tallyGaps } from "../../../lib/gap-registry.mjs";
 import { readCardStateBlob } from "./cli-card-state.js";
 import {
   noCardInContext,
@@ -67,7 +68,10 @@ async function manifestResult(
   const trailer = buildArtifactTrailer(
     card.id,
     artifacts,
-    gapState?.matched ? gapState.totals : null,
+    // Findings, not registry rows: the trailer and `bb stelow gaps` must
+    // report the same list, and one audit written into three documents is
+    // three findings, not nine.
+    gapState?.matched ? tallyGaps(gapState.gaps) : null,
   );
   const payload = {
     card: card.id,

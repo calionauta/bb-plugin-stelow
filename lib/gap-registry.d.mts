@@ -38,7 +38,25 @@ export function parseGapFrontmatter(text: unknown): { found: boolean; gaps: GapE
 
 export function escalatedGaps(text: unknown): GapEntry[];
 
-export function registryGaps(text: unknown): Array<{ description: string; resolution: string }>;
+export interface GapRow {
+  description: string;
+  /** `fixed` | `documented` | `escalate`, normalised. */
+  resolution: string;
+  /** The area the finding names, or null when the row carries none. */
+  area: string | null;
+}
+
+export function registryGaps(text: unknown): GapRow[];
+
+export interface GapTally {
+  total: number;
+  fixed: number;
+  documented: number;
+  escalated: number;
+}
+
+/** Tally a finding list: the count every surface prints is this one. */
+export function tallyGaps(rows: Array<{ resolution?: string | null }> | unknown): GapTally;
 
 export function summarizeGaps(text: unknown): GapSummary;
 

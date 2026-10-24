@@ -3036,6 +3036,25 @@ one input, one artifact.*
   rework it picks up. Re-critique overwrites the same file: every
   matched critique is validated (a lingering superseded file still
   claims), and every refusal names file + expected-vs-found.
+- **Gap areas across the fleet** (`bb stelow gaps [--card <id>]
+  [--area <glob>] [--status documented|escalated] [--json]`, read-only).
+  The one question a single card cannot answer — "what has already been
+  flagged in this area?" — asked through the artifacts the host already
+  reads (`lib/gap-registry.mjs`, via `createCritiqueGapState`), so there is
+  no second parser, no new table and no write. Findings group by the
+  registry's own `area`, one line per finding with the card that raised it;
+  `--status` narrows what is shown and never what was read, and the header
+  states both (`Areas: 1 · 1 of 4 shown (--status escalated)`). A card with
+  no execution critique is reported as such rather than as "no gaps", and a
+  state directory whose card no longer exists is never read — the fleet is
+  enumerated from cards, never from directories. Exit is 0 whenever the
+  read succeeded, including zero rows: a view that fails because it found
+  nothing cannot be used in a script. The commit trailer's `Stelow-Gaps:`
+  line is this same tally (`tallyGaps` over the deduped finding list), so a
+  card's commit, its run bundle and `bb stelow gaps --card` report one
+  number, and an unaudited card says `no execution critique registered`
+  instead of printing a zero it never measured.
+  (`tests/runtime-cli-gaps.test.mjs`.)
 - **Worktree storage** (`bb stelow storage [--json]`,
   `lib/worktree-storage.mjs`). Worktree disk usage attributed to cards
   (heaviest first, unattributed rows listed instead of hidden), read-only
