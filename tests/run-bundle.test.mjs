@@ -54,6 +54,11 @@ const rendered = renderBundleManifest({
     { name: "plan-notes.md", stage: "plan", sha8: "e5f6a7b8", sourcePath: "b/notes.md" },
   ],
   missing: ["gone.md"],
+  registered: [
+    { stage: "shape", path: "spec-product.md" },
+    { stage: "plan", path: "b/notes.md" },
+    { stage: "plan", path: "gone.md" },
+  ],
   gapTotals: null,
 });
 assert.deepEqual(
@@ -267,6 +272,7 @@ for (const [track, options] of [
     generatedAt: "2026-01-01T00:00:00.000Z",
     files: [{ name: "report.md", stage: "audit", sha8: "aaaaaaaa", sourcePath: "report.md" }],
     missing: [],
+    registered: [{ stage: "audit", path: "report.md" }],
     gapTotals: null,
   });
   const card = { id: "card_1", name: "Checkout", stage: "audit", kind: "build", dir_hash: "hash1" };

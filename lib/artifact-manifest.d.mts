@@ -23,6 +23,8 @@ export interface ArtifactTrailerGaps {
 
 export function buildArtifactTrailer(cardId: string, artifacts: Array<{ stage?: string | null; path?: string | null }>, gapTotals?: ArtifactTrailerGaps | null): string[];
 
+export function trailerArtifactCount(trailer: string[]): number;
+
 export interface BundleManifestFile {
   name: string;
   stage?: string | null;
@@ -43,8 +45,13 @@ export interface BundleManifestInput {
   cardName: string;
   stage: string;
   generatedAt: string;
+  /** What this export copied: one row per file, with its SHA. */
   files: BundleManifestFile[];
   missing: string[];
+  /** The owner of "which artifacts this card produced": the `artifacts:`
+   * list in `state.md`. The trailer is derived from this list, never from
+   * the copied subset — an unreadable artifact was still produced. */
+  registered: Array<{ stage?: string | null; path: string }>;
   gapTotals?: ArtifactTrailerGaps | null;
   tokens?: BundleManifestTokens | null;
 }

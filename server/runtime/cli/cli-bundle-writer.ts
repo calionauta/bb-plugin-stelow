@@ -244,13 +244,17 @@ function readBundleManifest(
 }
 
 /** Nothing readable and no bundle yet: writing a manifest of only missing
- * entries would be noise — skip, and say so. */
+ * entries would be noise — skip the write, and say so. The trailer still
+ * comes from the registration, not from the copies: "nothing to bundle" is
+ * a fact about this export, never about what the card produced. */
 async function writeBundle(
   deps: CliDeps,
   card: WorkerCard,
   sources: BundleSources,
 ): Promise<BundleWrite | BundleFailure> {
   const { readable, unreadable, targetRel, targetAbs, workspacePath } = sources;
+  const gapTotals = await bundleGapTotals(deps, card);
+  const trailer = buildArtifactTrailer(card.id, sources.registered, gapTotals);
   if (readable.length === 0) {
     const priorManifest = await readBundleManifest(deps, targetAbs);
     if (priorManifest === null)
@@ -260,7 +264,7 @@ async function writeBundle(
         dir: targetRel,
         files: [],
         missing: [...unreadable],
-        trailer: [],
+        trailer,
         wrote: false,
       };
   }
@@ -274,7 +278,6 @@ async function writeBundle(
     return { ok: false, error: `Could not create ${targetRel} — retry export.` };
   }
   const { files, missing } = await writeBundleFiles(deps, sources, workspacePath);
-  const gapTotals = await bundleGapTotals(deps, card);
   const manifest = renderBundleManifest({
     cardId: card.id,
     cardName: card.name,
@@ -282,6 +285,7 @@ async function writeBundle(
     generatedAt: new Date().toISOString(),
     files,
     missing,
+    registered: sources.registered,
     gapTotals,
     tokens: await bundleTokenEvidence(deps, card),
   });
@@ -298,11 +302,6 @@ async function writeBundle(
       error: `Exported ${files.length} file(s) but could not write manifest.md — retry export.`,
     };
   }
-  const trailer = buildArtifactTrailer(
-    card.id,
-    files.map((file) => ({ stage: file.stage, path: file.sourcePath })),
-    gapTotals,
-  );
   return {
     ok: true,
     check: false,
@@ -322,7 +321,13 @@ async function writeBundleFiles(
   const { readable, unreadable, targetAbs } = sources;
   const files: BundleEntry[] = [];
   const missing = [...unreadable];
-  for (const plan of assignBundleNames(readable)) {
+  // `assignBundleNames` speaks the registration's shape (`path`); the readable
+  // source carries the same fact as `sourcePath`. Naming the translation here
+  // is what the writer was missing — it handed over `sourcePath`, every entry
+  // read as junk, and every bundle copied zero files while still claiming a
+  // trailer. A silent zero is how `Stelow-Artifacts: 0` reached real commits.
+  const planned = readable.map((entry) => ({ stage: entry.stage, path: entry.sourcePath }));
+  for (const plan of assignBundleNames(planned)) {
     const source = readable.find((entry) => entry.sourcePath === plan.sourcePath);
     if (!source) continue;
     try {

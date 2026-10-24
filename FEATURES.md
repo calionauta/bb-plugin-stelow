@@ -2152,11 +2152,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Commits cannot carry file attachments, so the durable audit link is a
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered
   artifact paths, gap counts). The worker protocol requires pasting it
-  below the commit subject.
+  below the commit subject. The count has one owner: the `artifacts:` list
+  in `state.md`. `manifest`, `export`, `done`, and the trailer embedded in
+  the bundle's `manifest.md` all derive it from that list, so a card's
+  commit cannot say `Stelow-Artifacts: 0` while its own bundle lists the
+  artifacts it could not copy — an unreadable artifact was still produced.
 - **Run-bundle export** (`bb stelow export [--json] [--check] [--card] [--dir]`, `lib/run-bundle.mjs`).
   Copies the registered artifacts into flat `docs/runs/<card>/` plus a
   `manifest.md` (SHA-8 per file, gap counts, embedded trailer, missing
-  entries listed). Idempotent, path-confined to the workspace, stable
+  entries listed). The `## Files` table is what this export copied; the
+  embedded trailer counts the registration, and the table says both numbers
+  (`N registered in state.md (M copied)`) so neither can be read as the
+  other. Idempotent, path-confined to the workspace, stable
   basenames (a repeated name gets a stage prefix, never an overwrite). The
   host refreshes the bundle automatically on every `done` and prints the
   trailer in the completion output — a reopened card that completes again
@@ -2876,7 +2883,12 @@ one input, one artifact.*
   a medium gap must not resolve as an inline fix (`gap-underfixed`) —
   effort checks are fail-open when absent so legacy registries never
   retro-fail. A misclassified gap fails
-  deterministically instead of passing silently.
+  deterministically instead of passing silently. Field values are read as
+  YAML, comments included: the inline annotations the skill's template
+  teaches (`impact: medium  # low | medium | high | critical`) are
+  annotations, not values, and `tests/gap-registry.test.mjs` parses the
+  skill's own fenced template through the parser — documentation and guard
+  hold one schema, so a worker who copies the template verbatim passes.
 - **Gap-to-scope loop** (`bb stelow gap-scopes`, `critiqueGapState`).
   Escalated gaps become `audit-gap` rework scopes in the card's own
   `stelow.json` entry — created by code (idempotent, trail comment),
