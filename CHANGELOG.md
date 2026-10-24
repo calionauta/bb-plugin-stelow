@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.90.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.89.0...v0.90.0) (2026-10-24)
+
+
+### Features
+
+* a question records the cell it came from ([#419](https://github.com/calionauta/bb-plugin-stelow/issues/419)) ([4f21e4e](https://github.com/calionauta/bb-plugin-stelow/commit/4f21e4e4149a69fe217682550e7a08da87fefce9))
+* a read-only fleet view over the gap registry ([#424](https://github.com/calionauta/bb-plugin-stelow/issues/424)) ([7aa7128](https://github.com/calionauta/bb-plugin-stelow/commit/7aa712877c100b41f43867c3cbf69be6aa0c9685))
+* a script floor, a wired door, and the docs that stop repeating today ([#423](https://github.com/calionauta/bb-plugin-stelow/issues/423)) ([0f665fd](https://github.com/calionauta/bb-plugin-stelow/commit/0f665fd57bf4f0d330a643f6134f90667cae38da))
+
+
+### Bug Fixes
+
+* one owner for the gap schema and the artifact count ([#420](https://github.com/calionauta/bb-plugin-stelow/issues/420)) ([bbd6d49](https://github.com/calionauta/bb-plugin-stelow/commit/bbd6d497bec3f3daeff7d4a0199c6963c8127e56))
+
 ## [0.89.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.88.0...v0.89.0) (2026-10-24)
 
 
