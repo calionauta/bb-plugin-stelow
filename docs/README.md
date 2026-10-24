@@ -24,6 +24,10 @@ None pending — all operator guides migrated (see above).
 
 ## Stays here (maintainer-only, never public)
 
+- `dependencies-and-diagrams.md` — what this plugin needs installed (with the
+  command that verifies each), the two install symptoms that masquerade as code
+  bugs, and how a Mermaid fence or `.mmd` artifact renders on read with the
+  bundled `pele` (source is the artifact, a failed render falls back to it).
 - `runtime-architecture.md` — server module map and lifecycle boundary.
 - `runtime-integration-2026-09.md` — dated extraction record.
 - `remaining-debt-audit.md` — phase record of a merged branch's size-debt

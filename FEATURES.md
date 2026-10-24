@@ -1354,7 +1354,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `breadboard.json` deliberately derives nothing client-side: its canonical
   `.mmd`/`.html` views already exist beside it. The sibling `.html` page stays
   the durable view (`diagramRendererStatus` RPC reports bundled-vs-absent in the
-  About tab's Diagram renderer card).
+  About tab's Diagram renderer card). There is no SVG artifact: the source is
+  the file and the picture is a view, so a renderer that is absent or refuses the
+  source falls back to the source text plus a playground link instead of a blank
+  box. Dependencies, the two install symptoms that look like code bugs, and this
+  rendering contract are in
+  [`docs/dependencies-and-diagrams.md`](./docs/dependencies-and-diagrams.md).
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
