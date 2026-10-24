@@ -41,6 +41,12 @@ alone.
   artifact, how a question records the cell or artifact line it came from, and
   how a rewind invalidates an answer by that premise. Includes what still needs a
   live card to prove.
+- `2026-10-23-final-gaps-record.md` — four pendings closed or measured: the
+  `#420` package.json resolution with a floor on the test-band count (and the red
+  proof `suite-wiring` cannot give), the door that turns a blank contrast-matrix
+  cell into an open question, the nine gap rows of `card_wxpaf8ll` with their
+  routing call, the bundle export counts, and the dependencies/diagram page. Ends
+  with what was deliberately not done.
 
 Part I of the audit is a translation of its source, so it keeps the source's
 structure — findings, tables, numbering — and a reader can check it against
