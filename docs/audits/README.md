@@ -47,6 +47,10 @@ alone.
   cell into an open question, the nine gap rows of `card_wxpaf8ll` with their
   routing call, the bundle export counts, and the dependencies/diagram page. Ends
   with what was deliberately not done.
+- `2026-10-23-one-owner-record.md` — two facts that had several owners: the gap
+  registry the skill documented and the parser refused, and the artifact count
+  whose commit trailer was derived from the copied subset. Names the owner kept
+  for each, the test that holds it single, and the red proofs.
 
 Part I of the audit is a translation of its source, so it keeps the source's
 structure — findings, tables, numbering — and a reader can check it against

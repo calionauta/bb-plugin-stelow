@@ -1,4 +1,5 @@
 import type { CliDeps } from "./cli-deps.js";
+import { trailerArtifactCount } from "../../../lib/artifact-manifest.mjs";
 
 /** The one completion writer moved to `server/runtime/card-completion.ts` so
  * the research/explore polls can reach it without importing a CLI module. */
@@ -15,16 +16,22 @@ export type DoneBundle = {
 };
 
 /** Completion output: the headline plus the refreshed run bundle the worker
- * must commit with the work. A card with no registered artifacts says so
- * instead of pretending it bundled something. */
+ * must commit with the work. "Nothing to bundle" is a fact about this export,
+ * never about the card: when the registration names artifacts that could not
+ * be copied, the trailer still goes out, derived from `state.md`. */
 export function doneStdout(headline: string, bundle: DoneBundle): string {
-  return bundle.wrote
-    ? [
-        headline,
-        `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`,
-        ...bundle.trailer,
-      ].join("\n")
-    : `${headline} No registered artifacts — nothing to bundle.`;
+  if (bundle.wrote)
+    return [
+      headline,
+      `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`,
+      ...bundle.trailer,
+    ].join("\n");
+  const registered = trailerArtifactCount(bundle.trailer);
+  if (registered === 0) return `${headline} No registered artifacts — nothing to bundle.`;
+  return [
+    `${headline} Nothing readable to bundle yet (${registered} registered in state.md, none copied) — the commit trailer below still names every one:`,
+    ...bundle.trailer,
+  ].join("\n");
 }
 
 /** A required review policy means the deliverable must have a passing review

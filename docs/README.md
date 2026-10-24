@@ -52,6 +52,8 @@ None pending — all operator guides migrated (see above).
   Referenced from `FEATURES.md` (presets) and `rfc-worker-robustness.md`
   (fragility #6).
 - `rfc-*.md` — proposals under discussion, not behavior.
+- `audits/*.md` - the dated records as a class; `audits/README.md`
+  enumerates them, so a new record needs no second list here.
 - `audits/` — dated audit and evaluation records, deleted as a unit when stale.
   `2026-10-23-scope-6-record.md` covers the prompt cache economy of the
   research and explore spawns and the per-track completion rule.

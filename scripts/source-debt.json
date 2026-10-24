@@ -30,7 +30,7 @@
     "lib/scope-merge.mjs:mergeScopesAtomically": 71,
     "lib/scope-retry.mjs:claimScopeRetry": 61,
     "lib/trackable-evidence.mjs:evidenceConditions": 74,
-    "server/runtime/cli/cli-bundle-writer.ts:writeBundle": 68,
+    "server/runtime/cli/cli-bundle-writer.ts:writeBundle": 65,
     "server/runtime/cli/cli-split.ts:reportSplit": 61,
     "server/scopes.ts:runScopeCommand": 83,
     "tests/server-drafting.test.mjs:harness": 83,
