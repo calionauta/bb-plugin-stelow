@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.91.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.90.0...v0.91.0) (2026-10-24)
+
+
+### Features
+
+* tri-state security scan gate (clean/failed/did-not-run) ([#425](https://github.com/calionauta/bb-plugin-stelow/issues/425)) ([afb83cc](https://github.com/calionauta/bb-plugin-stelow/commit/afb83cc3f057971bd89c80f40377f760a15f5edb))
+
 ## [0.90.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.89.0...v0.90.0) (2026-10-24)
 
 
