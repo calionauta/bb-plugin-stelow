@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   frontmatterBlock,
   parseGapFrontmatter,
@@ -343,3 +344,53 @@ assert.equal(
 );
 
 console.log("gap registry test ok: parse, misclassification gate, contract wiring");
+
+// The skill's own template is the contract. A worker copies the fenced
+// example verbatim — annotations and all — and the guard must accept it. It
+// did not: the parser kept `# low | medium | high | critical` as part of the
+// impact value, so three real audit reports were refused for a shape the
+// skill itself taught. When the documentation and the guard drift apart
+// again, this goes red before a card burns its reports.
+const skillAudit = readFileSync(
+  new URL("../skills/stelow-workflow-execution-critique/references/workflow-audit.md", import.meta.url),
+  "utf8",
+);
+const template = [...skillAudit.matchAll(/```yaml\n([\s\S]*?)```/g)]
+  .map((match) => match[1])
+  .find((block) => /^gaps:/m.test(block));
+assert.ok(template, "the execution-critique skill documents a gaps: registry template");
+assert.deepEqual(
+  validateGapRegistry(template),
+  [],
+  "the skill's fenced template passes the guard verbatim — documentation and code hold one schema",
+);
+const templateRows = parseGapFrontmatter(template).gaps;
+assert.deepEqual(
+  templateRows.map(({ type, impact, effort, resolution }) => [type, impact, effort, resolution]),
+  [
+    ["missing-tests", "medium", "moderate", "escalate"],
+    ["incomplete", "high", "moderate", "escalate"],
+  ],
+  "a trailing YAML comment annotates a field; it is never part of the value",
+);
+assert.deepEqual(
+  templateRows[0].evidence,
+  { symbols: [], files: [], callers: 0, tests: [], reversible: "unknown", check: null },
+  "the documented evidence block parses as a measurement mapping, not as a scalar",
+);
+const quotedHash = [
+  "---",
+  "gaps:",
+  "  - type: quality   # the kind",
+  '    description: "fix #12 in the parser"   # the quoted hash survives',
+  "    impact: low  # severity",
+  "    resolution: fixed",
+  "---",
+  "",
+].join("\n");
+assert.equal(
+  parseGapFrontmatter(quotedHash).gaps[0].description,
+  "fix #12 in the parser",
+  "a `#` inside quotes is text, a `#` after whitespace is a comment — YAML's rule, not a guess",
+);
+assert.deepEqual(validateGapRegistry(quotedHash), [], "an annotated row still validates on its values");

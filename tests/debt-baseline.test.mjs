@@ -108,7 +108,10 @@ const inheritedBaseline = [
   // each under the function budget — so `source-debt.json` carries no entry
   // for it and the gate requires the waiver dropped rather than left as a
   // stale record.
-  "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 68 lines (recorded 68)",
+  // Lowered from 68: the trailer is now derived from the registration and
+  // built before the early return, so the copy at the end and its extra
+  // `files.map` are gone — `source-debt.json` carries the new ceiling.
+  "server/runtime/cli/cli-bundle-writer.ts:writeBundle#1: 65 lines (recorded 65)",
   // Paid: `deliverableSubject` was 69 lines because the research branch was
   // written inline. Splitting the research deliverable into `researchSubject`
   // — which the contract-aware excerpt needed anyway, since a research round

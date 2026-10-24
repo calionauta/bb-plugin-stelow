@@ -6,6 +6,7 @@ import {
   parseArtifactManifest,
   renderBundleManifest,
   resolveArtifactPath,
+  trailerArtifactCount,
   unregisteredArtifactPaths,
 } from "../lib/artifact-manifest.mjs";
 
@@ -93,6 +94,10 @@ assert.deepEqual(
 );
 
 // Run bundle manifest: stable names, SHA pins, missing listed, trailer embedded.
+// The trailer counts the REGISTRATION (two artifacts), not the copy (one row):
+// an artifact that could not be read was still produced, and the commit is the
+// surface that has to keep saying so. Deriving it from `files` printed
+// `Stelow-Artifacts: 0` above a `## Missing` list of seventeen.
 const bundle = renderBundleManifest({
   cardId: "card-1",
   cardName: "Login",
@@ -100,18 +105,25 @@ const bundle = renderBundleManifest({
   generatedAt: "2026-09-19T00:00:00.000Z",
   files: [{ name: "audit.md", stage: "audit", sha8: "abc12345", sourcePath: ".stelow/x/audit.md" }],
   missing: [".stelow/x/gone.md"],
+  registered: [
+    { stage: "audit", path: ".stelow/x/audit.md" },
+    { stage: "audit", path: ".stelow/x/gone.md" },
+  ],
   gapTotals: { fixed: 1, documented: 0, escalated: 2 },
 });
 assert.ok(bundle.includes("| audit.md | audit | `abc12345` | .stelow/x/audit.md |"), "file row pins name, stage, SHA, source");
 assert.ok(bundle.includes("- .stelow/x/gone.md"), "missing entries listed, never hidden");
 assert.ok(bundle.includes("1 fixed / 0 documented / 2 escalated"), "gap counts rendered");
 assert.ok(bundle.includes("Stelow-Card: card-1"), "trailer embedded for pasting");
+assert.ok(bundle.includes("Stelow-Artifacts: 2"), "the trailer counts the registration, not the copied rows");
+assert.ok(bundle.includes("Stelow-Artifact: [audit] .stelow/x/gone.md"), "an unreadable artifact is still named in the trailer");
+assert.equal(trailerArtifactCount(bundle.split("\n")), 2, "the trailer's own count is readable back without re-deriving it");
 
 // Token evidence is optional and honest: omitted entirely reads unknown,
 // never zero; reported legs render exact locale numbers for the audit.
 const withTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
   tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000 },
 });
 assert.ok(withTokens.includes("## Tokens"), "token evidence gets its own section");
@@ -129,7 +141,7 @@ assert.ok(
 // class of error as printing 0 for an unknown total.
 const measuredTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
   tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000, source: "provider" },
 });
 assert.ok(measuredTokens.includes("Provider-reported totals"), "a provider total is attributed to the provider");
@@ -137,7 +149,7 @@ assert.ok(!measuredTokens.includes("estimated"), "and is not hedged with a word 
 
 const estimatedTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
   tokens: { input: null, output: null, cached: null, reasoning: null, total: 232021, source: "context-estimate" },
 });
 assert.ok(
@@ -152,7 +164,7 @@ assert.ok(estimatedTokens.includes("232,021 total"), "while the number itself st
 
 const withoutTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
 });
 assert.ok(withoutTokens.includes("Unknown — no token reports at export time."), "missing evidence reads unknown");
 
