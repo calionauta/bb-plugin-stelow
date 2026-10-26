@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ANSWER_DELIVERIES,
   answerDeliveryCardPatch,
   answerDeliveryLine,
   answerDeliveryOf,
@@ -88,8 +87,4 @@ test("an unreadable dispatch is reported as unread, never as delivered", () => {
   assert.equal(answerDeliveryCardPatch({ delivery: "queued" }, "words", true), null);
   // Nothing was attempted at all: the answer patch's own activity stands.
   assert.equal(answerDeliveryCardPatch(null, null), null);
-});
-
-test("the verdict list and its names stay in one place", () => {
-  assert.deepEqual(ANSWER_DELIVERIES, ["sent", "queued", "refused"]);
 });

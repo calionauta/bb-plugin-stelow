@@ -9,6 +9,6 @@ export declare function answerFeedbackBlock(
 ): string | null;
 
 export declare function commentDeliveryLine(
-  delivery: "sent" | "queued" | "rides-answer" | null,
+  delivery: "sent" | "queued" | "rides-answer" | "saved" | null,
   hold: unknown,
 ): string | null;

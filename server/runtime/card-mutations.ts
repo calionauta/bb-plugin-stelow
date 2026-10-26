@@ -255,7 +255,7 @@ async function updateCardWorkspace(
   return { ok: true, error: null };
 }
 
-type CommentDelivery = "sent" | "queued" | "rides-answer";
+type CommentDelivery = "sent" | "queued" | "rides-answer" | "saved";
 
 async function addCardComment(
   deps: CardMutationDeps,
@@ -301,7 +301,11 @@ async function routeCommentToWorker(
   commentId: string,
 ): Promise<{ error: string | null; delivery: CommentDelivery | null; line: string | null }> {
   if (target !== "card" || !targetIsLiveWorker(card)) {
-    return { error: null, delivery: null, line: null };
+    // Nothing was woken: a scope/task comment is the card's record, and a card
+    // with no live worker has nobody to wake. Returning a null line here made
+    // the composer fall back to "Comment sent to the agent" — the exact claim
+    // this module exists to stop making.
+    return { error: null, delivery: "saved", line: commentDeliveryLine("saved", null) };
   }
   if (answerFeedbackHolds({ activity: card.activity, openExpired: openExpiredCount(deps.db, card.id) })) {
     // `sent` is not the verdict here: the comment is carried by an answer the

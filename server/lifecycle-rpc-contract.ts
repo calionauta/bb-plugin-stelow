@@ -20,7 +20,7 @@ export const lifecycleRpcContract = {
       commentId: z.string(),
       error: z.string().nullable(),
       /** `rides-answer` while a question waits: the comment is saved, not sent. */
-      delivery: z.enum(["sent", "queued", "rides-answer"]).nullable(),
+      delivery: z.enum(["sent", "queued", "rides-answer", "saved"]).nullable(),
       deliveryLine: z.string().nullable(),
     }),
   },

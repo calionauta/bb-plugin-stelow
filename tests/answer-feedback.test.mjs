@@ -69,7 +69,7 @@ test("the block carries the comments verbatim, under one heading", () => {
 test("the composer's line never claims a send that did not happen", () => {
   assert.equal(commentDeliveryLine("sent", null), null);
   const rides = commentDeliveryLine("rides-answer", null);
-  assert.match(rides, /goes with your answer/);
+  assert.match(rides, /will go with your answer/);
   assert.doesNotMatch(rides, /sent to the agent/);
   const queued = commentDeliveryLine("queued", null);
   assert.match(queued, /Comment saved\./);
@@ -133,7 +133,7 @@ test("the comments column is additive and safe to re-run", () => {
   );
 });
 
-function commentHarness(activity, send) {
+function commentHarness(activity, send, threadId = "thread_1") {
   const calls = { sends: [], updates: [] };
   const db = store();
   const handlers = createCardMutationHandlers({
@@ -158,7 +158,7 @@ function commentHarness(activity, send) {
       stage: "shape",
       kind: "build",
       activity,
-      worker_thread_id: "thread_1",
+      worker_thread_id: threadId,
       last_assistant_text: "working",
       dir_hash: null,
     }),
@@ -184,7 +184,7 @@ test("a comment during an open ask is saved and never wakes the worker", async (
   const result = await handlers.addCardComment(COMMENT);
   assert.equal(result.error, null);
   assert.equal(result.delivery, "rides-answer");
-  assert.match(result.deliveryLine, /goes with your answer/);
+  assert.match(result.deliveryLine, /will go with your answer/);
   assert.equal(calls.sends.length, 0, "sending now would wake the worker mid-read");
   // Saved, and still pending for the answer that will carry it.
   assert.deepEqual(pendingAnswerComments(db, "card_1").ids, ["c1"]);
@@ -212,4 +212,44 @@ test("a comment the host queues is not stamped carried", async () => {
   // would claim a delivery that has not happened.
   assert.deepEqual(pendingAnswerComments(db, "card_1").ids, ["c1"]);
   assert.equal(calls.updates[0].activity, "held");
+});
+
+// The route-level half of the hold rule: `answerFeedbackHolds` is tested on its
+// own, but nothing pinned that the COMMENT PATH asks it with the recovery rows.
+// What regresses if this fails: a comment on an idle card with an open recovery
+// question is sent immediately and wakes the worker mid-read.
+test("a comment waits on an idle card that still has a recovery question", async () => {
+  const { calls, db, handlers } = commentHarness("idle", () => ({ delivery: "sent" }));
+  db.prepare("INSERT INTO expired_questions (id, card_id, answered) VALUES ('q1', 'card_1', 0)").run();
+  const result = await handlers.addCardComment(COMMENT);
+  assert.equal(result.delivery, "rides-answer");
+  assert.equal(calls.sends.length, 0);
+});
+
+// A comment on a scope or a task is the card's record; the worker is not woken by
+// it. It used to report `delivery: null` with no line, which made the composer
+// fall back to "Comment sent to the agent" — a claim about a send that never
+// happened.
+test("a comment that woke nothing says so instead of claiming a send", async () => {
+  const { calls, handlers } = commentHarness("running", () => ({ delivery: "sent" }));
+  const result = await handlers.addCardComment({ ...COMMENT, target: "scope", targetId: "s1" });
+  assert.equal(result.error, null);
+  assert.equal(result.delivery, "saved");
+  assert.match(result.deliveryLine, /Nothing was sent to the worker/);
+  assert.equal(calls.sends.length, 0);
+});
+
+test("a card with no live worker reports a saved comment, not a sent one", async () => {
+  const { calls, handlers } = commentHarness("idle", () => ({ delivery: "sent" }), null);
+  const result = await handlers.addCardComment(COMMENT);
+  assert.equal(result.error, null);
+  assert.equal(result.delivery, "saved");
+  assert.equal(calls.sends.length, 0, "there is nobody to wake");
+});
+
+// The migration is exported and order-dependent on `createBaseTables`. A guard is
+// cheaper than a crash in a caller that runs it first on a fresh database.
+test("the delivery migration tolerates a database without the comments table", () => {
+  const db = new Database(":memory:");
+  assert.doesNotThrow(() => ensureCommentDeliveryColumn(db));
 });

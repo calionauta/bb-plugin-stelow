@@ -1025,9 +1025,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   "resumed" report is what marks the comments carried there. Nothing is lost when no answer
   comes: the comment is on the card, and it rides the next answer instead. The
   composer stops saying "sent to the agent" when it was only saved — it says the
-  comment goes with the answer, or that the host is holding it. The store is one
+  comment will go with the answer, that the host is holding it, or that nothing
+  was sent at all (a scope/task comment, or a card with no live worker). The store is one
   additive column (`comments.delivered_at`), so a held comment survives a crash,
   a restart, and a card archived by mistake.
+- **A refused resume still settles what was answered** (`server/runtime/answer-resume.ts`,
+  `answerQuestions`). An answer that resumes a native run can be refused by the
+  run's own contract — the boundary moved on while the person was deciding. The
+  answers were recorded before that attempt, so returning early left a phantom
+  wait: the card kept `awaiting-answer` and its Inbox row could not be answered
+  again (a second attempt hits "no question was answered"). The door now settles
+  the questions, the row and the card, and carries the refusal as the delivery
+  verdict — the line quotes the run's words and names the exit, **Resume the
+  card**. The same rule as a refused thread dispatch: the answer is a fact, the
+  wake is a separate one.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

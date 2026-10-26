@@ -225,14 +225,12 @@ async function answerQuestions(
       card.worker_thread_id,
       live.decisions,
     );
-    // The boundary door keeps its own refusal: the run did not advance, and the
-    // answers belong to it, so there is nothing recorded to stand on.
-    if (resume.boundaryResumed && resume.verdict.delivery === "refused") {
-      return refusal(
-        resume.verdict.error ?? "The run could not be resumed.",
-        live.decisions.length,
-      );
-    }
+    // A refused boundary resume used to return here, before any bookkeeping:
+    // `respondToLiveAsks` had already consumed the interaction, so the card kept
+    // `awaiting-answer` and an Inbox row nobody could answer (a re-answer hits
+    // "no question was answered"). The answers ARE recorded — the refusal is
+    // about waking the run — so the bookkeeping runs and the verdict carries the
+    // port's words. Same rule as a refused thread dispatch.
     const unanswered = live.pendingIds.filter((id) => !live.answeredIds.has(id));
     const openQuestionIds = [...unanswered, ...deps.openExpiredQuestionIds(input.cardId)];
     // Name the answered ones BEFORE the sync: disappearance alone would

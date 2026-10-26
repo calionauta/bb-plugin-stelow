@@ -15,8 +15,6 @@ export type AnswerDeliveryVerdict = {
   error: string | null;
 };
 
-export declare const ANSWER_DELIVERIES: readonly AnswerDelivery[];
-
 export declare function answerDeliveryOf(
   dispatch: AnswerDispatch | null | undefined,
 ): AnswerDeliveryVerdict;

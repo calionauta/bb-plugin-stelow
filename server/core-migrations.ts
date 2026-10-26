@@ -228,6 +228,12 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
  * they would never ride.
  */
 export function ensureCommentDeliveryColumn(db: Db) {
+  // Order-dependent by nature: the caller runs `createBaseTables` first. Guarded
+  // anyway, because this is exported and a test (or a future caller) may not be.
+  const hasTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'comments'")
+    .get() !== undefined;
+  if (!hasTable) return;
   const hadDelivery = (db.prepare('PRAGMA table_info("comments")').all() as Array<{ name?: string }>)
     .some((column) => column.name === "delivered_at");
   ensureColumns(db, "comments", [["delivered_at", "INTEGER"]]);

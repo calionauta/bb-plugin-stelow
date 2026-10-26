@@ -212,14 +212,20 @@ test("a refused boundary resume leaves its comments pending", async () => {
     cardId: "card_1",
     answers: [{ questionId: "ask_1", answers: ["A"] }],
   });
-  assert.equal(result.ok, false);
-  assert.match(result.error, /boundary has moved on/);
+  assert.equal(result.ok, true);
+  assert.equal(result.delivery, "refused");
+  assert.match(result.deliveryLine, /boundary has moved on/);
   assert.deepEqual(carried, []);
 });
 
 // A refused resume is reported, never swallowed: the answer was recorded, and
 // the caller has to learn that the run did not restart.
-test("a refused boundary resume surfaces its refusal with the answer counted", async () => {
+// A refused boundary resume used to return before any bookkeeping, which left a
+// phantom wait: the interaction was already consumed, so the card claimed
+// `awaiting-answer` and its Inbox row could not be answered again. What regresses
+// if this fails: an unanswerable row plus a card stuck on a question nobody can
+// settle.
+test("a refused boundary resume still settles the questions and reports the refusal", async () => {
   const { deps, calls } = answerDeps({
     deps: {
       boundary: {
@@ -234,10 +240,40 @@ test("a refused boundary resume surfaces its refusal with the answer counted", a
     cardId: "card_1",
     answers: [{ questionId: "ask_1", answers: ["A"] }],
   });
-  assert.equal(result.ok, false);
-  assert.equal(result.answered, 1, "the answer still counts: it was recorded before the resume");
-  assert.match(result.error, /no longer current/);
+  // The answer was recorded by the host before the resume was attempted, so the
+  // door succeeds at what it was asked and reports the wake separately.
+  assert.equal(result.ok, true);
+  assert.equal(result.answered, 1);
+  assert.equal(result.delivery, "refused");
+  assert.match(result.deliveryLine, /no longer current/);
+  assert.match(result.deliveryLine, /Resume the card/);
+  // The Inbox row and the card are settled: no phantom wait is left behind.
+  assert.deepEqual(calls.answered, ["ask_1"]);
+  assert.equal(calls.updates[0].activity, "idle");
   assert.equal(calls.sends.length, 0, "a refused boundary resume does not fall back to the thread");
+});
+
+// The comment mark follows the SAME standard as the card: only a dispatch that
+// landed carries it. What regresses if this fails: a comment the host queued is
+// stamped carried, and the resume prompt never contains it.
+test("a queued dispatch does not mark its comments carried", async () => {
+  const carried = [];
+  const { deps } = answerDeps({
+    send: () => ({
+      delivery: "queued",
+      queuedMessage: { waitingOn: { kind: "plugin", reason: "4 of 4 running on host alpha" } },
+    }),
+    deps: {
+      answerFeedback: async () => ({ block: "## Feedback written while answering", ids: ["c1"] }),
+      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.delivery, "queued");
+  assert.deepEqual(carried, []);
 });
 
 // An unbound port (before the execution layer is wired) is the pre-native
