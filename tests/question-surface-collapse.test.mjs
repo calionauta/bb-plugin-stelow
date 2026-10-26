@@ -61,8 +61,15 @@ import { codeOf } from "./helpers/source-code.mjs";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => readFileSync(join(repoRoot, relative), "utf8");
 
-/** Comments stripped: a comment naming the removed panel is documentation, not the panel. */
-const batchCode = codeOf(read("components/conversation/question-batch.tsx"));
+/**
+ * Comments stripped: a comment naming the removed panel is documentation, not
+ * the panel. The submit path then moved to its own hook when the component
+ * crossed its function budget, so these pins follow the code, not the path.
+ */
+const batchCode = [
+  read("components/conversation/question-batch.tsx"),
+  read("components/conversation/use-answer-submit.ts"),
+].map(codeOf).join("\n");
 /** The dots and the heading moved to their own file; the pins follow the code, not the path. */
 const headingCode = codeOf(read("components/conversation/batch-question-heading.tsx"));
 const bodyCode = codeOf(read("components/conversation/batch-answer-body.tsx"));
@@ -194,8 +201,10 @@ test("R3: skip, free text and split exclusivity all survive", () => {
 });
 
 test("R3: the batch still submits atomically, one payload for every question", () => {
+  // Counted by the call, not by the line it was written on: the submit moved to a
+  // hook and reflowed, and a pin that breaks on formatting guards the formatter.
   assert.equal(
-    (batchCode.split('rpc.call("answerQuestions", { cardId, answers: questions.map(').length - 1),
+    (batchCode.match(/rpc\.call\("answerQuestions", \{/g) ?? []).length,
     1,
     "the live batch still submits in ONE call carrying every question index — a per-question call would let half a "
     + "batch land and the worker resume twice",
