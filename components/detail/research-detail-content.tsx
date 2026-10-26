@@ -2,14 +2,14 @@ import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { researchColumnForStatus } from "../../lib/question-store.mjs";
 import { groupResearchArtifacts } from "../../lib/artifact-groups.mjs";
-import { reviewLine } from "../../lib/artifact-review.mjs";
+import { reviewLine, reviewMarksByPath } from "../../lib/artifact-review.mjs";
 import { joinStrategyLabels, statusTone } from "../../lib/detail-presentation.mjs";
 import { parseResearchIndexSections } from "../../lib/research-index-sections.mjs";
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { researchOpportunityHint } from "../../lib/research-opportunity-summary.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { ArtifactInventory, type ArtifactInventoryGroup } from "../artifacts/artifact-inventory";
-import { reviewMarksByPath, useArtifactReview } from "../artifacts/use-artifact-review";
+import { useArtifactReview } from "../artifacts/use-artifact-review";
 import { AcceptanceRow } from "./acceptance-row";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
@@ -235,18 +235,21 @@ function ResearchArtifacts({ card, detail, groups, setViewerFile, onReviewedChan
   // the research index never gave a round row. A fraction over rows nobody can
   // see could never reach its total, so this section derives its own from the
   // rows it renders — through the same sentence owner as the server
-  // (lib/artifact-review.mjs).
+  // (lib/artifact-review.mjs). Rows the server did not report (no mark entry)
+  // are excluded from the denominator too: they carry no control, so counting
+  // them would cap the fraction again.
+  const known = rows.filter((row) => marks.has(row.path));
   const line = reviewLine(
-    rows.filter((row) => marks.get(row.path)?.reviewed).length,
-    rows.length,
-    rows.filter((row) => marks.get(row.path)?.stale).length,
+    known.filter((row) => marks.get(row.path)?.reviewed).length,
+    known.length,
+    known.filter((row) => marks.get(row.path)?.stale).length,
   );
   const hint = count > 0
     ? `${count} ${count === 1 ? "file" : "files"} · newest round first${line ? ` · ${line}` : ""}`
     : "being prepared";
   return (
     <DisclosureSection title="Artifacts" hint={hint} defaultOpen>
-      {review.error ? <p className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
+      {review.error ? <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
       <ArtifactInventory
         groups={groups}
         workspaceKind={card.workspaceKind}

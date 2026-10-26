@@ -25,3 +25,10 @@ export declare function reviewState(
     | undefined,
   marks: ReadonlyMap<string, string> | null | undefined,
 ): ArtifactReviewState;
+
+export declare function reviewMarksByPath(
+  artifacts:
+    | ReadonlyArray<{ path: string; reviewed?: boolean; stale?: boolean }>
+    | null
+    | undefined,
+): Map<string, { reviewed: boolean; stale: boolean }>;

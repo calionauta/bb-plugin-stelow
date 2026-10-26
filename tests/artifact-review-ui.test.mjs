@@ -21,7 +21,7 @@ globalThis.__bbPluginRuntime = {
   },
 };
 
-const { ArtifactInventory } = await import("../components/artifacts/artifact-inventory.tsx");
+const { ArtifactGroups, ArtifactInventory } = await import("../components/artifacts/artifact-inventory.tsx");
 
 const ALPHA_PATH = "deliverables/spec.md";
 const BETA_PATH = "deliverables/audit-notes.md";
@@ -67,6 +67,40 @@ function showRows({ marks, pendingPath = null, withReview = true } = {}) {
     review,
   }));
   return toggles;
+}
+
+function groupArtifact(path, display, reviewed, stale) {
+  return {
+    stage: "build",
+    kind: "doc",
+    role: "deliverable",
+    path,
+    display,
+    generatedAt: "",
+    absolutePath: `/work/${path}`,
+    hostId: "host_1",
+    reviewed,
+    stale,
+  };
+}
+
+// ArtifactGroups derives the marks from this payload itself, so the controls
+// it draws are the proof that the server fields reach reviewMarksByPath.
+const GROUP_ARTIFACTS = [
+  groupArtifact("deliverables/reviewed.md", "Reviewed spec", true, false),
+  groupArtifact("deliverables/stale.md", "Stale spec", false, true),
+];
+
+function showGroups(reviewable) {
+  render(h(ArtifactGroups, {
+    artifacts: GROUP_ARTIFACTS,
+    workspaceKind: "build",
+    fileEnvironmentId: null,
+    onView: () => {},
+    cardId: "card_1",
+    reviewable,
+    onReviewedChanged: () => {},
+  }));
 }
 
 afterEach(cleanup);
@@ -142,6 +176,28 @@ test("pendingPath disables that row's primary control and only that row's", () =
   assert.equal(idle.disabled, false, "pendingPath names one row, not the whole inventory");
   fireEvent.click(pending);
   assert.deepEqual(toggles, [], "a disabled control never reaches onToggle");
+});
+
+test("ArtifactGroups derives each control from the server's reviewed/stale fields", () => {
+  showGroups(true);
+  rowButton("Reviewed spec");
+  rowButton("Stale spec");
+  assert.ok(screen.getByRole("button", { name: "Reviewed: Reviewed spec" }));
+  assert.ok(screen.getByRole("button", { name: "Review again: Stale spec" }));
+  assert.ok(screen.getByRole("button", { name: "Clear the stale reviewed mark: Stale spec" }));
+  assert.equal(
+    screen.queryByRole("button", { name: "Mark reviewed: Reviewed spec" }),
+    null,
+    "the already-reviewed row is not offered a mark it already carries",
+  );
+});
+
+test("reviewable=false keeps the rows but removes every review control", () => {
+  showGroups(false);
+  rowButton("Reviewed spec");
+  rowButton("Stale spec");
+  assert.equal(reviewControls("Reviewed spec").length, 0, "an archived card offers no mark");
+  assert.equal(reviewControls("Stale spec").length, 0, "not even the stale row gets a control");
 });
 
 console.log("artifact-review-ui: ok");

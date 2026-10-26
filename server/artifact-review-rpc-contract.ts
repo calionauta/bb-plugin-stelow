@@ -18,8 +18,9 @@ export const artifactReviewRpcContract = {
    * Mark one artifact reviewed at the version the server reads now.
    *
    * Refusals name their exits: unknown card (`cardNotFound`), archived card
-   * (the existing message), and a path that is not among the card's artifacts
-   * (`ARTIFACT_NOT_ON_CARD`, which points at the Artifacts section).
+   * (the existing message), a path that is not among the card's artifacts
+   * (`ARTIFACT_NOT_ON_CARD`, which points at the Artifacts section), and an
+   * unreadable workspace (`ARTIFACTS_UNAVAILABLE`, which says to reopen).
    */
   markArtifactReviewed: {
     experimental_description: "Mark this card's artifact reviewed at its current version",

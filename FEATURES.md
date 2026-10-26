@@ -1448,12 +1448,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   mark stores the artifact's `generatedAt` — the timestamp the row already
   displays — rather than a boolean. A file that changed after the mark reads
   **Reviewed before the file changed**, leaves the reviewed count, and asks to
-  be reviewed again; the section summarizes `3 of 7 reviewed`. The server
+  be reviewed again; the section summarizes `3 of 7 reviewed`. A stale row
+  also offers **Clear**, so the reversible pair is reachable where it matters
+  most. The server
   resolves the fingerprint from its own artifact list, so a client cannot make
   an old mark read as current, and a mark whose file is gone is ignored rather
-  than resurrected. The mark refuses nothing, answers no inbox event, and moves
-  no stage: it is a claim about a file, and clearing it is the person's door
-  back.
+  than resurrected. A research card's fraction counts only the rows its
+  Artifacts section actually renders — a round can outlive the artifact list it
+  was indexed from — and an archived card shows the marks as facts without
+  offering a control every click would have refused. The mark refuses nothing,
+  answers no inbox event, and moves no stage: it is a claim about a file, and
+  clearing it is the person's door back.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
   diff-gate and audit stages, plus completed cards whose tree went dirty

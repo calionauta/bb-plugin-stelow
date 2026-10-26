@@ -130,7 +130,7 @@ async function markReviewed(
 ): Promise<ReviewResult> {
   const checked = cardRefusal(deps, cardId);
   if ("error" in checked) return refused(checked.error);
-  const artifacts = await deps.readArtifacts(checked.card);
+  const artifacts = await deps.readArtifacts(checked.card).catch(() => null);
   if (artifacts === null) return refused(ARTIFACTS_UNAVAILABLE);
   const artifact = artifacts.find((entry) => entry.path === path);
   if (!artifact) return refused(ARTIFACT_NOT_ON_CARD);

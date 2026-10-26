@@ -14,7 +14,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reviewLine, reviewState } from "../lib/artifact-review.mjs";
+import { reviewLine, reviewMarksByPath, reviewState } from "../lib/artifact-review.mjs";
 import { artifactReviewRpcContract } from "../server/artifact-review-rpc-contract.ts";
 import { createCardLifecycleHandlers } from "../server/runtime/card-lifecycle.ts";
 import {
@@ -147,6 +147,42 @@ test("the equality is the whole rule: a changed timestamp is stale, never fresh"
 });
 
 // ---------------------------------------------------------------------------
+// The marks map the rows render from
+// ---------------------------------------------------------------------------
+
+test("reviewMarksByPath keys marked rows by path and drops rows without a server mark", () => {
+  const marks = reviewMarksByPath([
+    { path: "a.md", reviewed: true, stale: false },
+    { path: "b.md", reviewed: false, stale: true },
+    { path: "c.md" },
+    { path: 7, reviewed: true },
+  ]);
+  assert.deepEqual([...marks.keys()], ["a.md", "b.md"], "only server-marked paths become controls");
+  assert.deepEqual(marks.get("a.md"), { reviewed: true, stale: false });
+  assert.deepEqual(marks.get("b.md"), { reviewed: false, stale: true });
+  assert.equal(marks.has("c.md"), false, "a row with no boolean reviewed carries no mark");
+  assert.equal(marks.has(7), false, "a malformed path is not a key");
+});
+
+test("a mark without a stale field defaults to fresh, not stale", () => {
+  const marks = reviewMarksByPath([
+    { path: "fresh.md", reviewed: true },
+    { path: "open.md", reviewed: false },
+  ]);
+  assert.deepEqual(marks.get("fresh.md"), { reviewed: true, stale: false });
+  assert.deepEqual(marks.get("open.md"), { reviewed: false, stale: false },
+    "a mark with no stale flag is not a claim about an older version");
+});
+
+test("no artifact list derives no marks, as a Map", () => {
+  for (const missing of [null, undefined]) {
+    const marks = reviewMarksByPath(missing);
+    assert.ok(marks instanceof Map, "callers iterate the result; it is always a Map");
+    assert.equal(marks.size, 0, "an absent list has no server marks to offer");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // The store
 // ---------------------------------------------------------------------------
 
@@ -200,6 +236,9 @@ test("deleting a card deletes its marks, even though SQLite does not enforce the
   insertCard(db, row);
   markArtifactReviewed(db, row.id, "a.md", FRESH, 10);
   const handlers = createCardLifecycleHandlers(lifecycleDeps(db, row));
+  // Prove the EXPLICIT cleanup, not the schema's cascade: with foreign keys
+  // off the declared ON DELETE CASCADE cannot hide a missing delete.
+  db.pragma("foreign_keys = OFF");
   const result = await handlers.deleteCard({ cardId: row.id });
   assert.deepEqual(result, { deleted: true, error: null });
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id = ?").get(row.id).n, 0);
@@ -267,6 +306,22 @@ test("an unreadable workspace is UNKNOWN, not 'this card has no artifacts'", asy
   assert.deepEqual(result, { ok: false, error: ARTIFACTS_UNAVAILABLE });
   assert.notEqual(result.error, ARTIFACT_NOT_ON_CARD, "a host failure must not send the reader to an empty section");
   assert.equal(reviewMarks(db, row.id).size, 0);
+  db.close();
+});
+
+test("a reader that throws is UNKNOWN too, and the failure publishes nothing", async () => {
+  const db = freshDatabase();
+  const row = card({ id: "card_live" });
+  insertCard(db, row);
+  const { handlers, published } = handlersFor(db, {
+    row,
+    artifacts: () => { throw new Error("host read failed"); },
+  });
+  const result = await handlers.markArtifactReviewed({ cardId: row.id, path: "a.md" });
+  assert.deepEqual(result, { ok: false, error: ARTIFACTS_UNAVAILABLE });
+  assert.notEqual(result.error, ARTIFACT_NOT_ON_CARD, "a thrown host failure must not read as an empty artifact list");
+  assert.equal(reviewMarks(db, row.id).size, 0, "a failed read leaves no mark behind");
+  assert.deepEqual(published, [], "a failed read must not look like a write");
   db.close();
 });
 

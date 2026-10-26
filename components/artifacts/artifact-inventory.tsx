@@ -2,14 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { reviewMarksByPath } from "../../lib/artifact-review.mjs";
 import { groupArtifactsByStage } from "../../lib/artifact-groups.mjs";
 import { splitArtifactsByRole } from "../../lib/artifact-roles.mjs";
 import { DisclosureSection } from "../disclosure";
 import { ReviewToggle, type ArtifactReviewControls } from "./artifact-review-toggle";
-import {
-  reviewMarksByPath,
-  useArtifactReview,
-} from "./use-artifact-review";
+import { useArtifactReview } from "./use-artifact-review";
 
 // Artifact surfaces: the file-target convention (workspace vs host links),
 // the shared inventory renderer (every track supplies its grouping axis),
@@ -240,7 +238,9 @@ export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, on
    * click would be refused, and a visible control that always refuses is a
    * trap, not a protection. */
   reviewable?: boolean;
-  onReviewedChanged?: () => void;
+  /** The row cannot refresh itself: a mark that is written but not loaded back
+   * would leave the control claiming the old state. Required for that reason. */
+  onReviewedChanged: () => void;
 }) {
   const { deliverables, evidence } = useMemo(() => splitArtifactsByRole(artifacts), [artifacts]);
   const review = useArtifactReview(cardId, onReviewedChanged);
@@ -255,7 +255,7 @@ export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, on
   })), [deliverables, groupTitleForStage]);
   return (
     <>
-      {review.error ? <p className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
+      {review.error ? <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
       <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} review={controls} />
       <EvidenceDisclosure
         artifacts={evidence}

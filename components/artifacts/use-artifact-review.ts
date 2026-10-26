@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 
@@ -20,48 +20,34 @@ export function useArtifactReview(cardId: string, onReviewedChanged?: () => void
   const [error, setError] = useState<string | null>(null);
   // A refusal belongs to the card it was made on. The detail pane is reused
   // when the reader selects another card, so an error left standing would
-  // render under a card that never refused anything.
+  // render under a card that never refused anything — and a response landing
+  // after the switch must not write into the new card either.
+  const activeCard = useRef(cardId);
   useEffect(() => {
+    activeCard.current = cardId;
     setError(null);
     setPendingPath(null);
   }, [cardId]);
   const toggle = useCallback(async (path: string, reviewed: boolean) => {
+    const requestedFor = cardId;
     setPendingPath(path);
     setError(null);
     try {
       const result = reviewed
         ? await rpc.call("unmarkArtifactReviewed", { cardId, path })
         : await rpc.call("markArtifactReviewed", { cardId, path });
+      if (activeCard.current !== requestedFor) return;
       if (!result.ok) {
         setError(result.error ?? "The host refused the mark without a reason.");
         return;
       }
       onReviewedChanged?.();
     } catch {
+      if (activeCard.current !== requestedFor) return;
       setError("The host could not record the mark. Nothing changed on this card.");
     } finally {
-      setPendingPath(null);
+      if (activeCard.current === requestedFor) setPendingPath(null);
     }
   }, [cardId, onReviewedChanged, rpc]);
   return { toggle, pendingPath, error };
-}
-
-/**
- * Marks keyed by path for the rows that are in the card's own artifact list.
- *
- * A row absent from the map gets no toggle: a path the server would refuse is
- * not offered as an action (research rounds can outlive the artifact list they
- * were indexed from). Deriving the map from the server payload also keeps the
- * row and the summary line reading the same facts.
- */
-export function reviewMarksByPath(
-  artifacts: ReadonlyArray<{ path: string; reviewed?: boolean; stale?: boolean }>,
-): Map<string, ArtifactReviewMark> {
-  const marks = new Map<string, ArtifactReviewMark>();
-  for (const artifact of artifacts) {
-    if (typeof artifact.reviewed === "boolean") {
-      marks.set(artifact.path, { reviewed: artifact.reviewed, stale: artifact.stale === true });
-    }
-  }
-  return marks;
 }
