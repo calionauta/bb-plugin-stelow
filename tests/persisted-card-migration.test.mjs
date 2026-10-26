@@ -275,6 +275,7 @@ const stateOwner = (state) => stateWorkflowId(state);
     "expired_questions",
     "ask_contracts",
     "inbox_events",
+    "artifact_reviews",
     "github_imports",
   ]) {
     db.exec(`CREATE TABLE ${table} (card_id TEXT)`);

@@ -115,6 +115,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...cards.cardMutations,
     ...cards.cardLifecycle,
     ...cards.cardOperations,
+    ...cards.artifactReviews,
     ...cardReaderHandlers(cards),
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),

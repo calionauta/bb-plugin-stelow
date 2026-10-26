@@ -1,5 +1,6 @@
 import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { reviewState } from "../../lib/artifact-review.mjs";
 import { readOpenExpiredQuestions } from "../../lib/question-store.mjs";
 import { labelDetailQuestions } from "../../lib/scope-labels.mjs";
 import { readFrozenAcceptance } from "./card-detail-frozen.js";
@@ -16,6 +17,7 @@ import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
 import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
+import { reviewMarks } from "./artifact-reviews.js";
 import { recordContrastQuestions } from "./card-detail-contrast.js";
 import { enrichScopes } from "./card-detail-scopes.js";
 import { assembleDetail } from "./card-detail-presentation.js";
@@ -82,6 +84,44 @@ async function readOpenQuestions(deps: CardDetailDeps, card: WorkerCard) {
   };
 }
 
+/**
+ * The card's artifacts, with the reviewed marks joined.
+ *
+ * One query per card open, and the rows `reviewState` returns are 1:1 with the
+ * artifacts in the order they were read. The state is derived ONCE so the rows
+ * and the summary line cannot disagree about how much has been read
+ * (`lib/artifact-review.mjs`).
+ */
+async function readReviewedArtifacts(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  workspace: { path: string | null; hostId: string | null },
+  cardId: string,
+) {
+  const artifacts = await readDetailArtifacts(
+    {
+      bb: deps.bb,
+      stateDir: deps.stateDir,
+      fileTimestamp: deps.fileTimestamp,
+      auditReceiptNote: deps.auditReceiptNote,
+      workspaceRelative: deps.workspaceRelative,
+    },
+    card,
+    workspace.path,
+    workspace.hostId,
+  );
+  const review = reviewState(artifacts, reviewMarks(deps.db, cardId));
+  const rowByPath = new Map(review.rows.map((row) => [row.path, row]));
+  return {
+    artifacts: artifacts.map((artifact) => ({
+      ...artifact,
+      reviewed: rowByPath.get(artifact.path)?.reviewed === true,
+      stale: rowByPath.get(artifact.path)?.stale === true,
+    })),
+    reviewLine: review.line,
+  };
+}
+
 async function loadDetailInputs(
   deps: CardDetailDeps,
   card: WorkerCard,
@@ -96,18 +136,7 @@ async function loadDetailInputs(
   const fileEnvironmentId = await readFileEnvironment(deps, card, cardId);
   const scopes = loadCardScopes(workspace.path, card.id);
   const enrichedScopes = await enrichScopes(deps, card, workspace, scopes);
-  const artifacts = await readDetailArtifacts(
-    {
-      bb: deps.bb,
-      stateDir: deps.stateDir,
-      fileTimestamp: deps.fileTimestamp,
-      auditReceiptNote: deps.auditReceiptNote,
-      workspaceRelative: deps.workspaceRelative,
-    },
-    card,
-    workspace.path,
-    workspace.hostId,
-  );
+  const reviewed = await readReviewedArtifacts(deps, card, workspace, cardId);
   await recordContrastQuestions(deps, card, workspace.path);
   const activity = effectiveActivity(card, openQuestions.openCount);
   const preset = deps.getReliablePreset(presetBand(card), card.id);
@@ -122,7 +151,8 @@ async function loadDetailInputs(
   const questions = labelDetailQuestions(pending, expiredQuestions, scopeXray, scopeDraft, scopes);
   return {
     card, workspace, comments, ...questions, mentionedFiles, attachments,
-    fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
+    fileEnvironmentId, scopes: enrichedScopes, artifacts: reviewed.artifacts,
+    reviewLine: reviewed.reviewLine, activity, preset,
     workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft,
     frozen: await readFrozenAcceptance(deps, card, workspace.path), hold,
     nativeRun: readNativeRun(deps.db, cardId),

@@ -11,7 +11,7 @@
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import type { QuestionCount } from "../../lib/question-store.mjs";
 import { expiredQuestionId } from "../../lib/question-evidence.mjs";
-import { expandInteractionQuestions } from "../../lib/question-batch.mjs";
+import { expandInteractionQuestions, QUESTION_RENDERER_ID } from "../../lib/question-batch.mjs";
 import type { WorkerCard } from "../workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -52,9 +52,16 @@ function pendingAsks(
     ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>
   >,
 ): PendingAsk[] {
+  // The host returns every pending interaction on the thread, including the
+  // built-in `ask-user-question` plugin's. A card question is only this
+  // plugin's own renderer: reading a foreign payload with Stelow's shape
+  // yields a blank question and answering it sends the wrong value shape.
   return list.filter(
     (entry): entry is PendingAsk =>
-      entry.origin?.kind === "plugin" && entry.status === "pending",
+      entry.origin?.kind === "plugin"
+      && entry.origin.pluginId === deps.bb.pluginId
+      && entry.origin.rendererId === QUESTION_RENDERER_ID
+      && entry.status === "pending",
   );
 }
 async function fetchPendingAsks(

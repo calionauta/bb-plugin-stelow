@@ -21,7 +21,13 @@ import type { WorkerCard } from "../../workers-types.js";
 import type { CliCommandFn, CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 
-type AnswerResult = { ok: boolean; answered: number; error: string | null };
+type AnswerResult = {
+  ok: boolean;
+  answered: number;
+  error: string | null;
+  delivery?: "sent" | "queued" | "refused" | null;
+  deliveryLine?: string | null;
+};
 type AnswerInput = { cardId: string; answers: Array<{ questionId: string; answers: string[] }> };
 type Door = "live" | "expired";
 
@@ -93,7 +99,21 @@ async function answerThrough(
     return { exitCode: 1, stdout: "", stderr: result?.error ?? "Could not answer the questions." };
   }
   const stdout = asJson
-    ? JSON.stringify({ cardId, answered: result.answered, door })
-    : `Answered ${result.answered} question(s) on card ${cardId}.`;
+    ? JSON.stringify({
+      cardId,
+      answered: result.answered,
+      door,
+      delivery: result.delivery ?? null,
+      deliveryLine: result.deliveryLine ?? null,
+    })
+    : [
+      `Answered ${result.answered} question(s) on card ${cardId}.`,
+      // The answers are recorded whether or not the worker woke, so this line
+      // rides the success output instead of the error one. The exit code stays
+      // 0 for the same reason: a non-zero code would say the answers were not
+      // recorded, and a caller that re-ran the verb would be refused as a
+      // duplicate. A script that needs to branch on delivery reads `--json`.
+      result.deliveryLine,
+    ].filter(Boolean).join("\n");
   return { exitCode: 0, stdout, stderr: "" };
 }

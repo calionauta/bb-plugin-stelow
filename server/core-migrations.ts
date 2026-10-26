@@ -202,6 +202,8 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
     ["kind", "TEXT NOT NULL DEFAULT 'standard'"],
     ["locale", "TEXT"],
   ]);
+  ensureCommentDeliveryColumn(db);
+  ensureArtifactReviewsTable(db);
   ensureTrackableEventsTable(db);
   ensureAutoContinueColumns(db);
   createFeatureTables(db);
@@ -213,4 +215,57 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
   ensureColumns(db, "automation_rules", [["autostart", "INTEGER NOT NULL DEFAULT 0"]]);
   runPublicationMigrations(db);
   runPresetMigrations(db, now);
+}
+
+/**
+ * `comments.delivered_at`, and the backfill it needs exactly once.
+ *
+ * Null means "no answer has carried this comment yet" (lib/answer-feedback).
+ * A column added as null says that about every comment a card ever collected, so
+ * the first answer after the upgrade would send the card's whole history to the
+ * worker inside the resume prompt. The backfill stamps the history with its own
+ * timestamp — but it must run ONLY on the boot that adds the column: run on
+ * every boot it would stamp the comments genuinely waiting for an answer, and
+ * they would never ride.
+ */
+export function ensureCommentDeliveryColumn(db: Db) {
+  // Order-dependent by nature: the caller runs `createBaseTables` first. Guarded
+  // anyway, because this is exported and a test (or a future caller) may not be.
+  const hasTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'comments'")
+    .get() !== undefined;
+  if (!hasTable) return;
+  const hadDelivery = (db.prepare('PRAGMA table_info("comments")').all() as Array<{ name?: string }>)
+    .some((column) => column.name === "delivered_at");
+  ensureColumns(db, "comments", [["delivered_at", "INTEGER"]]);
+  if (hadDelivery) return;
+  db.prepare("UPDATE comments SET delivered_at = created_at WHERE delivered_at IS NULL").run();
+}
+
+/**
+ * A "reviewed" mark, bound to the version of the artifact the person read.
+ *
+ * The fingerprint is the artifact's `generatedAt` as the detail displays it,
+ * not a content hash: the card detail carries no sha, and adding one would put
+ * a file read on every card open. Equality is enough to DERIVE staleness —
+ * "this was read at a version that is no longer the one on the card" — which is
+ * a claim the UI can make and test. A content change that preserves mtime
+ * reads as fresh; that weakness is accepted and written down rather than
+ * hidden (lib/artifact-review.mjs).
+ *
+ * Additive and with no backfill: absence of a row means "not reviewed", which
+ * is true of every card created before this table existed. That is the
+ * opposite of `comments.delivered_at`, where absence meant "waiting for an
+ * answer" and the upgrade had to backfill (010e11e5); the difference is the
+ * whole lesson of that commit.
+ */
+export function ensureArtifactReviewsTable(db: Db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS artifact_reviews (
+      card_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      reviewed_at INTEGER NOT NULL,
+      reviewed_fingerprint TEXT NOT NULL,
+      PRIMARY KEY (card_id, path),
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+    )`);
 }

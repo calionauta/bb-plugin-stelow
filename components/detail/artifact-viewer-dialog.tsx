@@ -96,7 +96,16 @@ function useCommentDrafts(rpc: Rpc, open: boolean, cardId: string, file: Artifac
       if (result.error) toast.error(result.error);
       else {
         setDrafts([]);
-        toast.success(drafts.length === 1 ? "Comment sent to the agent." : `${drafts.length} comments sent to the agent.`);
+        // A comment written while the card waits on an answer is saved, not
+        // sent: it rides that answer. Saying "sent to the agent" here is the
+        // lie this line exists to stop.
+        if (result.deliveryLine) toast.message(result.deliveryLine);
+        else if (result.delivery === "sent") {
+          toast.success(drafts.length === 1 ? "Comment sent to the agent." : `${drafts.length} comments sent to the agent.`);
+        } else {
+          // No verdict and no line: claim nothing.
+          toast.message("Comment saved.");
+        }
         onCommented();
       }
     } finally {

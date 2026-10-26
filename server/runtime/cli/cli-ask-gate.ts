@@ -394,7 +394,3 @@ export async function discloseStandardSplit(
   for (const group of groups)
     group.question = withStandardSplitDisclosure(group.question);
 }
-
-export function askTimeoutMs(): number {
-  return Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
-}

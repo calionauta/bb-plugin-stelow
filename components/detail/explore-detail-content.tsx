@@ -82,16 +82,35 @@ function ExploreQuestions({ card, detail, state, onChanged }: Pick<ExploreConten
   );
 }
 
-function ExploreArtifacts({ card, detail, stageLabel, setViewerFile }: Pick<ExploreContentProps, "card" | "detail" | "stageLabel"> & {
+function ExploreArtifacts({ card, detail, stageLabel, setViewerFile, onChanged }: Pick<ExploreContentProps, "card" | "detail" | "stageLabel" | "onChanged"> & {
   setViewerFile: ExploreDetailState["setViewerFile"];
 }) {
-  // Machine receipts are not files this card produced, so they are not counted
-  // here — the same rule the inventory applies. Counting them is how Explore
-  // said "3 files" over two deliverables.
-  const { deliverables } = artifactRoleCounts(detail?.artifacts ?? []);
+  // Machine receipts are not files this card produced, so they are counted
+  // apart — the same rule the inventory applies. Counting them is how Explore
+  // said "3 files" over two deliverables, and leaving them out of the hint
+  // while the review line counted them made two adjacent counts disagree.
+  const { deliverables, evidence } = artifactRoleCounts(detail?.artifacts ?? []);
+  const hint = detail
+    ? `${deliverables} file${deliverables === 1 ? "" : "s"}`
+      + (evidence > 0 ? ` + ${evidence} evidence` : "")
+      + (detail.reviewLine ? ` · ${detail.reviewLine}` : "")
+    : "being prepared";
   return (
-    <DisclosureSection title="Artifacts" hint={detail ? `${deliverables} file${deliverables === 1 ? "" : "s"}` : "being prepared"} defaultOpen>
-      {detail ? <ArtifactGroups artifacts={detail.artifacts} workspaceKind={card.workspaceKind} fileEnvironmentId={detail.fileEnvironmentId} onView={setViewerFile} groupTitleForStage={() => stageLabel ?? "Exploration"} /> : <p className="text-xs text-muted-foreground">Loading…</p>}
+    <DisclosureSection title="Artifacts" hint={hint} defaultOpen>
+      {detail
+        ? (
+          <ArtifactGroups
+            artifacts={detail.artifacts}
+            workspaceKind={card.workspaceKind}
+            fileEnvironmentId={detail.fileEnvironmentId}
+            onView={setViewerFile}
+            groupTitleForStage={() => stageLabel ?? "Exploration"}
+            cardId={card.id}
+            reviewable={card.status !== "archived"}
+            onReviewedChanged={onChanged}
+          />
+        )
+        : <p className="text-xs text-muted-foreground">Loading…</p>}
     </DisclosureSection>
   );
 }
@@ -119,7 +138,7 @@ export function ExploreDetailContent({ inboxEventId, inboxEvent, card, detail, s
       <InputFiles card={card} detail={detail} onView={state.setViewerFile} />
       <PreviewSection cardId={card.id} />
       <ExploreQualitySection cardId={card.id} filePath={qualityPath} repairing={state.actions.repairing} onRepair={(lines) => void state.actions.doQualityRepair(lines)} />
-      <ExploreArtifacts card={card} detail={detail} stageLabel={stageLabel} setViewerFile={state.setViewerFile} />
+      <ExploreArtifacts card={card} detail={detail} stageLabel={stageLabel} setViewerFile={state.setViewerFile} onChanged={onChanged} />
       <CardConversation comments={detail?.comments ?? []} draft={state.comment} onDraftChange={state.setComment} onSend={() => void state.submitComment()} defaultOpen={hero.kind === "decision"} threadId={card.workerThreadId ?? null} />
     </>
   );

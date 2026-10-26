@@ -2,11 +2,12 @@ import { z } from "zod";
 import { NO_INPUT } from "./rpc-input.js";
 import { cardlessWorkflowRpcContract } from "./cardless-workflow-rpc-contract.js";
 import { BOARD_MOVE_COLUMNS } from "../lib/tracks.mjs";
-import { attachmentSchema, composerExecutionSchema } from "./contracts.js";
+import { answerResultSchema, attachmentSchema, composerExecutionSchema } from "./contracts.js";
 
 export const lifecycleRpcContract = {
   addCardComment: {
-    experimental_description: "Comment on a card, scope, or task; the worker sees it",
+    experimental_description:
+      "Comment on a card, scope, or task; the worker sees it now, or with the next answer while a question waits",
     input: z
       .object({
         cardId: z.string(),
@@ -15,7 +16,13 @@ export const lifecycleRpcContract = {
         body: z.string().min(1).max(10_000),
       })
       .strict(),
-    output: z.object({ commentId: z.string(), error: z.string().nullable() }),
+    output: z.object({
+      commentId: z.string(),
+      error: z.string().nullable(),
+      /** `rides-answer` while a question waits: the comment is saved, not sent. */
+      delivery: z.enum(["sent", "queued", "rides-answer", "saved"]).nullable(),
+      deliveryLine: z.string().nullable(),
+    }),
   },
   cancelCard: {
     experimental_description: "Stop the worker and archive the card; history preserved",
@@ -356,7 +363,7 @@ export const lifecycleRpcContract = {
           .max(12),
       })
       .strict(),
-    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+    output: answerResultSchema,
   },
   advanceCard: {
     experimental_description: "Advance a card to a stage preview under upstream transition rules",

@@ -54,6 +54,8 @@ const skippedFor = (gates) => skippedStages({ kind: "build", intent: "feature", 
 assert.deepEqual(skippedFor([]), ["diff-gate", "plan-gate", "selection"], "empty set skips every human gate");
 assert.deepEqual(skippedFor(["interface"]), ["diff-gate", "plan-gate"], "interface only waits the interface pick, never the tech or diff gates");
 assert.deepEqual(skippedFor(["spec", "tech"]), ["diff-gate", "selection"], "spec + tech plan waits plan-gate without the interface pick");
+assert.deepEqual(skippedFor(["tech"]), ["diff-gate", "selection"], "tech alone waits plan-gate without the interface pick or the diff gate");
+assert.deepEqual(skippedFor(["diff"]), ["plan-gate", "selection"], "diff alone waits the code diff without the tech plan or the interface pick");
 assert.deepEqual(skippedFor(["spec", "interface", "scope", "tech", "diff"]), [], "the full set waits everywhere");
 assert.deepEqual(
   requiredForStage({ stage: "selection", reviewMode: ["interface"], appetite: "Core" }).map((entry) => entry.id),

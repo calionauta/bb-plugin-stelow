@@ -817,10 +817,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   checkbox — no detached Show label. Severity chips that merely restate the
   row's own label are suppressed (one signal, not two); chips that add
   information — stall age, error counts — always survive.
+- **The list holds still while you read it** (`lib/inbox-stable-order.mjs`,
+  `components/panels/use-stable-inbox-order.ts`). Severity tiers order the list,
+  and the panel reloads on `card-state` / `inbox-changed`, so a severity bump —
+  an error repeating, a stall crossing 72h, a model judgement promoting an item —
+  used to move a row while somebody was reading the row below it. Every row
+  carries actions, so that is a click waiting to land on the wrong one. The order
+  is frozen for as long as the reader is looking: a row that gains severity keeps
+  its place and changes only its own content, a row that did not exist yet joins
+  at the end, and an **N updates · Show** control puts everything where it
+  belongs. Nothing is hidden — a held list that hid an arriving wait would be the
+  phantom-wait bug wearing a stability argument — and changing a filter adopts
+  that list's own order at once, because it is a list the reader asked for.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
-  and an escalating mark. Tiers reorder only — the badge still counts
+  and an escalating mark. Tiers reorder only — while a reader is looking the
+  drawn order is held (see above), and Show re-applies them — the badge still counts
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
@@ -977,6 +990,55 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Unread is a view, not a work state** (`components/panels/inbox-panel.tsx`). Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.
+- **The answer and its wake are two facts** (`lib/answer-delivery.mjs`,
+  `server/runtime/answer-resume.ts`). Both doors commit the answers first and
+  wake the worker second, and the host answers a dispatch three ways: it sent
+  it, it queued it behind a hold, or it refused with its own words. The door
+  used to await a raw `threads.send` and throw that away, so a queued dispatch
+  read as a resume — the card claimed `running` for a turn nobody had started,
+  and the row resolved whether or not anything was woken. The recovery door was
+  worse: it swallowed a failed send with `.catch(() => undefined)`. Now one
+  verdict travels. `sent` adds no line, because the card's own activity is the
+  receipt. `queued` puts the card on `held` and shows the host's hold sentence,
+  which already names what releases it and that the reader is not the one who
+  has to. `refused` leaves the card `idle` and shows the host's reason plus the
+  exit — *Resume the card; the answers do not need re-entering* — because a
+  refusal without an exit is a deadlock with a good error message. The verdict
+  rides the RPC result (`delivery`, `deliveryLine`) and the CLI's stdout and
+  `--json`, because both doors reach the same handler and a fact only one of
+  them knows is a fact the other breaks. A dispatch nobody could read renders
+  as "the host did not say", never as delivered: the answers are certain, the
+  wake is not.
+- **A comment written while answering rides the answer** (`lib/answer-feedback.mjs`,
+  `server/runtime/answer-feedback.ts`). The comment box on an artifact is how a
+  reviewer says *why* before saying *what*: "approve, but rewrite this
+  paragraph". Sending it on its own woke the worker mid-read, so the picks
+  arrived as a second turn and the first turn acted on half a thought — two
+  resumes for one decision moment. Now a comment written while the card waits on
+  an answer (activity `awaiting-answer`, or an open recovery question) is written
+  to the card as always and left uncarried; the answer's resume prompt carries it
+  under **Feedback written while answering**, before the worker acts, and only a
+  dispatch that actually landed marks it carried. An answer that resumes a native
+  run instead of the thread carries the same block as `context.resumeFeedback`,
+  beside the `resumeAnswers` a resume already sends — the run takes decisions,
+  not prose, so the field is the protocol surface for it, and the port's own
+  "resumed" report is what marks the comments carried there. Nothing is lost when no answer
+  comes: the comment is on the card, and it rides the next answer instead. The
+  composer stops saying "sent to the agent" when it was only saved — it says the
+  comment will go with the answer, that the host is holding it, or that nothing
+  was sent at all (a scope/task comment, or a card with no live worker). The store is one
+  additive column (`comments.delivered_at`), so a held comment survives a crash,
+  a restart, and a card archived by mistake.
+- **A refused resume still settles what was answered** (`server/runtime/answer-resume.ts`,
+  `answerQuestions`). An answer that resumes a native run can be refused by the
+  run's own contract — the boundary moved on while the person was deciding. The
+  answers were recorded before that attempt, so returning early left a phantom
+  wait: the card kept `awaiting-answer` and its Inbox row could not be answered
+  again (a second attempt hits "no question was answered"). The door now settles
+  the questions, the row and the card, and carries the refusal as the delivery
+  verdict — the line quotes the run's words and names the exit, **Resume the
+  card**. The same rule as a refused thread dispatch: the answer is a fact, the
+  wake is a separate one.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with
@@ -1057,6 +1119,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Marking only the first fixed nothing: on a real card the worker attached no
   document, the host injected the stage's own `interfaces.md` into all four
   options, and every row claimed it as its own evidence.
+- **A card question is this plugin's own** (`pendingAsks`, `lib/ask-timeout.mjs`).
+  The host returns every pending interaction on a worker thread, including the
+  built-in `ask-user-question` tool's, and both are `origin.kind: "plugin"`. The
+  Inbox now selects this plugin's id and the `stelow-question` renderer, so a
+  native question can never be rendered with Stelow's shape or answered with
+  Stelow's value shape; `bb stelow ask` remains the card question command. The
+  question timeout is a plugin setting (**Question
+  timeout**, 30 minutes–7 days; default **1 hour**) instead of an undeclared
+  daemon environment variable; `STELOW_ASK_TIMEOUT_MS` remains a test/ops
+  override and a malformed value falls back to the setting instead of becoming
+  `NaN` and stamping an unreadable recovery row.
 - **An option opens at its own section** (`components/detail/option-section.tsx`). A combined brief holds every
   proposal in one file, so opening it from an option landed on the first line
   — which is precisely not that option. On a real card a reader opened the
@@ -1380,6 +1453,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   serve as the review document, and carry the `evidence` role
   (`artifactRole`, `splitArtifactsByRole` in `lib/artifact-roles.mjs`) —
   the host's `audit.md` stays a deliverable beside them.
+- **A reviewed mark is bound to the version you read** (`markArtifactReviewed`,
+  `unmarkArtifactReviewed`, `artifact_reviews`, `reviewState` in
+  `lib/artifact-review.mjs`). Each artifact row can be marked reviewed, and the
+  mark stores the artifact's `generatedAt` — the timestamp the row already
+  displays — rather than a boolean. A file that changed after the mark reads
+  **Reviewed before the file changed**, leaves the reviewed count, and asks to
+  be reviewed again; the section summarizes `3 of 7 reviewed`. A stale row
+  also offers **Clear**, so the reversible pair is reachable where it matters
+  most. The server
+  resolves the fingerprint from its own artifact list, so a client cannot make
+  an old mark read as current, and a mark whose file is gone is ignored rather
+  than resurrected. A research card's fraction counts only the rows its
+  Artifacts section actually renders — a round can outlive the artifact list it
+  was indexed from — and an archived card shows the marks as facts without
+  offering a control every click would have refused. The mark refuses nothing,
+  answers no inbox event, and moves no stage: it is a claim about a file, and
+  clearing it is the person's door back.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
   diff-gate and audit stages, plus completed cards whose tree went dirty
@@ -2616,7 +2706,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a one-letter option label — is refused by `lib/question-gate.mjs`, and
   `--force` does not override that floor: only the context and evidence gates
   are forceable, because a probe that can be forced through is a probe that
-  will be, and the person it interrupts cannot tell it was forced. Per-option evidence opens inside the option row as the shared
+  will be, and the person it interrupts cannot tell it was forced. **A selected
+  gate with no host review tool asks; it never approves itself.** The worker copy
+  used to say only "do not park" while the vendored `visual_review` reference
+  said to silently approve; it now names the fallback explicitly (the gate's
+  document in a `bb stelow ask`), and unselected gates keep the LLM receipt.
+  Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below. **The question itself
   is not a panel.** The stepper renders as part of the card's hero section,
@@ -2628,6 +2723,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the dots keep their position for assistive tech (their label still reads
   "Question i of N (answered)"), and the note box, explicit skip, split
   keep-vs-deliver exclusivity and one atomic submit are unchanged.
+- **A selected plan or diff gate cannot approve itself**
+  (`question-contracts-gate.ts`). `plan-gate` and `diff-gate` have no upstream
+  question contract yet, so the host enforces the one rule the methodology
+  states: when `tech`/`diff` is selected, advancing from that stage needs a
+  human answer recorded since stage entry. The refusal names the artifact ask
+  and the answer that clears it; unselected gates and unreadable state stay
+  automatic or fail open. The review itself is the existing artifact viewer plus
+  excerpt comments, which ride the answer — no separate visual-review UI is
+  required.
 - **Answering without the mouse** (`lib/batch-keys.mjs`,
   `components/conversation/batch-keys-ui.tsx`). The question batch is
   answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move
