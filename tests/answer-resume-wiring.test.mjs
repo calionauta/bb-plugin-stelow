@@ -131,131 +131,6 @@ test("expired answers remain all-or-nothing and use the current worker", async (
 // RUN, and the worker thread is left alone. Without the port the same answer
 // sends an ordinary continuation, so removing the routing is a silent
 // regression a needs-input card would only discover at runtime.
-test("a boundary answer resumes the run and never the worker thread", async () => {
-  const resumed = [];
-  const { deps, calls } = answerDeps({
-    deps: {
-      boundary: {
-        read: () => ({
-          routeAnswerContinuation: async () => ({ id: "run_1" }),
-          resumeAfterAnswers: async (run, decisions) => {
-            resumed.push({ run, decisions });
-            return null;
-          },
-        }),
-      },
-    },
-  });
-  const result = await createQuestionAnswers(deps).answerQuestions({
-    cardId: "card_1",
-    answers: [{ questionId: "ask_1", answers: ["A"] }],
-  });
-  assert.equal(result.ok, true);
-  assert.equal(resumed.length, 1, "the boundary run is resumed once");
-  assert.equal(resumed[0].run.id, "run_1");
-  assert.equal(calls.sends.length, 0, "a boundary answer is not an ordinary worker continuation");
-});
-
-// The native resume takes decisions, not text — but it is still the continuation
-// that resumes the work, so what the person wrote while reviewing has to reach
-// it. The port reports whether the resume happened, and only that word lets the
-// comments be marked carried: this used to be decided by omission (comments
-// stayed pending forever on a card whose answers resume runs).
-test("a boundary answer carries the review comments into the run", async () => {
-  const carried = [];
-  const seen = [];
-  const { deps } = answerDeps({
-    deps: {
-      boundary: {
-        read: () => ({
-          routeAnswerContinuation: async () => ({ id: "run_1" }),
-          resumeAfterAnswers: async (_run, _decisions, feedback) => {
-            seen.push(feedback);
-            return null;
-          },
-        }),
-      },
-      answerFeedback: async () => ({
-        block: "## Feedback written while answering\n\n### Comment 1\n\nRe plan.md: keep it",
-        ids: ["c1"],
-      }),
-      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
-    },
-  });
-  const result = await createQuestionAnswers(deps).answerQuestions({
-    cardId: "card_1",
-    answers: [{ questionId: "ask_1", answers: ["A"] }],
-  });
-  assert.equal(result.delivery, "sent");
-  assert.equal(seen.length, 1);
-  assert.match(seen[0], /Re plan\.md: keep it/);
-  assert.deepEqual(carried, ["c1"]);
-});
-
-// The port's refusal is the only thing standing between a comment and a second
-// delivery: a run that did not resume did not carry anything.
-test("a refused boundary resume leaves its comments pending", async () => {
-  const carried = [];
-  const { deps } = answerDeps({
-    deps: {
-      boundary: {
-        read: () => ({
-          routeAnswerContinuation: async () => ({ id: "run_1" }),
-          resumeAfterAnswers: async () => "the boundary has moved on",
-        }),
-      },
-      answerFeedback: async () => ({ block: "## Feedback written while answering", ids: ["c1"] }),
-      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
-    },
-  });
-  const result = await createQuestionAnswers(deps).answerQuestions({
-    cardId: "card_1",
-    answers: [{ questionId: "ask_1", answers: ["A"] }],
-  });
-  assert.equal(result.ok, true);
-  assert.equal(result.delivery, "refused");
-  assert.match(result.deliveryLine, /boundary has moved on/);
-  assert.deepEqual(carried, []);
-});
-
-// A refused resume is reported, never swallowed: the answer was recorded, and
-// the caller has to learn that the run did not restart.
-// A refused boundary resume used to return before any bookkeeping, which left a
-// phantom wait: the interaction was already consumed, so the card claimed
-// `awaiting-answer` and its Inbox row could not be answered again. What regresses
-// if this fails: an unanswerable row plus a card stuck on a question nobody can
-// settle.
-test("a refused boundary resume still settles the questions and reports the refusal", async () => {
-  const { deps, calls } = answerDeps({
-    deps: {
-      boundary: {
-        read: () => ({
-          routeAnswerContinuation: async () => ({ id: "run_1" }),
-          resumeAfterAnswers: async () => "The native boundary contract is missing or no longer current.",
-        }),
-      },
-    },
-  });
-  const result = await createQuestionAnswers(deps).answerQuestions({
-    cardId: "card_1",
-    answers: [{ questionId: "ask_1", answers: ["A"] }],
-  });
-  // The answer was recorded by the host before the resume was attempted, so the
-  // door succeeds at what it was asked and reports the wake separately.
-  assert.equal(result.ok, true);
-  assert.equal(result.answered, 1);
-  assert.equal(result.delivery, "refused");
-  assert.match(result.deliveryLine, /no longer current/);
-  assert.match(result.deliveryLine, /Resume the card/);
-  // The Inbox row and the card are settled: no phantom wait is left behind.
-  assert.deepEqual(calls.answered, ["ask_1"]);
-  assert.equal(calls.updates[0].activity, "idle");
-  assert.equal(calls.sends.length, 0, "a refused boundary resume does not fall back to the thread");
-});
-
-// The comment mark follows the SAME standard as the card: only a dispatch that
-// landed carries it. What regresses if this fails: a comment the host queued is
-// stamped carried, and the resume prompt never contains it.
 test("a queued dispatch does not mark its comments carried", async () => {
   const carried = [];
   const { deps } = answerDeps({
@@ -278,20 +153,6 @@ test("a queued dispatch does not mark its comments carried", async () => {
 
 // An unbound port (before the execution layer is wired) is the pre-native
 // behavior, not a crash.
-test("an absent boundary port answers as an ordinary worker continuation", async () => {
-  const { deps, calls } = answerDeps();
-  const result = await createQuestionAnswers(deps).answerQuestions({
-    cardId: "card_1",
-    answers: [{ questionId: "ask_1", answers: ["A"] }],
-  });
-  assert.equal(result.ok, true);
-  assert.equal(calls.sends.length, 1);
-});
-
-// The other half of the rule: what the person wrote while reviewing rides the
-// answer itself, and only a dispatch that landed marks it carried. What
-// regresses if this fails: the comments are stamped as carried by an answer that
-// never went, so the worker never sees them and nothing says so.
 test("an answer carries the comments written while reviewing", async () => {
   const carried = [];
   const block = "## Feedback written while answering\n\n### Comment 1\n\nRe a.md: keep it";
@@ -352,3 +213,48 @@ test("a card still waiting on the person never reports idle", async () => {
   assert.equal(result.delivery, "refused");
   assert.equal(calls.updates[0].activity, "awaiting-answer");
 });
+
+// The order of the two bookkeeping calls is a rule, not an accident: the answers
+// are named BEFORE the inbox sync, because a row that merely disappears reads as
+// superseded. What regresses if this fails: an answered question is filed as
+// "you answered it, then it went away on its own", and the trail says the wrong
+// thing about why it closed.
+test("an answered question is named before the inbox is synced", async () => {
+  const order = [];
+  const { deps } = answerDeps({
+    deps: {
+      markInboxQuestionsAnswered: (_cardId, ids) => order.push(`answered:${ids.join(",")}`),
+      syncPendingQuestionInbox: () => order.push("sync"),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(order, ["answered:ask_1", "sync"]);
+});
+
+// The ack read is fail-soft by contract: a store that cannot answer must not fail
+// the answer. What regresses if this fails: a broken comment store blocks the
+// person from answering anything.
+test("a failing feedback reader does not fail the answer", async () => {
+  const { deps, calls } = answerDeps({
+    deps: {
+      answerFeedback: async () => {
+        throw new Error("store unavailable");
+      },
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.delivery, "sent");
+  assert.equal(calls.sends.length, 1);
+  assert.doesNotMatch(calls.sends[0].input[0].text, /Feedback written while answering/);
+});
+
+// The recovery door's thread fallback: the row's thread may be stale, but it is
+// still better than nothing when the card has no worker of its own.

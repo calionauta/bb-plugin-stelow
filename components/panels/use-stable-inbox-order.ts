@@ -4,38 +4,40 @@
  * The panel reloads on `card-state` / `inbox-changed`, and the list is ordered
  * by severity then time — so a severity bump moves a row while somebody is
  * reading the row below, and every row carries actions. `lib/inbox-stable-order`
- * is the rule; this is the React half: remember the order, adopt a new one when
- * the reader asks for a different list (a filter change) or presses Show, and
- * report how many rows arrived or moved since.
+ * decides where a frozen order puts each row; `lib/inbox-order-state` decides
+ * which order is frozen (this list, or a new one the reader asked for). This
+ * hook is the React wrapper: one state, one effect.
  *
- * Extracted from `InboxPanel` rather than inlined: the panel renders rows, and
- * three state transitions inside its body would have pushed it past its
- * function budget without making any of them clearer.
+ * Extracted from `InboxPanel` rather than inlined: three transitions inside the
+ * panel's body would have pushed it past its function budget without making any
+ * of them clearer, and none of them would have been testable.
  */
 import { useEffect, useState } from "react";
 import { stableInboxOrder } from "../../lib/inbox-stable-order.mjs";
+import { nextOrderState, showRequested } from "../../lib/inbox-order-state.mjs";
+import type { OrderState } from "../../lib/inbox-order-state.d.mts";
 import type { InboxNotification } from "./inbox-types";
 
 export function useStableInboxOrder(entries: InboxNotification[], viewKey: string) {
-  const [frozen, setFrozen] = useState<string[] | null>(null);
   const naturalIds = entries.map((entry) => entry.id);
   const naturalKey = naturalIds.join("|");
+  const [state, setState] = useState<OrderState>(() => nextOrderState(null, naturalIds, viewKey));
 
-  // A different list is a list the reader asked for: adopt its order, then hold
-  // that one. Without this, switching tabs reads as "everything arrived".
+  // One rule, one effect: a different list adopts its own order, anything else
+  // keeps the order being read. The reducer returns the same object when nothing
+  // changed, so a realtime tick does not re-render the list.
   useEffect(() => {
-    setFrozen(null);
-  }, [viewKey]);
+    setState((previous) => nextOrderState(previous, naturalIds, viewKey));
+  }, [viewKey, naturalKey]);
 
-  // The first draw of any list fixes the order it will keep.
-  useEffect(() => {
-    if (frozen === null) setFrozen(naturalIds);
-  }, [frozen, naturalKey]);
-
-  const view = stableInboxOrder(frozen, entries);
+  const view = stableInboxOrder(state.frozen, entries);
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const shown = view.order
     .map((id) => byId.get(id))
     .filter((entry): entry is InboxNotification => entry !== undefined);
-  return { shown, held: view.held, show: () => setFrozen(null) };
+  return {
+    shown,
+    held: view.held,
+    show: () => setState((previous) => showRequested(previous, naturalIds)),
+  };
 }

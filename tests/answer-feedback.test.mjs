@@ -253,3 +253,19 @@ test("the delivery migration tolerates a database without the comments table", (
   const db = new Database(":memory:");
   assert.doesNotThrow(() => ensureCommentDeliveryColumn(db));
 });
+
+// The race the module's own docstring names: a comment written while the answer
+// is being sent is not in the set that answer read, so it cannot be stamped by
+// it. What regresses if this fails: the comment is marked carried by an answer
+// that never contained it, and it is silently lost.
+test("a comment written after the answer read rides the next answer", () => {
+  const db = store();
+  seed(db, [["c1", "user", "before the answer"]]);
+  const read = pendingAnswerComments(db, "card_1");
+  // ...the person submits, and types one more while it is in flight.
+  db.prepare(
+    "INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES ('c2', 'card_1', 'card', 'card_1', 'user', 'after the read', 5)",
+  ).run();
+  markCommentsCarried(db, read.ids, 42);
+  assert.deepEqual(pendingAnswerComments(db, "card_1").ids, ["c2"]);
+});
