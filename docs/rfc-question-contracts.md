@@ -176,6 +176,12 @@ Enforcement points (server/execution-advance.ts):
   (`--contract` in `scripts/stelow` + `ask.md`). Enforcement using
   recorded ids stays parked pending real-data need (ad-hoc questions must
   keep working; exact matching needs protocol-level ids).
+- Selected plan/diff gates have a host-level guard even though the catalog
+  cannot contract them yet: `question-contracts-gate.ts` requires an answered
+  card question since stage entry when `tech`/`diff` is selected, and refuses
+  with the ask and unselect exits. This is not a catalog contract; it enforces
+  the one rule the methodology already states and stays fail-open on unreadable
+  state. Pinned by `tests/gate-human-answer.test.mjs`.
 - Residual simplifications (accepted, harden later): a human-ask contract
   is satisfied by any question answered since stage entry (not matched
   per contract id); in-flight legacy cards may refuse once post-deploy

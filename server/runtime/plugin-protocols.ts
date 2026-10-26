@@ -91,9 +91,9 @@ block, or CHANGELOG.md plus v* tags). If the repo releases from commits, write `
 // prompt-contracts test pins single definition + all references).
 export const INTERFACE_PICK =
   "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it to gates when absent). For each \
-selected gate, use the host's review tool when registered (visual_review); otherwise put the gate's document in a `bb stelow ask` with \
---artifact and stop. Unselected gates never park: the LLM decides itself, writes the receipt (assumptions_resolved, selected_by: llm, approval \
-receipts), and advances. Never approve a selected gate silently.";
+selected gate, put its document in a `bb stelow ask` with --artifact and stop; use another review tool only when the host registers one. Unselected \
+gates never park: the LLM decides itself, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Never \
+approve a selected gate silently.";
 
 // Explicit completion: done-ness was inferred from `audit` + idle, so a
 // narrate-and-stop at audit looked identical to stuck-at-audit. The

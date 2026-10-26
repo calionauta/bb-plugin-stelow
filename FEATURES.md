@@ -2717,6 +2717,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the dots keep their position for assistive tech (their label still reads
   "Question i of N (answered)"), and the note box, explicit skip, split
   keep-vs-deliver exclusivity and one atomic submit are unchanged.
+- **A selected plan or diff gate cannot approve itself**
+  (`question-contracts-gate.ts`). `plan-gate` and `diff-gate` have no upstream
+  question contract yet, so the host enforces the one rule the methodology
+  states: when `tech`/`diff` is selected, advancing from that stage needs a
+  human answer recorded since stage entry. The refusal names the artifact ask
+  and the unselect exit; unselected gates and unreadable state stay automatic
+  or fail open. The review itself is the existing artifact viewer plus excerpt
+  comments, which ride the answer — no separate visual-review UI is required.
 - **Answering without the mouse** (`lib/batch-keys.mjs`,
   `components/conversation/batch-keys-ui.tsx`). The question batch is
   answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move
