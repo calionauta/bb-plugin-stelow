@@ -1,6 +1,7 @@
 # RFC: Question Contracts (upstream + plugin)
 
-Status: implemented (P0–P3; residual simplifications in §10).
+Status: implemented for the contractable stages (P0–P3); `plan-gate` remains
+blocked by the upstream conflict in §5.
 Goal: make it mechanically knowable which questions must happen, in which
 skills/stages, under which situations and configs, so any LLM (or host)
 can implement and verify enforcement.
