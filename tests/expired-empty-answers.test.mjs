@@ -17,7 +17,16 @@ function harness(expiredRows) {
   const answered = [];
   const deps = {
     bb: {
-      sdk: { threads: { send: async (input) => calls.sends.push(input) } },
+      sdk: {
+        threads: {
+          // The host answers a dispatch with a discriminated union. A fake that
+          // returned nothing made every recovery answer read as a hold.
+          send: async (input) => {
+            calls.sends.push(input);
+            return { delivery: "sent" };
+          },
+        },
+      },
       realtime: { publish: () => undefined },
     },
     db: {

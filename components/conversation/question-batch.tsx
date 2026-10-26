@@ -1,8 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../server";
 import { questionCopy } from "../../lib/question-presentation.mjs";
-import { expiredAnswerPayload } from "../../lib/question-store.mjs";
 import { isSplitQuestion, splitQuestionText, splitSelectionNotice, submitBlockReason } from "../../lib/question-presentation.mjs";
 import { artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
 import { BatchKeyLegend, BatchKeyOverlay, useBatchKeys } from "./batch-keys-ui";
@@ -10,6 +7,7 @@ import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
 import { boundaryOptions } from "./boundary-question-frame";
 import { preselectedAnswers, toggleSinglePick } from "../../lib/question-batch.mjs";
 import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
+import { useAnswerSubmit } from "./use-answer-submit";
 import { BatchQuestionHeading } from "./batch-question-heading";
 import type {
   BatchItem,
@@ -359,30 +357,11 @@ export function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtif
   onAnswered: () => void;
   onOpenArtifact?: OpenArtifactHandler;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (questions.length === 0) return null;
+  // The hook runs before the empty-batch return so its own hooks are never
+  // conditional.
+  const { busy, error, submit } = useAnswerSubmit(cardId, questions, mode, onAnswered);
   const copy = questionCopy();
-  async function submit(all: string[][]) {
-    setBusy(true); setError(null);
-    try {
-      if (mode === "live") {
-        const result = await rpc.call("answerQuestions", { cardId, answers: questions.map((q, i) => ({ questionId: q.id, answers: all[i] ?? [] })) });
-        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
-      } else {
-        // Timed-out questions retain every selected option. The batch stays
-        // atomic, so a later answer cannot revise work already resumed.
-        const payload = expiredAnswerPayload(questions, all);
-        if (payload.length === 0) return;
-        const result = await rpc.call("answerExpiredQuestions", { cardId, answers: payload });
-        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
-      }
-      onAnswered();
-    } finally {
-      setBusy(false);
-    }
-  }
+  if (questions.length === 0) return null;
   return (
     <BatchStepper
       cardId={cardId}

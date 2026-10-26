@@ -63,7 +63,7 @@ assert.doesNotMatch(
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(
   comment,
-  /if \(isArchivedCard\(card\)\)\s*return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/,
+  /if \(isArchivedCard\(card\)\)\s*\{\s*return \{[^}]*error: ERR_CARD_ARCHIVED/,
   "archived cards refuse new comments",
 );
 assert.match(

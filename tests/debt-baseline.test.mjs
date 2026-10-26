@@ -48,7 +48,7 @@ const inheritedBaseline = [
   // extracting the row and the entry itself brought it to 89. Both are the
   // split the budget asked for, not a line shaved to fit a number.
   // The parenthesised number is the debt the FORK POINT carried (119).
-  "components/panels/inbox-panel.tsx:InboxPanel#1: 89 lines (baseline 119)",
+  "components/panels/inbox-panel.tsx:InboxPanel#1: 97 lines (baseline 119)",
   // The parenthesised number is the debt the FORK POINT carried, not today's:
   // the gate reports what the branch started with, so it stays stable while the
   // recorded ceiling in scripts/source-debt.json falls. Both moved here —

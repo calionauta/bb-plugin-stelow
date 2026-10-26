@@ -82,7 +82,14 @@ function mutationDeps(row) {
             read: async () => ({ content: "intent: old\n" }),
             write: async ({ content }) => calls.push(["write", content]),
           },
-          threads: { send: async (input) => calls.push(["send", input]) },
+          threads: {
+            // The host's dispatch union, not a bare truth: a fake returning
+            // nothing makes every comment read as queued by the host.
+            send: async (input) => {
+              calls.push(["send", input]);
+              return { delivery: "sent" };
+            },
+          },
         },
         realtime: { publish: (...event) => calls.push(["publish", ...event]) },
       },
@@ -114,7 +121,12 @@ test("card mutations preserve worker routing and archived refusal", async () => 
     targetId: row.id,
     body: "hello",
   });
-  assert.deepEqual(comment, { commentId: "comment_1", error: null });
+  assert.deepEqual(comment, {
+    commentId: "comment_1",
+    error: null,
+    delivery: "sent",
+    deliveryLine: null,
+  });
   assert.ok(mutation.calls.some(([name]) => name === "send"));
 
   const archived = mutationDeps(card({ status: "archived" }));
@@ -125,7 +137,7 @@ test("card mutations preserve worker routing and archived refusal", async () => 
       targetId: "card_1",
       body: "no",
     }),
-    { commentId: "", error: "This card is archived." },
+    { commentId: "", error: "This card is archived.", delivery: null, deliveryLine: null },
   );
   assert.equal(archived.calls.some(([name]) => name === "comment"), false);
 });

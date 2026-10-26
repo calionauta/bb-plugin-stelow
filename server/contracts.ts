@@ -333,3 +333,23 @@ export const workerHistoryEntrySchema = z.object({
           }),
         ),
 });
+
+/**
+ * The answer doors' shared result: the answers, and what the resume did.
+ *
+ * Both doors (`answerQuestions`, `answerExpiredQuestions`) commit the answers
+ * first and wake the worker second, so the two facts are reported apart. A
+ * `null` delivery is not "nothing happened" — it is a refusal, where nothing
+ * was attempted, and it must not borrow the words of a failed attempt.
+ *
+ * `deliveryLine` is the sentence the reader sees, composed once in
+ * `lib/answer-delivery.mjs`. A client that re-words it would be a second source
+ * of truth for the same fact.
+ */
+export const answerResultSchema = z.object({
+  ok: z.boolean(),
+  answered: z.number(),
+  error: z.string().nullable(),
+  delivery: z.enum(["sent", "queued", "refused"]).nullable(),
+  deliveryLine: z.string().nullable(),
+});

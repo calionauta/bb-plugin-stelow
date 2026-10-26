@@ -817,10 +817,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   checkbox — no detached Show label. Severity chips that merely restate the
   row's own label are suppressed (one signal, not two); chips that add
   information — stall age, error counts — always survive.
+- **The list holds still while you read it** (`lib/inbox-stable-order.mjs`,
+  `components/panels/use-stable-inbox-order.ts`). Severity tiers order the list,
+  and the panel reloads on `card-state` / `inbox-changed`, so a severity bump —
+  an error repeating, a stall crossing 72h, a model judgement promoting an item —
+  used to move a row while somebody was reading the row below it. Every row
+  carries actions, so that is a click waiting to land on the wrong one. The order
+  is frozen for as long as the reader is looking: a row that gains severity keeps
+  its place and changes only its own content, a row that did not exist yet joins
+  at the end, and an **N updates · Show** control puts everything where it
+  belongs. Nothing is hidden — a held list that hid an arriving wait would be the
+  phantom-wait bug wearing a stability argument — and changing a filter adopts
+  that list's own order at once, because it is a list the reader asked for.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
-  and an escalating mark. Tiers reorder only — the badge still counts
+  and an escalating mark. Tiers reorder only — while a reader is looking the
+  drawn order is held (see above), and Show re-applies them — the badge still counts
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
@@ -977,6 +990,55 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Unread is a view, not a work state** (`components/panels/inbox-panel.tsx`). Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.
+- **The answer and its wake are two facts** (`lib/answer-delivery.mjs`,
+  `server/runtime/answer-resume.ts`). Both doors commit the answers first and
+  wake the worker second, and the host answers a dispatch three ways: it sent
+  it, it queued it behind a hold, or it refused with its own words. The door
+  used to await a raw `threads.send` and throw that away, so a queued dispatch
+  read as a resume — the card claimed `running` for a turn nobody had started,
+  and the row resolved whether or not anything was woken. The recovery door was
+  worse: it swallowed a failed send with `.catch(() => undefined)`. Now one
+  verdict travels. `sent` adds no line, because the card's own activity is the
+  receipt. `queued` puts the card on `held` and shows the host's hold sentence,
+  which already names what releases it and that the reader is not the one who
+  has to. `refused` leaves the card `idle` and shows the host's reason plus the
+  exit — *Resume the card; the answers do not need re-entering* — because a
+  refusal without an exit is a deadlock with a good error message. The verdict
+  rides the RPC result (`delivery`, `deliveryLine`) and the CLI's stdout and
+  `--json`, because both doors reach the same handler and a fact only one of
+  them knows is a fact the other breaks. A dispatch nobody could read renders
+  as "the host did not say", never as delivered: the answers are certain, the
+  wake is not.
+- **A comment written while answering rides the answer** (`lib/answer-feedback.mjs`,
+  `server/runtime/answer-feedback.ts`). The comment box on an artifact is how a
+  reviewer says *why* before saying *what*: "approve, but rewrite this
+  paragraph". Sending it on its own woke the worker mid-read, so the picks
+  arrived as a second turn and the first turn acted on half a thought — two
+  resumes for one decision moment. Now a comment written while the card waits on
+  an answer (activity `awaiting-answer`, or an open recovery question) is written
+  to the card as always and left uncarried; the answer's resume prompt carries it
+  under **Feedback written while answering**, before the worker acts, and only a
+  dispatch that actually landed marks it carried. An answer that resumes a native
+  run instead of the thread carries the same block as `context.resumeFeedback`,
+  beside the `resumeAnswers` a resume already sends — the run takes decisions,
+  not prose, so the field is the protocol surface for it, and the port's own
+  "resumed" report is what marks the comments carried there. Nothing is lost when no answer
+  comes: the comment is on the card, and it rides the next answer instead. The
+  composer stops saying "sent to the agent" when it was only saved — it says the
+  comment will go with the answer, that the host is holding it, or that nothing
+  was sent at all (a scope/task comment, or a card with no live worker). The store is one
+  additive column (`comments.delivered_at`), so a held comment survives a crash,
+  a restart, and a card archived by mistake.
+- **A refused resume still settles what was answered** (`server/runtime/answer-resume.ts`,
+  `answerQuestions`). An answer that resumes a native run can be refused by the
+  run's own contract — the boundary moved on while the person was deciding. The
+  answers were recorded before that attempt, so returning early left a phantom
+  wait: the card kept `awaiting-answer` and its Inbox row could not be answered
+  again (a second attempt hits "no question was answered"). The door now settles
+  the questions, the row and the card, and carries the refusal as the delivery
+  verdict — the line quotes the run's words and names the exit, **Resume the
+  card**. The same rule as a refused thread dispatch: the answer is a fact, the
+  wake is a separate one.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

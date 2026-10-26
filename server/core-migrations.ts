@@ -202,6 +202,7 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
     ["kind", "TEXT NOT NULL DEFAULT 'standard'"],
     ["locale", "TEXT"],
   ]);
+  ensureCommentDeliveryColumn(db);
   ensureTrackableEventsTable(db);
   ensureAutoContinueColumns(db);
   createFeatureTables(db);
@@ -213,4 +214,29 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
   ensureColumns(db, "automation_rules", [["autostart", "INTEGER NOT NULL DEFAULT 0"]]);
   runPublicationMigrations(db);
   runPresetMigrations(db, now);
+}
+
+/**
+ * `comments.delivered_at`, and the backfill it needs exactly once.
+ *
+ * Null means "no answer has carried this comment yet" (lib/answer-feedback).
+ * A column added as null says that about every comment a card ever collected, so
+ * the first answer after the upgrade would send the card's whole history to the
+ * worker inside the resume prompt. The backfill stamps the history with its own
+ * timestamp — but it must run ONLY on the boot that adds the column: run on
+ * every boot it would stamp the comments genuinely waiting for an answer, and
+ * they would never ride.
+ */
+export function ensureCommentDeliveryColumn(db: Db) {
+  // Order-dependent by nature: the caller runs `createBaseTables` first. Guarded
+  // anyway, because this is exported and a test (or a future caller) may not be.
+  const hasTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'comments'")
+    .get() !== undefined;
+  if (!hasTable) return;
+  const hadDelivery = (db.prepare('PRAGMA table_info("comments")').all() as Array<{ name?: string }>)
+    .some((column) => column.name === "delivered_at");
+  ensureColumns(db, "comments", [["delivered_at", "INTEGER"]]);
+  if (hadDelivery) return;
+  db.prepare("UPDATE comments SET delivered_at = created_at WHERE delivered_at IS NULL").run();
 }

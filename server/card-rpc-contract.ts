@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { NO_INPUT, optionalInput } from "./rpc-input.js";
 import {
+  answerResultSchema,
   attachmentSchema,
   appetiteSchema,
   boardWorkflowDefaultsSchema,
@@ -47,7 +48,7 @@ export const cardRpcContract = {
           .max(12),
       })
       .strict(),
-    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+    output: answerResultSchema,
   },
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",

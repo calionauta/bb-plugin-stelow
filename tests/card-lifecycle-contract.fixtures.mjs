@@ -86,6 +86,10 @@ export const serverRecovery = readFileSync(
   "utf8",
 );
 export const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
+export const answerResume = readFileSync(
+  join(root, "server/runtime/answer-resume.ts"),
+  "utf8",
+);
 export const answerExpired = readFileSync(
   join(root, "server/runtime/question-answers.ts"),
   "utf8",
