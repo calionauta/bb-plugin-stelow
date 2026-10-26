@@ -54,6 +54,8 @@ export interface BundleManifestInput {
   registered: Array<{ stage?: string | null; path: string }>;
   gapTotals?: ArtifactTrailerGaps | null;
   tokens?: BundleManifestTokens | null;
+  /** Stage entry/exit, so the bundle can be replayed against its intent route. */
+  trail?: Array<{ stage: string; enteredAt: string | null; leftAt: string | null }> | null;
 }
 
 export function renderBundleManifest(input: BundleManifestInput): string;

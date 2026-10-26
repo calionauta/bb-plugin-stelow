@@ -2173,6 +2173,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   registration is read for its PATH, not its stage: an entry appended
   without a `stage:` is still a document the card produced, so it is copied
   (its row shows `?`) instead of vanishing from the bundle's record. The
+  host writes a `## Stage trail` table (stage, entered, left) from the state
+  file's own history, so a reopened run can be replayed against the route its
+  intent declares instead of only showing what it produced. The
   host refreshes the bundle automatically on every `done` and prints the
   trailer in the completion output — a reopened card that completes again
   refreshes it again — so the directory converges instead of rotting. The
