@@ -203,6 +203,7 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
     ["locale", "TEXT"],
   ]);
   ensureCommentDeliveryColumn(db);
+  ensureArtifactReviewsTable(db);
   ensureTrackableEventsTable(db);
   ensureAutoContinueColumns(db);
   createFeatureTables(db);
@@ -239,4 +240,32 @@ export function ensureCommentDeliveryColumn(db: Db) {
   ensureColumns(db, "comments", [["delivered_at", "INTEGER"]]);
   if (hadDelivery) return;
   db.prepare("UPDATE comments SET delivered_at = created_at WHERE delivered_at IS NULL").run();
+}
+
+/**
+ * A "reviewed" mark, bound to the version of the artifact the person read.
+ *
+ * The fingerprint is the artifact's `generatedAt` as the detail displays it,
+ * not a content hash: the card detail carries no sha, and adding one would put
+ * a file read on every card open. Equality is enough to DERIVE staleness —
+ * "this was read at a version that is no longer the one on the card" — which is
+ * a claim the UI can make and test. A content change that preserves mtime
+ * reads as fresh; that weakness is accepted and written down rather than
+ * hidden (lib/artifact-review.mjs).
+ *
+ * Additive and with no backfill: absence of a row means "not reviewed", which
+ * is true of every card created before this table existed. That is the
+ * opposite of `comments.delivered_at`, where absence meant "waiting for an
+ * answer" and the upgrade had to backfill (010e11e5); the difference is the
+ * whole lesson of that commit.
+ */
+export function ensureArtifactReviewsTable(db: Db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS artifact_reviews (
+      card_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      reviewed_at INTEGER NOT NULL,
+      reviewed_fingerprint TEXT NOT NULL,
+      PRIMARY KEY (card_id, path),
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+    )`);
 }

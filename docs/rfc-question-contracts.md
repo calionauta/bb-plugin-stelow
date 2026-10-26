@@ -1,6 +1,7 @@
 # RFC: Question Contracts (upstream + plugin)
 
-Status: partially implemented (P0 done, P1–P3 pending — see §10).
+Status: implemented for the contractable stages (P0–P3); `plan-gate` remains
+blocked by the upstream conflict in §5.
 Goal: make it mechanically knowable which questions must happen, in which
 skills/stages, under which situations and configs, so any LLM (or host)
 can implement and verify enforcement.
@@ -160,9 +161,9 @@ Enforcement points (server/execution-advance.ts):
   canonical in transitions, no plan-gate in Scopes. Plugin mirror
   extended; the host adds no intent gate of its own, so the permitted
   reduced ask reaches the human (worker-side `context:5` decides).
-- Still pending: advance-time enforcement linkage (P1–P3) — the mirror
-  is read by nothing in `advanceCard` yet, deliberately. Wiring it is
-  the remaining work; see the handoff below.
+- Advance-time enforcement was the remaining work at that point; it is wired
+  below. The mirror was deliberately read by nothing in `advanceCard` until
+  the fixtures and refusal shapes existed.
 - Enforcement wired (eaaf062): pure `lib/advance-contracts.mjs` +
   fixtures under `tests/fixtures/question-contracts/`, checked
   pre-helper in both `advanceCard` RPC and CLI `bb stelow advance`
@@ -175,6 +176,12 @@ Enforcement points (server/execution-advance.ts):
   (`--contract` in `scripts/stelow` + `ask.md`). Enforcement using
   recorded ids stays parked pending real-data need (ad-hoc questions must
   keep working; exact matching needs protocol-level ids).
+- Selected plan/diff gates have a host-level guard even though the catalog
+  cannot contract them yet: `question-contracts-gate.ts` requires an answered
+  card question since stage entry when `tech`/`diff` is selected, and refuses
+  with the artifact ask that clears it. This is not a catalog contract; it
+  enforces the one rule the methodology already states and stays fail-open on
+  unreadable state. Pinned by `tests/gate-human-answer.test.mjs`.
 - Residual simplifications (accepted, harden later): a human-ask contract
   is satisfied by any question answered since stage entry (not matched
   per contract id); in-flight legacy cards may refuse once post-deploy

@@ -220,6 +220,7 @@ function hostDeps(calls, options) {
     reviewFilesFor: async () => options.reviewFiles ?? [],
     pendingQuestions: async () => options.pendingQuestions ?? [],
     pendingAsks: async () => options.pendingAsks ?? [],
+    askTimeoutMs: async () => options.askTimeoutMs ?? 60 * 60 * 1000,
     openExpiredQuestionIds: () => options.expiredQuestionIds ?? [],
     askContractChecklist: async () => options.contractChecklist ?? null,
     snapshotQuestionEvidence: async () => {

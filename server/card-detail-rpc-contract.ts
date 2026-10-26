@@ -352,8 +352,18 @@ export const cardDetailRpcContract = {
           absolutePath: z.string(),
           hostId: z.string(),
           note: z.string().nullable().optional(),
+          // A mark bound to the version in `generatedAt`, not a checkbox.
+          // `reviewed` means the mark matches the file on the card; `stale`
+          // means a mark exists but the file changed since it was written
+          // (`reviewState` in lib/artifact-review.mjs).
+          reviewed: z.boolean(),
+          stale: z.boolean(),
         }),
       ),
+      // "3 of 7 reviewed · 1 reviewed before the file changed", or null when
+      // the card has no artifacts. One derived line, so the section and the
+      // rows cannot disagree about how much has been read.
+      reviewLine: z.string().nullable(),
       workerHistory: z.array(workerHistoryEntrySchema),
       executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links

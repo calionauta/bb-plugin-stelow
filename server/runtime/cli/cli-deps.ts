@@ -156,6 +156,8 @@ export type CliDeps = {
    * over a question it could not see. */
   pendingQuestions: (threadId: string | null) => Promise<PendingQuestions | null>;
   pendingAsks: (threadId: string | null) => Promise<PendingAsk[] | null>;
+  /** The card question wait, resolved from the plugin setting at call time. */
+  askTimeoutMs: () => Promise<number>;
   openExpiredQuestionIds: (cardId: string) => string[];
   askContractChecklist: (
     cardId: string,

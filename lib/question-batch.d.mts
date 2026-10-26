@@ -1,4 +1,5 @@
 export declare const QUESTION_KINDS: string[];
+export declare const QUESTION_RENDERER_ID: string;
 export declare function questionKind(raw: unknown): "standard" | "split";
 export declare interface AskOption {
   label: string;
