@@ -3,6 +3,7 @@ import {
   MAX_SPAWN_RETRIES,
   claimSpawnRetry,
   isRetryableSpawnError,
+  spawnRetryAttempts,
   spawnRetryDelayMs,
 } from "../lib/spawn-retry.mjs";
 import { truncateCause } from "../lib/worker-failure.mjs";
@@ -16,7 +17,11 @@ type RetryDeps = {
   updateCard: (cardId: string, fields: Record<string, unknown>) => void;
   comment: (cardId: string, body: string) => void;
   publish: (cardId: string) => void;
-  fresh: (cardId: string, reason: "start" | "restart") => Promise<{ ok: boolean; error: string | null }>;
+  fresh: (
+    cardId: string,
+    reason: "start" | "restart",
+    options?: { automatic?: boolean },
+  ) => Promise<{ ok: boolean; error: string | null }>;
   failedCause: (threadId: string) => Promise<string | null>;
   scheduler?: WorkerScheduler;
   retryDelayMs?: (attempt: number) => number;
@@ -41,13 +46,10 @@ function canRetry(state: RetryState, card: WorkerCard, cause: string): boolean {
   if (card.last_assistant_text != null) return false;
   if (!isRetryableSpawnError(cause)) return false;
   if (state.pending.get(card.id) === card.worker_thread_id) return false;
-  const used = card.spawn_retry_thread === card.worker_thread_id
-    ? (card.spawn_retry_count ?? 0)
-    : 0;
-  return used < MAX_SPAWN_RETRIES;
+  return spawnRetryAttempts(card) < MAX_SPAWN_RETRIES;
 }
 
-function schedule(state: RetryState, cardId: string, threadId: string): boolean {
+function schedule(state: RetryState, cardId: string, threadId: string, cause: string): boolean {
   if (state.pending.get(cardId) === threadId) return true;
   let attempt = 0;
   try {
@@ -57,7 +59,10 @@ function schedule(state: RetryState, cardId: string, threadId: string): boolean 
   }
   if (attempt < 1) return false;
   state.pending.set(cardId, threadId);
-  const short = truncateCause(state.deps.getCard(cardId)?.last_error) ?? "unknown error";
+  // The cause that just failed, not `card.last_error` — that column still holds
+  // the previous message (or nothing), which is how a specific
+  // `session/set_model` refusal used to be written up as "unknown error".
+  const short = truncateCause(cause) ?? "unknown error";
   state.deps.updateCard(cardId, {
     activity: "running",
     last_error: `Worker failed to start (${short}) — automatic retry ${attempt}/${MAX_SPAWN_RETRIES}.`,
@@ -80,7 +85,7 @@ async function runAttempt(
     const card = state.deps.getCard(cardId);
     if (!card || terminal(card.status)) return;
     if (card.worker_thread_id !== threadId || card.last_assistant_text != null) return;
-    const result = await state.deps.fresh(cardId, "restart");
+    const result = await state.deps.fresh(cardId, "restart", { automatic: true });
     if (result.ok) {
       state.deps.comment(cardId, `Worker start recovered automatically (attempt ${attempt}/${MAX_SPAWN_RETRIES}).`);
       state.deps.publish(cardId);
@@ -88,7 +93,7 @@ async function runAttempt(
     }
     if (attempt < MAX_SPAWN_RETRIES && result.error && isRetryableSpawnError(result.error)) {
       state.pending.delete(cardId);
-      schedule(state, cardId, threadId);
+      schedule(state, cardId, threadId, result.error);
       return;
     }
     const cause = result.error ?? "Worker failed to start.";
@@ -106,9 +111,13 @@ function failureCause(
   eventError: string | null,
   providerCause: string | null,
 ): string | null {
+  // The event-derived cause is the specific one. `thread.failed` carries the
+  // generic wrapper ("Command thread.start failed") while the thread's own
+  // system/error detail names what the provider actually refused, so the
+  // wrapper must never shadow the detail and decide retryability by itself.
+  if (providerCause?.trim()) return providerCause.trim();
   if (eventError?.trim()) return eventError.trim();
-  if (card?.last_error?.trim()) return card.last_error.trim();
-  return providerCause;
+  return card?.last_error?.trim() || null;
 }
 
 async function applyFailed(
@@ -122,7 +131,7 @@ async function applyFailed(
   const specific = failureCause(current, eventError, await state.deps.failedCause(threadId));
   const fresh = state.deps.getCard(cardId);
   if (!fresh || terminal(fresh.status) || state.pending.get(cardId) === threadId) return;
-  if (specific && canRetry(state, fresh, specific) && schedule(state, cardId, threadId)) return;
+  if (specific && canRetry(state, fresh, specific) && schedule(state, cardId, threadId, specific)) return;
   state.deps.updateCard(cardId, specific
     ? { activity: "error", last_error: specific }
     : { activity: "error" });

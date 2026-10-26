@@ -335,3 +335,42 @@ test("continuing workers reuse their live environment and ledger ownership is qu
   assert.equal(history[0].children.length, 0);
   db.close();
 });
+
+test("an automatic respawn keeps the retry episode; a person resets it", async () => {
+  // The replacement thread can die before it starts. If the automatic respawn
+  // cleared the budget, every replacement would restart at 1/3 — the loop that
+  // spawned 189 threads on one permanent provider error.
+  const automatic = harness();
+  automatic.db.prepare("UPDATE cards SET spawn_retry_count = 2, spawn_retry_thread = ? WHERE id = ?")
+    .run("thread-old", "card-1");
+  assert.deepEqual(await automatic.workers.fresh("card-1", "restart", { automatic: true }), {
+    ok: true,
+    error: null,
+  });
+  assert.deepEqual(
+    automatic.db.prepare(
+      "SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards",
+    ).get(),
+    { count: 2, thread: "thread-old" },
+    "the automatic respawn leaves the episode open",
+  );
+  automatic.workers.dispose();
+  automatic.db.close();
+
+  const human = harness();
+  human.db.prepare("UPDATE cards SET spawn_retry_count = 2, spawn_retry_thread = ? WHERE id = ?")
+    .run("thread-old", "card-1");
+  assert.deepEqual(await human.workers.fresh("card-1", "restart"), {
+    ok: true,
+    error: null,
+  });
+  assert.deepEqual(
+    human.db.prepare(
+      "SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards",
+    ).get(),
+    { count: 0, thread: null },
+    "a human restart opens a new episode",
+  );
+  human.workers.dispose();
+  human.db.close();
+});

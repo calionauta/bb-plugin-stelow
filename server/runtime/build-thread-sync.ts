@@ -14,6 +14,7 @@ import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/nativ
 import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
+import { resetSpawnRetry } from "../../lib/spawn-retry.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import {
   isActiveStatus,
@@ -116,6 +117,13 @@ export function createBuildThreadSync(deps: BuildThreadSyncDeps) {
       const snapshot = await readBuildThread(deps, card);
       if (!snapshot) return;
       applyStateMetadata(deps, snapshot);
+      // Output is the proof a worker STARTED. Only then does the automatic
+      // spawn-retry episode end: a failed thread's error text is not output,
+      // and resetting the budget on a spawn call or on a replacement thread
+      // would let one permanent provider error spawn workers forever.
+      if (snapshot.lastOutput != null && !isFailed(snapshot.status)) {
+        resetSpawnRetry(deps.db, card.id);
+      }
       if (isActiveStatus(snapshot.status) && await syncActive(deps, snapshot)) return;
       if (isIdleStatus(snapshot.status) && await syncIdle(deps, snapshot)) return;
       if (isFailed(snapshot.status)) {

@@ -1540,7 +1540,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one); completed
   cards instead show the preset recorded for their completed worker, real
-  "Change preset…" outline button, stale-preset warning with restart
+  "Change preset…" outline button (board presets, Board default, the live
+  provider/model catalog, and Custom; providers with no listed models are
+  not offered as choices, and Apply is enabled by the same effective value
+  the dialog shows), stale-preset warning with restart
   action, then a divider with recovery/danger actions — restart fresh,
   archive, delete archived cards behind confirms — all real outline
   buttons, archive/delete in destructive tone. Worker history collapses
@@ -1780,10 +1783,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
   lost host session) is respawned automatically — up to 3 attempts with
   1–2s / 2–4s / 4–8s jittered backoff — instead of paging the human.
-  Retries are idempotent (one in flight per card, attempts claimed in the
-  DB per failed thread, fresh-state revalidation before each spawn); only
-  the final exhaustion writes Failed with its single inbox event.
-  Mid-workflow failures and refusals never auto-retry.
+  The budget belongs to the failure **episode**, not to one dead thread: an
+  automatic replacement that fails before starting spends the next attempt
+  instead of reopening a fresh 3-attempt budget, and the episode clears only
+  when a worker actually produces output or a person starts/restarts the
+  card. The cause is read from the thread's own `system/error` detail, so a
+  permanent provider refusal such as `"Method not found": session/set_model`
+  (or a preset naming a model the provider no longer lists) fails fast to the
+  card with that sentence instead of being read as a transient
+  `thread.start` failure and respawned forever. Retries stay idempotent (one
+  in flight per card, attempts claimed in the DB, fresh-state revalidation
+  before each spawn); only the final exhaustion writes Failed with its single
+  inbox event. Mid-workflow failures and refusals never auto-retry.
 - **Restart worker** (`restartWorker`). Fresh thread on the current
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.

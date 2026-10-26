@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { presetProviderGroups } from "../../lib/preset-selection.mjs";
 import { PresetExecutionPicker } from "./preset-execution-picker";
 
 export type PresetSummary = {
@@ -128,46 +129,39 @@ function CustomPresetOption({
   );
 }
 
+type ProviderModelGroup = {
+  provider: ProviderCatalog["providers"][number];
+  models: ProviderCatalog["models"];
+};
+
 function ProviderPresetOptions({
-  catalog,
+  groups,
   selected,
   onSelect,
 }: {
-  catalog: ProviderCatalog;
+  groups: ProviderModelGroup[];
   selected: string | null;
   onSelect: (value: string) => void;
 }) {
-  return catalog.providers.map((provider) => {
-    const providerModels = catalog.models.filter(
-      (model) => model.providerId === provider.id,
-    );
-    return (
-      <div key={provider.id} className="pt-1">
-        <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {provider.displayName} · {providerModels.length}
-        </p>
-        <div className="space-y-1">
-          {providerModels.map((model) => (
-            <PresetOptionRow
-              key={`${provider.id}/${model.model}`}
-              selected={selected}
-              value={`model:${provider.id}/${model.model}`}
-              title={model.displayName}
-              subtitle={`${provider.id}/${model.model}`}
-              onSelect={onSelect}
-            />
-          ))}
-          {providerModels.length === 0 ? (
-            <p className="px-1 text-[11px] text-muted-foreground">
-              {provider.modelsAvailable
-                ? "No models listed for this provider."
-                : "Couldn't load models — use Custom below."}
-            </p>
-          ) : null}
-        </div>
+  return groups.map(({ provider, models }) => (
+    <div key={provider.id} className="pt-1">
+      <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {provider.displayName} · {models.length}
+      </p>
+      <div className="space-y-1">
+        {models.map((model) => (
+          <PresetOptionRow
+            key={`${provider.id}/${model.model}`}
+            selected={selected}
+            value={`model:${provider.id}/${model.model}`}
+            title={model.displayName}
+            subtitle={`${provider.id}/${model.model}`}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
-    );
-  });
+    </div>
+  ));
 }
 
 function useScrollFade(
@@ -232,11 +226,12 @@ export function PresetAssignOptions({
 }: PresetAssignOptionsProps) {
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
   const customPresets = presets.filter((preset) => !preset.isDefault);
+  const providerGroups = presetProviderGroups(catalog);
   const optionCount = customPresets.length + catalog.models.length + 2;
   return (
     <>
       <p className="text-[11px] text-muted-foreground">
-        {optionCount} options · {catalog.providers.length} providers — scroll for more below.
+        {optionCount} options · {providerGroups.length} providers — scroll for more below.
       </p>
       <PresetOptionList open={open} presets={presets} catalog={catalog}>
         <CustomPresetOption
@@ -262,7 +257,7 @@ export function PresetAssignOptions({
             onSelect={onSelect}
           />
         ))}
-        <ProviderPresetOptions catalog={catalog} selected={selected} onSelect={onSelect} />
+        <ProviderPresetOptions groups={providerGroups} selected={selected} onSelect={onSelect} />
         {presets.length === 0 && catalog.providers.length === 0 ? (
           <p className="text-xs text-muted-foreground">No presets or providers available.</p>
         ) : null}
