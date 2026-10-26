@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.92.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.91.0...v0.92.0) (2026-10-26)
+
+
+### Features
+
+* a reviewed artifact mark is bound to the version you read ([#431](https://github.com/calionauta/bb-plugin-stelow/issues/431)) ([0d15c53](https://github.com/calionauta/bb-plugin-stelow/commit/0d15c53f71085bbbb5f5feb266cbb2d62bc823f3))
+* harden card questions and gate review enforcement ([#432](https://github.com/calionauta/bb-plugin-stelow/issues/432)) ([a0e9872](https://github.com/calionauta/bb-plugin-stelow/commit/a0e9872342475537a1f25295bf71fb10eecf99cb))
+* the answer and its wake are two facts ([#428](https://github.com/calionauta/bb-plugin-stelow/issues/428)) ([60d9031](https://github.com/calionauta/bb-plugin-stelow/commit/60d90316d1c328dfbbffde79e16b3e5846f469fa))
+
+
+### Bug Fixes
+
+* bound spawn retries to one failure episode ([#433](https://github.com/calionauta/bb-plugin-stelow/issues/433)) ([0fda71e](https://github.com/calionauta/bb-plugin-stelow/commit/0fda71ef689bc391cb570218d08ea8d4b678b1c3))
+* keep every registered artifact in the run bundle ([#427](https://github.com/calionauta/bb-plugin-stelow/issues/427)) ([29a7d0f](https://github.com/calionauta/bb-plugin-stelow/commit/29a7d0f601ea1998c3ee69f97199724ee2dd11bd))
+
 ## [0.91.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.90.0...v0.91.0) (2026-10-24)
 
 
