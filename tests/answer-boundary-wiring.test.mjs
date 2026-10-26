@@ -12,6 +12,10 @@ import { answerDeps } from "./fixtures/answer-deps.mjs";
  * never touches, and both carry the same review comments through it.
  */
 
+// The native-boundary port: an answer that IS the run's boundary resumes the
+// RUN, and the worker thread is left alone. Without the port the same answer
+// sends an ordinary continuation, so removing the routing is a silent
+// regression a needs-input card would only discover at runtime.
 test("a boundary answer resumes the run and never the worker thread", async () => {
   const resumed = [];
   const { deps, calls } = answerDeps({
@@ -99,8 +103,6 @@ test("a refused boundary resume leaves its comments pending", async () => {
   assert.deepEqual(carried, []);
 });
 
-// A refused resume is reported, never swallowed: the answer was recorded, and
-// the caller has to learn that the run did not restart.
 // A refused boundary resume used to return before any bookkeeping, which left a
 // phantom wait: the interaction was already consumed, so the card claimed
 // `awaiting-answer` and its Inbox row could not be answered again. What regresses
@@ -134,9 +136,8 @@ test("a refused boundary resume still settles the questions and reports the refu
   assert.equal(calls.sends.length, 0, "a refused boundary resume does not fall back to the thread");
 });
 
-// The comment mark follows the SAME standard as the card: only a dispatch that
-// landed carries it. What regresses if this fails: a comment the host queued is
-// stamped carried, and the resume prompt never contains it.
+// An unbound port (before the execution layer is wired) is the pre-native
+// behavior, not a crash.
 test("an absent boundary port answers as an ordinary worker continuation", async () => {
   const { deps, calls } = answerDeps();
   const result = await createQuestionAnswers(deps).answerQuestions({
@@ -147,10 +148,8 @@ test("an absent boundary port answers as an ordinary worker continuation", async
   assert.equal(calls.sends.length, 1);
 });
 
-// The other half of the rule: what the person wrote while reviewing rides the
-// answer itself, and only a dispatch that landed marks it carried. What
-// regresses if this fails: the comments are stamped as carried by an answer that
-// never went, so the worker never sees them and nothing says so.
+// The recovery door's thread fallback: the row's thread may be stale, but it is
+// still better than nothing when the card has no worker of its own.
 test("the recovery door wakes the row's thread when the card has none", async () => {
   const { deps, calls } = answerDeps({
     expiredRows: [{ id: "old_1", thread_id: "thr_9", question: "Keep?", multiple: 1 }],
@@ -178,4 +177,25 @@ test("the recovery door names a card with no worker thread at all", async () => 
   assert.equal(result.delivery, "refused");
   assert.match(result.deliveryLine, /no worker thread/);
   assert.equal(calls.sends.length, 0);
+});
+
+// The recovery door's own guard: a card still waiting on the person keeps
+// `awaiting-answer`. It is unreachable while batches are all-or-nothing, and every
+// other fixture says `hasOpenQuestions: false` — so a mutation here stayed green
+// until this test existed. What regresses if this fails: a refused recovery answer
+// repaints the card as running/idle while a question is still open.
+test("the recovery door keeps the card waiting when a question is still open", async () => {
+  const { deps, calls } = answerDeps({
+    expiredRows: [{ id: "old_1", thread_id: "thr_9", question: "Keep?", multiple: 1 }],
+    send: () => {
+      throw new Error("gone");
+    },
+    deps: { hasOpenQuestions: () => true },
+  });
+  const result = await createQuestionAnswers(deps).answerExpiredQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "old_1", answers: [] }],
+  });
+  assert.equal(result.delivery, "refused");
+  assert.equal(calls.updates[0].activity, "awaiting-answer");
 });

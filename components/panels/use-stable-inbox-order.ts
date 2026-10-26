@@ -12,7 +12,7 @@
  * panel's body would have pushed it past its function budget without making any
  * of them clearer, and none of them would have been testable.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { stableInboxOrder } from "../../lib/inbox-stable-order.mjs";
 import { nextOrderState, showRequested } from "../../lib/inbox-order-state.mjs";
 import type { OrderState } from "../../lib/inbox-order-state.d.mts";
@@ -20,15 +20,15 @@ import type { InboxNotification } from "./inbox-types";
 
 export function useStableInboxOrder(entries: InboxNotification[], viewKey: string) {
   const naturalIds = entries.map((entry) => entry.id);
-  const naturalKey = naturalIds.join("|");
   const [state, setState] = useState<OrderState>(() => nextOrderState(null, naturalIds, viewKey));
 
-  // One rule, one effect: a different list adopts its own order, anything else
-  // keeps the order being read. The reducer returns the same object when nothing
-  // changed, so a realtime tick does not re-render the list.
-  useEffect(() => {
-    setState((previous) => nextOrderState(previous, naturalIds, viewKey));
-  }, [viewKey, naturalKey]);
+  // A different list is one the reader asked for. Adjusting state during render
+  // (React's own pattern for state derived from props) settles it before the
+  // commit, so there is no effect and no dependency array to get wrong: a review
+  // showed a mutation that emptied the deps array left every suite green, because
+  // the wiring below the reducer had no test to fail. Now there is nothing to
+  // remember — the reset cannot be forgotten.
+  if (state.viewKey !== viewKey) setState(nextOrderState(state, naturalIds, viewKey));
 
   const view = stableInboxOrder(state.frozen, entries);
   const byId = new Map(entries.map((entry) => [entry.id, entry]));

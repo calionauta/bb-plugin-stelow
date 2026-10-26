@@ -127,10 +127,9 @@ test("expired answers remain all-or-nothing and use the current worker", async (
   assert.match(calls.comments[0][4], /\[contract: direction-contract\]/);
 });
 
-// The native-boundary port: an answer that IS the run's boundary resumes the
-// RUN, and the worker thread is left alone. Without the port the same answer
-// sends an ordinary continuation, so removing the routing is a silent
-// regression a needs-input card would only discover at runtime.
+// The comment mark follows the SAME standard as the card: only a dispatch that
+// landed carries it. What regresses if this fails: a comment the host queued is
+// stamped carried, and the resume prompt never contains it.
 test("a queued dispatch does not mark its comments carried", async () => {
   const carried = [];
   const { deps } = answerDeps({
@@ -151,8 +150,10 @@ test("a queued dispatch does not mark its comments carried", async () => {
   assert.deepEqual(carried, []);
 });
 
-// An unbound port (before the execution layer is wired) is the pre-native
-// behavior, not a crash.
+// The other half of the rule: what the person wrote while reviewing rides the
+// answer itself, and only a dispatch that landed marks it carried. What
+// regresses if this fails: the comments are stamped as carried by an answer that
+// never went, so the worker never sees them and nothing says so.
 test("an answer carries the comments written while reviewing", async () => {
   const carried = [];
   const block = "## Feedback written while answering\n\n### Comment 1\n\nRe a.md: keep it";
