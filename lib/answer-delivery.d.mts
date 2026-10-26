@@ -24,6 +24,7 @@ export declare function answerDeliveryOf(
 export declare function answerDeliveryCardPatch(
   verdict: { delivery: string | null } | null | undefined,
   lastOutput: string | null,
+  waiting?: boolean,
 ): { activity: "held"; last_assistant_text: string | null } | { activity: "idle" } | null;
 
 export declare function answerDeliveryLine(verdict: AnswerDeliveryVerdict): string | null;

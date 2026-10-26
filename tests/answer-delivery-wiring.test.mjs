@@ -236,3 +236,22 @@ test("a refused answer leaves its comments pending for the next one", async () =
   assert.equal(result.delivery, "refused");
   assert.deepEqual(carried, [], "a comment is never marked carried by a send that failed");
 });
+
+// The card patch order used to let a refused verdict replace `awaiting-answer`
+// on a card that still had open questions. What regresses if this fails: a card
+// waiting on the person reads as idle, and the reconciler spends a resume budget
+// on a card that is not stuck.
+test("a card still waiting on the person never reports idle", async () => {
+  const { deps, calls } = answerDeps({
+    send: () => {
+      throw new Error("gone");
+    },
+    deps: { openExpiredQuestionIds: () => ["q2"] },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.delivery, "refused");
+  assert.equal(calls.updates[0].activity, "awaiting-answer");
+});

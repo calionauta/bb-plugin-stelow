@@ -82,6 +82,10 @@ test("an unreadable dispatch is reported as unread, never as delivered", () => {
   assert.match(answerDeliveryLine(verdict), /did not say/);
   // An attempt nobody could read claims no activity either way.
   assert.equal(answerDeliveryCardPatch(verdict, null).activity, "idle");
+  // A card still waiting on the person is neither running nor idle: the open
+  // question is the truth about what comes next.
+  assert.equal(answerDeliveryCardPatch({ delivery: "refused" }, null, true), null);
+  assert.equal(answerDeliveryCardPatch({ delivery: "queued" }, "words", true), null);
   // Nothing was attempted at all: the answer patch's own activity stands.
   assert.equal(answerDeliveryCardPatch(null, null), null);
 });

@@ -268,11 +268,11 @@ async function answerQuestions(
       live.decisions,
       await premiseObservation(deps, input.cardId),
     );
+    // A queued answer is a hold, a refused one woke nobody, and a card still
+    // waiting on the person keeps `awaiting-answer`. Only `sent` stays `running`.
     deps.updateCard(input.cardId, {
       ...answeredCardPatch(openQuestionIds.length > 0),
-      // A queued answer is a hold and a refused one woke nobody; only a sent
-      // dispatch leaves the answer patch's `running` standing.
-      ...answerDeliveryCardPatch(resume.verdict, card.last_assistant_text),
+      ...answerDeliveryCardPatch(resume.verdict, card.last_assistant_text, openQuestionIds.length > 0),
     });
     return delivered(live.decisions.length, resume.verdict);
   } catch (error) {

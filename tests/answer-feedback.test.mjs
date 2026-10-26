@@ -13,6 +13,7 @@ import {
 } from "../server/runtime/answer-feedback.ts";
 import { createCardMutationHandlers } from "../server/runtime/card-mutations.ts";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
+import { ensureCommentDeliveryColumn } from "../server/core-migrations.ts";
 
 /**
  * A comment written while the card waits on an answer belongs to that answer.
@@ -100,6 +101,25 @@ test("only open recovery questions count as an expected answer", () => {
   db.prepare("INSERT INTO expired_questions (id, card_id, answered) VALUES ('q2', 'card_1', 1)").run();
   assert.equal(openExpiredCount(db, "card_1"), 1);
   assert.equal(openExpiredCount(db, "card_2"), 0);
+});
+
+// The upgrade case: a column added as null says "no answer has carried this
+// comment" about every comment the card ever collected, so the first answer after
+// the upgrade would send the card's whole history to the worker. What regresses
+// if this fails: either the history rides (no backfill) or the comments genuinely
+// waiting are stamped by a restart (an unconditional backfill).
+test("the delivery column backfills history once, and never a waiting comment", () => {
+  const db = new Database(":memory:");
+  db.exec(`CREATE TABLE comments (id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at INTEGER NOT NULL)`);
+  db.prepare("INSERT INTO comments (id, body, created_at) VALUES ('old', 'history', 5)").run();
+  ensureCommentDeliveryColumn(db);
+  assert.equal(db.prepare("SELECT delivered_at FROM comments WHERE id = 'old'").get().delivered_at, 5);
+
+  // Written after the migration and waiting for the next answer; a second boot
+  // must leave it pending or it never rides.
+  db.prepare("INSERT INTO comments (id, body, created_at) VALUES ('waiting', 'now', 9)").run();
+  ensureCommentDeliveryColumn(db);
+  assert.equal(db.prepare("SELECT delivered_at FROM comments WHERE id = 'waiting'").get().delivered_at, null);
 });
 
 test("the comments column is additive and safe to re-run", () => {

@@ -832,7 +832,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
-  and an escalating mark. Tiers reorder only — the badge still counts
+  and an escalating mark. Tiers reorder only — while a reader is looking the
+  drawn order is held (see above), and Show re-applies them — the badge still counts
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.

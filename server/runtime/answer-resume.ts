@@ -116,9 +116,10 @@ export async function resumeExpiredAnswer(
   //
   // Same stale-error rule as live answers: answering clears the interrupted
   // turn's failure so the recovered card reads coherent.
+  const waiting = deps.hasOpenQuestions(card.id, openQuestionIds);
   deps.updateCard(card.id, {
-    ...answeredCardPatch(deps.hasOpenQuestions(card.id, openQuestionIds)),
-    ...answerDeliveryCardPatch(verdict, card.last_assistant_text),
+    ...answeredCardPatch(waiting),
+    ...answerDeliveryCardPatch(verdict, card.last_assistant_text, waiting),
   });
   deps.bb.realtime.publish("card-state", { cardId: card.id });
   return verdict;
