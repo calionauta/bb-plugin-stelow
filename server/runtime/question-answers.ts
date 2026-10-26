@@ -17,11 +17,11 @@ import {
   slotsOf,
 } from "../../lib/question-exclusivity.mjs";
 import { recordSplitAnswer } from "../../lib/split-proposal.mjs";
-import type { ExecutionRun } from "../../lib/execution-run-ledger.mjs";
 import { answerDeliveryCardPatch, answerDeliveryLine } from "../../lib/answer-delivery.mjs";
 import type { AnswerDeliveryVerdict } from "../../lib/answer-delivery.d.mts";
 import type { WorkerCard } from "../workers-types.js";
 import { resumeExpiredAnswer, resumeFromDecisions } from "./answer-resume.js";
+import type { BoundaryPortReader } from "./answer-resume.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Answer = { questionId: string; answers: string[] };
@@ -45,29 +45,6 @@ type AnswerRow = OpenRow & { answers: string[] };
  * a native-boundary answer asks for it, and a door on a card with no run never
  * does. Binding it is the execution layer's wiring, not this module's.
  */
-export type AnswerBoundaryPort = {
-  /**
-   * Sends the ordinary worker continuation, unless a decision is this run's own
-   * native boundary — that one resumes the run instead of the thread. Returns
-   * the boundary run it resumed, if any.
-   */
-  routeAnswerContinuation: (
-    cardId: string,
-    threadId: string,
-    decisions: Decision[],
-  ) => Promise<ExecutionRun | null>;
-  /** Resumes from a boundary answer; a non-null result is a resume refusal. */
-  resumeAfterAnswers: (
-    run: ExecutionRun,
-    decisions: Decision[],
-  ) => Promise<string | null>;
-};
-
-/** A port that is not bound yet reads as undefined, and the door stays ordinary. */
-export type BoundaryPortReader = {
-  read: () => AnswerBoundaryPort | undefined;
-};
-
 export type QuestionAnswersDeps = {
   bb: BbPluginApi;
   db: Db;

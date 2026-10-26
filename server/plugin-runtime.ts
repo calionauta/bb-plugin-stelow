@@ -28,7 +28,7 @@ import { createHostSurfaces } from "./runtime/wiring/host-surfaces.js";
 import { registerStelowRpc } from "./runtime/wiring/rpc-surfaces.js";
 import { registerStelowCommand } from "./runtime/wiring/cli-surfaces.js";
 import { deferred } from "./runtime/wiring/deferred.js";
-import type { AnswerBoundaryPort } from "./runtime/question-answers.js";
+import type { AnswerBoundaryPort } from "./runtime/answer-resume.js";
 import type { GithubAutomation } from "./github-issues.js";
 
 export default async function plugin(bb: BbPluginApi) {

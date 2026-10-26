@@ -156,6 +156,67 @@ test("a boundary answer resumes the run and never the worker thread", async () =
   assert.equal(calls.sends.length, 0, "a boundary answer is not an ordinary worker continuation");
 });
 
+// The native resume takes decisions, not text — but it is still the continuation
+// that resumes the work, so what the person wrote while reviewing has to reach
+// it. The port reports whether the resume happened, and only that word lets the
+// comments be marked carried: this used to be decided by omission (comments
+// stayed pending forever on a card whose answers resume runs).
+test("a boundary answer carries the review comments into the run", async () => {
+  const carried = [];
+  const seen = [];
+  const { deps } = answerDeps({
+    deps: {
+      boundary: {
+        read: () => ({
+          routeAnswerContinuation: async () => ({ id: "run_1" }),
+          resumeAfterAnswers: async (_run, _decisions, feedback) => {
+            seen.push(feedback);
+            return null;
+          },
+        }),
+      },
+      answerFeedback: async () => ({
+        block: "## Feedback written while answering\n\n### Comment 1\n\nRe plan.md: keep it",
+        ids: ["c1"],
+      }),
+      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.delivery, "sent");
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /Re plan\.md: keep it/);
+  assert.deepEqual(carried, ["c1"]);
+});
+
+// The port's refusal is the only thing standing between a comment and a second
+// delivery: a run that did not resume did not carry anything.
+test("a refused boundary resume leaves its comments pending", async () => {
+  const carried = [];
+  const { deps } = answerDeps({
+    deps: {
+      boundary: {
+        read: () => ({
+          routeAnswerContinuation: async () => ({ id: "run_1" }),
+          resumeAfterAnswers: async () => "the boundary has moved on",
+        }),
+      },
+      answerFeedback: async () => ({ block: "## Feedback written while answering", ids: ["c1"] }),
+      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /boundary has moved on/);
+  assert.deepEqual(carried, []);
+});
+
 // A refused resume is reported, never swallowed: the answer was recorded, and
 // the caller has to learn that the run did not restart.
 test("a refused boundary resume surfaces its refusal with the answer counted", async () => {

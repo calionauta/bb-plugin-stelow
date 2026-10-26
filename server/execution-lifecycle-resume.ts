@@ -37,8 +37,8 @@ type PreparedResume = { childId: string; childRoot: string; args: ResumeArgs };
 
 export function createLifecycleResumer(deps: ResumeDeps) {
   return {
-    resumeAfterAnswers: (run: ExecutionRun, decisions: AnswerDecision[]) =>
-      resumeAfterAnswers(deps, run, decisions),
+    resumeAfterAnswers: (run: ExecutionRun, decisions: AnswerDecision[], feedback?: string | null) =>
+      resumeAfterAnswers(deps, run, decisions, feedback),
     routeAnswerContinuation: (cardId: string, threadId: string, decisions: AnswerDecision[]) =>
       routeAnswerContinuation(deps, cardId, threadId, decisions),
   };
@@ -48,6 +48,7 @@ export async function resumeAfterAnswers(
   deps: ResumeDeps,
   run: ExecutionRun,
   decisions: AnswerDecision[],
+  feedback?: string | null,
 ): Promise<string | null> {
   // The contract is checked against the card's CURRENT shape before anything is
   // prepared: an answer to a boundary that has since moved on resumes nothing,
@@ -56,7 +57,7 @@ export async function resumeAfterAnswers(
   if (answerError) return answerError;
   let prepared: PreparedResume | { error: string };
   try {
-    prepared = await prepareResume(deps, run, decisions);
+    prepared = await prepareResume(deps, run, decisions, feedback);
   } catch (error) {
     return failResume(deps, run, `missing-${Date.now()}`, error);
   }
@@ -121,6 +122,7 @@ async function prepareResume(
   deps: ResumeDeps,
   run: ExecutionRun,
   decisions: AnswerDecision[],
+  feedback?: string | null,
 ): Promise<PreparedResume | { error: string }> {
   if (!run.runId) return { error: "The native boundary has no run identity to resume." };
   const parsed = parseResumeArgs(run.argsText);
@@ -130,7 +132,16 @@ async function prepareResume(
   const args: ResumeArgs = {
     recipeId: parsed.recipeId,
     localRunId: childId,
-    context: { ...parsed.context, artifactRoot: childRoot, resumeAnswers: decisions },
+    // `resumeFeedback` is the sibling of `resumeAnswers`: what the person wrote
+    // while reviewing, in the same context a resume already carries its
+    // decisions in. Absent when nothing was written, so a run's argsText stays
+    // comparable across resumes that carry no feedback.
+    context: {
+      ...parsed.context,
+      artifactRoot: childRoot,
+      resumeAnswers: decisions,
+      ...(feedback ? { resumeFeedback: feedback } : {}),
+    },
   };
   try {
     await deps.bb.sdk.files.mkdir({ path: childRoot, rootPath: run.workspaceId, recursive: true });

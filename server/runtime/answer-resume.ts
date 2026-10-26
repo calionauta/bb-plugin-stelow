@@ -19,7 +19,39 @@ import { answeredCardPatch } from "../../lib/question-evidence.mjs";
 import { formatBatchContinuation } from "../../lib/question-batch.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import type { QuestionAnswersDeps } from "./question-answers.js";
+import type { ExecutionRun } from "../../lib/execution-run-ledger.mjs";
 import { sendWorkerInput } from "./thread-send.js";
+
+export type AnswerBoundaryPort = {
+  /**
+   * Sends the ordinary worker continuation, unless a decision is this run's own
+   * native boundary — that one resumes the run instead of the thread. Returns
+   * the boundary run it resumed, if any.
+   */
+  routeAnswerContinuation: (
+    cardId: string,
+    threadId: string,
+    decisions: Decision[],
+  ) => Promise<ExecutionRun | null>;
+  /**
+   * Resumes from a boundary answer; a non-null result is a resume refusal.
+   *
+   * `feedback` is what the person wrote while reviewing, already composed
+   * (`lib/answer-feedback`). A null result is the port's word that the resume
+   * happened, which is the only thing that lets the answer door mark those
+   * comments carried.
+   */
+  resumeAfterAnswers: (
+    run: ExecutionRun,
+    decisions: Decision[],
+    feedback?: string | null,
+  ) => Promise<string | null>;
+};
+
+/** A port that is not bound yet reads as undefined, and the door stays ordinary. */
+export type BoundaryPortReader = {
+  read: () => AnswerBoundaryPort | undefined;
+};
 
 type Decision = { question: string; answers: string[] };
 type Row = { thread_id: string };
@@ -34,12 +66,16 @@ export async function resumeFromDecisions(
   threadId: string,
   decisions: Decision[],
 ): Promise<{ boundaryResumed: boolean; verdict: AnswerDeliveryVerdict }> {
+  // Read once, before either continuation exists: whichever one resumes the
+  // work is the one that carries what the person wrote while reviewing.
+  const feedback = await readAnswerFeedback(deps, cardId);
   const port = deps.boundary?.read();
   const boundaryRun = port
     ? await port.routeAnswerContinuation(cardId, threadId, decisions)
     : null;
   if (boundaryRun && port) {
-    const resumeError = await port.resumeAfterAnswers(boundaryRun, decisions);
+    const resumeError = await port.resumeAfterAnswers(boundaryRun, decisions, feedback.block);
+    if (!resumeError && feedback.ids.length > 0) deps.markAnswerFeedbackCarried?.(feedback.ids);
     return {
       boundaryResumed: true,
       // The run door reports a failure as words, not as a dispatch: it never
@@ -50,10 +86,9 @@ export async function resumeFromDecisions(
         : { delivery: "sent", hold: null, error: null },
     };
   }
-  // What the person wrote while reviewing rides the answer, and only the
-  // dispatch that landed marks it carried: a refusal leaves the comments pending
-  // for the next answer instead of losing them behind a send that never went.
-  const feedback = await readAnswerFeedback(deps, cardId);
+  // Only the dispatch that landed marks the comments carried: a refusal leaves
+  // them pending for the next answer instead of losing them behind a send that
+  // never went.
   const verdict = answerDeliveryOf(await sendWorkerInput(deps.bb, threadId, [{
     type: "text",
     text: [formatBatchContinuation(decisions), feedback.block].filter(Boolean).join("\n\n"),

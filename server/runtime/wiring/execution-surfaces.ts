@@ -35,7 +35,7 @@ import { cardLiveRuns } from "../card-live-runs.js";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
 import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
-import type { AnswerBoundaryPort } from "../question-answers.js";
+import type { AnswerBoundaryPort } from "../answer-resume.js";
 import type { RuntimeCore } from "../runtime-core.js";
 import type { GateSurfaces } from "./gate-surfaces.js";
 import type { Deferred } from "./deferred.js";

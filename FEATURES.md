@@ -1018,7 +1018,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   an answer (activity `awaiting-answer`, or an open recovery question) is written
   to the card as always and left uncarried; the answer's resume prompt carries it
   under **Feedback written while answering**, before the worker acts, and only a
-  dispatch that actually landed marks it carried. Nothing is lost when no answer
+  dispatch that actually landed marks it carried. An answer that resumes a native
+  run instead of the thread carries the same block as `context.resumeFeedback`,
+  beside the `resumeAnswers` a resume already sends — the run takes decisions,
+  not prose, so the field is the protocol surface for it, and the port's own
+  "resumed" report is what marks the comments carried there. Nothing is lost when no answer
   comes: the comment is on the card, and it rides the next answer instead. The
   composer stops saying "sent to the agent" when it was only saved — it says the
   comment goes with the answer, or that the host is holding it. The store is one

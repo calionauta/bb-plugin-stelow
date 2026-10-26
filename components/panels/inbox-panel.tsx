@@ -6,6 +6,7 @@ import { HolderChip } from "./inbox-holder-chip";
 import { openAskDoor } from "./inbox-ask-door";
 import { InboxEntry } from "./inbox-row";
 import { useStableInboxOrder } from "./use-stable-inbox-order";
+import { Button } from "../ui/button";
 import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
 import { inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
@@ -221,12 +222,9 @@ export function InboxPanel() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <InboxToolbar filter={filter} setFilter={setFilter} unreadOnly={unreadOnly} setUnreadOnly={setUnreadOnly} />
           {held > 0 ? (
-            <button
-              onClick={show}
-              className="min-h-11 cursor-pointer rounded-md border px-3 text-sm font-medium hover:bg-background"
-            >
+            <Button variant="outline" className="min-h-11" onClick={show}>
               {held === 1 ? "1 update" : `${held} updates`} · Show
-            </button>
+            </Button>
           ) : null}
         </div>
         {panelState === "loading" ? <PanelSkeleton /> : panelState === "failure" ? (
