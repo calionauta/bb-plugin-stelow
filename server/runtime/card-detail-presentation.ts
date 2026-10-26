@@ -65,6 +65,8 @@ export type DetailParts = {
   fileEnvironmentId: string | null;
   scopes: unknown[];
   artifacts: unknown[];
+  /** "3 of 7 reviewed…", derived from the marks joined into `artifacts`. */
+  reviewLine: string | null;
   activity: "idle" | "running" | "awaiting-answer" | "error" | "held";
   preset: Preset;
   workerHistory: unknown[];
@@ -180,6 +182,7 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
     blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
+    reviewLine: parts.reviewLine,
     workerHistory: parts.workerHistory,
     executionRuns: deps.executionLifecycle.detailList(card.id),
     fileEnvironmentId: parts.fileEnvironmentId,
