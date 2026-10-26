@@ -26,6 +26,7 @@ import { cancelScopeBatchRun } from "../../scope-batch.js";
 import { createSharedCheckoutReader, listBbThreads } from "../shared-checkout.js";
 import { createVerifyBlockageReader } from "../verify-blockage.js";
 import { createCardDetailHandler } from "../card-detail.js";
+import { buildArtifactReviews, artifactReadDeps } from "./artifact-review-surface.js";
 import { createCardMutationHandlers } from "../card-mutations.js";
 import { cancelCardScopeBatches, createCardLifecycleHandlers } from "../card-lifecycle.js";
 import { createCardOperationsHandlers } from "../card-operations.js";
@@ -34,12 +35,10 @@ import { createResearchTrackHandlers } from "../research-track-handlers.js";
 import { createCardCreator } from "./card-creator.js";
 import { detectMentionedFiles } from "../mentioned-files.js";
 import { recoveryNudge } from "../card-copy.js";
-import { cardAttachments, workspaceRelative } from "../card-files.js";
+import { cardAttachments } from "../card-files.js";
 import { EXPLORATORY_SCOPE } from "../exploratory-scope.js";
 import { IDLE_ATTENTION_MS } from "../attention-window.js";
 import { parseNextStages } from "../workflow-state.js";
-import { fileTimestamp } from "../root-paths.js";
-import { auditReceiptNote } from "../audit-receipts.js";
 import { INTERFACE_PICK, SPLIT_REQUEST_NUDGE } from "../plugin-protocols.js";
 import type { RuntimeCore } from "../runtime-core.js";
 import type { ExecutionSurfaces } from "./execution-surfaces.js";
@@ -65,6 +64,7 @@ export function createCardSurfaces(deps: CardSurfaceDeps) {
     cards,
     workspacesRecovery,
     cardDetail: buildCardDetail(core, execution),
+    artifactReviews: buildArtifactReviews(core),
     sharedCheckoutExposure: buildSharedCheckoutExposure(core),
     verifyBlockage: buildVerifyBlockage(core),
     cardMutations: buildCardMutations(core),
@@ -180,10 +180,9 @@ function buildVerifyBlockage(core: RuntimeCore) {
 }
 
 function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
-  const { bb, db, now, presetServer, workers } = core;
+  const { db, now, presetServer, workers } = core;
   return createCardDetailHandler({
     db,
-    bb,
     now,
     idleAttentionMs: IDLE_ATTENTION_MS,
     getCard: core.getCard,
@@ -193,7 +192,6 @@ function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
     resolveAskOptions: core.asks.resolveAskOptions,
     cardAttachments,
     detectMentionedFiles,
-    workspaceRelative,
     parseNextStages,
     getReliablePreset: presetServer.getReliablePresetForBand,
     strategyList: core.strategyList,
@@ -202,14 +200,9 @@ function buildCardDetail(core: RuntimeCore, execution: ExecutionSurfaces) {
     workers,
     executionLifecycle: execution.executionLifecycle,
     stalenessForQuestions: core.stalenessForQuestions,
-    stateDir: (sourcePath, card) =>
-      card.dir_hash
-        ? core.workflowStateDir(bb, sourcePath, card.id, card.dir_hash)
-        : Promise.resolve(null),
+    ...artifactReadDeps(core),
     scopeXray: execution.scopeMaps.scopeXray,
     scopeDraft: execution.scopeMaps.scopeDraft,
-    fileTimestamp,
-    auditReceiptNote,
     cardNotFound: core.ERRORS.cardNotFound,
   });
 }
