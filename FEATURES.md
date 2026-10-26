@@ -817,6 +817,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   checkbox — no detached Show label. Severity chips that merely restate the
   row's own label are suppressed (one signal, not two); chips that add
   information — stall age, error counts — always survive.
+- **The list holds still while you read it** (`lib/inbox-stable-order.mjs`,
+  `components/panels/use-stable-inbox-order.ts`). Severity tiers order the list,
+  and the panel reloads on `card-state` / `inbox-changed`, so a severity bump —
+  an error repeating, a stall crossing 72h, a model judgement promoting an item —
+  used to move a row while somebody was reading the row below it. Every row
+  carries actions, so that is a click waiting to land on the wrong one. The order
+  is frozen for as long as the reader is looking: a row that gains severity keeps
+  its place and changes only its own content, a row that did not exist yet joins
+  at the end, and an **N updates · Show** control puts everything where it
+  belongs. Nothing is hidden — a held list that hid an arriving wait would be the
+  phantom-wait bug wearing a stability argument — and changing a filter adopts
+  that list's own order at once, because it is a list the reader asked for.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)

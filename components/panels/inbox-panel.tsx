@@ -5,6 +5,7 @@ import { usePanelData } from "../panel/panel-state-hooks";
 import { HolderChip } from "./inbox-holder-chip";
 import { openAskDoor } from "./inbox-ask-door";
 import { InboxEntry } from "./inbox-row";
+import { useStableInboxOrder } from "./use-stable-inbox-order";
 import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
 import { inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
@@ -186,6 +187,9 @@ export function InboxPanel() {
     realtimeChannels: ["card-state", "inbox-changed"],
   });
   const entries = inboxVisibleEntries(notifications, filter, unreadOnly);
+  // The order is held while the reader is looking: a row that gains severity
+  // keeps its place instead of moving under a click meant for the row below it.
+  const { shown, held, show } = useStableInboxOrder(entries, `${filter}:${unreadOnly}`);
   const selected = FILTERS.find((entry) => entry.id === filter)!;
   const panelState = inboxPanelState(firstLoad, loadError, notifications);
   const emptyTitle = unreadOnly
@@ -216,6 +220,14 @@ export function InboxPanel() {
         </header>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <InboxToolbar filter={filter} setFilter={setFilter} unreadOnly={unreadOnly} setUnreadOnly={setUnreadOnly} />
+          {held > 0 ? (
+            <button
+              onClick={show}
+              className="min-h-11 cursor-pointer rounded-md border px-3 text-sm font-medium hover:bg-background"
+            >
+              {held === 1 ? "1 update" : `${held} updates`} · Show
+            </button>
+          ) : null}
         </div>
         {panelState === "loading" ? <PanelSkeleton /> : panelState === "failure" ? (
           <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
@@ -224,11 +236,11 @@ export function InboxPanel() {
               Retry
             </button>
           </section>
-        ) : entries.length ? (
+        ) : shown.length ? (
           <section className="space-y-2" aria-label={selected.label}>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{selected.label}</h2>
             <div className="divide-y rounded-md border">
-              {entries.map((entry) => (
+              {shown.map((entry) => (
                 <InboxEntry
                   key={entry.id}
                   entry={entry}
