@@ -125,6 +125,7 @@ async function fresh(
   deps: WorkerDeps,
   cardId: string,
   reason: "start" | "restart",
+  options?: { automatic?: boolean },
 ): Promise<{ ok: boolean; error: string | null }> {
   const card = deps.getCard(cardId);
   if (!card) return { ok: false, error: deps.errors.cardNotFound };
@@ -144,7 +145,12 @@ async function fresh(
   if (reason === "start") refreshUnsettledTitle(deps, card);
   const reset = deps.resetAutoContinue();
   deps.updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
-  resetSpawnRetry(deps.db, cardId);
+  // A person starting or restarting a card opens a new failure episode. An
+  // automatic retry must NOT: its replacement can die before it starts, and
+  // clearing the budget there is what turned a permanent provider error into
+  // an endless spawn loop. The episode clears on the first worker output
+  // (`build-thread-sync`), which is the real proof that it started.
+  if (!options?.automatic) resetSpawnRetry(deps.db, cardId);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }
@@ -185,7 +191,7 @@ async function failedCause(deps: WorkerDeps, threadId: string): Promise<string |
   try {
     const events = await deps.bb.sdk.threads.events.list({
       threadId,
-      types: ["provider/error"],
+      types: ["provider/error", "system/error"],
       order: "desc",
       limit: "5",
     });
@@ -216,7 +222,11 @@ function workerFacade(
       continuingEnvironment(deps, card, fallback),
     respawn: (cardId: string, presetId: string, reason?: string, options?: RespawnOptions) =>
       respawn(respawnDeps(deps), cardId, presetId, reason, options),
-    fresh: (cardId: string, reason: "start" | "restart") => fresh(deps, cardId, reason),
+    fresh: (
+      cardId: string,
+      reason: "start" | "restart",
+      options?: { automatic?: boolean },
+    ) => fresh(deps, cardId, reason, options),
     scheduleRespawn: respawnScheduler.schedule,
     applyFailed: retry.applyFailed,
     ...history,
@@ -247,7 +257,7 @@ export function createWorkers(deps: WorkerDeps) {
     updateCard: deps.updateCard,
     comment: deps.comment,
     publish: (cardId) => deps.bb.realtime.publish("card-state", { cardId }),
-    fresh: (cardId, reason) => fresh(deps, cardId, reason),
+    fresh: (cardId, reason, options) => fresh(deps, cardId, reason, options),
     failedCause: (threadId) => failedCause(deps, threadId),
     scheduler,
     retryDelayMs: deps.retryDelayMs,

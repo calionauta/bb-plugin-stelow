@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { isRetryableSpawnError } from "../lib/spawn-retry.mjs";
 import { summarizeProviderDetail, failureCauseFromEvents } from "../lib/worker-failure.mjs";
 
 // The 400-before-first-output shape: provider detail carries code + JSON.
@@ -52,6 +53,28 @@ assert.equal(
   ]),
   "host reconnect gave up",
   "system/error is the fallback cause",
+);
+
+// A `thread_command_failed` system/error carries the generic wrapper in
+// `message` and the real refusal in `detail`. Preferring the message made a
+// permanent "Method not found" look like a transient thread.start failure and
+// earned it automatic respawns, so the detail must win — and must not look
+// retryable either.
+const refusedModel = '"Method not found": session/set_model: {"method":"session/set_model"}';
+assert.equal(
+  failureCauseFromEvents([
+    {
+      type: "system/error",
+      data: { message: "Command thread.start failed", detail: refusedModel },
+    },
+  ]),
+  refusedModel,
+  "system/error detail outranks the generic message",
+);
+assert.equal(
+  isRetryableSpawnError(refusedModel),
+  false,
+  "a model/session refusal is never retried as a transient start failure",
 );
 
 // Unknown shapes never throw and never invent a cause.

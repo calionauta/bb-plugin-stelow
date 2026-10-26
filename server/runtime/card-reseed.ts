@@ -351,6 +351,11 @@ function applyReseedState(
     last_assistant_text: null,
     auto_continue_count: reset.count,
     auto_continue_stage: reset.stage,
+    // A reseed is the human's explicit new start, so it opens a new failure
+    // episode: the replacement must not inherit an exhausted spawn-retry budget
+    // keyed to the worker the person just replaced.
+    spawn_retry_count: 0,
+    spawn_retry_thread: null,
   });
 }
 

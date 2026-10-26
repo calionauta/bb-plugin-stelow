@@ -179,8 +179,11 @@ const stateOwner = (state) => stateWorkflowId(state);
   );
 }
 
-// Retry: start-phase recovery is persisted, bounded, and scoped to the same
-// failed worker. A reseeded/new worker episode gets a fresh budget.
+// Retry: start-phase recovery is persisted, bounded, and scoped to the card's
+// failure episode. An automatic retry spawns a replacement, and a replacement
+// that dies before starting is the same episode — only a successful start
+// (resetSpawnRetry) or a human restart opens a fresh budget. Keying the budget
+// to the thread id restarted 1/3 on every replacement and looped forever.
 {
   const retry = fixture("retry");
   assert.equal(
@@ -217,8 +220,8 @@ const stateOwner = (state) => stateWorkflowId(state);
   );
   assert.equal(
     claimSpawnRetry(db, retry.card.id, "thr_new_worker"),
-    1,
-    "a replacement worker starts a fresh retry episode",
+    0,
+    "a replacement worker continues the exhausted episode instead of starting at one",
   );
   resetSpawnRetry(db, retry.card.id);
   assert.equal(
