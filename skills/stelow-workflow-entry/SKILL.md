@@ -66,8 +66,8 @@ cp "$git_root/assets/state-template.md" "$state_path"
 #   current_stage: triage   (first canonical stage for every intent)
 #   status: active
 #   config:
-#     appetite: <Lean | Core | Complete — derived from intent + scope>
-#     review_mode: <Auto | Product Spec Gate | Product Spec + Interface + Scopes | Product Spec + Interface + Tech Review + Code Diff>
+#     quality/exploration: derived from intent + scope (production/3 defaults; legacy appetite mapped once)
+#     review_mode: <Auto | Product Spec Gate | Product Spec + Interface Gates | Product Spec + Interface + Scopes | Product Spec + Interface + Tech Review | Product Spec + Interface + Tech Review + Code Diff>
 #     product_type: <software | docs | infra | data | research>
 ```
 

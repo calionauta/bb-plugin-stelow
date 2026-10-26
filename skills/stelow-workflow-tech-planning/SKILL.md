@@ -2,7 +2,7 @@
 name: stelow-workflow-tech-planning
 description: >
   [stelow] Technical planning and scope sequencing skill. Generates typed scopes
-  (feature/optimization/spike + test-*), sequences them, and creates goals (see references/cli-tools/goals.md).
+  (feature/optimization/spike + test-*), sequences them, and creates goals (see `../stelow-workflow-orchestrator/references/cli-tools/goals.md`).
   For software products, also generates testing-strategy.md via stelow-workflow-testing-ai-code.
   Part of stelow but can be used standalone.
 metadata:
@@ -70,7 +70,7 @@ Read the `references/` files to guide the process:
 
 | Layer | Owned by | Lifetime | Purpose |
 |---|---|---|---|
-| **Scope** | `stelow-workflow-tech-planning` (this skill) | Workflow lifetime (stelow.json) | Atomic delivery unit. Appetite ceiling: Lean ≤2, Core ≤5, Complete ~10. Cannot be created during execution — must be planned. |
+| **Scope** | `stelow-workflow-tech-planning` (this skill) | Workflow lifetime (stelow.json) | Atomic delivery unit. Scope ceiling: 9 maximum, discovered by mapping (never a target). Cannot be created during execution — must be planned. |
 | **Task** | `stelow-workflow-scope-executor` Step 3e-ter (runtime) | Scope lifetime (`wf.scopes[i].tasks`) | Sub-item checklist inside a scope. Seeds from spec-tech.md table; can be added during execution as `source: 'discovered'`. |
 
 **At planning time (this skill):**
@@ -196,16 +196,15 @@ Compare tech plan against product spec; resolve misalignment per `review_mode`
    and produce the testing-strategy.md artifact directly in the current context.
    Do NOT skip — the testing strategy gates are required for execution.
 
-2. **Add test-* scopes to spec-tech.md based on appetite:**
+2. **Add test-* scopes to spec-tech.md based on quality:**
 
-| Appetite | Add test scopes |
+| Quality | Add test scopes |
 |----------|----------------|
-| `Lean` | `test-behavior` (1 E2E test for happy path); `test-unit` for critical business logic; optional `test-integration` only when an external seam is in IN scope; `test-security` only for auth/payment/data in IN scope. |
-| `Core` | `test-behavior` (E2E for happy path + key variations); `test-unit` for main logic; `test-integration` for DB/API/external services; `test-security` for sensitive paths. |
-| `Complete` | `test-behavior` (full E2E coverage + edge cases); `test-unit`, `test-integration`, `test-security`. |
+| `production` | `test-behavior` (full E2E coverage + edge cases); `test-unit`, `test-integration`, `test-security`. |
+| `experimental` | `test-behavior` (1 E2E test for happy path); `test-unit` for critical business logic; optional `test-integration` only when an external seam is in IN scope; `test-security` only for auth/payment/data in IN scope. Never ship as-is. |
 
-**Note on TDD:** Research shows TDD alone is insufficient for AI-generated code.
-- Use TDD for critical business logic (isolated, deterministic)
+**Note on test-first ceremony:** Research shows mandated test-first is insufficient for AI-generated code — and harmful as an agent in-loop workflow (ProgramBench 2026).
+- Use fail-observed guards with human-described cases for critical business logic (isolated, deterministic)
 - Use Test-After + risk-based tests for standard paths
 - Never use same AI for both code AND test generation
 
@@ -314,7 +313,7 @@ Read the stelow-workflow-scope-executor skill for routing rules.
 
 | Scope type | Route to |
 |------------|----------|
-| `feature` | worker + iteration loop (see scope-executor Step 3 — implement → verify → review → quality, repeat) + supervision (see `../stelow-workflow-orchestrator/references/cli-tools/supervise.md`) |
+| `feature` | worker + iteration loop (see scope-executor Step 3 — implement → verify → review → quality, repeat) |
 | `optimization` | subagent + acceptance with benchmark verify (see `../stelow-workflow-orchestrator/references/cli-tools/goals.md` → Optimization Goals) |
 | `spike` | scout + researcher (see `../stelow-workflow-orchestrator/references/cli-tools/subagents.md`) |
 | `test-*` | subagent + acceptance (see `../stelow-workflow-orchestrator/references/cli-tools/goals.md`) with testing gates |
@@ -399,6 +398,7 @@ software, service, or hybrid so the AI-Aware Testing Strategy can activate corre
 If a tool is unavailable, check:
 `references/cli-tools/`
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -423,13 +423,15 @@ stage          : planning
 description    : Tech planning. Typed scopes + sequencing.
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : plan-gate
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
 gate           : none
-rework-on      : scope
+rework-on      : architecture
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -442,4 +444,6 @@ the rest of this file (unchanged). Summary:
 Primary actions (per stages.yaml): `read, write`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 

@@ -1,6 +1,6 @@
 ---
 name: stelow-workflow-orchestrator
-description: "[stelow] Complete product planning workflow: Shape Up -> Interface -> Tech Planning -> Product Critique -> visual review Gate. Includes 8 domain playbooks (Pricing, Trust, Ads, Health, etc)"
+description: "[stelow] Complete product planning workflow: Shape Up -> Interface -> Architecture -> Tech Planning -> Product Critique -> visual review Gate. Includes 8 domain playbooks (Pricing, Trust, Ads, Health, etc)"
 metadata:
   frequency: daily
   category: workflow
@@ -24,8 +24,7 @@ You are a strategic product planner following the Shape Up method. This is the *
 1. **Follow the stage sequence.** Do NOT skip stages arbitrarily — the pipeline is intentional. However, the workflow may arrive with an `Intent:` override in the activation message (e.g. bugfix, refactor, investigate) that adjusts which stages run. Respect the intent override when present.
 2. **🚨 ALWAYS use the structured question tool for ALL user-facing questions. NEVER ask questions in chat/markdown/prose format.** Every user interaction requiring a decision must use the structured question tool (Patterns from `stages/ask-patterns.md`). Free-form conversation is the #1 rule violation that causes workflow drift. Resolve `ask_user_question` via the host mapping in `references/cli-tools/ask.md`. Never write prose like "waiting for your choice".
 3. **Review Gate (visual review --gate) is MANDATORY.** Verbal approval is not a substitute.
-4. **NEVER activate the supervisor during stages before Execution.** The supervisor would re-submit visual review. Only in the Execution stage.
-5. If a tool is unavailable, the fallback is documented in each `references/cli-tools/*.md` file.
+4. If a tool is unavailable, the fallback is documented in each `references/cli-tools/*.md` file.
 6. **Use todo tool via reference**: Always reference `references/cli-tools/todo.md` for task management. Never call todo tools directly.
 7. **Every response starts with stage indicator**: See todo.md for response format with stage indicator, tasks, and navigation hint.
 
@@ -43,7 +42,6 @@ You are a strategic product planner following the Shape Up method. This is the *
 | `goal-system` (acceptance contracts) | `references/cli-tools/goals.md` |
 | `safe-change` | `references/cli-tools/safe-change.md` |
 | `intercom` | `references/cli-tools/intercom.md` |
-| `supervise` | `references/cli-tools/supervise.md` |
 || `/sw-next`, `/sw-setphase` | `references/cli-tools/stage-status.md` |
 | `todo` | `references/cli-tools/todo.md` |
 
@@ -58,7 +56,7 @@ You are a strategic product planner following the Shape Up method. This is the *
 Artifacts are stored in `.stelow/{YYYY-MM-DD}/{_dir}/`:
 - `index.json` — Auto-discovery metadata
 - `specs/spec-product_v{N}.md` — Shape Up output
-- `interfaces/interfaces_v{N}.md` — Interface proposals
+- `interfaces/interfaces_v{N}.md` — Interface Contrast rendering (bounded alternatives + disposition)
 - `plans/spec-tech_v{N}.md` + `plans/scopes/` — Tech plan
 - `critiques/critique-report_v{N}.md` — Critique
 - `approvals/*.receipt.md` — Gate receipts
@@ -156,10 +154,6 @@ LLMs suffer from **context rot**: compliance with their own rules drops from
   - Add `test-*` scope types to spec-tech.md
   - See the `stelow-workflow-testing-ai-code` skill
 
-### Supervisor (Execution)
-- **Never activate during stages before Execution.** The supervisor would re-submit visual review.
-- Activate only during execution, WHEN STARTING each scope.
-
 ### Execution
 - **DO NOT ask** "Would you like to execute?", "Create a goal?", "Review plan first?"
 - **Execution is automatic** after Tech Planning approval. Proceed directly.
@@ -204,8 +198,8 @@ Follow the sequence below. For Shape Up, Critique, Interface, and Int. Gate stag
 
 1. Shape: see the `stelow-workflow-shape-up` skill for instructions
 2. Critique: see the `stelow-workflow-plan-critique` skill for instructions
-3. Interface: see the `stelow-workflow-interface-alternatives` skill for instructions
-4. Int. Gate: see the `stelow-workflow-interface-alternatives` skill for instructions
+3. Interface: see the `stelow-workflow-interface-contrast` skill for instructions
+4. Int. Gate: visual review gate — run the `visual_review` tool on the contrast rendering (see `references/cli-tools/visual_review.md`), not a skill
 
 Do NOT use `/skill:` for internal subskills.
 
@@ -215,16 +209,17 @@ Do NOT use `/skill:` for internal subskills.
 |------|-------|-------------|---------|
 | `triage` | **Inbox Triage** | Extract items from the host's inbox surface (Stelow no longer mirrors `.stelow/inbox/`), suggest groups, user confirms/adjusts. | Auto (list detected) |
 | `select` | **Item Selection** | Show all candidates (individuals + groups), user picks one and routes remainders | After triage |
-| `setup` | **Project Setup** | Group context injection, appetite/review mode declaration, stages selection, safe-change | — |
-| `context` | **Strategic Context** (optional) | Strategic exploration + domain detection. See `context:5` (appetite/review mode gate), `context:10` (Strategic Approaches — 5 options), `context:20` (Domain Libraries — 8 libraries) | — |
-| `shape` | **Shape Up** | Create spec with problem/solution/scope. Includes `shape:12` — **Tech Preview** (appetite-gated cymbal recon for brownfield codebase understanding) | — |
+| `setup` | **Project Setup** | Group context injection, run-knob quality/exploration + review mode declaration, stages selection, safe-change | — |
+| `context` | **Strategic Context** (optional) | Strategic exploration + domain detection. See `context:5` (quality/review mode gate), `context:10` (Strategic Approaches — 5 options), `context:20` (Domain Libraries — 8 libraries) | — |
+| `shape` | **Shape Up** | Create spec with problem/solution/scope. Includes `shape:12` — **Tech Preview** (breadth-gated cymbal recon for brownfield codebase understanding) | — |
 | `critique` | **Product Critique** | Multi-dimensional critique (plan/codebase/site) | — |
 | `gate` | **Review Gate (visual review)** | Visual approval — **never skip** | — |
 | `scope` | **Scope Adjustment** | Add/remove from IN/OUT (ask) | — |
-| `interface` | **Interface Alternatives** | Appetite-scaled interface exploration: 1, 3, or 5 proposals + hybrid | — |
-| `int-gate` | **Interface Gate (visual review)** | Visual review of all interfaces | — |
-| `selection` | **Interface Selection** | Human pick via ask with preview in Interface-Gates modes; LLM decides in `Auto` / `Product Spec Gate` (`references/human-gates.md`). Chosen interface saved to `selected-interface.md` | — |
-| `planning` | **Tech Planning** | Typed scopes + sequencing. Includes `planning:15` — **Alignment Check** (review mode-gated bidirectional feedback: spec-tech vs spec-product) | — |
+| `interface` | **Interface Contrast** | Reaction-first decision loop: preserves the first reaction, compares bounded alternatives with scope coverage, emits a named disposition (`interfaces/contrast.json` + readable rendering) | — |
+| `int-gate` | **Interface Gate (visual review)** | Visual review of the contrast rendering via `visual_review` | — |
+| `selection` | **Interface Selection** | Human pick from the contrast options via ask with preview in Interface-Gates modes; LLM decides in `Auto` / `Product Spec Gate` (`references/human-gates.md`, ask Pattern 2). Chosen interface saved to `selected-interface.md` | — |
+| `architecture` | **Architecture Alternatives + Choice** | Breadth-scaled construction exploration: 2 to 5 directions + hybrid, then human pick at tech-review modes (worker adopts below). Chosen architecture saved to `selected-architecture.md` | — |
+| `planning` | **Tech Planning** | Typed scopes + sequencing from the selected interface and architecture. Includes `planning:15` — **Alignment Check** (review mode-gated bidirectional feedback: spec-tech vs spec-product) | — |
 | `plan-gate` | **Tech Plan Gate (visual review)** | Visual review of spec-tech.md. Only in Tech Review / Code Diff modes | After planning |
 | `execution` | **Execution** | Goal/scope executor | — |
 | `verification` | **Verification** | Run full test suite, code review, UI audit, browser testing | After execution |
@@ -259,7 +254,7 @@ setup — Project Setup (reads group-context/manifest.json if a group was select
 context — Strategic Context (optional)
   ↓
 shape — Shape Up*
-  │  * shape:12 = Tech Preview (appetite-gated cymbal recon)
+  │  * shape:12 = Tech Preview (breadth-gated cymbal recon)
   ↓
 critique — Product Critique (pre-flight)
   ↓
@@ -267,11 +262,13 @@ gate — visual review Gate ← visual pause
   ↓
 scope — Scope Adjustment (ask)
   ↓
-interface — Interface Alternatives
+interface — Interface Contrast (reaction-first decision loop)
   ↓
 int-gate — visual review Gate (interfaces) ← visual pause
   ↓
 selection — Interface Selection (ask with preview)
+  ↓
+architecture — Architecture Alternatives + Choice (ask at tech-review modes, worker adopts below)
   ↓
 planning — Tech Planning*
   │  * planning:15 = Alignment Check (review mode-gated bidirectional feedback)
@@ -299,7 +296,7 @@ audit — Execution Critique
 **Gate** (visual review --gate) never skips — visual pause is mandatory.
 **Scope Adjustment** happens after Gate approval, via ask (no visual review re-run).
 **Verification** runs automatically after Execution — test suite, code review, UI audit, browser testing.
-**Interface Gate** shows all proposals visually before selection.
+**Interface Gate** shows the contrast rendering visually before selection.
 **Execution** runs automatically after Tech Planning — DO NOT ask user what to do next.
 **Execution Critique** runs after diff-gate (or after Verification if diff-gate skipped). Uses the `stelow-workflow-execution-critique` skill for all 11 evaluation criteria.
 **Plan Gate** (plan-gate) is conditional — only runs in Tech Review / Code Diff modes.
@@ -310,68 +307,57 @@ audit — Execution Critique
 
 Each tool in `references/cli-tools/` documents its own fallback.
 
-## Stage State Management — Single Source of Truth
+## Stage State Management — One Owner
 
-The workflow state is tracked in a **single file**: `stelow.json` at the project root.
-No other state files are needed — this is the canonical source for TUI display, resume,
-cross-CLI adapters, and LLM stage tracking.
+State lives in two files, and the helper writes both:
 
-The file contains a `workflows[]` array. Each active workflow has:
-- `currentPhase` (number index into PHASE_NAMES)
-- `phases[]` (array of {id, name, status})
-- `stage` (object with `current_stage`, `previous_stage`, `transitioned_at`, `history`,
-  `supervisor_active`)
+| File | Role | Writer |
+|---|---|---|
+| `state.md` (per workflow, under the state dir) | the machine: `current_stage`, stage statuses, artifacts, history | `scripts/stelow` |
+| `stelow.json` (project root) | the tracking projection: `workflows[]`, read by TUIs, resume and host adapters | `scripts/stelow` — `seed`, `advance`, `sync-scopes`, `scope` |
+
+Editing either one by hand is a bypass, not a shortcut. The helper is the only
+thing that knows the transition table, the review-mode skips and the stage
+policies, so a hand-written `current_stage` is a stage the guard refuses the
+moment anyone advances for real — and until the next `sync-scopes` overwrites
+one of the two files, they disagree about where the card is. A worker that
+"fixed" the state by hand did not move the card; it moved one copy of it.
 
 ### Stage Transitions
 
-When completing a stage and moving to the next:
+**Auto-advance is the default.** Do NOT ask the user for permission and do not
+wait for a `/sw-next` command: advance, then continue in the same response.
 
-**Auto-advance is the default.** Do NOT ask the user for permission or wait for `/sw-next`.
-Update the tracking file directly via bash, then continue to the next stage in the same response.
+```bash
+scripts/stelow advance <stage>
+```
 
-**Mechanism (all harnesses):** Update `stelow.json` directly — it is the canonical source of truth. No manual sync needed.
+A host that wraps the helper exposes its own equivalent command; the helper's is
+the contract, and the host's is a wrapper around it.
 
-   ```bash
-   node -e "
-   const fs = require('fs');
+The helper validates the move against the transition table and the run knobs,
+writes `state.md`, updates the `stelow.json` projection, and on refusal exits
+non-zero with a message that names the legal alternative. Read that message: every
+refusal names an exit, and the refusal is the guard working — not an obstacle to
+route around.
 
-   // 1. Update stelow.json (canonical source of truth)
-   const file = 'stelow.json';
-   const raw = fs.readFileSync(file, 'utf-8');
-   const t = JSON.parse(raw);
-   const idx = t.workflows.findIndex(w => w.status === 'in-progress');
-   if (idx === -1) { console.log('No active workflow'); process.exit(1); }
+**Finding the state dir:** `scripts/stelow status --json` prints it. Never build
+the path by hand: the layout is `{date}/{dirhash}` and the hash is not derivable
+from the card id.
 
-   const NEW = NEW_PHASE_INDEX;  // set this (e.g. 3 for Context)
-   const NEW_SLUG = 'new-stage-slug';  // set this (e.g. 'context')
-   const wf = t.workflows[idx];
-
-   wf.currentPhase = NEW;
-   wf.phases.forEach((p, i) => {
-     p.status = i < NEW ? 'completed' : i === NEW ? 'in-progress' : 'pending';
-   });
-   wf.stage.previous_stage = wf.stage.current_stage;
-   wf.stage.current_stage = NEW_SLUG;
-   wf.stage.transitioned_at = new Date().toISOString();
-   wf.stage.history.push({ stage: NEW_SLUG, entered_at: new Date().toISOString(), exited_at: null });
-   wf.updated = new Date().toISOString();
-   t.updated = wf.updated;
-   fs.writeFileSync(file, JSON.stringify(t, null, 2));
-   console.log('Main tracking updated:', NEW_SLUG, '— index.json mirror is automatic.');
-   "
-   ```
-
-**For paused workflows only:** Use `/sw-next` or `/sw-setphase phasename=<stage>`.
-The extension handles all three tracking mechanisms (TUI, resume, tool restrictions).
+**Paused workflows** resume from the projection; `status --json` is the authority
+for which workflow is active.
 
 ### Cross-CLI Portability
 
-The single file works on ALL harnesses:
-- **Any agentskills-compatible agent** reads `stelow.json` directly via
-  the standard `read` / `bash` tools; the orchestrator interprets `currentPhase`
-  per `stages.yaml`
-- **Resume** reads the active workflow's `currentPhase` from this file
-- **LLM auto-advance** updates this file via bash (node -e) and proceeds without /sw-next
+Every harness reaches the same state the same way — by running the helper:
+
+- **Agentskills-compatible agents** call `scripts/stelow status --json` /
+  `advance` through their shell tool.
+- **Hosts that cannot run a shell** read `stelow.json` as a read-only projection
+  and write through the host's own command surface; they never write the file.
+- **Resume** reads the projection, then verifies it against `state.md` through
+  the helper before continuing.
 
 ## Tool Restrictions
 

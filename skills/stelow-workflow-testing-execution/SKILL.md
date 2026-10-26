@@ -149,24 +149,28 @@ Use `stelow-workflow-ux-critique` for a focused UX/UI quality audit.
 
 **Real scenario:** A payment handler passes E2E but fails under race condition when two requests hit simultaneously. Unit tests covering concurrency logic catch this.
 
-Run the project's test suite:
+Run the project's test suite — scoped to the change, not the world:
 
 ```bash
-# Go
-go test ./...
+# Go (changed packages only)
+go test ./<changed-pkg>/...
 
-# Node
-npm test
+# Node (impact subset)
+npx vitest run <affected-files>
 
-# Python
-pytest
+# Python (impact subset)
+pytest <affected-test-files>
 ```
+
+Full `go test ./...` / `npm test` stays a CI gate. In-loop full-suite
+execution measured ~zero success gain at real token cost (DeepSWE Oct 2026);
+name the exact tests at risk (TDAD impact subset) and run those.
 
 **If no tests exist:** Create unit tests only for critical business logic (auth, payment, data validation). Skip for CRUD/standard paths.
 
-**Wiring check — exercised, not just present:** a green suite proves nothing if the new tests assert text existence instead of behavior. Reject presence-only assertions (source-text grep/regex, string-presence checks) unless they constrain topology, counts, or refusal shapes. New behavior must be *executed* by a test that fails when the behavior is inverted or removed — verify by hand-mutation (see `stelow-workflow-testing-ai-code`, hand-mutation). Runnable-but-shallow is the most common LLM test failure mode (VibeCheck, Sep 2026: weak assertions and missing edge cases outnumber blocking failures).
+**Wiring check — exercised, not just present:** see `../stelow-workflow-testing-ai-code/references/guard-contract.md` (5 questions). Reject presence-only assertions unless they constrain topology, counts, or refusal shapes.
 
-**Block until tests pass.** Do not proceed with failing tests.
+**Block until tests pass.** Do not proceed with failing tests. BLOCK AC-sem-teste per `../stelow-workflow-testing-ai-code/references/guard-contract.md` — never self-certified by the implementing agent.
 
 ## Phase 4: Parallel Code Review via Subagents
 
@@ -174,7 +178,7 @@ pytest
 
 **Real scenario:** Developer implements auth flow. Subagent reviewer finds: (1) missing rate limiting on login endpoint, (2) JWT token not invalidated on password change, (3) error messages leak user existence. None of these showed in unit tests.
 
-**Test-quality reviewer (third lens on critical paths):** give a fresh subagent the requirement plus the tests — *not* the implementation — and ask: "would these tests catch an inverted behavior?" This breaks same-author circular validation, the dominant LLM-test failure mode (TDFlow, EACL 2026: human-written tests resolve 94.3% vs self-generated 68%; VibeCheck, Sep 2026: cross-agent peer evaluation exposes weak assertions). One red-team pass on the tests is cheaper than debugging a false-green suite later.
+**Test-quality reviewer (fresh-oracle third lens on critical paths):** give a fresh subagent the requirement plus the tests — *not* the implementation — and ask: "would these tests catch an inverted behavior?" This breaks same-author circular validation, the dominant LLM-test failure mode (TDFlow, EACL 2026: human-written tests resolve 94.3% vs self-generated 68%; VibeCheck, Sep 2026: cross-agent peer evaluation exposes weak assertions). One red-team pass on the tests is cheaper than debugging a false-green suite later. Full decision spec (layers, verdicts, routing, tripwire): `references/guard-quality-decision.md`.
 
 **When to use subagents:**
 - Diff touches 3+ files
@@ -206,8 +210,9 @@ Before marking feature complete:
 - [ ] New tests red-proofed — observed failing without the fix (if applicable)
 - [ ] Tests co-located correctly — no production code in test files and vice versa
 - [ ] Code review done (subagent or human)
+- [ ] Reviewed against the user's stated intent, not the diff — a deliberate decision is not a mistake (no-mistakes intent rule)
 - [ ] No regressions detected
-- [ ] Documentation updated (if applicable)
+- [ ] Documentation updated — BLOCK when user-facing behavior changed without a doc update in the same change (most common AI-change defect class)
 - [ ] AGENTS.md updated (if architecture changed)
 
 ## Workflow Summary
@@ -362,13 +367,14 @@ Input:
       └→ Run review phases without E2E
 ```
 
-**Stelow awareness:** when inside stelow, reads `spec-tech*.md` and `scopes/` from `.stelow/*/*/plans/` for context (scope list, appetite, review mode). When standalone, files are auto-discovered in the current directory. The decision tree and phases work identically in both modes.
+**Stelow awareness:** when inside stelow, reads `spec-tech*.md` and `scopes/` from `.stelow/*/*/plans/` for context (scope list, quality, review mode). When standalone, files are auto-discovered in the current directory. The decision tree and phases work identically in both modes.
 
 ## References
 
 - **stelow-workflow-testing-ai-code**: Use this BEFORE implementation to generate testing strategy, coverage/risk targets, and test scopes. This execution skill uses those targets as quality gates.
 - `../stelow-workflow-orchestrator/references/cli-tools/subagents.md` — Subagent task structure patterns
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -393,13 +399,15 @@ stage          : verification
 description    : Verification. Run full test suite, code review, UI audit, browser testing.
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : diff-gate
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
 gate           : none
 rework-on      : execution
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -409,7 +417,9 @@ the rest of this file (unchanged). Summary:
 
 > Verification. Run full test suite, code review, UI audit, browser testing.
 
-Primary actions (per stages.yaml): `read, write`. Run only the actions that
+Primary actions (per stages.yaml): `bash, write`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 

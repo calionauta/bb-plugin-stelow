@@ -35,29 +35,100 @@ tools:
 # own board/timeline representation; they must not copy the list locally.
 routes:
   intents:
-    new-product: [triage, select, setup, context, shape, critique, gate, scope, interface, int-gate, selection, planning, plan-gate, execution, verification, diff-gate, audit]
-    feature: [triage, select, setup, context, shape, critique, gate, scope, interface, int-gate, selection, planning, plan-gate, execution, verification, diff-gate, audit]
+    new-product: [triage, select, setup, context, shape, critique, gate, scope, interface, int-gate, selection, architecture, planning, plan-gate, execution, verification, diff-gate, audit]
+    feature: [triage, select, setup, context, shape, critique, gate, scope, interface, int-gate, selection, architecture, planning, plan-gate, execution, verification, diff-gate, audit]
     bugfix: [triage, select, setup, context, shape, critique, gate, execution, verification, audit]
     refactor: [triage, select, setup, context, planning, plan-gate, execution, verification, audit]
     investigate: [triage, select, setup, context, audit]
+  # Two kinds of "skip", and they mean different things:
+  #
+  #   skipped        — the stage DOES NOT RUN in this mode. The helper refuses
+  #                    to enter it and lets the predecessor move straight to
+  #                    the successor. Only approval stages live here: a stage
+  #                    that needs an approver nobody configured.
+  #   no_human_wait  — the stage DOES run, but it never parks for a person:
+  #                    the agent decides and records the receipt. `selection`
+  #                    lives here in Auto/Product Spec Gate (see
+  #                    references/human-gates.md).
+  #
+  # One list for both was a vocabulary that lied: the helper cannot bypass
+  # `selection` (it runs and produces required artifacts) while the timeline
+  # must still show it as "no human pick". The kinds are named so the runtime
+  # enforces exactly one of them.
   review_modes:
     Auto:
-      skipped: [selection, plan-gate, diff-gate]
+      skipped: [plan-gate, diff-gate]
+      no_human_wait: [selection]
     Product Spec Gate:
-      skipped: [selection, plan-gate, diff-gate]
+      skipped: [plan-gate, diff-gate]
+      no_human_wait: [selection]
     Product Spec + Interface Gates:
       skipped: [plan-gate, diff-gate]
+      no_human_wait: []
     Product Spec + Interface + Scopes:
       skipped: [plan-gate, diff-gate]
+      no_human_wait: []
     Product Spec + Interface + Tech Review:
       skipped: [diff-gate]
+      no_human_wait: []
     Product Spec + Interface + Tech Review + Code Diff:
       skipped: []
+      no_human_wait: []
   entry_stages:
     analysis: triage
     planning: critique
     execution: execution
     review: diff-gate
+  # Stages that do not run under a declared condition.
+  #
+  # A stage may be absent for two reasons, and they are different kinds:
+  # `review_modes.<mode>.skipped` says the stage does not exist in that mode
+  # (nobody to approve it); a rule here says the stage does not exist under
+  # a condition of the RUN KNOBS.
+  #
+  # The condition shape is one thing: every key in `when` must hold (the
+  # value is the set of allowed values), and when `any_of` is present at
+  # least one of its keys must hold. `when` alone is a conjunction;
+  # `any_of` adds a disjunction inside it.
+  # Why the context stage is a spike, and when a spike is not worth it:
+  #
+  #   The context stage answers ONE question — "which strategic approach?" —
+  #   and its output is consumed by Shape and Scope. That is a spike: a
+  #   time-boxed exploration whose product is knowledge, not software. A
+  #   spike is worth running when it reduces uncertainty that will change a
+  #   consequential decision, and when its answer has a consumer.
+  #
+  #   Two independent signals say the answer changes nothing:
+  #     quality=experimental — a probe that will not ship as-is; the
+  #       strategic choice is not going to be acted on as a product
+  #       decision.
+  #     exploration_count=1 — the human chose "one direct direction, no
+  #       hybrid, trivial changes only, by explicit choice". There is no
+  #       divergence to explore.
+  #
+  #   One signal says the answer HAS a consumer:
+  #     review_mode != Auto — a human reviews the strategic approaches, so
+  #       cutting the stage removes their input.
+  #
+  #   So the stage runs unless the mode is Auto AND one of the two "no
+  #   question to answer" signals holds. The policy and the gate used to
+  #   disagree in BOTH directions: the published matrix skipped only for
+  #   experimental+Auto, while the helper skipped for a single direction
+  #   too — so a worker following the policy was refused by the gate.
+  stage_policies:
+    - stage: context
+      id: context-spike
+      # When the stage does NOT run. Omit the block and it always runs.
+      skip:
+        when:
+          review_mode: [Auto]
+          any_of:
+            quality: [experimental]
+            exploration_count: [1]
+      # How much the stage asks when it DOES run, per quality.
+      ask:
+        experimental: reduced
+        production: full
 
 stages:
   - name: triage
@@ -98,7 +169,7 @@ stages:
     artifacts: []
     phase: analysis
     skill: stelow-workflow-orchestrator
-    playbook: null
+    playbook: stages/selection.md
 
     execution:
       mode: direct
@@ -150,7 +221,7 @@ stages:
   - name: context
     order: 25
     model_hint: standard
-    description: "Strategic context. Market analysis, JTBD, domain detection. Gated by `context:5` (appetite/review mode): Product Spec Gate+Auto skips; others use reduced ask. See the context stage, section 5."
+    description: "Strategic context. Market analysis, JTBD, domain detection. Gated by `context:5` (quality/review mode): experimental+Auto skips; experimental otherwise reduced ask. See the context stage, section 5."
     label: Project Context
     produces: "Gathers the project context the proposal needs."
     artifacts: []
@@ -189,7 +260,7 @@ stages:
   - name: shape
     order: 40
     model_hint: best
-    description: Shape stage. Define appetite, hill chart, rabbit holes.
+    description: Shape stage. Define run knobs, hill chart, rabbit holes.
     label: Product Proposal
     produces: "Writes the product proposal (spec-product_vN.md) for the chosen item."
     artifacts: [plans/spec-product*.md]
@@ -341,7 +412,7 @@ stages:
   - name: interface
     order: 80
     model_hint: best
-    description: "Reaction-first Interface Contrast. Preserves the first reaction, compares bounded alternatives, and emits a named disposition."
+    description: "Interface exploration + reaction-first contrast. Generates bounded alternatives with wireframes, preserves the first reaction, compares them, and emits a named disposition."
     label: Interface
     produces: "Designs the user-facing interface for the approved scope with explicit alternatives, evidence, and selection receipt."
     artifacts: [interfaces/*.md, interfaces/contrast.json]
@@ -376,7 +447,7 @@ stages:
     artifacts: []
     phase: planning
     skill: stelow-workflow-orchestrator
-    playbook: null
+    playbook: stages/int-gate.md
 
     execution:
       mode: direct
@@ -401,13 +472,58 @@ stages:
   - name: selection
     order: 100
     model_hint: standard
-    description: Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in Auto / Product Spec Gate (see references/human-gates.md).
+    description: Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in Auto / Product Spec Gate (see `../stelow-workflow-orchestrator/references/human-gates.md`). Records the chosen interface and its breadboard map.
     label: Interface Choice
-    produces: "Selects which interface variant to implement."
-    artifacts: [interfaces/selected-interface.md]
+    produces: "Selects which interface variant to implement, and maps it into a breadboard."
+    artifacts: [interfaces/selected-interface.md, interfaces/breadboard.json]
     phase: planning
     skill: stelow-workflow-orchestrator
-    playbook: stages/selection.md
+    playbook: stages/interface-selection.md
+
+    execution:
+      mode: direct
+      recipe: null
+      required_capabilities: []
+      preferred_capabilities: []
+      write_policy: none
+      partition: none
+      permission_profile: inherit
+
+    blocked_tools: []
+    allowed_tools: [ask_user_question, read, grep, ls, subagent, write, bash]
+    preferred_tools: [ask_user_question, read]
+    primary_actions: [ask_user_question]
+    # Machine-readable question contract.  The host owns enforcement; this
+    # describes who resolves the interface decision in each review mode.
+    # Keep methodology prose in stages/interface-selection.md and human-gates.md.
+    questions:
+      - id: interface-pick
+        gate: interface
+        kind: human-ask
+        modes: ["Product Spec + Interface Gates", "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review", "Product Spec + Interface + Tech Review + Code Diff"]
+        exploration_min_count: 2
+        evidence: per-option
+        receipt: interfaces/selected-interface.md
+      - id: interface-pick-auto
+        gate: interface
+        kind: agent-receipt
+        modes: [Auto, "Product Spec Gate"]
+        receipt: interfaces/selected-interface.md
+    transitions:
+      next: [architecture]
+      accept: [architecture]
+      reject: [interface]
+
+  - name: architecture
+    order: 105
+    model_hint: best
+    description: Architecture selection. Diverges construction directions, then a human pick via structured question in Tech-Review modes; worker adopts below that threshold (see `../stelow-workflow-orchestrator/references/human-gates.md`).
+    label: Architecture Choice
+    produces: "Selects which construction direction to plan and implement."
+    artifacts: [architecture/selected-architecture.md]
+    phase: planning
+    skill: stelow-workflow-orchestrator
+    playbook: stages/architecture.md
 
     execution:
       mode: direct
@@ -423,32 +539,33 @@ stages:
     preferred_tools: [ask_user_question, read]
     primary_actions: [ask_user_question]
     # Machine-readable question contract.  The host owns enforcement; this
-    # describes who resolves the interface decision in each review mode.
-    # Keep methodology prose in stages/selection.md and human-gates.md.
+    # describes who resolves the architecture decision in each review mode.
+    # The pick is reviewed again at plan-gate through the tech plan that
+    # cites the selected architecture. No dedicated architecture gate stage.
     questions:
-      - id: interface-pick
-        gate: interface
+      - id: architecture-pick
+        gate: tech
         kind: human-ask
-        modes: ["Product Spec + Interface Gates", "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review", "Product Spec + Interface + Tech Review + Code Diff"]
-        appetite: [Core, Complete]
+        modes: ["Product Spec + Interface + Tech Review", "Product Spec + Interface + Tech Review + Code Diff"]
+        exploration_min_count: 2
         evidence: per-option
-        receipt: interfaces/selected-interface.md
-      - id: interface-pick-auto
-        gate: interface
+        receipt: architecture/selected-architecture.md
+      - id: architecture-pick-auto
+        gate: tech
         kind: agent-receipt
-        modes: [Auto, "Product Spec Gate"]
-        receipt: interfaces/selected-interface.md
+        modes: [Auto, "Product Spec Gate", "Product Spec + Interface Gates", "Product Spec + Interface + Scopes"]
+        receipt: architecture/selected-architecture.md
     transitions:
       next: [planning]
       accept: [planning]
-      reject: [interface]
+      reject: [scope]
 
   - name: planning
     order: 110
     model_hint: best
     description: Tech planning. Typed scopes + sequencing.
     label: Tech Planning
-    produces: "Writes the technical plan (PLAN.md) from the interface and scope."
+    produces: "Writes the technical plan (PLAN.md) from the interface, architecture, and scope."
     artifacts: [plans/spec-tech*.md]
     phase: planning
     skill: stelow-workflow-tech-planning
@@ -470,7 +587,7 @@ stages:
     transitions:
       next: [plan-gate]
       accept: [plan-gate]
-      reject: [scope]
+      reject: [architecture]
 
   - name: plan-gate
     order: 115
@@ -527,7 +644,6 @@ stages:
     allowed_tools: [edit, write, bash, read, grep, ls, subagent, ask_user_question, agent_browser]
     preferred_tools: [edit, write, bash]
     primary_actions: [edit, write, bash]
-    supervisor: true
     transitions:
       next: [verification]
       accept: [verification]

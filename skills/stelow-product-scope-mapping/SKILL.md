@@ -9,10 +9,10 @@ metadata:
   frequency: weekly
   category: product
   execution:
-    mode: reference
-    recipe: null
-    capabilities: []
-    write_policy: none
+    mode: orchestrated
+    recipe: scope-map
+    capabilities: [pipeline, structured-output]
+    write_policy: artifact
     permission_profile: inherit
   context-cost: medium
   author: calionauta
@@ -52,6 +52,35 @@ Record these sources alongside the proposal before generating scopes.
 6. Check that the graph is acyclic and that no scope silently owns another scope's boundary.
 7. If a narrow bugfix or mechanical refactor needs no full map, emit a one-scope plan and record why the full map is unnecessary.
 
+## Preview mode (draft for the product gate)
+
+Run with `mode: preview` when the decision-maker needs to SEE the division
+before approving anything — typically ahead of the product gate review:
+
+- Single pass, no parallel scouts, no approval. Read the shaped proposal
+  (approved or not) and emit tentative names, outcomes, and dependencies only.
+  Capabilities and evidence stay explicitly marked as unharvested.
+- Write `scope-map-draft.json` (same contract as the map, `status: "draft"`)
+  plus a readable draft companion (scope names + one-line outcomes + counts,
+  never the full evidence tables).
+- A draft from an unapproved spec is explicitly allowed here and ONLY here:
+  it illustrates the division, it commits to nothing, and it must never be
+  promoted without re-validation once the spec is approved.
+- The gate review renders the draft read-only in a draft tone. Nobody edits
+  the draft at the gate; feedback lands as review annotations, which the
+  scope stage reconciles.
+
+## Promote mode (scope stage)
+
+When a draft exists from preview mode, do not start blank-slate:
+
+1. Re-run the full method against the approved spec, the gate's approval
+   receipt, and the IN/OUT adjustments recorded since.
+2. Record what changed relative to the draft (added/removed/merged scopes,
+   moved boundaries) in the run notes.
+3. Write the approved `scope-map.json` only when the approval receipt for
+   this stage exists. Then the draft is superseded, never edited.
+
 ## Output contract
 
 Write `scope-map.json` using the contract in `schemas/scope-map.json`.
@@ -86,3 +115,52 @@ Before returning the map, verify:
 - no approval is fabricated.
 
 When a check fails, repair the draft or report the exact missing input. Do not hide uncertainty in prose.
+
+<!-- stelow:scope3:begin -->
+## Entry (mode detection)
+
+When this skill loads, check for the stelow workflow marker:
+
+```bash
+if [ -n "$STELOW_WORKFLOW" ] && [ -n "$STELOW_STATE" ]; then
+  echo "stelow: workflow mode (state=$STELOW_STATE)"
+else
+  echo "stelow: standalone mode (no STELOW_WORKFLOW marker)"
+fi
+```
+
+In **standalone mode** (no marker), run the existing skill body unchanged.
+In **workflow mode**, skip to `### Workflow slice` and emit a complete
+`## Hand-off (workflow mode)` block at the end. See
+`../stelow-workflow-entry/SKILL.md` for the full marker protocol.
+
+## Hand-off (workflow mode)
+
+```
+stage          : scope
+description    : Owns the approved Scope Map for feature routes. Shape may propose candidate slices; this stage finalizes the map without creating a second stage. Narrow mechanical refactors may bypass Scope.
+status         : <done|partial|blocked>
+artifacts      : <paths created or modified>
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
+gate           : none
+rework-on      : gate
+```
+
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
+`scripts/stelow advance <next-candidate>` to move state forward.
+
+### Workflow slice
+
+Workflow mode for the **scope** stage. Standalone behavior lives in
+the rest of this file (unchanged). Summary:
+
+> Owns the approved Scope Map for feature routes. Shape may propose candidate slices; this stage finalizes the map without creating a second stage. Narrow mechanical refactors may bypass Scope.
+
+Primary actions (per stages.yaml): `read, write`. Run only the actions that
+produce the artifacts promised in `## Hand-off`; skip anything that does
+not advance the workflow.
+
+<!-- stelow:scope3:end -->

@@ -47,7 +47,7 @@ The plan must contain scopes with type annotations:
 
 If the plan has the optional **"Execution routing"** section (from stelow), use it directly. Otherwise, infer routing from `[TYPE]` tags.
 
-**Standalone awareness:** when inside stelow, reads appetite from `.stelow/*/plans/spec-product*.md` and checks review_mode from `stelow.json#workflows[].config.review_mode`. When standalone, defaults to Core appetite + Product Spec + Interface + Scopes review mode. Scans current directory for `spec-tech*.md` files. The `[TYPE]` routing works identically in both modes — no stelow dependency for scope execution logic.
+**Standalone awareness:** when inside stelow, reads run knobs from `.stelow/*/plans/spec-product*.md` and checks review_mode from `stelow.json#workflows[].config.review_mode`. When standalone, defaults to production quality + Product Spec + Interface + Scopes review mode. Scans current directory for `spec-tech*.md` files. The `[TYPE]` routing works identically in both modes — no stelow dependency for scope execution logic.
 
 ---
 
@@ -63,7 +63,7 @@ You have access to the harness's tools and subagents. Use them.
 
 ### Step 1: Read and parse the plan
 
-Read the approved plan file. Identify every scope and its type.
+Read the approved plan file. Identify every scope and its type. Read `<statedir>/decision-receipts.json` when present and treat receipts covering your scopes as binding: never revive a rejected option or overturn a recorded pick without an opened challenge (`scripts/stelow decide --open-challenge --against <receipt> --reason <why>`, then `--challenge <challenge-id>`).
 
 Example scope shape:
 ```
@@ -124,8 +124,8 @@ Before executing, present a clear execution plan to the user with the resolved e
 ```
 📋 Execution Plan for: {plan-name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Appetite: {Lean|Core|Complete} (human-set)
-Appetite Fit: {fits|cuts_needed|reshape} (LLM-set)
+Quality: {production|experimental} (human-set)
+Scope Fit: {fits|cuts_needed|reshape} (LLM-set)
 Phase 1 (parallel):
   ⏩ [SCOPE-1] Login — feature → worker
   ⏩ [SCOPE-3] Vector DB eval — spike → scout + researcher
@@ -136,18 +136,18 @@ Phase 2 (after SCOPE-1):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-**Human-in-loop check for Complete appetite:**
+**Human-in-loop check for production quality at tech-review modes:**
 
 ```bash
-# Try precise path first, then fallback to glob. Cross-check with Workflow.config.appetite
+# Try precise path first, then fallback to glob. Cross-check with Workflow.config.quality
 # (canonical source via helper) so the warning matches the active workflow, not stale specs.
-APPETITE=$(grep -oP '^appetite:\s*\K\S+' .stelow/*/*/plans/spec-product_*.md 2>/dev/null || echo "Core")
+QUALITY=$(grep -oP '^quality:\s*\K\S+' .stelow/*/*/plans/spec-product_*.md 2>/dev/null || echo "production")
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]:-$0}")/../../stelow-workflow-orchestrator/references/cli-tools/read-config.sh" 2>/dev/null || true
-WF_APPETITE=$(stelow_read_appetite 2>/dev/null || true)
-[ -n "$WF_APPETITE" ] && APPETITE="$WF_APPETITE"
-if [ "$APPETITE" = "Complete" ]; then
-  echo "⚠️ COMPREHENSIVE APPETITE: Human-in-loop mode may be needed for architectural changes."
+WF_QUALITY=$(stelow_read_quality 2>/dev/null || true)
+[ -n "$WF_QUALITY" ] && QUALITY="$WF_QUALITY"
+if [ "$QUALITY" = "production" ]; then
+  echo "⚠️ PRODUCTION QUALITY: Human-in-loop mode may be needed for architectural changes."
   echo "Check the workflow's review_mode setting in stelow.json#workflows[].config.review_mode."
   echo "In Product Spec + Interface + Tech Review mode, each PR/fork-point requires human approval before merge."
 ```
@@ -227,9 +227,9 @@ Parse the integer value into `wf.scopes[i].lock_ttl_seconds: number` (optional).
 
 Convention is **advisory** — no enforcement at the tracking layer. The file-reservation lock protocol (see `../stelow-workflow-orchestrator/references/cli-tools/file-locking.md` in `stelow-workflow-orchestrator`) uses these declared paths at scope-execution time. If undeclared, the post-execution `actual_files ∩ declared` diff in Step 8 still flags undeclared writes.
 
-### Step 2d: Complete Human-in-loop execution mode
+### Step 2d: Production human-in-loop execution mode
 
-If appetite is `Complete`, **modify execution flow** for each scope:
+When quality is `production` at tech-review modes, **modify execution flow** for each scope:
 
 1. LLM implements changes in a working branch
 2. LLM **pauses** and presents the diff to the human
@@ -251,8 +251,11 @@ commands + stop rules, `MAX_ITERATIONS` cap). The child self-corrects on
 feedback (`feedback_log`); on plateau, retry with a different approach;
 ESCALATE to a human after max iterations. Persist state to
 `iteration-state-{SCOPE-ID}.md` as you go — resume/rehydrate from disk after
-compaction, never from memory. Full loop, evidence snippets, Record template
-and planned/discovered task tracking: `references/step-3-feature.md`, then
+compaction, never from memory. Fail-observed first: Step 3b-bis materializes the
+mapped test and records fail + freeze before passing; `scope done` refuses
+without verified + red_proof + freeze_sha + baseline (strict) and refuses
+feature close while test-* scopes are open. Full loop, evidence snippets,
+Record template and planned/discovered task tracking: `references/step-3-feature.md`, then
 `references/records-and-tasks.md`.
 
 ### Record + Tasks (claim-proof evidence)
@@ -308,6 +311,7 @@ Full autonomous (default) or scope-by-scope; standalone input detection, tool
 interaction, environment adaptation: `references/invocation.md`. Visual review
 gate doc: `../stelow-workflow-orchestrator/references/cli-tools/visual_review.md`.
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -329,16 +333,18 @@ In **workflow mode**, skip to `### Workflow slice` and emit a complete
 
 ```
 stage          : execution
-description    : Execute the approved scopes and leave verified outputs for verification.
+description    : Implementation. Execute planned scopes.
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : verification
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
 gate           : none
 rework-on      : shape
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -346,9 +352,11 @@ router skill consumes the next-candidate field and calls
 Workflow mode for the **execution** stage. Standalone behavior lives in
 the rest of this file (unchanged). Summary:
 
-> Execute the approved scopes and leave verified outputs for verification.
+> Implementation. Execute planned scopes.
 
-Primary actions (per stages.yaml): `read, write`. Run only the actions that
+Primary actions (per stages.yaml): `edit, write, bash`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 

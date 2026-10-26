@@ -29,7 +29,7 @@ metadata:
 
 > **Tools:** See `../stelow-workflow-orchestrator/references/cli-tools/subagents.md` for subagent patterns.
 
-**Standalone awareness:** inside stelow, appetite gates critique depth (Lean → light, Core → quick, Complete → full). Standalone defaults to Core appetite (quick single-reviewer). Works with any source directory — no stelow dependency for the audit logic.
+**Standalone awareness:** inside stelow, quality gates critique depth (experimental → light, production → full). Standalone defaults to production quality (full single-reviewer). Works with any source directory — no stelow dependency for the audit logic.
 
 ## Overview
 
@@ -53,31 +53,30 @@ technical and structural aspects (non-visual):
 If you need visual UI auditing (accessibility, design, UX), use
 `stelow-workflow-ux-critique` em Codebase mode.
 
-### Appetite Gate (auto-skip for small scopes)
+### Quality Gate (auto-skip for small scopes)
 
-**Before running codebase critique**, check if appetite warrants it.
+**Before running codebase critique**, check if quality warrants it.
 Codebase critique is for structural analysis — if the scope is 1 file,
 the value is minimal.
 
 ```bash
-# Read appetite from stelow context or env var; default Core (via canonical helper).
+# Read quality from stelow context or env var; default production (via canonical helper).
 WF_DIR="$(ls -td .stelow/*/*/ 2>/dev/null | head -1)"
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]:-$0}")/../../stelow-workflow-orchestrator/references/cli-tools/read-config.sh"
-APPETITE="${APPETITE:-$(stelow_read_appetite)}"
+QUALITY="${QUALITY:-$(stelow_read_quality)}"
 DIFF_FILES=$(git diff --name-only HEAD~1 2>/dev/null | wc -l | tr -d ' ')
 # Entity-level gate when sem is available (files undercount refactors that touch few files broadly)
 DIFF_ENTITIES=$(sem diff --format json HEAD~1 2>/dev/null | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('entities', [])))" 2>/dev/null || echo "$DIFF_FILES")
 ```
 
-| Appetite | Files changed | Action |
+| Quality | Files changed | Action |
 |----------|--------------|--------|
-| `Lean` | any | **Light.** Single reviewer runs a basic structural check (architecture, dead code, naming). Quality floor. |
-| `Core` | 1-2 | **Light.** Single reviewer with standard checklist. |
-| `Core` | 3+ | **Quick critique.** Single reviewer, no parallel. |
-| `Complete` | any | **Full.** One reviewer analyzes all dimensions with detailed recommendations, or parallel reviewers when scope warrants. |
+| `experimental` | any | **Light.** Single reviewer runs a basic structural check (architecture, dead code, naming). Quality floor. Probes only. |
+| `production` | 1-2 | **Light.** Single reviewer with standard checklist. |
+| `production` | 3+ | **Full.** One reviewer analyzes all dimensions with detailed recommendations, or parallel reviewers when scope warrants. |
 
-**Rationale:** Codebase critique is quality protection — appetite controls depth, not whether it runs. At Lean the reviewer uses a lighter checklist (basic structural, dead code, naming) instead of architectural analysis, but the audit always runs. Code review is correctness; codebase critique is structure — they're complementary, not substitutes.
+**Rationale:** Codebase critique is quality protection — quality controls depth, not whether it runs. At experimental the reviewer uses a lighter checklist (basic structural, dead code, naming) instead of architectural analysis, but the audit always runs. Code review is correctness; codebase critique is structure — they're complementary, not substitutes.
 
 ### Standalone
 ```
@@ -240,6 +239,7 @@ specialized analysis.
 - **stelow-workflow-plan-critique**: For product plan critique (use instead when you have spec-product.md)
 - **stelow-workflow-execution-critique**: Post-implementation audit
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -261,16 +261,18 @@ In **workflow mode**, skip to `### Workflow slice` and emit a complete
 
 ```
 stage          : diff-gate
-description    : Code diff review. visual review review of working tree diff. Only in Product Spec + Interface + Tech Review + Code Diff 
+description    : Code diff review. visual review review of working tree diff. Only in Product Spec + Interface + Tech Review + Code Diff mode.
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : audit
-gate           : none
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
+gate           : approval-required (visual_review)
 rework-on      : execution
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -280,7 +282,9 @@ the rest of this file (unchanged). Summary:
 
 > Code diff review. visual review review of working tree diff. Only in Product Spec + Interface + Tech Review + Code Diff mode.
 
-Primary actions (per stages.yaml): `read, write`. Run only the actions that
+Primary actions (per stages.yaml): `read`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 

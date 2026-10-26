@@ -1,5 +1,5 @@
 # Transitions Reference
-<!-- TEMPLATE: this file generates transitions.md (same dir) via scripts/generate-transitions.py. {{STAGE_ORDER}} and {{TRANSITIONS:<stage>:<verb>}} markers expand from stages.yaml. Gate prose, (none) lines, tables and stubs below are curated and pass through verbatim. -->
+<!-- TEMPLATE: this file generates transitions.md (same dir) via scripts/generate-transitions.py. {{STAGE_ORDER}}, {{TRANSITIONS:<stage>:<verb>}}, {{REVIEW_MODES}}, {{GATE_MODES:<stage>}} and {{REVIEW_MODE_TABLE}} markers expand from stages.yaml. Everything else — gate prose, (none) lines, headers — is curated and passes through verbatim. -->
 
 This file is a **data-only mirror** of `skills/stelow-workflow-orchestrator/stages.yaml`.
 It is the single source of truth used by the `stelow advance` helper and the
@@ -22,6 +22,12 @@ after any change to verify.
 
 ---
 
+## Review Modes
+
+{{REVIEW_MODES}}
+
+---
+
 ## Transition Table
 
 ### triage
@@ -30,8 +36,9 @@ after any change to verify.
 {{TRANSITIONS:triage:next}}
 {{TRANSITIONS:triage:accept}}
 reject:    (none — stays at triage)
-rework:    (none)
+{{REWORK:triage}}
 gate:      (none — triage has no gate)
+{{ARTIFACTS:triage}}
 ```
 
 ### select
@@ -41,7 +48,7 @@ gate:      (none — triage has no gate)
 {{TRANSITIONS:select:accept}}
 {{TRANSITIONS:select:reject}}
 {{ARTIFACTS:select}}
-rework:    (none)
+{{REWORK:select}}
 gate:      (none)
 ```
 
@@ -52,7 +59,7 @@ gate:      (none)
 {{TRANSITIONS:setup:accept}}
 {{TRANSITIONS:setup:reject}}
 {{ARTIFACTS:setup}}
-rework:    (none)
+{{REWORK:setup}}
 gate:      (none)
 ```
 
@@ -63,7 +70,7 @@ gate:      (none)
 {{TRANSITIONS:context:accept}}
 {{TRANSITIONS:context:reject}}
 {{ARTIFACTS:context}}
-rework:    (none)
+{{REWORK:context}}
 gate:      context:5 — Product Spec Gate and Auto skip this stage
            (other review modes use reduced ask; this affects pipeline
            routing but not the transitions table)
@@ -76,7 +83,7 @@ gate:      context:5 — Product Spec Gate and Auto skip this stage
 {{TRANSITIONS:shape:accept}}
 {{TRANSITIONS:shape:reject}}
 {{ARTIFACTS:shape}}
-rework:    shape    (shape rework — same stage)
+{{REWORK:shape}}    (shape rework — same stage)
 gate:      (none)
 ```
 
@@ -87,7 +94,7 @@ gate:      (none)
 {{TRANSITIONS:critique:accept}}
 {{TRANSITIONS:critique:reject}}
 {{ARTIFACTS:critique}}
-rework:    (none)
+{{REWORK:critique}}
 gate:      (none — critique feeds the gate, gate handles approval)
 ```
 
@@ -98,7 +105,7 @@ gate:      (none — critique feeds the gate, gate handles approval)
 {{TRANSITIONS:gate:accept}}
 {{TRANSITIONS:gate:reject}}
 {{ARTIFACTS:gate}}
-rework:    (none)
+{{REWORK:gate}}
 gate:      requires_approval: true
            approval_tool: visual_review
            Visual approval required before advancing.
@@ -112,7 +119,7 @@ gate:      requires_approval: true
 {{TRANSITIONS:scope:accept}}
 {{TRANSITIONS:scope:reject}}
 {{ARTIFACTS:scope}}
-rework:    (none)
+{{REWORK:scope}}
 gate:      (none)
 ```
 
@@ -123,7 +130,7 @@ gate:      (none)
 {{TRANSITIONS:interface:accept}}
 {{TRANSITIONS:interface:reject}}
 {{ARTIFACTS:interface}}
-rework:    (none)
+{{REWORK:interface}}
 gate:      (none)
 ```
 
@@ -134,7 +141,7 @@ gate:      (none)
 {{TRANSITIONS:int-gate:accept}}
 {{TRANSITIONS:int-gate:reject}}
 {{ARTIFACTS:int-gate}}
-rework:    (none)
+{{REWORK:int-gate}}
 gate:      requires_approval: true
            approval_tool: visual_review
            Visual review of all interface proposals required.
@@ -147,9 +154,29 @@ gate:      requires_approval: true
 {{TRANSITIONS:selection:accept}}
 {{TRANSITIONS:selection:reject}}
 {{ARTIFACTS:selection}}
-rework:    (none)
+{{REWORK:selection}}
+gate:      (none)
+{{GATE_MODES:selection}}
+```
+
+The selection stage records the chosen interface AND its breadboard map. The
+map is the source of truth for the interface's shape; the prose is its
+commentary. Both are required: a pick with no map leaves the architecture and
+planning stages reading prose where a graph belongs.
+
+### architecture
+
+```
+{{TRANSITIONS:architecture:next}}
+{{TRANSITIONS:architecture:accept}}
+{{TRANSITIONS:architecture:reject}}
+{{ARTIFACTS:architecture}}
+{{REWORK:architecture}}
 gate:      (none)
 ```
+
+The architecture pick is reviewed again at plan-gate through the tech plan
+that cites the selected architecture. No dedicated architecture gate stage.
 
 ### planning
 
@@ -158,7 +185,7 @@ gate:      (none)
 {{TRANSITIONS:planning:accept}}
 {{TRANSITIONS:planning:reject}}
 {{ARTIFACTS:planning}}
-rework:    (none)
+{{REWORK:planning}}
 gate:      (none)
 ```
 
@@ -169,13 +196,10 @@ gate:      (none)
 {{TRANSITIONS:plan-gate:accept}}
 {{TRANSITIONS:plan-gate:reject}}
 {{ARTIFACTS:plan-gate}}
-rework:    (none)
+{{REWORK:plan-gate}}
 gate:      requires_approval: true
            approval_tool: visual_review
-           Only in: "Product Spec + Interface + Tech Review",
-           "Product Spec + Interface + Tech Review + Code Diff"
-           Skipped in: Auto, "Product Spec Gate",
-           "Product Spec + Interface Gates", "Product Spec + Interface + Scopes"
+{{GATE_MODES:plan-gate}}
 ```
 
 ### execution
@@ -185,9 +209,8 @@ gate:      requires_approval: true
 {{TRANSITIONS:execution:accept}}
 {{TRANSITIONS:execution:reject}}
 {{ARTIFACTS:execution}}
-rework:    shape    (full rework path — returns to shape)
+{{REWORK:execution}}    (full rework path — returns to shape)
 gate:      (none)
-           supervisor: true (host-native supervision when available)
 ```
 
 ### verification
@@ -197,7 +220,7 @@ gate:      (none)
 {{TRANSITIONS:verification:accept}}
 {{TRANSITIONS:verification:reject}}
 {{ARTIFACTS:verification}}
-rework:    (none)
+{{REWORK:verification}}
 gate:      (none)
 ```
 
@@ -208,13 +231,11 @@ gate:      (none)
 {{TRANSITIONS:diff-gate:accept}}
 {{TRANSITIONS:diff-gate:reject}}
 {{ARTIFACTS:diff-gate}}
-rework:    (none)
+{{REWORK:diff-gate}}
 {{TRANSITIONS:diff-gate:annotate}}
 gate:      requires_approval: true
            approval_tool: visual_review
-           Only in: "Product Spec + Interface + Tech Review + Code Diff"
-           Skipped in: Auto, "Product Spec Gate",
-                       "Product Spec + Interface Gates", "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review"
+{{GATE_MODES:diff-gate}}
 ```
 
 ### audit
@@ -224,30 +245,21 @@ next:      (done — workflow complete)
 accept:    (done)
 {{TRANSITIONS:audit:reject}}
 {{ARTIFACTS:audit}}
-rework:    (none)
+{{REWORK:audit}}
 gate:      (none)
 ```
 
 ---
 
+## Stage Skips
+
+{{STAGE_SKIPS}}
+
+---
+
 ## Gate Conditions by review_mode
 
-| Stage | review_mode | Blocked? | Gate rule |
-|---|---|---|---|
-| context | all | see `context:5` | `context:5` is canonical: it decides skip, reduced ask, or full ask from appetite and intent. |
-| gate | all | block | `requires_approval: true`, `visual_review` required |
-| int-gate | all | block | `requires_approval: true`, `visual_review` required |
-| plan-gate | Auto | skip | skipped |
-| plan-gate | Product Spec Gate | skip | skipped |
-| plan-gate | Product Spec + Interface + Scopes | skip | skipped |
-| plan-gate | Product Spec + Interface Gates | skip | skipped; planning redirects directly to execution |
-| plan-gate | Product Spec + Interface + Tech Review / Product Spec + Interface + Tech Review + Code Diff | block | `requires_approval: true`, `visual_review` required |
-| diff-gate | Auto | skip | skipped |
-| diff-gate | Product Spec Gate | skip | skipped |
-| diff-gate | Product Spec + Interface Gates | skip | skipped; verification redirects directly to audit |
-| diff-gate | Product Spec + Interface + Scopes | skip | skipped |
-| diff-gate | Product Spec + Interface + Tech Review | skip | skipped |
-| diff-gate | Product Spec + Interface + Tech Review + Code Diff | block | `requires_approval: true`, `visual_review` required |
+{{REVIEW_MODE_TABLE}}
 
 ---
 
@@ -262,6 +274,8 @@ transition. The stage catalog declares these per stage:
 | critique | `critiques/critique-report.md` |
 | interface | `interfaces/*.md` |
 | selection | `interfaces/selected-interface.md` |
+| selection | `interfaces/breadboard.json` |
+| architecture | `architecture/selected-architecture.md` |
 | planning | `plans/spec-tech*.md` |
 
 Execution scopes and verification evidence remain runtime projections; their
@@ -274,16 +288,16 @@ from a missing file glob.
 
 Minimal pipelines (no stage skipped without a gate rule):
 
-**new-product:** triage → select → setup → context → shape → critique → gate → scope → interface → int-gate → selection → planning → plan-gate → execution → verification → diff-gate → audit
+{{INTENT:new-product}}
 
-**feature:** triage → select → setup → context → shape → critique → gate → scope → interface → int-gate → selection → planning → plan-gate → execution → verification → diff-gate → audit
+{{INTENT:feature}}
 
-**bugfix:** triage → select → setup → context → shape → critique → gate → execution → verification → audit
-*(interface/int-gate/selection/planning/plan-gate/diff-gate skipped unless review_mode adds them)*
+{{INTENT:bugfix}}
+*(interface/int-gate/selection/architecture/planning/plan-gate/diff-gate skipped unless review_mode adds them)*
 
-**refactor:** triage → select → setup → context → planning → plan-gate → execution → verification → audit
+{{INTENT:refactor}}
 
-**investigate:** triage → select → setup → context → audit
+{{INTENT:investigate}}
 
 ---
 

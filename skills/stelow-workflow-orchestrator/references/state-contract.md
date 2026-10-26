@@ -37,7 +37,10 @@ intent: feature          # new-product | feature | bugfix | refactor | investiga
 current_stage: shape     # single string, always one of the stage names below
 status: active           # active | paused | archived | completed
 config:
-  appetite: Core          # Lean | Core | Complete
+  quality: production   # production | experimental
+  exploration_count: 3  # 1-5
+  exploration_hybrid: true
+  appetite: Core          # DEPRECATED alias, mapped once, then rewritten
   review_mode: "Auto"     # Auto | "Product Spec Gate" | "Product Spec + Interface + Scopes" | "Product Spec + Interface + Tech Review + Code Diff"
   product_type: software  # software | docs | infra | data | research
 stages:
@@ -72,16 +75,17 @@ history:
 ---
 ```
 
-`artifacts` is the complete typed manifest of material Markdown outputs. At a
-successful transition, `scripts/stelow advance` records every previously
-unregistered Markdown file in the workflow directory with the stage it is
-leaving. Hosts can therefore show each artifact beside its producing stage
-without a second index or filename-based stage inference.
+`artifacts` is the complete typed manifest of material outputs. At a successful
+transition, `scripts/stelow advance` records every previously unregistered file
+in the workflow directory with the stage it is leaving — `.md` files as
+`kind: document`, anything else (`.json`, `.mmd`, `.html`) as `kind: artifact`.
+Hosts can therefore show each artifact beside its producing stage without a
+second index or filename-based stage inference.
 
 ### Valid Stage Names
 
 `triage`, `select`, `setup`, `context`, `shape`, `critique`, `gate`,
-`scope`, `interface`, `int-gate`, `selection`, `planning`,
+`scope`, `interface`, `int-gate`, `selection`, `architecture`, `planning`,
 `plan-gate`, `execution`, `verification`, `diff-gate`, `audit`.
 
 ### Valid Stage Statuses
@@ -94,7 +98,8 @@ without a second index or filename-based stage inference.
 
 ### Valid Review Modes
 
-`Auto` | `Product Spec Gate` | `Product Spec + Interface + Scopes` |
+`Auto` | `Product Spec Gate` | `Product Spec + Interface Gates` |
+`Product Spec + Interface + Scopes` | `Product Spec + Interface + Tech Review` |
 `Product Spec + Interface + Tech Review + Code Diff`.
 
 ### Authorship Rules

@@ -44,6 +44,7 @@
         "interface",
         "int-gate",
         "selection",
+        "architecture",
         "planning",
         "plan-gate",
         "execution",
@@ -63,6 +64,7 @@
         "interface",
         "int-gate",
         "selection",
+        "architecture",
         "planning",
         "plan-gate",
         "execution",
@@ -104,37 +106,45 @@
     "review_modes": {
       "Auto": {
         "skipped": [
-          "selection",
           "plan-gate",
           "diff-gate"
+        ],
+        "no_human_wait": [
+          "selection"
         ]
       },
       "Product Spec Gate": {
         "skipped": [
-          "selection",
           "plan-gate",
           "diff-gate"
+        ],
+        "no_human_wait": [
+          "selection"
         ]
       },
       "Product Spec + Interface Gates": {
         "skipped": [
           "plan-gate",
           "diff-gate"
-        ]
+        ],
+        "no_human_wait": []
       },
       "Product Spec + Interface + Scopes": {
         "skipped": [
           "plan-gate",
           "diff-gate"
-        ]
+        ],
+        "no_human_wait": []
       },
       "Product Spec + Interface + Tech Review": {
         "skipped": [
           "diff-gate"
-        ]
+        ],
+        "no_human_wait": []
       },
       "Product Spec + Interface + Tech Review + Code Diff": {
-        "skipped": []
+        "skipped": [],
+        "no_human_wait": []
       }
     },
     "entry_stages": {
@@ -142,13 +152,32 @@
       "planning": "critique",
       "execution": "execution",
       "review": "diff-gate"
-    }
-  },
-  "entry_stages": {
-    "analysis": "triage",
-    "planning": "critique",
-    "execution": "execution",
-    "review": "diff-gate"
+    },
+    "stage_policies": [
+      {
+        "stage": "context",
+        "id": "context-spike",
+        "skip": {
+          "when": {
+            "review_mode": [
+              "Auto"
+            ],
+            "any_of": {
+              "quality": [
+                "experimental"
+              ],
+              "exploration_count": [
+                1
+              ]
+            }
+          }
+        },
+        "ask": {
+          "experimental": "reduced",
+          "production": "full"
+        }
+      }
+    ]
   },
   "stages": [
     {
@@ -204,7 +233,7 @@
       "artifacts": [],
       "phase": "analysis",
       "skill": "stelow-workflow-orchestrator",
-      "playbook": null,
+      "playbook": "stages/selection.md",
       "execution": {
         "mode": "direct",
         "recipe": null,
@@ -297,7 +326,7 @@
     {
       "order": 25,
       "model_hint": "standard",
-      "description": "Strategic context. Market analysis, JTBD, domain detection. Gated by `context:5` (appetite/review mode): Product Spec Gate+Auto skips; others use reduced ask. See the context stage, section 5.",
+      "description": "Strategic context. Market analysis, JTBD, domain detection. Gated by `context:5` (quality/review mode): experimental+Auto skips; experimental otherwise reduced ask. See the context stage, section 5.",
       "label": "Project Context",
       "produces": "Gathers the project context the proposal needs.",
       "artifacts": [],
@@ -359,7 +388,7 @@
     {
       "order": 40,
       "model_hint": "best",
-      "description": "Shape stage. Define appetite, hill chart, rabbit holes.",
+      "description": "Shape stage. Define run knobs, hill chart, rabbit holes.",
       "label": "Product Proposal",
       "produces": "Writes the product proposal (spec-product_vN.md) for the chosen item.",
       "artifacts": [
@@ -662,7 +691,7 @@
     {
       "order": 80,
       "model_hint": "best",
-      "description": "Reaction-first Interface Contrast. Preserves the first reaction, compares bounded alternatives, and emits a named disposition.",
+      "description": "Interface exploration + reaction-first contrast. Generates bounded alternatives with wireframes, preserves the first reaction, compares them, and emits a named disposition.",
       "label": "Interface",
       "produces": "Designs the user-facing interface for the approved scope with explicit alternatives, evidence, and selection receipt.",
       "artifacts": [
@@ -728,7 +757,7 @@
       "artifacts": [],
       "phase": "planning",
       "skill": "stelow-workflow-orchestrator",
-      "playbook": null,
+      "playbook": "stages/int-gate.md",
       "execution": {
         "mode": "direct",
         "recipe": null,
@@ -775,15 +804,94 @@
     {
       "order": 100,
       "model_hint": "standard",
-      "description": "Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in Auto / Product Spec Gate (see references/human-gates.md).",
+      "description": "Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in Auto / Product Spec Gate (see `../stelow-workflow-orchestrator/references/human-gates.md`). Records the chosen interface and its breadboard map.",
       "label": "Interface Choice",
-      "produces": "Selects which interface variant to implement.",
+      "produces": "Selects which interface variant to implement, and maps it into a breadboard.",
       "artifacts": [
-        "interfaces/selected-interface.md"
+        "interfaces/selected-interface.md",
+        "interfaces/breadboard.json"
       ],
       "phase": "planning",
       "skill": "stelow-workflow-orchestrator",
-      "playbook": "stages/selection.md",
+      "playbook": "stages/interface-selection.md",
+      "execution": {
+        "mode": "direct",
+        "recipe": null,
+        "required_capabilities": [],
+        "preferred_capabilities": [],
+        "write_policy": "none",
+        "partition": "none",
+        "permission_profile": "inherit"
+      },
+      "blocked_tools": [],
+      "allowed_tools": [
+        "ask_user_question",
+        "read",
+        "grep",
+        "ls",
+        "subagent",
+        "write",
+        "bash"
+      ],
+      "preferred_tools": [
+        "ask_user_question",
+        "read"
+      ],
+      "primary_actions": [
+        "ask_user_question"
+      ],
+      "questions": [
+        {
+          "id": "interface-pick",
+          "gate": "interface",
+          "kind": "human-ask",
+          "modes": [
+            "Product Spec + Interface Gates",
+            "Product Spec + Interface + Scopes",
+            "Product Spec + Interface + Tech Review",
+            "Product Spec + Interface + Tech Review + Code Diff"
+          ],
+          "exploration_min_count": 2,
+          "evidence": "per-option",
+          "receipt": "interfaces/selected-interface.md"
+        },
+        {
+          "id": "interface-pick-auto",
+          "gate": "interface",
+          "kind": "agent-receipt",
+          "modes": [
+            "Auto",
+            "Product Spec Gate"
+          ],
+          "receipt": "interfaces/selected-interface.md"
+        }
+      ],
+      "transitions": {
+        "next": [
+          "architecture"
+        ],
+        "accept": [
+          "architecture"
+        ],
+        "reject": [
+          "interface"
+        ]
+      },
+      "id": "selection",
+      "playbook_skill": "stelow-workflow-orchestrator"
+    },
+    {
+      "order": 105,
+      "model_hint": "best",
+      "description": "Architecture selection. Diverges construction directions, then a human pick via structured question in Tech-Review modes; worker adopts below that threshold (see `../stelow-workflow-orchestrator/references/human-gates.md`).",
+      "label": "Architecture Choice",
+      "produces": "Selects which construction direction to plan and implement.",
+      "artifacts": [
+        "architecture/selected-architecture.md"
+      ],
+      "phase": "planning",
+      "skill": "stelow-workflow-orchestrator",
+      "playbook": "stages/architecture.md",
       "execution": {
         "mode": "direct",
         "recipe": null,
@@ -813,31 +921,28 @@
       ],
       "questions": [
         {
-          "id": "interface-pick",
-          "gate": "interface",
+          "id": "architecture-pick",
+          "gate": "tech",
           "kind": "human-ask",
           "modes": [
-            "Product Spec + Interface Gates",
-            "Product Spec + Interface + Scopes",
             "Product Spec + Interface + Tech Review",
             "Product Spec + Interface + Tech Review + Code Diff"
           ],
-          "appetite": [
-            "Core",
-            "Complete"
-          ],
+          "exploration_min_count": 2,
           "evidence": "per-option",
-          "receipt": "interfaces/selected-interface.md"
+          "receipt": "architecture/selected-architecture.md"
         },
         {
-          "id": "interface-pick-auto",
-          "gate": "interface",
+          "id": "architecture-pick-auto",
+          "gate": "tech",
           "kind": "agent-receipt",
           "modes": [
             "Auto",
-            "Product Spec Gate"
+            "Product Spec Gate",
+            "Product Spec + Interface Gates",
+            "Product Spec + Interface + Scopes"
           ],
-          "receipt": "interfaces/selected-interface.md"
+          "receipt": "architecture/selected-architecture.md"
         }
       ],
       "transitions": {
@@ -848,10 +953,10 @@
           "planning"
         ],
         "reject": [
-          "interface"
+          "scope"
         ]
       },
-      "id": "selection",
+      "id": "architecture",
       "playbook_skill": "stelow-workflow-orchestrator"
     },
     {
@@ -859,7 +964,7 @@
       "model_hint": "best",
       "description": "Tech planning. Typed scopes + sequencing.",
       "label": "Tech Planning",
-      "produces": "Writes the technical plan (PLAN.md) from the interface and scope.",
+      "produces": "Writes the technical plan (PLAN.md) from the interface, architecture, and scope.",
       "artifacts": [
         "plans/spec-tech*.md"
       ],
@@ -903,7 +1008,7 @@
           "plan-gate"
         ],
         "reject": [
-          "scope"
+          "architecture"
         ]
       },
       "id": "planning",
@@ -1013,7 +1118,6 @@
         "write",
         "bash"
       ],
-      "supervisor": true,
       "transitions": {
         "next": [
           "verification"

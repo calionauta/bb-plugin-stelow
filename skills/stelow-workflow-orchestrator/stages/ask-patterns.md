@@ -19,6 +19,17 @@ When using `multiSelect: true`:
 - The user can select **all** to mean "all"
 - Selections are explicit — no need for a "select all" button
 
+### Opt-Out Confirms (preselected options)
+
+For confirmations — scope maps, IN tables — prefer opt-out over opt-in:
+every option starts checked (`selected: true`) and the human unchecks to
+remove. Keeping all checked confirms; unchecking everything means "remove
+all" (reshape territory), which is distinct from skipping (leaves unchanged).
+Preselection composes only with `multiSelect: true`; single-select groups
+refuse it. Option sources differ by moment (proposal IN/OUT items at shaping
+time, mapped scopes with stable IDs at scope time) but the interaction is one
+pattern. Chunk at 6 options per question (MAX_OPTIONS); never drop items to fit.
+
 ### Tool Capabilities
 
 `ask_user_question` supports:
@@ -38,14 +49,14 @@ Preview limits:
 
 Used in the context stage for strategic approach selection.
 
-> **Gate awareness:** Before applying this pattern, run `context:5` (appetite/mode gate). If `Lean` + `Auto`, skip the question entirely. If `Lean` + non-Auto, present this pattern with opt-in execution note (subagents not automatic). If `Core`/`Complete`, apply as-is.
+> **Gate awareness:** Before applying this pattern, run `context:5` (quality/review-mode gate). If `experimental` + `Auto`, skip the question entirely. If `experimental` + non-Auto, or the intent pre-check reduced the stage, present this pattern with opt-in execution note (subagents not automatic). Otherwise, apply as-is.
 
 ```typescript
 ask_user_question({
   questions: [{
-    question: `Before planning, would you like to explore strategic directions?
-Each approach below generates inputs that feed into Shape Up.
-Recommendation: [justification based on project context].`,
+    question: `Would you like extra exploration before shaping the plan?
+Each approach below feeds findings into the shaped plan.
+Recommendation: [approach(es) + one-line why, in plain words].`,
     header: "Strategy",
     multiSelect: true,
     options: [
@@ -76,11 +87,61 @@ Recommendation: [justification based on project context].`,
 > **Note:** When using `multiSelect: true`, do NOT include "None" or "Skip" options — the user can simply select nothing to proceed without strategic exploration.
 ```
 
+Rules for this pattern:
+
+- **Recommend, don't dump.** Name the 1–2 approaches that fit with `(Recommended)` in the label and one line why; say in one line why the rest don't fit. Never ship the question without a recommendation — an unranked menu of five is the worker abstaining.
+- **Context in plain words, two sentences max.** Who gains what — never recon internals (bundle counts, parseable rows, file handles), stage slugs, or methodology brand names. Recon detail goes in `preview`, never inline.
+
 ---
 
-## Pattern 2: Interface Proposal Selection (Interface Selection stage)
+## Pattern 2: Interface Selection (Interface Selection stage)
 
-Used in `stelow-workflow-interface-alternatives` for visual proposal comparison.
+Used for the `interface-pick` question: the human chooses one direction
+from the Interface Contrast receipt (`interfaces/contrast.json`).
+
+> **Option source:** every option comes from a receipt option
+> (`contrast.json` → `options[]`). `label` is the option `id` verbatim
+> (an id over 60 chars refuses the pick — never truncate it);
+> `description` names the primary value plus served/friction scope coverage
+> by scope TITLE from the scope map (or states explicitly that no map
+> exists) — never bare scope IDs; `preview` is ≤15 rows built
+> only from receipt fields (decision question, primary value, related
+> values, coverage, criteria) — never an invented wireframe; `artifact`
+> is the readable rendering (`interfaces/interfaces.md`), already written.
+> There is no recommendation field: authority lives with the decider, so a
+> human pick and an agent auto-adopt read the same options. Anything else —
+> a stop/shape/research route, an invalid receipt, a single existing
+> interface — refuses with a named reason instead of a pick.
+
+```typescript
+ask_user_question({
+  questions: [{
+    question: `{decisionQuestion from contrast.json}`,
+    header: "Interface",
+    options: [
+      {
+        label: "{option id}",
+        description: "{primaryValue}. Served: {scope titles}. Friction: {scope titles}.",
+        preview: `{decisionQuestion}
+{primaryValue}
+Related: {relatedValues}
+Serves {scope title} — {note}
+Friction {scope title} — {note}
+Judged by: {criteria}`,
+        artifact: { path: ".stelow/{YYYY-MM-DD}/{dir}/interfaces/interfaces.md", display: "interfaces.md" }
+      }
+      // ... one option per receipt option (1-4, all valid)
+    ]
+  }]
+})
+```
+
+### Pattern 2A: Breadth Proposal Selection (Explore track only)
+
+Used in `stelow-workflow-interface-alternatives` for visual proposal
+comparison on the Explore track or standalone. Never on the Build track:
+there the `interface` stage runs Interface Contrast and the pick follows
+Pattern 2 above.
 
 > **Preview format:** Extract the first ASCII wireframe from each proposal's output.
 > Markdown rendering supports ASCII art, headers, lists, and code blocks.
@@ -177,41 +238,68 @@ Keep previews concise. If content exceeds limits, prioritize:
 
 ## Pattern 3: Scope Adjustment (Scope Adjustment stage)
 
-Used after Gate approval to let user add/remove from IN/OUT — **only when
+Used after Gate approval to confirm the mapped scopes — **only when
 review mode requires IN/OUT confirmation** (`Product Spec + Interface +
 Scopes` and above). In `Auto` and lower modes the LLM adjusts scope itself
 (see `../references/human-gates.md`) and never parks waiting.
 
 > **Note:** No visual review re-run after this — the ask tool already confirms selections.
 
+Opt-out form: every mapped scope is one preselected option. Keeping all
+checked confirms the map; unchecking removes. Unchecking everything means
+"remove all" (reshape territory) — distinct from skipping, which leaves the
+map unchanged.
+
+> **Address the human by outcome, never by scope ID.** Labels carry the
+> scope's outcome (what the person gets); the stable ID lives only in the
+> `scope-map.json` artifact and the decision receipt, where the worker —
+> never the person — reads it back to record the pick. A label like
+> "A5 — checkout" forces the person to decode worker vocabulary; the host
+> also maps known IDs to titles at render time, but the question should not
+> need the safety net.
+
 ```typescript
 ask_user_question({
   questions: [
     {
-      question: "What should be REMOVED from IN scope?",
-      header: "Remove IN",
+      question: "Which of these scopes stay IN?",
+      header: "Keep IN",
       multiSelect: true,
       options: [
-        { label: "{scope-1}", description: "{scope description}" },
-        { label: "{scope-2}", description: "{scope description}" }
+        {
+          label: "{outcome}",
+          description: "{IN items + key dependencies}",
+          selected: true,
+          preview: "{outcome, IN/OUT, dependencies — ≤15 rows}",
+          artifact: { path: ".stelow/{YYYY-MM-DD}/{dir}/scope-map.json", display: "scope-map.json" },
+        },
+        // ... one option per mapped scope, ALL preselected
       ]
     },
+    // Only when OUT items exist:
     {
-      question: "What should be ADDED to IN scope?",
-      header: "Add to IN",
+      question: "Add any of these back to IN?",
+      header: "Add IN",
       multiSelect: true,
       options: [
-        { label: "{out-scope-1}", description: "{description}" },
-        { label: "{out-scope-2}", description: "{description}" }
+        { label: "{out-item}", description: "{why it was left out}" }
+        // ... OUT items, NONE preselected (opt-in)
       ]
     }
   ]
 })
 ```
 
-**If user removes items:** update spec
+Chunking rule: at most 6 options per question. With 7–9 mapped scopes,
+split into batched groups of ≤6 in ONE call (e.g. "Which of these scopes
+stay IN? (1/2)"), all preselected. Never silently drop scopes to fit.
+
+**If user removes items:** update spec + emit a scope-map challenge when a
+boundary or dependency meaning changes (never rewrite the approved map in
+place).
 **If user adds items:** create new spec version (requires awareness but no extra Gate)
-**If user selects nothing:** proceed unchanged
+**If user selects nothing on the keep question:** reshape — an empty map is not a map.
+**If user skips:** proceed unchanged.
 
 ---
 
@@ -259,7 +347,7 @@ ask_user_question({
   questions: [
     {
       question: `Which Product Definition Workflow stages should be activated?
-Recommendation: [Shape Up + Interface + Tech Planning] | [Shape Up only] | etc.
+Recommendation: [Shaping + Interface + Tech Planning] | [Shaping only] | etc.
 Justification: [1-2 sentences explaining why].
 
 Select the desired stages:`,
@@ -267,7 +355,7 @@ Select the desired stages:`,
       multiSelect: true,
       options: [
         {
-          label: "Shape Up Planning (Recommended)",
+          label: "Shaping (Recommended)",
           description: "Understand problem, expose assumptions, map risks, define IN/OUT scope. Generates spec-product.md. → Automatically activates Product Critique + Review Gate."
         },
         {
@@ -276,7 +364,7 @@ Select the desired stages:`,
         },
         {
           label: "Tech Planning Sequencing",
-          description: "Break into scopes with DoD + acceptance criteria. If standalone (no Shape Up/Interface): includes own Review Gate. If post-approval: no gate."
+          description: "Break into scopes with DoD + acceptance criteria. If standalone (no Shaping/Interface): includes own Review Gate. If post-approval: no gate."
         }
       ]
     },
@@ -342,63 +430,84 @@ What would you like to do?`,
 /// END PATTERN 6
 
 ---
-## Pattern 7: Appetite Declaration
+## Pattern 7: Run Knobs Declaration
 
-Used by `setup:15` when the human declares the depth of scope to prepare.
+Used by `setup:15` when the human declares quality and exploration breadth.
 
 > **Trigger:** Before stage selection, after inbox/lessons/session knowledge injection.
 > **⚠️ This is a SEPARATE question from Pattern 8 (Review Mode).** Never combine them into one `ask_user_question` call.
 
 ```typescript
 ask_user_question({
-  questions: [{
-    question: `How deep should the plan be?
-This sets the appetite — how much scope the LLM should prepare.
-Appetite defines scope depth, NOT time or calendar duration.
-Review Mode will be asked separately in the next step.
-`,
-    header: "Appetite",
-    options: [
-      {
-        label: "Lean",
-        description: "Quick validation — 1 minimal feature, ~1 page spec, 1-2 scopes. No edge cases."
-      },
-      {
-        label: "Core (Recommended)",
-        description: "One feature product, main Job To Be Done — ~3 page spec, 3-5 scopes, obvious edge cases."
-      },
-      {
-        label: "Complete",
-        description: "Multi-feature product — ~8+ page spec, 8-15 scopes, full edge case mapping, 3-5 implementation strategies compared with trade-offs."
-      }
-    ]
-  }]
+  questions: [
+    {
+      question: `Which rigor for verification?
+Production checks everything the same way every time. Experimental runs lighter, and only for probes that will not ship as-is.`,
+      header: "Quality",
+      options: [
+        {
+          label: "Production (Recommended)",
+          description: "Full paths, edge cases, parallel reviewers, full test layers including security where applicable, full critique depth."
+        },
+        {
+          label: "Experimental",
+          description: "Reduced paths and checks for probes and idea evolution. Never ship as-is without upgrading to Production."
+        }
+      ]
+    },
+    {
+      question: `How many directions should divergence compare?
+A hybrid synthesis is produced whenever more than one direction exists.
+Review Mode will be asked separately in the next step.`,
+      header: "Explore",
+      options: [
+        {
+          label: "2 + hybrid",
+          description: "Two most-differentiated directions plus a hybrid synthesis."
+        },
+        {
+          label: "3 + hybrid (Recommended)",
+          description: "Three directions plus a hybrid synthesis."
+        },
+        {
+          label: "4 + hybrid",
+          description: "Four directions plus a hybrid synthesis."
+        },
+        {
+          label: "5 + hybrid",
+          description: "Five directions plus a hybrid synthesis. Heaviest preparation."
+        },
+        {
+          label: "1 single",
+          description: "One direct direction, no hybrid. Trivial changes only, by explicit choice."
+        }
+      ]
+    }
+  ]
 })
-
 ```
 
-**How appetite shapes the output:**
+**How the knobs shape the output:**
 
-| Level | Spec size | Scopes | Implementation strategies | Interface exploration | Test scope |
-|-------|-----------|--------|--------------------------|----------------------|------------|
-| Lean | ~1 page | 1-2 | 1 direct — no divergence | 1 suggested interface; no alternatives | Smoke tests + critical-path unit tests |
-| Core | ~3 pages | 3-5 | 1-2 considered with brief rationale | 3 archetypes explored + 1 hybrid | Unit tests + integration tests for external seams |
-| Complete | ~8+ pages | 8-15 | 3-5 compared with trade-off analysis | 5 archetypes explored + 1 hybrid | Unit + integration + behavior/e2e + security tests |
+| Knob | What it changes | What it never changes |
+|------|----------------|----------------------|
+| Quality | Paths, edge cases, reviewer parallelism, test layers, critique depth | Whether verification runs — it always runs |
+| Exploration | Direction count (interaction + architecture), hybrid synthesis | Decision ownership — a pick is always recorded |
 
-**Cut policy:** Lean cuts edge cases, secondary flows, alternative strategies, and non-critical integrations. Core cuts only low-value variants. Complete cuts nothing unless impossible. Quality gates are not cut: build/test/lint/typecheck run for every appetite, and a11y checks run whenever UI files exist; Appetite only changes interface/test exploration depth.
+**Cut policy:** breadth 1 keeps only the direct path. Breadth 2–3 keeps the main JTBD and obvious edge cases, cutting low-value variants. Breadth 4–5 cuts nothing unless impossible. Quality gates are not cut: build/test/lint/typecheck run at every setting, and a11y checks run whenever UI files exist. Production verifies every scope the same way regardless of breadth.
 
-**Storage:** Save to `stelow.json` as `workflows[].config.appetite` (single source of truth), and inject into `spec-product.md` frontmatter as `appetite: {chosen_appetite}`. Review Mode follows the same pattern (`workflows[].config.review_mode` + `review_mode:` in frontmatter). Both are canonical subagent inputs — see `../references/cli-tools/subagents.md` (Input Files table).
+**Storage:** Save to `stelow.json` as `workflows[].config.quality`, `workflows[].config.exploration` (single source of truth), and inject into `spec-product.md` frontmatter as `quality:`, `exploration_count:`, `exploration_hybrid:`. Review Mode follows the same pattern (`workflows[].config.review_mode` + `review_mode:` in frontmatter). All are canonical subagent inputs — see `../references/cli-tools/subagents.md` (Input Files table). A legacy `appetite:` line is accepted and mapped once (Lean → production/2, Core → production/3, Complete → production/5), then rewritten to knobs.
 
-> **Key rule:** Appetite is FIXED for the cycle. The LLM cannot extend it. If scope doesn't fit, the LLM splits — the human decides whether to accept the split or extend appetite in a NEW cycle.
+> **Key rule:** Knobs are FIXED for the cycle. The LLM cannot widen them. If scope doesn't fit, the LLM splits — the human decides whether to accept the split or start a NEW cycle with different knobs.
 
-### Guardrails for LLMs generating appetite questions
+### Guardrails for LLMs generating knob questions
 
-When presenting appetite options to the user:
+When presenting knob options to the user:
 
-1. **NEVER reference time or calendar duration** (days, weeks, months, sprints, etc.) in the question text, option labels, or descriptions. Appetite defines **scope depth only**.
-2. **NEVER say "Lean = 1 week" or similar time-based framing.** The original Shape Up used appetite as a calendar window (6 weeks), but stelow explicitly departs from that model — appetite caps preparation depth (spec size, number of scopes, interface variants, test layers), not calendar duration. Wall-clock time is not predictable under LLM execution.
-3. The descriptions above use spec page count and scope count as reference. This is intentional — these are scope metrics, not time metrics.
-4. If the user asks "how long will this take?", respond: "Appetite controls preparation depth, not duration. Execution time depends on scope complexity, not the appetite label."
+1. **NEVER reference time or calendar duration** (days, weeks, months, sprints, etc.) in the question text, option labels, or descriptions. Knobs define **consideration breadth and verification rigor only**.
+2. **NEVER say "Lean = 1 week" or similar time-based framing, and NEVER map the old appetite labels to time.** The original method used appetite as a calendar window (6 weeks); stelow caps breadth and rigor, not calendar duration. Wall-clock time is not predictable under LLM execution.
+3. If the user asks "how long will this take?", respond: "Knobs control breadth and rigor, not duration. Execution time depends on scope complexity, not the knob labels."
+4. If the user asks for the old Lean/Core/Complete labels, map them once through the legacy table above and continue with knobs.
 
 ---
 
@@ -469,25 +578,126 @@ When the Plan Critique finds gaps via the 7 checklists, each gap is classified a
 
 **Storage:** Save to `stelow.json` as `workflows[].config.review_mode` (single source of truth).
 
-> **Note:** Review Mode does NOT affect supervisor, parallelization, or which skills run. All stages run for all modes — only gates and questions change.
+> **Note:** Review Mode does NOT affect parallelization or which skills run. Those follow the run knobs (quality, exploration). All stages run for all modes — only gates and questions change with Review Mode.
 
 /// END PATTERN 8
+
+## Pattern 9: Split Proposal (triage/select, Build track only)
+
+Used when the human signals split intent: ask the formal split question
+IMMEDIATELY — never a freeform "want to split?" pre-question first. The
+pre-question costs a full round and its answer ("yes, split") still needs
+the formal one; asking it is the rework.
+
+> **Shape (host-enforced):** `--tag split`, `--multiple`, one question,
+> slices with outcome plus done-criteria, exactly one `"Keep as one card"`
+> option with that exact label. Anything else is refused before the human
+> is pinged.
+
+```typescript
+ask_user_question({
+  questions: [{
+    question: `Following your call to split: confirm which slices become
+separate cards — or keep together after all.`,
+    header: "Split",
+    multiSelect: true,
+    options: [
+      {
+        label: "Slice A — {outcome}",
+        description: "{what moves} Done when {verifiable done-criteria}.",
+      },
+      {
+        label: "Slice B — {outcome}",
+        description: "{what moves} Done when {verifiable done-criteria}.",
+      },
+      {
+        label: "Keep as one card",
+        description: "Everything stays here after all.",
+      }
+    ]
+  }]
+})
+```
+
+Rules for this pattern:
+
+- **Acknowledge the prior decision in the question.** "Following your call
+  to split" tells the human the worker heard them; a bare slice list
+  reads as if the earlier answer never happened.
+- **Keep is the veto, and it stays even after a pro-split decision** — it
+  is stronger after the slices are concrete, not weaker: the human may
+  look at the slices and keep together after all. Never drop it to
+  "honor" the earlier call.
+- **Preselect slices the human already named.** When the prior answer chose
+  split with named slices, mark those slices `--selected` (split is already
+  `--multiple`, so preselection is legal): the human submits to confirm
+  instead of re-picking what they just picked. Unchecking removes; Keep
+  stays unchecked — preselecting the veto would answer for the human.
+- **Slices carry new information** (grouping rationale, done-criteria),
+  never an echo of the human's own words. An echo reads as ignored input
+  even when the content matches.
 
 ## Usage Rules
 
 1. **Read this file** before any `ask_user_question` call
 2. **Use the appropriate pattern** for the context
 3. **Adapt labels/summaries** to the specific situation
-4. **Use preview** when visual comparison adds value
-5. **Use artifact** when the human must review full details before picking
+4. **Verify every factual premise by reading before asking.** Never assert
+   what a file contains, which line does what, or what an ID refers to
+   from memory: read the file, the scope map, or the receipt first, then
+   ask. A question asked on a wrong premise (a "CI edit" that is actually a
+   product-surface removal) costs the human a correction round the read
+   would have prevented — and the correction must name what was wrong,
+   what changed, and what the new evidence is.
+5. **Never address the human by internal IDs** — scope IDs, stage slugs,
+   file handles, `[Stelow boundary …]` markers. Use titles and outcomes in
+   question text, labels, descriptions, and previews; IDs live in artifacts
+   and receipts.
+6. **Use preview** when visual comparison adds value
+7. **Use artifact** when the human must review full details before picking
    (interface proposals, plan documents, generated reports): pass the
    workspace-relative path of the already-written file. `preview` is the
    inline glance (≤20 rows side-by-side, ≤15 stacked); `artifact` is the
    openable source of truth — they compose, never compete. A missing file
    degrades to the preview and never blocks the question.
-6. **Batch independent questions** in one call (repeat question blocks);
+8. **Batch independent questions** in one call (repeat question blocks);
    sequence dependent ones. Appetite (Pattern 7) and Review Mode
    (Pattern 8) always stay separate — deliberate sequencing, not dependency
+9. **Stage-gate options carry their destination and the recommendation.**
+   Every option ends with where it goes ("→ goes to critique", "→ back
+   to shape"): the human picks a destination, not a sentence — and a bare
+   approve is then fully determined by contract plus transition table, no
+   context needed. Mark the recommended option "(Recommended)" first. An
+   approve-as-written option states plainly that no changes and no note
+   are needed — just submit.
+9. **Every option must be decidable from its row, with the note box as its
+   voice.** A pick composes with free text — the note travels with the
+   decision, except on split proposals where pick and text stay exclusive —
+   so conditional options ("trim the scope — tell me which") are actionable
+   when the human adds the which. Mark them explicitly with `--needs-note`
+   (CLI path): submit then waits until the note box carries the missing
+   piece, instead of shipping a bare pick into a clarification round. A
+   conditional option submitted bare is still a wasted round: the worker
+   must re-ask for the missing piece rather than guess it. Never write an
+   option that needs text without naming the needed piece in the option
+   itself.
+10. **No channel, no dependency: tool-path asks resolve elaboration with a
+    follow-up question.** `ask_user_question` carries no `--needs-note`
+    flag — only `stelow ask` declares it. An expectant option on the
+    tool path ("Adjust groups", "Adjust the list") must therefore end in a
+    second question asked immediately ("Which group would you like to
+    change?"), never in "tell me X" prose with nowhere to put X. Prefer
+    the CLI path with `--needs-note` wherever a conditional pick needs
+    enforcing rather than convention.
+11. **Write for the decider, not the log.** Question text stays short (a
+    few lines) and in plain words: who gains what, and what the choice
+    changes. Never stage slugs, file handles or paths, recon internals
+    (bundle counts, parseable rows), process markers, or methodology
+    brand names — name a document only when the human must open or
+    approve it. Justification and evidence travel in `preview`/`artifact`
+    (CLI: `--preview`/`--artifact`), never inline. A question that needs
+    a paragraph to be understood is a question asked too early: read
+    first, then ask once.
 
 ---
 
@@ -511,6 +721,7 @@ interface Option {
     path: string;      // e.g. ".stelow/2026-09-09/abc123/interfaces/proposal-a.md"
     display: string;   // short name shown on the open affordance
   };
+  selected?: boolean;  // preselected (opt-out confirms only, requires multiSelect)
 }
 
 interface Question {

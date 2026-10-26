@@ -11,7 +11,7 @@ decision** under each `review_mode` (frontmatter in `spec-product.md`,
 
 | Review Mode | Structured Questions to Human | Interface Selection Pick |
 |---|---|---|
-| `Auto` | None | **LLM decides** — adopt the hybrid recommendation (or the single proposal for Lean appetite) as `selected-interface.md`. Never park waiting for a human pick. |
+| `Auto` | None | **LLM decides** — adopt the hybrid recommendation (or the single proposal for count 1) as `selected-interface.md`. Never park waiting for a human pick. |
 | `Product Spec Gate` | None | **LLM decides** — same as Auto. |
 | `Product Spec + Interface Gates` | Interface selection | **User chooses** via structured ask with preview. |
 | `Product Spec + Interface + Scopes` | Interface selection + scope | **User chooses** via structured ask with preview. |
@@ -25,10 +25,12 @@ decision** under each `review_mode` (frontmatter in `spec-product.md`,
 - **Execution start**: always automatic after planning approval. Never ask
   "shall I proceed" — that question is the workflow stalling, not diligence.
 - **Gate tool fallback**: when a gate *tool* (`visual_review`) is
-  unavailable in the host, do NOT park in chat waiting. In `Auto`, write
-  the approval receipt yourself (`.stelow/approvals/{dirHash}/{file}.approved.md`)
-  and advance; in gated modes, open a structured ask instead. A wait with
-  neither tool receipt nor open ask is a phantom wait — forbidden.
+  unavailable in the host, do NOT park in chat waiting. For a **selected**
+  gate, open the host's structured ask with the artifact under decision and
+  wait for the answer. For an **unselected** gate (or `Auto`), write the
+  approval receipt yourself (`.stelow/approvals/{dirHash}/{file}.approved.md`)
+  with `selected_by: llm` and advance. A wait with neither tool receipt nor
+  open ask is a phantom wait — forbidden.
 
 ## Rules
 

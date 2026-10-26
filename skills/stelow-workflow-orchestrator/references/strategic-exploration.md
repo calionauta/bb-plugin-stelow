@@ -49,12 +49,12 @@ If user selects one or more:
 
    **Task string must include the user's verbatim request** — strategic-context subagents do NOT inherit orchestrator deliberation. Pass:
    - `USER REQUEST (verbatim): ${userOriginalRequest}` — the literal text the user typed at workflow start
-   - `Appetite: ${configAppetite}`
+   - `Quality: ${configQuality}, Exploration: ${configExplorationCount}+hybrid`
    - `Review Mode: ${configReviewMode}`
    - `Detected domains: ${configDomainsDetected}`
    - `Workflow dir: ${WF_DIR}`
 
-   **Reads:** `reads: [".stelow/{date}/{dir}/index.json"]` — spec-product.md does NOT exist yet at this stage (Shape Up creates it later). index.json is the only canonical config artifact available.
+   **Reads:** `reads: [".stelow/{date}/{dir}/index.json"]` — spec-product.md does NOT exist yet at this stage (Shaping creates it later). index.json is the only canonical config artifact available.
 
    See the "Strategic-context worked example" in `subagents.md` for the literal invocation shape.
 
@@ -67,16 +67,16 @@ If user selects one or more:
    - Top opportunities consolidated
    - Recommended focus areas
 
-   **Task string inputs:** consolidated inputs include the original user request, appetite, review_mode, and the N individual skill analyses (paths in `reads`).
+   **Task string inputs:** consolidated inputs include the original user request, run knobs, review_mode, and the N individual skill analyses (paths in `reads`).
 
 4. Show summary in chat with file links
 
 5. For each skill, ask granular integration using the ask tool (see `cli-tools/ask.md`).
 ```
    - If no insights selected from a skill → skip that skill
-   - Proceed to next or Shape Up
+   - Proceed to next or Shaping
 
-6. Integrate selected insights into Shape Up:
+6. Integrate selected insights into Shaping:
    - Inject as context
    - Add sections to spec-product.md (e.g. `## Considered Jobs`)
 

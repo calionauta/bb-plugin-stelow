@@ -1,49 +1,42 @@
-### Step 4: Generate Appetite-Specific Test Targets
+### Step 4: Generate Quality-Specific Test Targets
 
-From research: coverage alone is insufficient. A test suite can execute every line but still miss behavioral bugs, security gaps, and non-deterministic agent failures. Appetite selects breadth; risk selects which paths inside that breadth are mandatory.
+> Canonical guard reference: `guard-contract.md` (5 questions, ritual, anti-patterns, gates).
+> This file keeps only quality-specific breadth tables (Steps 4–5) and the mutation-fit rationale (Step 6).
+> Do not copy anti-patterns or gates here — link to `guard-contract.md`.
 
-| Appetite | Path Type | Testing Depth |
+From research: coverage alone is insufficient. A test suite can execute every line but still miss behavioral bugs, security gaps, and non-deterministic agent failures. Quality selects breadth; risk selects which paths inside that breadth are mandatory. A legacy `appetite:` line maps to `production` for every legacy value.
+
+| Quality | Path Type | Testing Depth |
 |-----------|-----------|-------------|
-| `Lean` | Critical path | E2E/behavior (1 happy path) + smoke + unit for the one negative case |
-| `Lean` | Standard/experimental | E2E/behavior (1 happy path); no broad integration suite |
-| `Core` | Critical path | E2E/behavior + unit tests + negative cases + integration seams |
-| `Core` | Standard features | E2E/behavior (key variations) + unit tests + integration for external seams |
-| `Complete` | Critical path | E2E/behavior (full) + unit + integration + security gates |
-| `Complete` | Complex flows | E2E/behavior for multi-step UI or agent workflows |
+| `production` | Critical path | E2E/behavior (full) + unit + integration + security gates |
+| `production` | Standard features | E2E/behavior (key variations) + unit tests + integration for external seams |
+| `production` | Complex flows | E2E/behavior for multi-step UI or agent workflows |
+| `experimental` | Critical path | E2E/behavior (1 happy path) + smoke + unit for the one negative case |
+| `experimental` | Standard/experimental | E2E/behavior (1 happy path); no broad integration suite. Never ship as-is. |
 
 ### Step 5: Define Test Scope Types
 
-For each IN scope in the spec-product, add corresponding test scopes. Appetite controls breadth:
+For each IN scope in the spec-product, add corresponding test scopes. Quality controls breadth:
 
-**Lean:**
+**Production:**
 
-| Code Type | Test Type | When to Use | TDD? |
-|----------|-----------|-------------|------|
-| User-facing flows | `test-behavior` | 1 E2E test for happy path | No — browser/e2e |
-| Critical business logic | `test-unit` | Happy path + one negative case | Yes for deterministic logic |
-| External APIs | `test-integration` | Only if external seam is in Lean IN scope | No — test-after |
-| Security-sensitive | `test-security` | Only if auth/payment/data is in Lean IN scope | Automated SAST |
-
-**Core:**
-
-| Code Type | Test Type | When to Use | TDD? |
-|----------|-----------|-------------|------|
-| User-facing flows | `test-behavior` | E2E for happy path + key variations | No — browser/e2e |
-| Agent workflows | `test-behavior` | Multi-step agents | Multi-run validation |
-| Business logic | `test-unit` | Main flows + obvious edge cases | Yes — critical paths |
-| External APIs | `test-integration` | DB, APIs, queues | No — test-after |
-| Security-sensitive | `test-security` | Auth, payment, data | Automated SAST |
-
-**Complete:**
-
-| Code Type | Test Type | When to Use | TDD? |
+| Code Type | Test Type | When to Use | Fail-observed? |
 |----------|-----------|-------------|------|
 | User-facing flows | `test-behavior` | Full E2E coverage + edge cases | No — browser/e2e |
 | Complex UI/user flows | `test-behavior` | Forms, modals, multi-step flows | Browser/e2e |
 | Agent workflows | `test-behavior` | Multi-step agents | Multi-run validation |
-| Business logic | `test-unit` | Full edge mapping | Yes — critical paths |
+| Business logic | `test-unit` | Full edge mapping | Yes — guards from planned cases, critical paths |
 | External APIs | `test-integration` | All external seams | No — test-after with contract checks |
 | Security-sensitive | `test-security` | Auth, payment, data, permissions | Automated SAST + targeted tests |
+
+**Experimental (probes only, never ship as-is):**
+
+| Code Type | Test Type | When to Use | Fail-observed? |
+|----------|-----------|-------------|------|
+| User-facing flows | `test-behavior` | 1 E2E test for happy path | No — browser/e2e |
+| Critical business logic | `test-unit` | Happy path + one negative case | Yes — planned cases, deterministic logic |
+| External APIs | `test-integration` | Only if external seam is in scope | No — test-after |
+| Security-sensitive | `test-security` | Only if auth/payment/data is in scope | Automated SAST |
 
 **Brownfield/Hybrid (existing code):**
 
@@ -54,18 +47,7 @@ For each IN scope in the spec-product, add corresponding test scopes. Appetite c
 | Replay past tasks | `test-simulation` | Verify consistency | Brownfield |
 | Impact analysis | `test-impact` | TDAD-style | Brownfield |
 
-Based on MSR 2026 research (agents use mocks 36% vs 26% humans):
-
-**Anti-patterns to flag:**
-- ❌ Mock count > 3 per test
-- ❌ Mocks for simple objects (use real objects instead)
-- ❌ 100% coverage target (coverage ≠ test quality)
-- ❌ Snapshot tests for non-UI components
-- ❌ Single-run validation (agents are non-deterministic)
-- ❌ Same AI for both code AND test generation (circular validation)
-- ❌ Presence tests — assertions that source text exists (grep/regex over code, string-presence checks). They pass on broken logic and break on refactors. Allowed only when they constrain topology, counts, or refusal shapes, with the caught regression named.
-- ❌ Assertion Roulette — many assertions per test with no single behavior under test (AI tests show higher assertion density than human tests, MSR 2026). One behavior per test; a failure must name its cause.
-- ❌ Unreasoned oracles — assertions that execute code without capturing faulty behavior. LLM faults that matter are missed because oracles don't assert the failure mode (Hamidi et al., Sep 2026). Every assertion must answer: "which wrong behavior would make this fail?"
+**Anti-patterns:** canonical list in `guard-contract.md` — do not copy here.
 
 ### Step 6: Evaluate Mutation Testing Fit
 
@@ -75,8 +57,10 @@ Mutation testing evaluates whether a test suite would **notice a regression** �
 
 **Decision flow (cheapest verdict first — adequacy is not the goal):**
 
-1. **Hand-mutation per critical invariant** (free, immediate) — invert or remove the guarded behavior; the test must fail. A test that stays green on broken code is rejected. Stop here when every critical invariant is covered.
+1. **Hand-mutation per critical invariant** (free, immediate) — invert or remove the guarded behavior; the test MUST FAIL. A test that stays green on broken code is rejected — this is the hard gate, not an advisory check. Stop here when every critical invariant is covered.
 2. **Extreme mutation** (pseudo-tested methods) once the suite is mature and CI budget exists — minutes instead of hours, and findings map directly to weak tests. This is the ceiling for most projects: beyond it, cost exceeds signal.
+
+Sequence per scope: FAIL-OBSERVED-FREEZE-PASS — write the guard from the planned case and observe it FAIL, record the observed FAIL, freeze the guard text, then implement to PASSING. Never edit the frozen guard to make it pass.
 
 Full mutation tooling (Stryker, mutmut, PIT, go-mutate) is **not recommended by default**: it only marginally outperforms coverage on real faults while oracles remain the bottleneck (Hamidi et al., Sep 2026), triage costs ~4.6 min per mutant with ~33% unproductive (Just et al.), and adequacy is neither practical nor desirable. Consider it only for safety-critical or regulated code with an already-mature suite — nightly, scoped to the regulated modules, no score targets.
 
@@ -91,32 +75,11 @@ Rationale: fix the weak-test signal, then stop — don't chase scores.
 5. Repeat (plateau ~4 iterations)
 ```
 
-**Anti-patterns for mutation testing with AI code:**
-- ❌ Same model that wrote code generates tests AND judges equivalent mutants (circular bias)
-- ❌ Full-suite mutation as per-PR gate (hours of CI, Zenseact 2023)
-- ❌ Any score target as a goal — no minimum is owed (not 50%, not 70%); stop when the weak-test signal is exhausted
-- ❌ No equivalent-mutant filter (>50% survival = noise, Facebook 2020)
-- ❌ Chasing 100% mutation score (adequacy is not the goal — kill the weak-test signal, then stop)
+**Mutation anti-patterns:** canonical list in `guard-contract.md` — do not copy here.
 
 ### Step 7: Create CI/CD Gates
 
-```yaml
-GATES:
-  critical_path_coverage:
-    condition: "missing required tests"
-    action: BLOCK
-    rationale: "Critical paths need executable regression checks"
-  
-  security_findings:
-    condition: "> 0 on critical paths"
-    action: BLOCK
-    rationale: "45% of AI code contains vulnerabilities (Veracode 2025)"
-  
-  flaky_rate:
-    condition: "> 5%"
-    action: WARN
-    rationale: "Agents generate non-deterministic tests"
-```
+Canonical table in `guard-contract.md` — do not copy here.
 
 ---
 

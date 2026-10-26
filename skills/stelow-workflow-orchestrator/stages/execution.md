@@ -1,11 +1,7 @@
-## Execution: Supervisor + Scope Execution
+## Execution: Scope Execution
 
 > **Part of stelow** — See [`SKILL.md`](../SKILL.md) for stage sequence, safety rules, and capability reference.
 > **Tool Restrictions:** See `stages.yaml` for blocked/allowed tools in this stage.
-### ⚠️ Activate the supervisor ONLY during execution
-**Never activate during stages before Execution.** The supervisor would re-submit visual review.
-**Activate in Execution stage only** — when starting scope execution.
-
 ### ⚠️ Context Rot + Plan Staleness Check (before executing)
 
 **Reading spec-tech.md from disk.** The plan was generated in a previous session
@@ -33,6 +29,20 @@ fi
 ```
 
 The selected interface contains the work pattern, breadboarding, ASCII sketches, interaction flow, and trade-off analysis. Follow its direction — do NOT regenerate or reinterpret the interface during execution.
+
+### Read Selected Architecture Artifact
+
+If an architecture was chosen and saved as `selected-architecture.md`, read it for construction direction:
+
+```bash
+ARCHITECTURE=".stelow/{YYYY-MM-DD}/{_dir}/architecture/selected-architecture.md"
+if [ -f "$ARCHITECTURE" ]; then
+  echo "SELECTED_ARCHITECTURE_FOUND"
+  cat "$ARCHITECTURE"
+fi
+```
+
+The selected architecture contains the construction pattern, component sketch, construction flow, and trade-off analysis. Follow its direction — do NOT regenerate or reinterpret the architecture during execution.
 
 ### ⚠️ Plan Staleness Detection (before scope execution)
 
@@ -123,32 +133,31 @@ of truth — harness-native todos are display-only.
 
 > **Goal system:** See `../references/cli-tools/goals.md` for all scope types —
 > optimization scopes use the acceptance contract with benchmark verify commands.
+> Every scope reads its frozen contract (`scopes/{scope-id}.json`:
+> `test_map` / `freeze_sha` / `red_proof` / `baseline`); a scope with an
+> unmapped AC (AC-sem-teste) is rejected before dispatch.
 
-**Before routing, read appetite from spec-product.md.**
-```bash
-APPETITE=$(grep -oP '^appetite:\s*\K\S+' .stelow/{YYYY-MM-DD}/{_dir}/plans/spec-product_{v}.md 2>/dev/null || echo "Core")
-```
+**No separate supervision pass is needed here, and none is registered.** An
+earlier revision of this stage read a `supervisor` knob (`low`/`med`/`high`)
+from `spec-product.md` and activated a mid-flight checkpoint every 3 to 10 tool
+calls. That knob was retired: it steered nothing a scope-close gate did not
+already prove, and each checkpoint cost a full headless harness spawn — the most
+expensive operation this reference describes, spent to re-read work the
+acceptance contract verifies with evidence on disk. Drift has a door without it:
+the parent-controlled loop re-delegates on a failed verify with a fresh context
+per iteration, and the close gates below refuse the scope outright.
 
-**Supervisor decision by appetite** (see `../references/cli-tools/supervise.md` for full reference):
+The columns that remain are the enforcement that does run, per scope type:
 
-| Appetite | Supervisor | Sensitivity | Human-in-loop | Rationale |
-|----------|-----------|-------------|---------------|----------|
-| `Lean` | **Activate** | `low` | No | Even small scopes can drift over multiple turns. Low sensitivity catches clear deviations without false-positive noise. |
-| `Core` | **Activate** | `medium` | No | Standard feature scope. Medium sensitivity balances steering vs autonomy. |
-| `Complete` | **Activate** | `high` | No | High-risk, multi-scope work. High sensitivity ensures drift is caught early. |
-
-> **Human-in-loop is controlled by Review Mode** (from `stelow.json#workflows[].config.review_mode`), not by appetite.
-> Review Mode = "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review", or "Product Spec + Interface + Tech Review + Code Diff" may add human approval checkpoints per PR.
-
-| Scope Type | Executor | Supervision |
+| Scope Type | Executor | Enforcement |
 |---|---|---|
 | `[TYPE] optimization` | acceptance contract (see `../references/cli-tools/goals.md`, Optimization Goals) | Metric verify (auto) |
 | `[EXECUTOR] optimization-goal` | acceptance contract (see `../references/cli-tools/goals.md`, Optimization Goals) | Metric verify (auto) |
 | Spike with metric | acceptance contract (see `../references/cli-tools/goals.md`, Optimization Goals) | Metric verify (auto) |
-| `feature` | iteration loop (see scope-executor Step 3 — implement → verify → review → quality, repeat until criteria met or `[MAX_ITERATIONS]` exhausted) | supervision checkpoint (DoD as outcome) |
-| Refactoring without metric | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | supervision checkpoint (DoD as outcome) |
-| Investigative spike | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | supervision checkpoint (DoD as outcome) |
-| Interface alternatives | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | supervision checkpoint (DoD as outcome) |
+| `feature` | iteration loop (see scope-executor Step 3 — implement → verify → review → quality, repeat until criteria met or `[MAX_ITERATIONS]` exhausted) | acceptance contract (DoD as outcome) + red-first close gate |
+| Refactoring without metric | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | acceptance contract |
+| Investigative spike | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | acceptance contract |
+| Interface alternatives | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | acceptance contract |
 | `test-unit` | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | Testing gates (see below) |
 | `test-integration` | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | Testing gates (see below) |
 | `test-security` | acceptance contract (see `../references/cli-tools/goals.md`) — without native acceptance: parent-controlled loop | Testing gates (see below) |
@@ -156,49 +165,29 @@ APPETITE=$(grep -oP '^appetite:\s*\K\S+' .stelow/{YYYY-MM-DD}/{_dir}/plans/spec-
 
 ### When starting execution of each scope:
 
-1. **Read appetite** from spec-product.md:
-   ```bash
-   APPETITE=$(grep -oP '^appetite:\s*\K\S+' .stelow/{YYYY-MM-DD}/{_dir}/plans/spec-product_{v}.md 2>/dev/null || echo "Core")
-   ```
+1. **No supervision pass to start.** The retired `supervisor` knob is gone; the
+   enforcing gates are scope close (red-first + frozen acceptance, below) and
+   the parent-controlled loop's verify step.
 
 2. **Feature/refactor/spike without metric → acceptance contract** (see `../references/cli-tools/goals.md`)
    - Without native acceptance: **parent-controlled loop** (delegate → verify → fix → repeat, no discussion, starts immediately)
-   - **Supervisor:** See the canonical appetite-based decision table in `execution:20` above. Activate a supervision checkpoint with outcome="Execute scope '{scope_name}' per spec-tech.md. DoD: {DoD}. AC: {acceptance criteria}. Do not deviate from approved scope." Add `sensitivity: "medium"` if appetite = Core.
-   - The supervisor detects deviation and re-centers if the LLM leaves scope
+   - Drift is caught by the verify commands and the close gates, not by a mid-flight reader
 
 3. **Optimization/spike with metric → acceptance contract** (see `../references/cli-tools/goals.md`, Optimization Goals)
-   - No supervisor needed (acceptance contract with benchmark verify is self-supervising via metric)
+   - The acceptance contract with benchmark verify is self-enforcing via metric
 
 3. **If blocked:** record the blockage with reason, pause the scope, flag to user
 
 4. **Scope adjustment:** re-plan the scope if it needs modification during execution (never silently expand)
 
-> **Tip:** supervision checkpoints are especially useful for long scopes where the LLM
-> may forget the original objective. Activate WHEN STARTING the scope, not before.
+> **Tip:** the acceptance contract is most valuable on long scopes where the LLM
+> may lose the original objective. Its verify commands run at scope start and
+> again at close — the two points where the DoD is actually checked.
 
 ### execution:20 — Testing Gates (AI-Aware Testing for Software Products)
 
-**For test-* scopes, hard blocks are enforced:**
-
-| Gate | Condition | Action | Rationale |
-|------|-----------|--------|----------|
-| **Critical Path Tests** | missing required tests | 🔴 BLOCK | AI code has 1.7x more bugs; critical paths need executable regression checks |
-| **Security Findings** | security_findings > 0 on critical paths | 🔴 BLOCK | 45% of AI code contains vulnerabilities (Veracode 2025) |
-| **Flaky Tests** | flaky_rate > 5% | 🟡 WARN | Agents generate non-deterministic tests |
-| **Test Execution** | duration > 10min | 🟡 WARN | CI/CD pipeline impact |
-
-**Security scanning:**
-- Run SAST on every commit for critical paths
-- Block if CVSS >= 7.0 vulnerabilities found
-- 2.5x more critical vulnerabilities in AI code (ACM TOSEM)
-
-**Anti-patterns to detect:**
-- ❌ Over-mocking (>3 mocks per test) — agents use mocks 36% vs 26% for humans
-- ❌ 100% coverage target — coverage ≠ test quality
-- ❌ Single-run validation — agents are non-deterministic
-- ❌ Snapshot tests for non-UI components
-
-See the `stelow-workflow-testing-ai-code` skill
+Canonical gates + anti-patterns: `../../stelow-workflow-testing-ai-code/references/guard-contract.md`.
+For test-* scopes, hard blocks enforced per that contract. See the `stelow-workflow-testing-ai-code` skill.
 
 ## Execution — AUTOMATIC
 
@@ -214,9 +203,9 @@ After visual review approval on spec-tech_v{N}.md:
 
 | Scope Type | Executor | Command |
 |------------|----------|--------|
-| `feature` | acceptance contract (see `../references/cli-tools/goals.md`) + supervision checkpoint | see the `stelow-workflow-scope-executor` skill for instructions |
+| `feature` | acceptance contract (see `../references/cli-tools/goals.md`) | see the `stelow-workflow-scope-executor` skill for instructions |
 | `optimization` | acceptance contract (see `../references/cli-tools/goals.md`, Optimization Goals) | see the `stelow-workflow-scope-executor` skill for instructions |
-| `spike` | acceptance contract (see `../references/cli-tools/goals.md`) + supervision checkpoint | see the `stelow-workflow-scope-executor` skill for instructions |
+| `spike` | acceptance contract (see `../references/cli-tools/goals.md`) | see the `stelow-workflow-scope-executor` skill for instructions |
 | `test-*` | acceptance contract (see `../references/cli-tools/goals.md`) + testing gates | see the `stelow-workflow-scope-executor` skill for instructions |
 
 ### Executing Scopes
@@ -271,21 +260,18 @@ Run `thermo-nuclear-code-quality-review` when all of these are true:
 
 1. `product_type` is `software` or `hybrid`
 2. the diff includes code changes
-3. at least one appetite/review mode condition below is true
+3. at least one quality/review mode condition below is true
 
-#### Appetite + review mode matrix
+#### Quality + review mode matrix
 
-| Appetite | Review Mode | Decision |
+| Quality | Review Mode | Decision |
 |----------|-------------|----------|
-| `Lean` | any | **Skip** unless the user explicitly requests it. |
-| `Core` | `Auto` / `Product Spec Gate` | **Skip** unless risk is high. |
-| `Core` | `Product Spec + Interface Gates` / `Product Spec + Interface + Scopes` | Run when risk is high. |
-| `Core` | `Product Spec + Interface + Tech Review` | Run when risk is high or the diff is meaningful. |
-| `Complete` | `Auto` / `Product Spec Gate` | **Run** if code changed. Resolve/document findings without asking. |
-| `Complete` | `Product Spec + Interface Gates` | **Run** if code changed. Escalate P0/P1 gaps to the user. |
-| `Complete` | `Product Spec + Interface + Scopes` | **Run** if code changed. P0/P1 gaps need fix or explicit human acceptance. |
-| `Complete` | `Product Spec + Interface + Tech Review` | **Mandatory** for software/hybrid code changes. |
-| `Complete` | `Product Spec + Interface + Tech Review + Code Diff` | **Mandatory** for software/hybrid code changes. Code diff gate runs after fix. |
+| `experimental` | any | **Skip** unless the user explicitly requests it. |
+| `production` | `Auto` / `Product Spec Gate` | **Run** if code changed. Resolve/document findings without asking. |
+| `production` | `Product Spec + Interface Gates` | **Run** if code changed. Escalate P0/P1 gaps to the user. |
+| `production` | `Product Spec + Interface + Scopes` | **Run** if code changed. P0/P1 gaps need fix or explicit human acceptance. |
+| `production` | `Product Spec + Interface + Tech Review` | **Mandatory** for software/hybrid code changes. |
+| `production` | `Product Spec + Interface + Tech Review + Code Diff` | **Mandatory** for software/hybrid code changes. Code diff gate runs after fix. |
 
 #### High-risk trigger
 

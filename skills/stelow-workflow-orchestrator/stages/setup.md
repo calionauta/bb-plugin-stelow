@@ -240,7 +240,7 @@ After identifying the workflow:
 
 4. **Map artifacts to completed stages**:
    - Approval in `.stelow/approvals/` → that stage's gate has passed
-   - `spec-product.md` exists → Shape Up stage completed
+   - `spec-product.md` exists → Shaping stage completed
    - `interfaces.md` exists → Interface stages completed
    - `critique-report.md` exists → Product Critique stage completed
    - `spec-tech.md` exists and approved → Tech Planning stage completed
@@ -272,55 +272,84 @@ fi
 If `GROUP_MODE: true`, prefix the session with:
 > **Group mode active.** This workflow shapes ALL items in the group together under one spec. Each group item becomes a separate typed scope during Tech Planning. IN/OUT boundaries apply to the whole group.
 
-This propagates to the Shape Up stage: the spec's `## IN` / `## OUT` sections cover the entire group, and each item in the group becomes a dedicated section under `## Solution`. The gate approves the group spec as a whole — individual item veto is treated as a scope adjustment.
+This propagates to the Shaping stage: the spec's `## IN` / `## OUT` sections cover the entire group, and each item in the group becomes a dedicated section under `## Solution`. The gate approves the group spec as a whole — individual item veto is treated as a scope adjustment.
 
-### setup:15 — Appetite Declaration
+### setup:15 — Run Knobs Declaration
 
-**Before stage selection, the human declares appetite.**
+**Before stage selection, the human declares the run knobs.**
 
-Appetite defines the **depth of scope** (what the LLM prepares). Review Mode will be asked separately in `setup:16`.
+The knobs define **how much the run may consider and how rigorously it is
+checked** (never how long it takes — wall-clock time under agents is not
+predictable, so no knob is ever framed in days, weeks, or sprints).
+Review Mode will be asked separately in `setup:16`.
 
-> **⚠️ IMPORTANT:** Appetite and Review Mode are TWO SEPARATE decisions. Ask them as two separate `ask_user_question` calls. NEVER combine them into one question. Appetite is asked first (here), Review Mode is asked second (setup:16).
+> **⚠️ IMPORTANT:** Run knobs and Review Mode are TWO SEPARATE decisions. Ask them as two separate `ask_user_question` calls. NEVER combine them into one question. Knobs are asked first (here), Review Mode is asked second (setup:16).
 
-#### Step 1: Ask Appetite
+#### Step 1: Ask quality and exploration
 
-Use **Pattern 7 (Appetite Declaration)** from `ask-patterns.md`.
+Use **Pattern 7 (Run Knobs Declaration)** from `ask-patterns.md`.
 
-Present three options for appetite:
+Present two questions in one call:
 
 ```
 ask_user_question({
-  questions: [{
-    question: `How deep should the plan be?
-This sets the appetite — how much scope the LLM should prepare.
-Appetite defines scope depth, NOT time or calendar duration.
-Review Mode will be asked separately in the next step.`,
-    header: "Appetite",
-    options: [
-      { label: "Lean", description: "Quick validation — 1 minimal feature, ~1 page spec, 1-2 scopes. No edge cases." },
-      { label: "Core (Recommended)", description: "One feature product, main Job To Be Done — ~3 page spec, 3-5 scopes, obvious edge cases." },
-      { label: "Complete", description: "Multi-feature product — ~8+ page spec, 8-15 scopes, full edge case mapping, 3-5 implementation strategies compared with trade-offs." }
-    ]
-  }]
+  questions: [
+    {
+      question: `Which rigor for verification?
+Production checks everything the same way every time. Experimental runs lighter, and only for probes that will not ship as-is.`,
+      header: "Quality",
+      options: [
+        { label: "Production (Recommended)", description: "Full paths, edge cases, parallel reviewers, full test layers including security where applicable, full critique depth." },
+        { label: "Experimental", description: "Reduced paths and checks for probes and idea evolution. Never ship as-is without upgrading to Production." }
+      ]
+    },
+    {
+      question: `How many directions should divergence compare?
+A hybrid synthesis is produced whenever more than one direction exists. Review Mode will be asked separately in the next step.`,
+      header: "Explore",
+      options: [
+        { label: "2 + hybrid", description: "Two most-differentiated directions plus a hybrid synthesis." },
+        { label: "3 + hybrid (Recommended)", description: "Three directions plus a hybrid synthesis." },
+        { label: "4 + hybrid", description: "Four directions plus a hybrid synthesis." },
+        { label: "5 + hybrid", description: "Five directions plus a hybrid synthesis. Heaviest preparation." },
+        { label: "1 single", description: "One direct direction, no hybrid. Trivial changes only, by explicit choice." }
+      ]
+    }
+  ]
 })
 ```
 
-**Validate the appetite value:**
+**Validate the knob values:**
 ```bash
-VALID_APPETITES="Lean Core Complete"
-if ! echo "$VALID_APPETITES" | grep -qw "{chosen_appetite}"; then
-  echo "INVALID_APPETITE: '{chosen_appetite}' must be one of: Lean, Core, Complete"
+VALID_QUALITY="production experimental"
+VALID_EXPLORATION_COUNT="1 2 3 4 5"
+if ! echo "$VALID_QUALITY" | grep -qw "{chosen_quality}"; then
+  echo "INVALID_QUALITY: '{chosen_quality}' must be one of: production experimental"
+  exit 1
+fi
+if ! echo "$VALID_EXPLORATION_COUNT" | grep -qw "{chosen_exploration_count}"; then
+  echo "INVALID_EXPLORATION_COUNT: '{chosen_exploration_count}' must be one of: 1 2 3 4 5"
   exit 1
 fi
 ```
 
-**Cut policy tied to appetite:**
+**Cut policy tied to exploration breadth:**
 
-| Appetite | Cut first |
+| Breadth | Cut first |
 |----------|-----------|
-| Lean | Edge cases, secondary flows, alternative strategies, non-critical integrations. Keep only the happy path. |
-| Core | Low-value variants. Keep the main JTBD, obvious edge cases, and one alternative only if it changes the core flow. |
-| Complete | Cut nothing unless impossible. Keep full edge case mapping, multiple implementation strategies, and domain context. |
+| 1 direction | Everything but the direct path. Trivial changes only. |
+| 2–3 directions | Low-value variants. Keep the main JTBD and obvious edge cases. |
+| 4–5 directions | Cut nothing unless impossible. Keep full edge case mapping and domain context. |
+
+Quality is never cut: Production verifies every scope the same way regardless
+of breadth. Only an explicit Experimental choice runs lighter, and its output
+must be upgraded before shipping.
+
+**Legacy appetite mapping (deprecated alias):** states carrying only a legacy
+`appetite:` and no knobs resolve as Lean → {quality production,
+exploration 2}, Core → {production, 3}, Complete → {production, 5}.
+Rigor always resolves to the strongest level; breadth preserves the old intent.
+The mapping is announced once when applied — never silent.
 
 ### setup:16 — Review Mode Declaration
 
@@ -349,7 +378,7 @@ Review Mode is orthogonal to appetite: appetite defines depth, review mode defin
     options: [
       { label: "Auto", description: "No gates, no questions, no visual review. AI resolves all gaps without asking." },
       { label: "Product Spec Gate", description: "One visual review gate on the shaped product spec. AI resolves all gaps without asking. No IN/OUT confirmation." },
-      { label: "Product Spec + Interface Gates", description: "Product spec gate + interface gate. User picks the UI direction from generated alternatives. AI resolves trivial gaps, asks about moderate/critical." },
+      { label: "Product Spec + Interface Gates", description: "Product spec gate + interface gate. User picks the UI direction from the contrast options. AI resolves trivial gaps, asks about moderate/critical." },
       { label: "Product Spec + Interface + Scopes", description: "All product gates including scope IN/OUT confirmation after gate approval. User adjusts boundaries. AI resolves trivial gaps, asks about moderate/critical." },
       { label: "Product Spec + Interface + Tech Review", description: "All product gates + tech plan gate (visual review on spec-tech.md) + technical questions. Full pipeline oversight with AI recommendations." },
       { label: "Product Spec + Interface + Tech Review + Code Diff", description: "All gates including code diff review via visual review. Maximum human oversight: spec → interfaces → scopes → tech plan → code diff." }
@@ -379,7 +408,10 @@ const path = 'stelow.json';
 const t = JSON.parse(fs.readFileSync(path, 'utf8'));
 const wf = t.workflows[t.workflows.length - 1];
 wf.config = {
-  appetite: '{chosen_appetite}',
+  quality: '{chosen_quality}',
+  exploration_count: '{chosen_count}',
+  exploration_hybrid: '{chosen_hybrid}',
+  appetite: '{chosen_appetite_alias}',
   review_mode: '{chosen_review_mode}',
   domains_detected: []
 };
@@ -387,29 +419,33 @@ t.updated = new Date().toISOString();
 fs.writeFileSync(path, JSON.stringify(t, null, 2));
 console.log('Config saved to stelow.json (workflow: ' + wf.name + ')');
 "
+# `{chosen_appetite_alias}` is the deprecated Lean/Core/Complete label derived
+# from exploration breadth (1-2 → Lean, 3 → Core, 4-5 → Complete), written for
+# one release line so old hosts keep working. Knobs above are canonical.
 # stelow.json is the only file persisted — later stages update it directly
 # (`scripts/stelow advance`, `scripts/stelow sync-scopes`).
 ```
 
 #### Step 4: Inject into spec-product.md frontmatter
 
-When the LLM generates `spec-product.md` later in the Shape Up stage, it MUST include:
+When the LLM generates `spec-product.md` later in the Shaping stage, it MUST include:
 ```yaml
-appetite: {chosen_appetite}
-appetite_source: setup
+quality: {chosen_quality}            # production | experimental (human-set)
+exploration_count: {chosen_count}    # 1-5 (human-set)
+exploration_hybrid: {true|false}     # hybrid synthesis whenever count >= 2
 review_mode: {chosen_review_mode}
 review_mode_source: setup
 domains_detected: {json_array_from_config}  # populated by context:20
 ```
-The Shape Up validation guard will reject the file if `appetite:` or `review_mode:` is missing. `domains_detected:` is also required if any domain was detected by `context:20`. All three are **canonical inputs** for downstream subagents — they read the frontmatter explicitly via `reads: [spec-product.md]` rather than receiving these values through conversation history.
-The Shape Up stage runs a preliminary mechanical check (scope count, spec size) and writes `appetite_fit`. The **Plan Critique** stage validates it via its fresh-context feasibility reviewer — this reuses the existing 5-reviewer infrastructure. If the critique finds `cuts_needed` or `reshape`, the scope must be
-cut or reshaped. Appetite is a constraint, not a target — never extended.
+A legacy `appetite:` line is still accepted and mapped per the table in setup:15, then rewritten to knobs. The Shaping validation guard rejects the file if `quality:` is missing; `review_mode:` and `domains_detected:` (when domains were detected) are required as before. All are **canonical inputs** for downstream subagents — they read the frontmatter explicitly via `reads: [spec-product.md]` rather than receiving these values through conversation history.
+The Shaping stage runs a preliminary mechanical check (scope count against the ceiling of 9) and writes `appetite_fit`. The **Plan Critique** stage validates it via its fresh-context feasibility reviewer — this reuses the existing 5-reviewer infrastructure. If the critique finds `cuts_needed` or `reshape`, the scope must be
+cut or reshaped. Knobs are constraints, not targets — never widened.
 
 > **Rules:**
-> 1. Appetite is FIXED for the cycle. The LLM cannot extend it.
-> 2. If scope doesn't fit appetite, the LLM splits scope — the human decides final.
+> 1. Knobs are FIXED for the cycle. The LLM cannot widen them.
+> 2. If scope doesn't fit the knobs, the LLM splits scope — the human decides final.
 > 3. Review Mode is fixed for the cycle. The LLM cannot change which gates run.
-> 4. Sub-skills called standalone always run in "Product Spec + Interface + Scopes" mode.
+> 4. Sub-skills called standalone always run in "Product Spec + Interface + Scopes" mode with Production quality.
 
 ---
 
@@ -424,9 +460,9 @@ cut or reshaped. Appetite is a constraint, not a target — never extended.
 
 | Review Mode | Stage selection |
 |-------------|----------------|
-| Auto | Auto-selects Shape Up → Execution (auto-determined). Skip Pattern 5 entirely. |
-| Product Spec Gate | Auto-selects Shape Up → Critique → Gate → Interface (LLM-recommended) → Planning → Plan.Gate → Execution. Skip Pattern 5 entirely. |
-| Product Spec + Interface Gates | Show Pattern 5 (recommended: Shape Up + Interface). |
+| Auto | Auto-selects Shaping → Execution (auto-determined). Skip Pattern 5 entirely. |
+| Product Spec Gate | Auto-selects Shaping → Critique → Gate → Interface (LLM-recommended) → Planning → Plan.Gate → Execution. Skip Pattern 5 entirely. |
+| Product Spec + Interface Gates | Show Pattern 5 (recommended: Shaping + Interface). |
 | Product Spec + Interface + Scopes | Show Pattern 5 (recommended: all stages). |
 | Product Spec + Interface + Tech Review | Show Pattern 5 (recommended: all stages). |
 | Product Spec + Interface + Tech Review + Code Diff | Show Pattern 5 (recommended: all stages). |
@@ -452,12 +488,12 @@ cut or reshaped. Appetite is a constraint, not a target — never extended.
 
 | User selection | Stages that run automatically |
 |---|---|
-| Shape Up only | Shape Up → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
+| Shaping only | Shaping → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
 | Interface only | Interface Brain. → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
-| Shape Up + Interface | Shape Up → Interface Brain. → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
+| Shaping + Interface | Shaping → Interface Brain. → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
 | Tech Planning only | Tech Planning (with its own **Review Gate**) → Execution |
-| Shape Up + Tech Planning | Shape Up → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
-| All | Shape Up → Interface Brain. → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
+| Shaping + Tech Planning | Shaping → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
+| All | Shaping → Interface Brain. → **Product Critique** → **Review Gate** → Tech Planning (no gate) → Execution |
 
 **Product Critique** and **Review Gate** never appear as options — they are automatic.
 

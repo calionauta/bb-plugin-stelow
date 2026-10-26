@@ -20,7 +20,7 @@ metadata:
   author-url: https://github.com/calionauta
 ---
 
-**Standalone awareness:** inside stelow, appetite gates critique depth (Lean → static a11y baseline, Core → codebase mode, Complete → live site). Standalone defaults to Core appetite (codebase/browserless mode, ~80% coverage). Works with URL, source directory, or screenshot — no stelow dependency for core audit logic.
+**Standalone awareness:** inside stelow, quality gates critique depth (experimental → static a11y baseline, production → live site). Standalone defaults to production quality (live-site mode when a URL exists, else codebase/browserless mode, ~80% coverage). Works with URL, source directory, or screenshot — no stelow dependency for core audit logic.
 
 # UX Critique
 
@@ -44,30 +44,28 @@ Accepts **3 input types**, each activating a different subset of dimensions:
 | **Codebase** | Source code directory | **~80%** without browser (except exact contrast, real keyboard, screen reader) |
 | **Screenshot** | `.png` `.jpg` `.webp` file | **~60%** — visual hierarchy, AI slop, estimated contrast, cognitive load |
 
-### Appetite Gate (auto-skip for scopes without UI changes)
+### Quality Gate (auto-skip for scopes without UI changes)
 
 **Before running UX critique**, check if the scope involves visual UI changes
-and if appetite warrants a full audit.
+and if quality warrants a full audit.
 
 ```bash
-# Read appetite from stelow context or env var; default Core (via canonical helper).
+# Read quality from stelow context or env var; default production (via canonical helper).
 WF_DIR="$(ls -td .stelow/*/*/ 2>/dev/null | head -1)"
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]:-$0}")/../../stelow-workflow-orchestrator/references/cli-tools/read-config.sh"
-APPETITE="${APPETITE:-$(stelow_read_appetite)}"
+QUALITY="${QUALITY:-$(stelow_read_quality)}"
 # Check if any visual files changed (entity evidence first, churn count fallback)
 UI_FILES=$(sem diff --format json HEAD~1 2>/dev/null | python3 -c "import sys,json; print(sum(1 for e in json.load(sys.stdin).get('entities', []) if str(e.get('file','')).endswith(('.templ','.html','.tsx','.jsx','.css'))))" 2>/dev/null || git diff --name-only HEAD~1 2>/dev/null | grep -cE '\.(templ|html|tsx|jsx|css)$' || echo "0")
 ```
 
-| Appetite | UI files changed | Action |
+| Quality | UI files changed | Action |
 |----------|-----------------|--------|
-| `Lean` | any | **Static a11y/lint baseline.** No browser/live audit unless upgraded. |
-| `Core` | 0 | **Static a11y/lint baseline.** No browser. Skip full audit when no UI changed. |
-| `Core` | 1+ | **Codebase mode (~80%).** No browser. Syntactic a11y + AI slop only. |
-| `Complete` | 0 | **Skip** (no UI to audit) |
-| `Complete` | 1+ | **Live Site mode.** Full audit with browser + real a11y. Human reviews report in Product Spec + Interface + Scopes / Product Spec + Interface + Tech Review mode. |
+| `experimental` | any | **Static a11y/lint baseline.** No browser/live audit unless upgraded. Probes only. |
+| `production` | 0 | **Skip** (no UI to audit) |
+| `production` | 1+ | **Live Site mode.** Full audit with browser + real a11y. Human reviews report in Product Spec + Interface + Scopes / Product Spec + Interface + Tech Review mode. |
 
-**Rationale:** UX critique with a browser is expensive (opens URL, navigates, captures screenshots). For Lean, keep the static a11y/lint baseline; for Core, use codebase/browserless review; for Complete, run live-site audit when UI exists. Appetite changes audit depth, not whether UI quality matters.
+**Rationale:** UX critique with a browser is expensive (opens URL, navigates, captures screenshots). At experimental quality, keep the static a11y/lint baseline. At production quality, run live-site audit when UI exists. Quality changes audit depth, not whether UI quality matters.
 
 ### Standalone
 Read this file and jump to the relevant mode.
@@ -313,6 +311,7 @@ If agent_browser is not available (e.g. other CLIs), use Codebase mode
 
 See `../stelow-workflow-orchestrator/references/cli-tools/agent_browser.md` for availability details.
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -337,13 +336,15 @@ stage          : int-gate
 description    : Interface gate. Visual review of all interface proposals. Use `visual_review` tool (not bash).
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : selection
-gate           : none
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
+gate           : approval-required (visual_review)
 rework-on      : interface
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -353,7 +354,9 @@ the rest of this file (unchanged). Summary:
 
 > Interface gate. Visual review of all interface proposals. Use `visual_review` tool (not bash).
 
-Primary actions (per stages.yaml): `read, write`. Run only the actions that
+Primary actions (per stages.yaml): `read`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 

@@ -12,3 +12,6 @@ data/.skills-sync-state.json
 stelow.json
 # One-shot 0.3 migration backup
 .stelow-0.3-backup/
+
+# macOS metadata
+.DS_Store

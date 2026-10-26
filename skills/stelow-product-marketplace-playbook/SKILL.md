@@ -18,6 +18,8 @@ disable-model-invocation: true
 
 # Stimulating Marketplace: Supply and Demand
 
+*(The "white-hot center" concept used here comes from NFX.)*
+
 ## 19 Tactics to Stimulate Marketplaces
 
 ### Getting the Core Dynamics Right
@@ -123,6 +125,7 @@ Should NOT activate: "B2B SaaS tier pricing" (use stelow-product-pricing instead
 ### Picked tactics without market context
 - Go back to Research First; a thin-everywhere diagnosis without comparables is a guess.
 
+<!-- stelow:scope3:begin -->
 ## Entry (mode detection)
 
 When this skill loads, check for the stelow workflow marker:
@@ -144,16 +147,18 @@ In **workflow mode**, skip to `### Workflow slice` and emit a complete
 
 ```
 stage          : shape
-description    : Shape stage. Define appetite, hill chart, rabbit holes.
+description    : Shape stage. Define run knobs, hill chart, rabbit holes.
 status         : <done|partial|blocked>
 artifacts      : <paths created or modified>
-next-candidate : critique
+next-candidate : <the stage scripts/stelow next reports — run `scripts/stelow next`>
 gate           : none
 rework-on      : shape
 ```
 
-Workflow mode: emit the above Hand-off block verbatim, then stop. The
-router skill consumes the next-candidate field and calls
+Workflow mode: emit the above Hand-off block verbatim, then stop. Fill
+`next-candidate` from `scripts/stelow next`: it is the workflow's own
+answer, already accounting for this run's intent route and review mode.
+The router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
 ### Workflow slice
@@ -161,9 +166,11 @@ router skill consumes the next-candidate field and calls
 Workflow mode for the **shape** stage. Standalone behavior lives in
 the rest of this file (unchanged). Summary:
 
-> Shape stage. Define appetite, hill chart, rabbit holes.
+> Shape stage. Define run knobs, hill chart, rabbit holes.
 
 Primary actions (per stages.yaml): `read, write`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
+
+<!-- stelow:scope3:end -->
 
