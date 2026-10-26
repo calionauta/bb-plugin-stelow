@@ -57,6 +57,14 @@ for (const intent of WALK_INTENTS) {
     `${intent} is swept, or walks the same route as a swept intent`,
   );
 }
+// The policy condition is an `any_of` (experimental OR exploration_count 1), and
+// the walked entry satisfies both branches at once. Assert each branch alone so a
+// projection that read only `quality` — or only the count — fails here instead of
+// silently skipping nothing in production.
+for (const knobs of [{ quality: "experimental", explorationCount: 3 }, { quality: "production", explorationCount: 1 }]) {
+  const route = plannedRoute({ intent: REFERENCE_INTENT, reviewMode: "Auto", ...knobs });
+  assert.ok(!route.includes("context"), `the ${JSON.stringify(knobs)} policy excludes context on its own`);
+}
 const skippedCount = (mode) => (WORKFLOW_ROUTES.review_modes[mode]?.skipped ?? []).length;
 const sweptModes = [...new Set(SWEEP.map((entry) => entry.reviewMode))].filter((mode) => WALK_MODES.includes(mode));
 const sweptSkips = sweptModes.map(skippedCount);
