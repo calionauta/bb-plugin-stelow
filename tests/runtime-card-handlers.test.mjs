@@ -40,6 +40,50 @@ test("card advance preserves refusal, helper, respawn, update, publish order", a
   assert.deepEqual(calls.map(([name]) => name), ["helper", "respawn-via-band", "update", "stage", "publish"]);
 });
 
+test("card advance refuses an archived card before any workspace or helper work", async () => {
+  // The vendored helper has no terminal guard — run by hand, `stelow advance`
+  // moves an archived card to the next stage (recorded in .auto/prompt.md). The
+  // host is the guard, so this test pins the ORDER, not just the answer: an
+  // archived card must be refused before the workspace is resolved, before the
+  // artifact/question gates run, and before `runHelper` is ever called. A guard
+  // that fires after the helper has already mutated state is not a guard.
+  const reached = [];
+  const guard = (name) => async () => {
+    reached.push(name);
+    return null;
+  };
+  const advance = createCardAdvance({
+    getCard: () => ({ ...card(), status: "archived" }),
+    isArchivedCard: (value) => value.status === "archived",
+    cardWorkspace: async () => {
+      reached.push("workspace");
+      return { path: "/project", hostId: "host_1" };
+    },
+    stateDir: async () => "/project/state",
+    ensureArtifacts: guard("artifacts"),
+    questionGate: guard("question"),
+    runHelper: async () => {
+      reached.push("helper");
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    updateCard: () => reached.push("update"),
+    recordStageEvent: () => reached.push("stage"),
+    publishCard: () => reached.push("publish"),
+    requestGatePreReview: async () => undefined,
+    errors: { cardNotFound: "missing", cardArchived: "This card is archived.", workspaceUnavailable: "workspace" },
+  }, {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async () => undefined,
+  }).advanceCard;
+  assert.deepEqual(await advance({ cardId: "card_1", stage: "execution" }), {
+    ok: false,
+    stdout: "",
+    error: "This card is archived.",
+  });
+  assert.deepEqual(reached, [], "an archived card touches no workspace, gate, helper, or row");
+});
+
 test("card advance question refusal is a negative control", async () => {
   let helperRan = false;
   const services = {

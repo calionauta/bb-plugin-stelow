@@ -40,7 +40,7 @@ function stateAt(root, ...segments) {
 }
 
 /** Deps with every card path stubbed out; the cardless run never touches them. */
-function harness(root, { guard = null, helper = { code: 0, stdout: "advanced", stderr: "" } } = {}) {
+function harness(root, { guard = null, helper = { code: 0, stdout: "advanced", stderr: "" }, card, archived = false } = {}) {
   const calls = [];
   const deps = {
     errors: {
@@ -48,9 +48,9 @@ function harness(root, { guard = null, helper = { code: 0, stdout: "advanced", s
       cardArchived: "card archived",
       workspaceUnavailable: "workspace unavailable",
     },
-    isArchivedCard: () => false,
+    isArchivedCard: () => archived,
     // Cardless: no thread, so no card — the run below must never ask for one.
-    getCardByWorkerThread: () => undefined,
+    getCardByWorkerThread: () => card,
     cardWorkspace: async () => null,
     projectRoot: async () => root,
     stateDir: async () => null,
@@ -129,3 +129,22 @@ test("no cardless workflow runs the helper with no state dir, as before", async 
 });
 
 console.log("cardless advance CLI ok: single re-roots guard and helper, ambiguous refuses, none keeps project root");
+
+test("an archived card is refused before the guard or the helper runs", async () => {
+  // `advanceCard` is not the only door: the worker and the CLI both run
+  // `advanceCli`, which resolves the card from the worker thread. The vendored
+  // helper has no terminal guard, so this boundary is the one that keeps an
+  // archived card from moving; it must refuse BEFORE the artifact guard and
+  // before the helper mutates state.
+  const root = fixtureRoot();
+  const { calls, deps, services } = harness(root, {
+    card: { id: "card_1", kind: "build", status: "archived", dir_hash: null },
+    archived: true,
+  });
+
+  const result = await advanceCli(deps, services, ["advance", "context"], { threadId: "thr_1", projectId: "proj_1" });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stderr, "card archived");
+  assert.deepEqual(calls, [], "an archived card touches no artifact guard and no helper");
+});

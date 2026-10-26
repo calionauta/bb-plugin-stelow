@@ -61,7 +61,7 @@ async function runSeed(
   if (fromCard) return fromCard;
   const rootPath = await deps.projectRoot(projectId);
   if (!rootPath)
-    return { exitCode: 1, stderr: "Project workspace path is unavailable." };
+    return { exitCode: 1, stderr: "Project workspace path is unavailable — open or recover the project workspace, then retry." };
   const result = await deps.seedWorkflow(
     rootPath,
     workflowIdForName(name),

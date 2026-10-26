@@ -6,6 +6,7 @@ import {
   renderBundleManifest,
   resolveArtifactPath,
 } from "../../../lib/artifact-manifest.mjs";
+import { parseStageTrail } from "../../../lib/stage-trail.mjs";
 import {
   assignBundleNames,
   parseBundleManifest,
@@ -70,6 +71,8 @@ type BundleSources = {
   targetRel: string;
   targetAbs: string;
   workspacePath: string;
+  /** Entry and exit for every stage the card entered, from `state.md` history. */
+  trail: Array<{ stage: string; enteredAt: string | null; leftAt: string | null }>;
 };
 
 /** Shared run-bundle writer: `export` calls it on demand, `done` calls it on
@@ -120,6 +123,7 @@ async function readBundleSources(
     targetRel,
     targetAbs,
     workspacePath: workspace.path,
+    trail: parseStageTrail(stateBlob ?? ""),
   };
 }
 
@@ -284,9 +288,9 @@ async function writeBundle(
     cardName: card.name,
     stage: card.stage,
     generatedAt: new Date().toISOString(),
-    files,
-    missing,
+    files, missing,
     registered: sources.registered,
+    trail: sources.trail,
     gapTotals,
     tokens: await bundleTokenEvidence(deps, card),
   });

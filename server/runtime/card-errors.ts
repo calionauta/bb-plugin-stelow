@@ -8,7 +8,7 @@ import { CARD_ERRORS } from "./composition.js";
 
 export const ERRORS = {
   cardNotFound: CARD_ERRORS.cardNotFound,
-  cardArchived: "This card is archived.",
-  workspaceUnavailable: "Workspace is unavailable.",
+  cardArchived: "This card is archived. Restore it from Manage to move it again.",
+  workspaceUnavailable: "Workspace is unavailable — recover it from the card's Manage section, then retry.",
   presetNotFound: CARD_ERRORS.presetNotFound,
 } as const;
