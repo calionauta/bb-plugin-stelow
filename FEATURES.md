@@ -2169,7 +2169,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   embedded trailer counts the registration, and the table says both numbers
   (`N registered in state.md (M copied)`) so neither can be read as the
   other. Idempotent, path-confined to the workspace, stable
-  basenames (a repeated name gets a stage prefix, never an overwrite). The
+  basenames (a repeated name gets a stage prefix, never an overwrite). A
+  registration is read for its PATH, not its stage: an entry appended
+  without a `stage:` is still a document the card produced, so it is copied
+  (its row shows `?`) instead of vanishing from the bundle's record. The
   host refreshes the bundle automatically on every `done` and prints the
   trailer in the completion output — a reopened card that completes again
   refreshes it again — so the directory converges instead of rotting. The
