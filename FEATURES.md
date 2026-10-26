@@ -977,6 +977,25 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Unread is a view, not a work state** (`components/panels/inbox-panel.tsx`). Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.
+- **The answer and its wake are two facts** (`lib/answer-delivery.mjs`,
+  `server/runtime/answer-resume.ts`). Both doors commit the answers first and
+  wake the worker second, and the host answers a dispatch three ways: it sent
+  it, it queued it behind a hold, or it refused with its own words. The door
+  used to await a raw `threads.send` and throw that away, so a queued dispatch
+  read as a resume — the card claimed `running` for a turn nobody had started,
+  and the row resolved whether or not anything was woken. The recovery door was
+  worse: it swallowed a failed send with `.catch(() => undefined)`. Now one
+  verdict travels. `sent` adds no line, because the card's own activity is the
+  receipt. `queued` puts the card on `held` and shows the host's hold sentence,
+  which already names what releases it and that the reader is not the one who
+  has to. `refused` leaves the card `idle` and shows the host's reason plus the
+  exit — *Resume the card; the answers do not need re-entering* — because a
+  refusal without an exit is a deadlock with a good error message. The verdict
+  rides the RPC result (`delivery`, `deliveryLine`) and the CLI's stdout and
+  `--json`, because both doors reach the same handler and a fact only one of
+  them knows is a fact the other breaks. A dispatch nobody could read renders
+  as "the host did not say", never as delivered: the answers are certain, the
+  wake is not.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { NO_INPUT } from "./rpc-input.js";
 import { cardlessWorkflowRpcContract } from "./cardless-workflow-rpc-contract.js";
 import { BOARD_MOVE_COLUMNS } from "../lib/tracks.mjs";
-import { attachmentSchema, composerExecutionSchema } from "./contracts.js";
+import { answerResultSchema, attachmentSchema, composerExecutionSchema } from "./contracts.js";
 
 export const lifecycleRpcContract = {
   addCardComment: {
@@ -356,7 +356,7 @@ export const lifecycleRpcContract = {
           .max(12),
       })
       .strict(),
-    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+    output: answerResultSchema,
   },
   advanceCard: {
     experimental_description: "Advance a card to a stage preview under upstream transition rules",

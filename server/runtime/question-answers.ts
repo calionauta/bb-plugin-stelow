@@ -8,7 +8,7 @@ import {
   EXPIRED_QUESTION_ID_PREFIX,
   expiredQuestionId,
 } from "../../lib/question-evidence.mjs";
-import { expandInteractionQuestions, formatBatchContinuation, groupBatchAnswers } from "../../lib/question-batch.mjs";
+import { expandInteractionQuestions, groupBatchAnswers } from "../../lib/question-batch.mjs";
 import {
   answersFor,
   exclusivePickError,
@@ -18,13 +18,24 @@ import {
 } from "../../lib/question-exclusivity.mjs";
 import { recordSplitAnswer } from "../../lib/split-proposal.mjs";
 import type { ExecutionRun } from "../../lib/execution-run-ledger.mjs";
+import { answerDeliveryCardPatch, answerDeliveryLine } from "../../lib/answer-delivery.mjs";
+import type { AnswerDeliveryVerdict } from "../../lib/answer-delivery.d.mts";
 import type { WorkerCard } from "../workers-types.js";
+import { resumeExpiredAnswer, resumeFromDecisions } from "./answer-resume.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Answer = { questionId: string; answers: string[] };
 type Decision = { question: string; answers: string[] };
 type PendingAsk = { id: string; payload?: { title?: string } };
-type Result = { ok: boolean; answered: number; error: string | null };
+type Result = {
+  ok: boolean;
+  answered: number;
+  error: string | null;
+  /** What the resume did, or null when nothing was resumed (a refusal). */
+  delivery: AnswerDeliveryVerdict["delivery"];
+  /** The sentence to show beside the saved answer; null when a dispatched resume speaks for itself. */
+  deliveryLine: string | null;
+};
 type OpenRow = { id: string; thread_id: string; question: string; multiple: unknown; kind: unknown; options?: unknown };
 type AnswerRow = OpenRow & { answers: string[] };
 
@@ -57,7 +68,7 @@ export type BoundaryPortReader = {
   read: () => AnswerBoundaryPort | undefined;
 };
 
-type QuestionAnswersDeps = {
+export type QuestionAnswersDeps = {
   bb: BbPluginApi;
   db: Db;
   errors: { cardNotFound: string; cardArchived: string };
@@ -98,8 +109,25 @@ type QuestionAnswersDeps = {
   boundary?: BoundaryPortReader;
 };
 
-function refusal(error: string): Result {
-  return { ok: false, answered: 0, error };
+function refusal(error: string, answered = 0): Result {
+  // A refusal resumes nothing, so it carries no verdict: `null`, never `refused`.
+  // "The host refused to wake the worker" and "nothing was attempted" are
+  // different facts, and the second one must not borrow the first one's words.
+  //
+  // `answered` is not always 0: a boundary answer is committed before its run is
+  // asked to resume, so a refused boundary resume already recorded the answers.
+  return { ok: false, answered, error, delivery: null, deliveryLine: null };
+}
+
+/** A result that answers the questions, with the resume's verdict attached. */
+function delivered(answered: number, verdict: AnswerDeliveryVerdict): Result {
+  return {
+    ok: true,
+    answered,
+    error: null,
+    delivery: verdict.delivery,
+    deliveryLine: answerDeliveryLine(verdict),
+  };
 }
 
 function questionText(asks: PendingAsk[]): Map<string, string> {
@@ -181,37 +209,6 @@ function recordContractAnswers(
 }
 
 /**
- * Resumes the worker with the batch, unless this batch answered the run's own
- * native boundary — that decision resumes the RUN, and the thread is left
- * alone. Returns a refusal when the boundary answer could not be applied.
- */
-async function resumeFromDecisions(
-  deps: QuestionAnswersDeps,
-  cardId: string,
-  threadId: string,
-  decisions: Decision[],
-): Promise<{ boundaryResumed: boolean; error: string | null }> {
-  const port = deps.boundary?.read();
-  const boundaryRun = port
-    ? await port.routeAnswerContinuation(cardId, threadId, decisions)
-    : null;
-  if (boundaryRun && port) {
-    const resumeError = await port.resumeAfterAnswers(boundaryRun, decisions);
-    return { boundaryResumed: true, error: resumeError };
-  }
-  await deps.bb.sdk.threads.send({
-    threadId,
-    mode: "auto",
-    input: [{
-      type: "text",
-      text: formatBatchContinuation(decisions),
-      mentions: [],
-    }],
-  });
-  return { boundaryResumed: false, error: null };
-}
-
-/**
  * A recovery question answered with its bare row id lands here, and the older
  * wording blamed the card for a question that was very much open. Say which id
  * space the caller wants and name the way out: a refusal without an exit is a
@@ -245,8 +242,13 @@ async function answerQuestions(
       card.worker_thread_id,
       live.decisions,
     );
-    if (resume.error) {
-      return { ok: false, answered: live.decisions.length, error: resume.error };
+    // The boundary door keeps its own refusal: the run did not advance, and the
+    // answers belong to it, so there is nothing recorded to stand on.
+    if (resume.boundaryResumed && resume.verdict.delivery === "refused") {
+      return refusal(
+        resume.verdict.error ?? "The run could not be resumed.",
+        live.decisions.length,
+      );
     }
     const unanswered = live.pendingIds.filter((id) => !live.answeredIds.has(id));
     const openQuestionIds = [...unanswered, ...deps.openExpiredQuestionIds(input.cardId)];
@@ -260,8 +262,13 @@ async function answerQuestions(
       live.decisions,
       await premiseObservation(deps, input.cardId),
     );
-    deps.updateCard(input.cardId, answeredCardPatch(openQuestionIds.length > 0));
-    return { ok: true, answered: live.decisions.length, error: null };
+    deps.updateCard(input.cardId, {
+      ...answeredCardPatch(openQuestionIds.length > 0),
+      // A queued answer is a hold and a refused one woke nobody; only a sent
+      // dispatch leaves the answer patch's `running` standing.
+      ...answerDeliveryCardPatch(resume.verdict, card.last_assistant_text),
+    });
+    return delivered(live.decisions.length, resume.verdict);
   } catch (error) {
     return refusal(error instanceof Error ? error.message : "Unable to answer the questions.");
   }
@@ -367,21 +374,14 @@ async function answerExpiredQuestions(
   // used to write a differently-spelled comment per question, so a grep for a
   // satisfied contract could miss it.
   recordContractAnswers(deps, input.cardId, decisions.decisions, null, decisions.staleNotes);
-  // Same stale-error rule as live answers: answering clears the interrupted
-  // turn's failure so the recovered card reads coherent.
-  deps.updateCard(
-    input.cardId,
-    answeredCardPatch(deps.hasOpenQuestions(input.cardId, openQuestionIds)),
+  const verdict = await resumeExpiredAnswer(
+    deps,
+    card,
+    rows,
+    decisions.decisions,
+    openQuestionIds,
   );
-  deps.bb.realtime.publish("card-state", { cardId: input.cardId });
-  // Resume the CURRENT worker: the row's thread may be stale (restart / reseed
-  // archives the thread but keeps its expired questions).
-  const threadId = card.worker_thread_id ?? rows[0]?.thread_id ?? null;
-  if (threadId) {
-    await resumeFromDecisions(deps, input.cardId, threadId, decisions.decisions)
-      .catch(() => undefined);
-  }
-  return { ok: true, answered: decisions.decisions.length, error: null };
+  return delivered(decisions.decisions.length, verdict);
 }
 
 export function createQuestionAnswers(deps: QuestionAnswersDeps) {
