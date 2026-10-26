@@ -92,6 +92,15 @@ export type QuestionAnswersDeps = {
    * unreadable artifact.
    */
   premiseObservation?: (cardId: string) => Promise<PremiseObserver | null>;
+  /**
+   * The comments the card's next answer carries (`server/runtime/answer-feedback`):
+   * what a person wrote while reviewing, before they decided. Optional and
+   * fail-soft, like the premise observation — an unbound reader means no block,
+   * never a lost answer.
+   */
+  answerFeedback?: (cardId: string) => Promise<{ block: string | null; ids: string[] }>;
+  /** Mark the comments a SENT answer carried, so none of them rides twice. */
+  markAnswerFeedbackCarried?: (ids: string[]) => void;
   logCardComment: (
     cardId: string,
     targetType: string,
@@ -111,10 +120,7 @@ export type QuestionAnswersDeps = {
 
 function refusal(error: string, answered = 0): Result {
   // A refusal resumes nothing, so it carries no verdict: `null`, never `refused`.
-  // "The host refused to wake the worker" and "nothing was attempted" are
-  // different facts, and the second one must not borrow the first one's words.
-  //
-  // `answered` is not always 0: a boundary answer is committed before its run is
+  // `answered` is not always 0 — a boundary answer is committed before its run is
   // asked to resume, so a refused boundary resume already recorded the answers.
   return { ok: false, answered, error, delivery: null, deliveryLine: null };
 }

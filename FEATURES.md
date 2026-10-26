@@ -996,6 +996,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   them knows is a fact the other breaks. A dispatch nobody could read renders
   as "the host did not say", never as delivered: the answers are certain, the
   wake is not.
+- **A comment written while answering rides the answer** (`lib/answer-feedback.mjs`,
+  `server/runtime/answer-feedback.ts`). The comment box on an artifact is how a
+  reviewer says *why* before saying *what*: "approve, but rewrite this
+  paragraph". Sending it on its own woke the worker mid-read, so the picks
+  arrived as a second turn and the first turn acted on half a thought — two
+  resumes for one decision moment. Now a comment written while the card waits on
+  an answer (activity `awaiting-answer`, or an open recovery question) is written
+  to the card as always and left uncarried; the answer's resume prompt carries it
+  under **Feedback written while answering**, before the worker acts, and only a
+  dispatch that actually landed marks it carried. Nothing is lost when no answer
+  comes: the comment is on the card, and it rides the next answer instead. The
+  composer stops saying "sent to the agent" when it was only saved — it says the
+  comment goes with the answer, or that the host is holding it. The store is one
+  additive column (`comments.delivered_at`), so a held comment survives a crash,
+  a restart, and a card archived by mistake.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

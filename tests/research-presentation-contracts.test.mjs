@@ -15,6 +15,7 @@ import {
   conversation,
   answerBody,
   answerExpired,
+  answerResume,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
 const boardCard = boardCards.slice(
@@ -200,9 +201,14 @@ assert.match(
   "a palette open from a foreign thread says so instead of an empty card",
 );
 assert.match(
-  answerExpired,
+  answerResume,
   /formatBatchContinuation\(decisions\)/,
   "recovered answers use the same neutral continuation as live answers",
+);
+assert.match(
+  answerExpired,
+  /resumeExpiredAnswer/,
+  "the recovery door reaches that continuation instead of formatting its own",
 );
 assert.doesNotMatch(
   answerExpired,

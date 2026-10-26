@@ -202,6 +202,11 @@ export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number):
     ["kind", "TEXT NOT NULL DEFAULT 'standard'"],
     ["locale", "TEXT"],
   ]);
+  // A comment written while the card waits on an answer rides that answer
+  // instead of waking the worker mid-read (lib/answer-feedback). Null means no
+  // answer has carried it yet; the row itself is written as always, so a held
+  // comment survives an answer that never comes.
+  ensureColumns(db, "comments", [["delivered_at", "INTEGER"]]);
   ensureTrackableEventsTable(db);
   ensureAutoContinueColumns(db);
   createFeatureTables(db);

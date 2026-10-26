@@ -27,6 +27,7 @@ import { seedWorkflow } from "../workflow-seeding.js";
 import { createQuestionContractsGate } from "../question-contracts-gate.js";
 import { createCritiqueGapState } from "../critique-gap-state.js";
 import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader } from "../question-answers.js";
+import { markCommentsCarried, pendingAnswerComments } from "../answer-feedback.js";
 import { createGapSummary } from "../gap-summary.js";
 import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
@@ -135,6 +136,10 @@ function buildQuestionAnswers(
       const stateDir = await core.workflowStateDir(bb, rootPath, card.id, card.dir_hash).catch(() => null);
       return stateDir ? observeFromCard({ stateDir }) : null;
     },
+    // A comment written while the card waits on an answer rides that answer.
+    // Read here, marked carried only by the door that lands the send.
+    answerFeedback: async (cardId) => pendingAnswerComments(db, cardId),
+    markAnswerFeedbackCarried: (ids) => markCommentsCarried(db, ids, core.now()),
     logCardComment: core.ledger.logCardComment,
     updateCard,
     hasOpenQuestions: questions.hasOpenQuestions,

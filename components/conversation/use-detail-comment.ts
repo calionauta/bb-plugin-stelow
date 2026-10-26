@@ -19,6 +19,8 @@ export function useDetailComment({ cardId, onChanged }: {
       return;
     }
     setComment("");
+    // Saved is not sent: while a question waits, the comment rides the answer.
+    if (result.deliveryLine) toast.message(result.deliveryLine);
     await onChanged();
   }
 

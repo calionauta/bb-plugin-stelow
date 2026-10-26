@@ -50,14 +50,30 @@ export async function resumeFromDecisions(
         : { delivery: "sent", hold: null, error: null },
     };
   }
-  return {
-    boundaryResumed: false,
-    verdict: answerDeliveryOf(await sendWorkerInput(deps.bb, threadId, [{
-      type: "text",
-      text: formatBatchContinuation(decisions),
-      mentions: [],
-    }])),
-  };
+  // What the person wrote while reviewing rides the answer, and only the
+  // dispatch that landed marks it carried: a refusal leaves the comments pending
+  // for the next answer instead of losing them behind a send that never went.
+  const feedback = await readAnswerFeedback(deps, cardId);
+  const verdict = answerDeliveryOf(await sendWorkerInput(deps.bb, threadId, [{
+    type: "text",
+    text: [formatBatchContinuation(decisions), feedback.block].filter(Boolean).join("\n\n"),
+    mentions: [],
+  }]));
+  if (verdict.delivery === "sent" && feedback.ids.length > 0) {
+    deps.markAnswerFeedbackCarried?.(feedback.ids);
+  }
+  return { boundaryResumed: false, verdict };
+}
+
+/** The pending comments, fail-soft: an unbound reader means no block, not a failed answer. */
+async function readAnswerFeedback(
+  deps: QuestionAnswersDeps,
+  cardId: string,
+): Promise<{ block: string | null; ids: string[] }> {
+  if (!deps.answerFeedback) return { block: null, ids: [] };
+  return await deps
+    .answerFeedback(cardId)
+    .catch(() => ({ block: null, ids: [] as string[] }));
 }
 
 /**

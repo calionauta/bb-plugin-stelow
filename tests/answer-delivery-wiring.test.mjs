@@ -190,3 +190,49 @@ test("an absent boundary port answers as an ordinary worker continuation", async
   assert.equal(result.ok, true);
   assert.equal(calls.sends.length, 1);
 });
+
+// The other half of the rule: what the person wrote while reviewing rides the
+// answer itself, and only a dispatch that landed marks it carried. What
+// regresses if this fails: the comments are stamped as carried by an answer that
+// never went, so the worker never sees them and nothing says so.
+test("an answer carries the comments written while reviewing", async () => {
+  const carried = [];
+  const block = "## Feedback written while answering\n\n### Comment 1\n\nRe a.md: keep it";
+  const { deps, calls } = answerDeps({
+    deps: {
+      answerFeedback: async () => ({ block, ids: ["c1"] }),
+      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.delivery, "sent");
+  const text = calls.sends[0].input[0].text;
+  // The continuation leads: the answers are the instruction, the comments are
+  // what came with them.
+  assert.match(text, /^The user answered the pending question/);
+  assert.ok(text.indexOf("Feedback written while answering") > 0);
+  assert.match(text, /Re a\.md: keep it/);
+  assert.deepEqual(carried, ["c1"]);
+});
+
+test("a refused answer leaves its comments pending for the next one", async () => {
+  const carried = [];
+  const { deps } = answerDeps({
+    send: () => {
+      throw new Error("thread 1 is gone");
+    },
+    deps: {
+      answerFeedback: async () => ({ block: "## Feedback written while answering", ids: ["c1"] }),
+      markAnswerFeedbackCarried: (ids) => carried.push(...ids),
+    },
+  });
+  const result = await createQuestionAnswers(deps).answerQuestions({
+    cardId: "card_1",
+    answers: [{ questionId: "ask_1", answers: ["A"] }],
+  });
+  assert.equal(result.delivery, "refused");
+  assert.deepEqual(carried, [], "a comment is never marked carried by a send that failed");
+});

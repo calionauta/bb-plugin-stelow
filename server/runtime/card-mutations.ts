@@ -5,6 +5,10 @@ import { heuristicDisplayName } from "../../lib/draft-burst.mjs";
 import { needsNaming } from "../../lib/card-naming.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { commentDeliveryLine, answerFeedbackHolds } from "../../lib/answer-feedback.mjs";
+import { holdUpdates } from "../../lib/host-hold.mjs";
+import { openExpiredCount } from "./answer-feedback.js";
+import { sendWorkerInput } from "./thread-send.js";
 import { canEditWorkflowIntent } from "../../lib/workflow-intent-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -251,6 +255,8 @@ async function updateCardWorkspace(
   return { ok: true, error: null };
 }
 
+type CommentDelivery = "sent" | "queued" | "rides-answer";
+
 async function addCardComment(
   deps: CardMutationDeps,
   input: {
@@ -262,50 +268,73 @@ async function addCardComment(
 ) {
   const { cardId, target, targetId, body } = input;
   const card = deps.getCard(cardId);
-  if (!card) return { commentId: "", error: deps.errors.cardNotFound };
-  if (isArchivedCard(card)) return { commentId: "", error: ERR_CARD_ARCHIVED };
+  if (!card) {
+    return { commentId: "", error: deps.errors.cardNotFound, delivery: null, deliveryLine: null };
+  }
+  if (isArchivedCard(card)) {
+    return { commentId: "", error: ERR_CARD_ARCHIVED, delivery: null, deliveryLine: null };
+  }
   const commentId = deps.logCardComment(cardId, target, targetId, "user", body);
-  const workerError = await routeCommentToWorker(deps, card, target, body);
-  if (workerError) return { commentId, error: workerError };
+  const routed = await routeCommentToWorker(deps, card, target, body, commentId);
+  if (routed.error) {
+    return { commentId, error: routed.error, delivery: routed.delivery, deliveryLine: routed.line };
+  }
   deps.bb.realtime.publish("card-state", { cardId });
-  return { commentId, error: null };
+  return { commentId, error: null, delivery: routed.delivery, deliveryLine: routed.line };
 }
 
+/**
+ * Whether to wake the worker with this comment now, and what to say about it.
+ *
+ * A comment written while the card waits on an answer rides that answer: sending
+ * it now wakes the worker mid-read, so the person's picks arrive as a second
+ * turn and the first turn acts on half a thought. The row is already written and
+ * stays unstamped, so the answer carries it later
+ * (`server/runtime/answer-feedback.ts`). Nothing is lost if the answer never
+ * comes — the comment is on the card either way.
+ */
 async function routeCommentToWorker(
   deps: CardMutationDeps,
   card: WorkerCard,
   target: "card" | "scope" | "task",
   body: string,
-): Promise<string | null> {
-  if (target === "card" && targetIsLiveWorker(card)) {
-    try {
-      await deps.bb.sdk.threads.send({
-        threadId: card.worker_thread_id!,
-        mode: "auto",
-        input: [
-          {
-            type: "text",
-            text: `User comment on card "${card.name}":\n\n${body}`,
-            mentions: [],
-          },
-        ],
-      });
-      const resume = statusForNewCardWork({
-        kind: card.kind,
-        status: card.status,
-        stage: card.stage,
-      });
-      deps.updateCard(card.id, {
-        activity: "running",
-        status: resume.status,
-      });
-    } catch (error) {
-      return error instanceof Error
-        ? error.message
-        : "Failed to route comment to worker thread.";
-    }
+  commentId: string,
+): Promise<{ error: string | null; delivery: CommentDelivery | null; line: string | null }> {
+  if (target !== "card" || !targetIsLiveWorker(card)) {
+    return { error: null, delivery: null, line: null };
   }
-  return null;
+  if (answerFeedbackHolds({ activity: card.activity, openExpired: openExpiredCount(deps.db, card.id) })) {
+    // `sent` is not the verdict here: the comment is carried by an answer the
+    // person has not given yet.
+    return { error: null, delivery: "rides-answer", line: commentDeliveryLine("rides-answer", null) };
+  }
+  return await deliverComment(deps, card, body, commentId);
+}
+
+/** Send it now, and stamp it carried only when the host actually dispatched it. */
+async function deliverComment(
+  deps: CardMutationDeps,
+  card: WorkerCard & { worker_thread_id: string },
+  body: string,
+  commentId: string,
+): Promise<{ error: string | null; delivery: CommentDelivery | null; line: string | null }> {
+  const dispatch = await sendWorkerInput(deps.bb, card.worker_thread_id, [
+    { type: "text", text: `User comment on card "${card.name}":\n\n${body}`, mentions: [] },
+  ]);
+  if (dispatch.delivery === "refused") return { error: dispatch.error, delivery: null, line: null };
+  if (dispatch.delivery === "queued") {
+    // The host took it and dispatches it on its own. Stamping it carried now
+    // would claim a delivery that has not happened and keep it from ever riding
+    // an answer that could have carried it.
+    deps.updateCard(card.id, holdUpdates(card.last_assistant_text));
+    return { error: null, delivery: "queued", line: commentDeliveryLine("queued", dispatch.hold) };
+  }
+  deps.db
+    .prepare("UPDATE comments SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL")
+    .run(deps.now(), commentId);
+  const resume = statusForNewCardWork({ kind: card.kind, status: card.status, stage: card.stage });
+  deps.updateCard(card.id, { activity: "running", status: resume.status });
+  return { error: null, delivery: "sent", line: null };
 }
 
 function targetIsLiveWorker(card: WorkerCard): card is WorkerCard & {
