@@ -1,6 +1,6 @@
 # RFC: Question Contracts (upstream + plugin)
 
-Status: partially implemented (P0 done, P1–P3 pending — see §10).
+Status: implemented (P0–P3; residual simplifications in §10).
 Goal: make it mechanically knowable which questions must happen, in which
 skills/stages, under which situations and configs, so any LLM (or host)
 can implement and verify enforcement.
@@ -160,9 +160,9 @@ Enforcement points (server/execution-advance.ts):
   canonical in transitions, no plan-gate in Scopes. Plugin mirror
   extended; the host adds no intent gate of its own, so the permitted
   reduced ask reaches the human (worker-side `context:5` decides).
-- Still pending: advance-time enforcement linkage (P1–P3) — the mirror
-  is read by nothing in `advanceCard` yet, deliberately. Wiring it is
-  the remaining work; see the handoff below.
+- Advance-time enforcement was the remaining work at that point; it is wired
+  below. The mirror was deliberately read by nothing in `advanceCard` until
+  the fixtures and refusal shapes existed.
 - Enforcement wired (eaaf062): pure `lib/advance-contracts.mjs` +
   fixtures under `tests/fixtures/question-contracts/`, checked
   pre-helper in both `advanceCard` RPC and CLI `bb stelow advance`

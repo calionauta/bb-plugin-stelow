@@ -4,6 +4,7 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import { questionFormActions, questionFormItems } from "../../lib/question-presentation.mjs";
 import { questionCopy } from "../../lib/question-presentation.mjs";
+import { QUESTION_RENDERER_ID } from "../../lib/question-batch.mjs";
 import { Button } from "../ui/button";
 import { BatchStepper, type BatchItem } from "./question-batch";
 
@@ -35,7 +36,7 @@ export function QuestionForm({ interaction, submit, cancel }: PluginPendingInter
 
 export function registerPendingInteraction(app: PluginAppBuilder): void {
   app.slots.pendingInteraction({
-    id: "stelow-question",
+    id: QUESTION_RENDERER_ID,
     component: QuestionForm,
   });
 }

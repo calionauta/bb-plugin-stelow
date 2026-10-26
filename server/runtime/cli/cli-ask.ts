@@ -1,17 +1,12 @@
-import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/question-gate.mjs";
+import { classifyAskCancel } from "../../../lib/question-gate.mjs";
 import { kickQuestionSync } from "../../../lib/question-store.mjs";
-import {
-  persistFailureInboxEvent,
-  persistFailureTrailLine,
-  shouldRecordPersistFailure,
-} from "../../../lib/question-evidence.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
+import { QUESTION_RENDERER_ID } from "../../../lib/question-batch.mjs";
 import { askFinishedUpdates } from "../../../lib/question-store.mjs";
 import { answerMentionsSplit, splitEligibility } from "../../../lib/split-proposal.mjs";
 import { array, record } from "../values.js";
 import {
   askOwningCard,
-  askTimeoutMs,
   declareAskContracts,
   discloseStandardSplit,
   gateAsk,
@@ -23,6 +18,7 @@ import {
 } from "./cli-ask-gate.js";
 import type { CliCommandFn, CliResult, Refusal } from "./cli-contract.js";
 import type { CliDeps, PendingAsk } from "./cli-deps.js";
+import { persistUnanswered } from "./cli-ask-persist.js";
 
 type AskOutcome = { outcome: string; reason: string | null; value?: unknown };
 
@@ -41,7 +37,7 @@ export function createAskCommand(deps: CliDeps): CliCommandFn {
     if ("refusal" in liveAsks) return liveAsks.refusal;
     const refusal = await askRefusals(deps, card.id, liveAsks, intent, argv);
     if (refusal) return refusal.refusal;
-    return blockOnAnswer(deps, card.id, intent, ctx.signal);
+    return blockOnAnswer(deps, card.id, intent, ctx.signal, await deps.askTimeoutMs());
   };
 }
 
@@ -74,6 +70,7 @@ async function blockOnAnswer(
   cardId: string,
   intent: { threadId: string; tag: AskTag; groups: AskGroup[]; batched: boolean },
   signal: AbortSignal | undefined,
+  timeoutMs: number,
 ): Promise<CliResult> {
   const { groups, threadId } = intent;
   deps.updateCard(cardId, { activity: "awaiting-answer" });
@@ -90,20 +87,25 @@ async function blockOnAnswer(
   // sync that observes it: without this the row waits for the 45s tick
   // while the card already shows the question. Idempotent, fire-and-forget.
   const cancelSyncKick = kickQuestionSync(deps, { threadId, cardId });
-  const requested = await requestAnswer(deps, intent, signal);
+  const requested = await requestAnswer(deps, intent, signal, timeoutMs);
   cancelSyncKick();
   // The ask call ended (answered, cancelled, or torn down): mark the worker
   // running again. Activity only — board position is owned by the sync poll,
   // the answer RPCs, and advance/moveCard, on both tracks.
   // See lib/question-store.
   deps.updateCard(cardId, askFinishedUpdates());
+  // Cancellation without an answer falls into two buckets. Transient
+  // infrastructure reasons (timeout, plugin reload/restart, aborted request)
+  // mean the user simply never answered: persist the question so it stays
+  // answerable on the card. Explicit end states (dismissed, thread
+  // stopped/deleted) are returned as-is for the worker to interpret.
   const cancelReason =
     requested.result.outcome === "cancelled" ? requested.result.reason : null;
   const transientCancel =
     requested.failed ||
     classifyAskCancel(requested.result.outcome, cancelReason) === "persist";
   if (transientCancel)
-    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested);
+    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested, timeoutMs);
   return answerOutcome(deps, cardId, intent, requested);
 }
 
@@ -113,14 +115,17 @@ type Requested = { result: AskOutcome; failed: boolean };
  * names the wait while the form is open (BB 0.43), and describeSubmission
  * decides what the transcript keeps — decisions only, never the payload or
  * the raw value. Hosts that predate the fields ignore them. */
-function askInputFor(intent: { threadId: string; groups: AskGroup[]; batched: boolean }) {
+function askInputFor(
+  intent: { threadId: string; groups: AskGroup[]; batched: boolean },
+  timeoutMs: number,
+) {
   return {
     threadId: intent.threadId,
-    rendererId: "stelow-question",
+    rendererId: QUESTION_RENDERER_ID,
     title: intent.batched
       ? `Stelow questions (${intent.groups.length})`
       : "Stelow question",
-    timeoutMs: askTimeoutMs(),
+    timeoutMs,
     presentation: {
       label: askTimelineLabels({
         batched: intent.batched,
@@ -135,9 +140,10 @@ async function requestAnswer(
   deps: CliDeps,
   intent: { threadId: string; groups: AskGroup[]; batched: boolean },
   signal: AbortSignal | undefined,
+  timeoutMs: number,
 ): Promise<Requested> {
   const { groups } = intent;
-  const askInput = askInputFor(intent);
+  const askInput = askInputFor(intent, timeoutMs);
   // Contract ids are host bookkeeping, not renderer input: strip them so the
   // interaction payload keeps its exact BB shape.
   const payloadGroups = groups.map((group) => ({
@@ -174,157 +180,6 @@ async function requestAnswer(
       failed: true,
     };
   }
-}
-
-/** Cancellation without an answer falls into two buckets. Transient
- * infrastructure reasons (timeout, plugin reload/restart, aborted request)
- * mean the user simply never answered: persist the question exactly like a
- * timeout so it stays answerable on the card and the worker stops to wait.
- * Explicit end states (user dismissed, thread stopped/deleted) are returned
- * as-is for the worker to interpret. */
-/**
- * Tell the reader, on the card and in the inbox, that a question could not be recorded.
- *
- * Extracted from the retry loop because it is a different responsibility: that loop tries to
- * persist, and this one reports that it could not. It is also what pushed the loop past the
- * repository's function budget.
- *
- * Every failure here is swallowed. This runs on a failure path, where a throw would replace
- * the failure being reported with an unrelated one — and the log line the loop already
- * wrote, plus the worker's own stdout instruction, survive either way.
- */
-function recordPersistFailure(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  whyPersistFailed: string,
-  persistError: string | null,
-): void {
-  if (!shouldRecordPersistFailure({ persisted: false, error: persistError })) return;
-  const cause = `${whyPersistFailed}${persistError ? `; ${persistError}` : ""}`;
-  try {
-    deps.logCardComment(
-      cardId,
-      "card",
-      cardId,
-      "agent",
-      persistFailureTrailLine({ threadId, error: cause }),
-    );
-    const event = persistFailureInboxEvent({ cardId, error: cause });
-    deps.recordInboxEvent(event.card, event.kind, event.summary, event.dedupeKey, deps.now());
-  } catch {
-    // Never replace the failure with a report about the failure.
-  }
-}
-
-/**
- * Write the expired-question rows, twice if the first failure looks transient.
- *
- * Two attempts because a concurrent writer — the reconcile timer, a sync poll — can hold
- * the lock briefly, and `SQLITE_BUSY` is transient rather than fatal. A non-retryable
- * failure stops at once: retrying a closed handle or a full disk only delays the report.
- */
-async function tryPersistUnanswered(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  groups: AskGroup[],
-  askedAt: number,
-): Promise<{ persisted: boolean; persistError: string | null }> {
-  let persisted = false;
-  let persistError: string | null = null;
-  for (let attempt = 1; attempt <= 2 && !persisted; attempt++) {
-    try {
-      writeExpiredRows(deps, cardId, threadId, groups, askedAt);
-      persisted = true;
-    } catch (err) {
-      persistError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-      deps.bb.log.warn(
-        `stelow ask persist attempt ${attempt}/2 failed (card ${cardId}, thread ${threadId}): ${persistError}`,
-      );
-      if (isRetryablePersistError(persistError) && attempt === 1) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      } else {
-        break;
-      }
-    }
-  }
-  return { persisted, persistError };
-}
-
-async function persistUnanswered(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  groups: AskGroup[],
-  askedAt: number,
-  requested: Requested,
-): Promise<CliResult> {
-  const cancelReason =
-    requested.result.outcome === "cancelled" ? requested.result.reason : null;
-  const { persisted, persistError } = await tryPersistUnanswered(deps, cardId, threadId, groups, askedAt);
-  const elapsed = Math.round((deps.now() - askedAt) / 1e3);
-  if (!persisted) {
-    const whyPersistFailed = requested.failed
-      ? "request failure"
-      : `cancel reason "${cancelReason ?? "unknown"}"`;
-    // The failure must leave a record, not only a log line. The card was marked
-    // `awaiting-answer` before the blocking wait and is set back to running when the call
-    // ends — which happens BEFORE this persist — so an unrecorded failure leaves a card
-    // that is idle, has no pending question, and shows no trace of what happened. That is
-    // a phantom wait by this project's own rule, and the README used to carry the runbook
-    // because the product said nothing.
-    recordPersistFailure(deps, cardId, threadId, whyPersistFailed, persistError);
-    return {
-      exitCode: 1,
-      stdout: `The question could not be recorded (interrupted storage after ${whyPersistFailed}). STOP and wait: do NOT proceed with the workflow. \
-On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.`,
-    };
-  }
-  const why = interruptionWhy(cancelReason, requested.failed, elapsed);
-  return {
-    exitCode: 1,
-    stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (same column, marked as waiting \
-for your answer) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you \
-may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.`,
-  };
-}
-
-/** A timed-out batch persists as one expired row per sub-question so the card
- * can answer them individually or all at once. */
-function writeExpiredRows(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  groups: AskGroup[],
-  askedAt: number,
-): void {
-  const expiredAt = askedAt + askTimeoutMs();
-  const insert = deps.db.prepare(
-    "INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, kind, locale, options, expired_at, answered) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  );
-  deps.db.transaction(() => {
-    for (const group of groups) {
-      insert.run(
-        deps.randomId("qexp"),
-        cardId,
-        threadId,
-        group.question,
-        group.multiple ? 1 : 0,
-        group.kind,
-        "en",
-        JSON.stringify(group.options),
-        expiredAt,
-        0,
-      );
-    }
-  })();
-  deps.updateCard(cardId, { activity: "awaiting-answer" });
-  deps.bb.realtime.publish("card-state", { cardId });
-  // Expired rows are answerable immediately; mint their inbox row now
-  // instead of on the next tick (same kick as the live path).
-  kickQuestionSync(deps, { threadId, cardId });
 }
 
 /** The host records what the human approved on a split proposal — right here

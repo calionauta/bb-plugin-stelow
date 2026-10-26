@@ -10,7 +10,9 @@ export const GATES = {
   gate: { artifact: "product-spec", receipt: "gate-approved.md" },
   "int-gate": { artifact: "interfaces", receipt: "int-gate-approved.md" },
   "plan-gate": { artifact: "tech-plan", receipt: "plan-gate-approved.md" },
-  "diff-gate": { artifact: "other", receipt: "diff-gate-approved.md" },
+  // diff-gate reviews the working tree, not a registered document; its receipt
+  // is written by the stage, and no artifact row can carry the approved mark.
+  "diff-gate": { artifact: null, receipt: "diff-gate-approved.md" },
 } as const;
 
 export type Gate = keyof typeof GATES;
