@@ -1119,6 +1119,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Marking only the first fixed nothing: on a real card the worker attached no
   document, the host injected the stage's own `interfaces.md` into all four
   options, and every row claimed it as its own evidence.
+- **A card question is this plugin's own** (`pendingAsks`, `lib/ask-timeout.mjs`).
+  The host returns every pending interaction on a worker thread, including the
+  built-in `ask-user-question` tool's, and both are `origin.kind: "plugin"`. The
+  Inbox now selects this plugin's id and the `stelow-question` renderer, so a
+  native question can never be rendered with Stelow's shape or answered with
+  Stelow's value shape; `bb stelow ask` remains the card question command. The
+  question timeout is a plugin setting (**Question
+  timeout**, 30 minutes–7 days; default **1 hour**) instead of an undeclared
+  daemon environment variable; `STELOW_ASK_TIMEOUT_MS` remains a test/ops
+  override and a malformed value falls back to the setting instead of becoming
+  `NaN` and stamping an unreadable recovery row.
 - **An option opens at its own section** (`components/detail/option-section.tsx`). A combined brief holds every
   proposal in one file, so opening it from an option landed on the first line
   — which is precisely not that option. On a real card a reader opened the
@@ -2689,7 +2700,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a one-letter option label — is refused by `lib/question-gate.mjs`, and
   `--force` does not override that floor: only the context and evidence gates
   are forceable, because a probe that can be forced through is a probe that
-  will be, and the person it interrupts cannot tell it was forced. Per-option evidence opens inside the option row as the shared
+  will be, and the person it interrupts cannot tell it was forced. **A selected
+  gate with no host review tool asks; it never approves itself.** The worker copy
+  used to say only "do not park" while the vendored `visual_review` reference
+  said to silently approve; it now names the fallback explicitly (the gate's
+  document in a `bb stelow ask`), and unselected gates keep the LLM receipt.
+  Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below. **The question itself
   is not a panel.** The stepper renders as part of the card's hero section,
@@ -2701,6 +2717,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the dots keep their position for assistive tech (their label still reads
   "Question i of N (answered)"), and the note box, explicit skip, split
   keep-vs-deliver exclusivity and one atomic submit are unchanged.
+- **A selected plan or diff gate cannot approve itself**
+  (`question-contracts-gate.ts`). `plan-gate` and `diff-gate` have no upstream
+  question contract yet, so the host enforces the one rule the methodology
+  states: when `tech`/`diff` is selected, advancing from that stage needs a
+  human answer recorded since stage entry. The refusal names the artifact ask
+  and the answer that clears it; unselected gates and unreadable state stay
+  automatic or fail open. The review itself is the existing artifact viewer plus
+  excerpt comments, which ride the answer — no separate visual-review UI is
+  required.
 - **Answering without the mouse** (`lib/batch-keys.mjs`,
   `components/conversation/batch-keys-ui.tsx`). The question batch is
   answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move

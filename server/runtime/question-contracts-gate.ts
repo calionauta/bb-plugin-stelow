@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { checkAdvanceContracts } from "../../lib/advance-contracts.mjs";
 import { requiredForStage } from "../../lib/question-contracts.mjs";
+import { normalizeReviewGates } from "../../lib/review-gates.mjs";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import { parseCurrentStage } from "../../lib/current-stage.mjs";
@@ -27,16 +28,47 @@ function stageEnteredAt(state: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+type SelectedGate = {
+  atom: "tech" | "diff";
+  label: string;
+  artifact: string;
+};
+
+/**
+ * The two gate stages the generated catalog cannot contract yet: `plan-gate`
+ * is blocked by an upstream conflict and `diff-gate` reviews the working tree,
+ * not a document. The methodology still says both block when their atom is
+ * selected, so the host enforces that fact here — scoped to the atom the card
+ * actually selected, never to a guessed mode matrix. Unselected gates stay
+ * automatic, and unreadable state stays fail-open.
+ */
+function selectedGate(stage: string, gates: string[]): SelectedGate | null {
+  if (stage === "plan-gate" && gates.includes("tech")) {
+    return { atom: "tech", label: "technical-plan", artifact: "tech plan" };
+  }
+  if (stage === "diff-gate" && gates.includes("diff")) {
+    return { atom: "diff", label: "code-diff", artifact: "working-tree diff" };
+  }
+  return null;
+}
+
+function gateAnswerRefusal(gate: SelectedGate, stage: string): string {
+  return `Refused: the selected ${gate.label} gate needs a human answer on the card before advancing \`${stage}\`. `
+    + `Ask with \`bb stelow ask\` and attach the ${gate.artifact} as --artifact; the answer is the gate decision.`;
+}
+
 function requiredContracts(state: string): {
   stage: string;
   enteredAt: number;
   contracts: Contract[];
+  gate: SelectedGate | null;
 } | null {
   const stage = parseCurrentStage(state) ?? "";
   const { quality, explorationCount, reviewMode, reviewGates } = parseWorkflowConfig(state, {
     strict: true,
   });
   if (!stage || !quality || (!reviewMode && !reviewGates)) return null;
+  const gate = selectedGate(stage, normalizeReviewGates(reviewGates ?? reviewMode ?? []));
   let contracts: Contract[];
   try {
     contracts = requiredForStage({
@@ -47,10 +79,9 @@ function requiredContracts(state: string): {
   } catch {
     return null;
   }
+  if (contracts.length === 0 && gate === null) return null;
   const enteredAt = stageEnteredAt(state);
-  return contracts.length > 0 && enteredAt !== null
-    ? { stage, enteredAt, contracts }
-    : null;
+  return enteredAt !== null ? { stage, enteredAt, contracts, gate } : null;
 }
 
 function pathEntries(value: unknown): string[] {
@@ -111,16 +142,28 @@ export function createQuestionContractsGate(deps: QuestionContractsGateDeps) {
     if (!state) return null;
     const required = requiredContracts(state);
     if (!required) return null;
-    const receipts = await collectReceipts(deps, stateDir);
-    if (!receipts) return null;
     const synced = await deps.syncOpenQuestionInbox(card);
     if (synced === null) return null;
+    let answered: boolean;
+    try {
+      answered = answeredSinceEntry(deps, card, required.enteredAt);
+    } catch {
+      // An unreadable answer record is unknown, not proof that nobody
+      // answered; a guard that cannot read must not invent a deadlock.
+      return null;
+    }
+    if (required.gate && !answered) {
+      return gateAnswerRefusal(required.gate, required.stage);
+    }
+    if (required.contracts.length === 0) return null;
+    const receipts = await collectReceipts(deps, stateDir);
+    if (!receipts) return null;
     return checkAdvanceContracts({
       stage: required.stage,
       enteredAt: required.enteredAt,
       contracts: required.contracts,
       receipts,
-      answered: answeredSinceEntry(deps, card, required.enteredAt),
+      answered,
     });
   };
 }

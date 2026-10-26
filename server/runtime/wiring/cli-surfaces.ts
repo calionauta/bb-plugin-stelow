@@ -175,6 +175,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     passingReviewCovers: seams.passingReviewCovers,
     reviewFilesFor: seams.reviewFilesFor,
     pendingQuestions: core.fetchPendingQuestions,
+    askTimeoutMs: core.askTimeoutMs,
     ...questionReads(core),
     ...researchReads(core),
     gapState: gates.critiqueGapState,
@@ -183,11 +184,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     workers,
     presets: core.presetServer,
     ...decisionSeams(core),
-    preview: {
-      view: cardPreview.view,
-      start: cardPreview.start,
-      stop: cardPreview.stop,
-    },
+    ...previewSeams(cardPreview),
     draftingCommand: (argv, threadId) => core.drafting.command(argv, threadId),
     advanceCli: (argv, context) => execution.executionAdvance.cli(argv, context),
     retryExecutionRun: (args) => execution.executionLifecycle.handlers.retryExecutionRun(args),
@@ -257,6 +254,20 @@ function claimSeams(core: RuntimeCore) {
   return {
     releaseCardClaims: claims.releaseCardClaimsAndNotify,
     notifyClaimWaiters: core.notifyClaimWaiters,
+  };
+}
+
+/**
+ * The preview seams: the same three reads the panel and the CLI share, named
+ * once so the CLI bag does not grow a second inline copy of the shape.
+ */
+function previewSeams(cardPreview: RuntimeCore["cardPreview"]) {
+  return {
+    preview: {
+      view: cardPreview.view,
+      start: cardPreview.start,
+      stop: cardPreview.stop,
+    },
   };
 }
 

@@ -40,19 +40,29 @@ import { runHelper } from "./helper-script.js";
 import { projectRoot } from "./root-paths.js";
 import { BUILD_INFO } from "../plugin-paths.js";
 import { TRACK_PROTOCOL_CLAUSES } from "./track-protocol-clauses.js";
+import { createAskTimeoutSetting } from "./ask-timeout-setting.js";
 
 export type RuntimeCore = ReturnType<typeof createRuntimeCore>;
 
-export function createRuntimeCore(bb: BbPluginApi) {
-  const db = bb.storage.database();
-  const now = () => Date.now();
-  const ledger = createCardLedger({ db, now });
-  const { updates: pluginUpdates } = startRuntimeServices({
+function startPluginUpdates(
+  bb: BbPluginApi,
+  db: ReturnType<BbPluginApi["storage"]["database"]>,
+  now: () => number,
+) {
+  return startRuntimeServices({
     bb,
     db,
     now,
     installedVersion: BUILD_INFO.version,
-  });
+  }).updates;
+}
+
+export function createRuntimeCore(bb: BbPluginApi) {
+  const db = bb.storage.database();
+  const now = () => Date.now();
+  const { askTimeoutMs } = createAskTimeoutSetting(bb);
+  const ledger = createCardLedger({ db, now });
+  const pluginUpdates = startPluginUpdates(bb, db, now);
   const services = createRuntimeServices({ bb, db, now, randomId });
   // The tracks carry the NARROWER bag: no stages and no gates means no stage,
   // advance, split, recon or seed clause, and the track half of the completion
@@ -66,6 +76,7 @@ export function createRuntimeCore(bb: BbPluginApi) {
     db,
     now,
     randomId,
+    askTimeoutMs,
     ledger,
     prompts,
     pluginUpdates,
