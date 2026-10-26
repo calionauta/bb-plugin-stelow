@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { ERRORS } from "../card-errors.js";
 import { decideAskGate } from "../../../lib/question-gate.mjs";
 import {
   recordAskContracts,
@@ -174,7 +175,7 @@ export function askOwningCard(
 never a provider session id nor a workflow dirHash (sw-*).`,
     });
   if (cardRow.status === "archived")
-    return refuse({ exitCode: 2, stderr: "This card is archived." });
+    return refuse({ exitCode: 2, stderr: ERRORS.cardArchived });
   return cardRow;
 }
 

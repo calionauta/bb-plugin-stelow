@@ -35,6 +35,11 @@ export type ReviewSubject = {
 /** Deterministic precondition: review only sees verify-PASS artifacts. The
  * document must be registered, readable, and pass its stage contract — thin
  * files never reach the reviewer. */
+/** A refusal names the exit: without a workflow state there is nothing to
+ * review, and the action that creates one is seeding the card. */
+const NO_WORKFLOW_STATE =
+  "No workflow state for this card yet — seed the card's workflow (`bb stelow seed`), then retry.";
+
 export async function buildDocumentSubject(
   deps: CliDeps,
   card: WorkerCard,
@@ -42,12 +47,12 @@ export async function buildDocumentSubject(
 ): Promise<ReviewSubject | Refusal> {
   const workspace = await deps.cardWorkspace(card);
   if (!workspace?.path || !card.dir_hash)
-    return refuse({ exitCode: 1, stderr: "No workflow state for this card yet." });
+    return refuse({ exitCode: 1, stderr: NO_WORKFLOW_STATE });
   const stateDir = await deps
     .workflowStateDir(workspace.path, card.id, card.dir_hash)
     .catch(() => null);
   if (!stateDir)
-    return refuse({ exitCode: 1, stderr: "No workflow state for this card yet." });
+    return refuse({ exitCode: 1, stderr: NO_WORKFLOW_STATE });
   const stateBlob = await deps.bb.sdk.files
     .read({ path: join(stateDir, "state.md") })
     .then((file) => file.content)

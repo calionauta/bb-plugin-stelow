@@ -25,8 +25,8 @@ type RpcHandlers = {
 };
 
 export const CARD_ERRORS = {
-  cardNotFound: "Card not found.",
-  presetNotFound: "Preset not found.",
+  cardNotFound: "Card not found — check the id, or run from the card's worker thread.",
+  presetNotFound: "Preset not found — list them with `bb stelow preset list`.",
 } as const;
 
 type CoreDependencyOptions = {

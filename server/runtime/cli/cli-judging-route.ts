@@ -42,7 +42,7 @@ export function decisionApiEnabled(): CliResult | null {
     ? {
         exitCode: 1,
         stderr:
-          "Decision API is disabled on this host (STELOW_DECISION_API=0).",
+          "Decision API is disabled on this host — set STELOW_DECISION_API=1 and retry.",
       }
     : null;
 }

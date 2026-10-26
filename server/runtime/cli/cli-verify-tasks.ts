@@ -186,7 +186,7 @@ async function runCommandTasks(
           score: null,
           confidence: null,
           verdict: "unverifiable",
-          error: "verify command did not run",
+          error: "verify command did not run — run it, then re-run `bb stelow verify-tasks`.",
         };
       return {
         ...base,
