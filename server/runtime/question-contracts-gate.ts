@@ -54,7 +54,7 @@ function selectedGate(stage: string, gates: string[]): SelectedGate | null {
 
 function gateAnswerRefusal(gate: SelectedGate, stage: string): string {
   return `Refused: the selected ${gate.label} gate needs a human answer on the card before advancing \`${stage}\`. `
-    + `Ask with \`bb stelow ask\` and attach the ${gate.artifact} as --artifact, or unselect the ${gate.atom} gate.`;
+    + `Ask with \`bb stelow ask\` and attach the ${gate.artifact} as --artifact; the answer is the gate decision.`;
 }
 
 function requiredContracts(state: string): {

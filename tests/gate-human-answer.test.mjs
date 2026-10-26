@@ -67,7 +67,8 @@ test("plan-gate with the tech gate refuses until a question is answered since en
   assert.equal(typeof result, "string", "an unanswered selected gate refuses advancing");
   assert.match(result, /technical-plan/, "the refusal names the technical-plan gate");
   assert.match(result, /bb stelow ask/, "and the ask command that produces the answer");
-  assert.match(result, /unselect the tech gate/, "and the exit that unselects the gate");
+  assert.match(result, /--artifact/, "the refusal names the artifact that clears it");
+  assert.match(result, /gate decision/, "and what the answer means");
   db.close();
 });
 
@@ -99,7 +100,7 @@ test("diff-gate with the diff gate refuses until an answer is recorded", async (
   assert.equal(typeof result, "string", "the selected diff gate is a human wait");
   assert.match(result, /code-diff/, "the refusal names the code-diff gate");
   assert.match(result, /bb stelow ask/, "and the ask command that produces the answer");
-  assert.match(result, /unselect the diff gate/, "and the exit that unselects the gate");
+  assert.match(result, /--artifact/, "the refusal names the artifact that clears it");
   assert.doesNotMatch(result, /technical-plan/, "the tech refusal does not leak into the diff gate");
   db.close();
 });

@@ -2722,9 +2722,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   question contract yet, so the host enforces the one rule the methodology
   states: when `tech`/`diff` is selected, advancing from that stage needs a
   human answer recorded since stage entry. The refusal names the artifact ask
-  and the unselect exit; unselected gates and unreadable state stay automatic
-  or fail open. The review itself is the existing artifact viewer plus excerpt
-  comments, which ride the answer — no separate visual-review UI is required.
+  and the answer that clears it; unselected gates and unreadable state stay
+  automatic or fail open. The review itself is the existing artifact viewer plus
+  excerpt comments, which ride the answer — no separate visual-review UI is
+  required.
 - **Answering without the mouse** (`lib/batch-keys.mjs`,
   `components/conversation/batch-keys-ui.tsx`). The question batch is
   answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move
