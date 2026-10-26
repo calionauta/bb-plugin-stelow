@@ -168,8 +168,8 @@ assert.match(
 );
 assert.match(
   cliAsk,
-  /if \(cardRow\.status === "archived"\)\s*return refuse\(\{ exitCode: 2, stderr: "This card is archived\." \}\);/,
-  "ask on an archived thread names the state",
+  /if \(cardRow\.status === "archived"\)\s*return refuse\(\{ exitCode: 2, stderr: ERRORS\.cardArchived \}\);/,
+  "ask on an archived thread refuses with the shared terminal copy, never a re-spelling",
 );
 // Stage truth is state.md: every sync converges the DB cache once, upfront,
 // so question-wait and idle polls never render the last manually-advanced

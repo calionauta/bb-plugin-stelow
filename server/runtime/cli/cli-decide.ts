@@ -22,6 +22,13 @@ import type { WorkerCard } from "../../workers-types.js";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { OPERATOR_IDENTITY } from "../../scope-map-approval.js";
 
+/** Both refusals were dead ends: they said what failed and not what to do
+ * about it. A refusal that names no exit is a deadlock with a good error message. */
+const NO_OWNED_STATE =
+  "Workflow state ownership cannot be verified for this card — reseed its workflow (`bb stelow seed`), then retry.";
+const CORRUPT_DECISION_STORE =
+  "The decision store (decision-receipts.json) is unreadable — fix or remove it, then retry.";
+
 const USAGE = "Usage: bb stelow decide --selected <option> [--rejected a,b]"
   + " [--scopes s1,s2] [--reason <text>] [--by <name>] [--supersedes r-old] [--challenge ch-id] [--card <id>]"
   + " | bb stelow decide --open-challenge --against <receipt> --reason <text> [--card <id>]";
@@ -61,7 +68,7 @@ async function resolveState(deps: CliDeps, card: WorkerCard): Promise<StateRef |
   const stateDir = card.dir_hash
     ? await deps.workflowStateDir(workspace.path, card.id, card.dir_hash).catch(() => null)
     : null;
-  if (!stateDir) return { error: "Workflow state ownership cannot be verified for this card." };
+  if (!stateDir) return { error: NO_OWNED_STATE };
   return { rootPath: workspace.path, stateDir };
 }
 
@@ -72,7 +79,7 @@ async function openChallenge(deps: CliDeps, card: WorkerCard, flags: Record<stri
   const state = await resolveState(deps, card);
   if ("error" in state) return { exitCode: 1, stderr: state.error };
   const stored = await loadDecisions(deps.bb.sdk.files, state.stateDir);
-  if (stored.corrupt) return { exitCode: 1, stderr: "The decision store is present but unreadable; refusing." };
+  if (stored.corrupt) return { exitCode: 1, stderr: CORRUPT_DECISION_STORE };
   const target = stored.receipts.find((entry) => entry.id === against);
   if (!target) return { exitCode: 1, stderr: `No decision receipt ${against} on this card.` };
   if (typeof target.supersededBy === "string" && target.supersededBy) {
@@ -104,7 +111,7 @@ async function runDecide(deps: CliDeps, card: WorkerCard, flags: DecideFlags): P
   const state = await resolveState(deps, card);
   if ("error" in state) return { exitCode: 1, stderr: state.error };
   const stored = await loadDecisions(deps.bb.sdk.files, state.stateDir);
-  if (stored.corrupt) return { exitCode: 1, stderr: "The decision store is present but unreadable; refusing." };
+  if (stored.corrupt) return { exitCode: 1, stderr: CORRUPT_DECISION_STORE };
   const shapeVersion = await readCardShapeVersion(deps, state.stateDir);
   const { live } = resolveLive(stored.receipts);
   const receiptId = deps.randomId("dec");
