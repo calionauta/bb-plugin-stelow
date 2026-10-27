@@ -53,11 +53,36 @@ export function createCliDispatch(deps: CliDispatchDeps) {
   };
 }
 
+/** Verbs that only read. Their successes are inspection traffic — including
+ * `log` reading itself — and an unbounded row per read makes the CLI's own
+ * refusal rate drift toward "everything is fine" as audits accumulate. Each of
+ * these collapses to one row per window, per verb, with `occurrences` keeping
+ * the denominator honest. A verb that writes (done, verify, review, seed…)
+ * still records every call, because every call is a decision. */
+const READ_VERBS = new Set([
+  "log",
+  "storage",
+  "status",
+  "schema",
+  "metrics",
+  "playbook",
+  "doctor",
+  "gaps",
+  "help",
+]);
+
 type CallContext = {
   verb: string;
   cardId: string | null;
   threadId: string | null;
 };
+
+/** `cli.read.<verb>` for inspection, `null` for a write (no cause = no fold),
+ * and the refusal's own cause otherwise. */
+function successCause(verb: string): string | null {
+  if (!READ_VERBS.has(verb)) return null;
+  return `cli.read.${verb.replace(/[^a-z0-9-]+/g, "-")}`;
+}
 
 function recordCliResult(
   deps: CliDispatchDeps,
@@ -67,11 +92,11 @@ function recordCliResult(
     kind: "cli.call",
     actor: "agent",
     outcome: call.result.exitCode === 0 ? "ok" : "refused",
-    // A successful call repeats far more often than it names a condition, and
-    // a cause is what makes the recorder collapse repeats. Only the refusals
-    // carry one.
+    // A write's success repeats without being the same condition, so it gets
+    // no cause and no fold. A refusal always carries one; an inspection verb
+    // gets its own, which is what stops the log from measuring itself.
     cause: call.result.exitCode === 0
-      ? null
+      ? successCause(call.verb)
       : (call.result.reason ?? causeForExit(call.result.exitCode)),
     cardId: call.cardId,
     threadId: call.threadId,

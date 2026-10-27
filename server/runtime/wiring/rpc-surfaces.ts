@@ -109,6 +109,7 @@ function cardReaderHandlers(cards: CardSurfaces) {
     .list({ cardId: input.cardId, limit: input.limit ?? 50 })
     .map((row) => ({
       at: Number(row.at),
+      lastAt: Number(row.lastAt),
       kind: String(row.kind),
       outcome: String(row.outcome),
       cause: typeof row.cause === "string" ? row.cause : null,

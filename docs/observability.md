@@ -38,12 +38,16 @@ One append-only table, `action_log`, in the plugin's `data.db`
 
 `surface` is `rpc`, `cli`, `tick`, `hook`, `watcher` or `system`. Both the kind
 catalog and its layer/surface are declared in `lib/action-kinds.mjs`; the writer
-refuses an unknown kind, outcome, actor or cause. Adding an event is one line
-there plus the assertion that emits it.
+refuses an unknown kind, outcome or actor, and a malformed cause. Adding an
+event is one line there plus the assertion that emits it.
 
 A **cause** is a dotted code (`done.audit-trail`, `run.no-reason`), never a
-sentence. Prose lives in `detail` (≤ 2 KB JSON), on the card, or in the comment
-the event points at.
+sentence. There is no cause allow-list: the shape is enforced, the vocabulary
+is a convention, and a typo is a new series rather than a refusal. That is
+deliberate — a closed cause list would need an entry per condition a gate can
+name, and the catalog is edited at the seam anyway — but it means a cause is
+only as trustworthy as grep. Prose lives in `detail` (≤ 2 KB JSON), on the card,
+or in the comment the event points at.
 
 ## Two rules that keep it readable
 
@@ -55,6 +59,12 @@ the event points at.
 2. **The detail is evidence, not a copy of the database.** No prompts, no file
    contents, no assistant text. RPC inputs are never recorded — the card id is
    enough to join. A detail over the cap is replaced by its size.
+3. **A folded row keeps the worst duration, and prints both moments.** The
+   duration of a row with `occurrences > 1` is the slowest occurrence (MAX), not
+   the one that created the row — a 5.7 s reconcile pass must not read 12 ms.
+   The text form prints `first→last` so a condition that stopped an hour ago
+   cannot look live; the card shows the last moment, because that is the
+   question the reader has.
 
 Logging never blocks the action it records: the lib validates and throws (a
 programmer error, red in tests); `server/runtime/action-log-runtime.ts` catches,

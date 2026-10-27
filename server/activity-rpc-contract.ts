@@ -38,6 +38,7 @@ export const activityRpcContract = {
       rows: z.array(
         z.object({
           at: z.number(),
+          lastAt: z.number(),
           kind: z.string(),
           outcome: z.string(),
           cause: z.string().nullable(),

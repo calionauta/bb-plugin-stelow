@@ -55,7 +55,9 @@ What each number means:
 
 - `rows` is distinct conditions; `events` is occurrences. A cause with 1 row and
   300 events is one standing failure, not 300 problems — and it is the loudest
-  thing in the log.
+  thing in the log. A folded row prints `first→last`; a stale `last` is the
+  alarm, not a stale `first`. Its `durationMs` is the **worst** occurrence, so
+  "the pass is slow" survives being averaged away.
 - A **fresh** `lastAt` on `card.tick` / `reconcile.tick` proves the reconciler
   is running. A stale one means it died silently; that is the first thing to
   check when "nothing happens" on the board.

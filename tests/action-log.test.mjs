@@ -345,4 +345,5 @@ function freshDb() {
   assert.deepEqual(tied.map((row) => row.source), ["alpha", "beta"], "equal timestamps break ties by source name");
 }
 
+
 console.log("action log test ok: vocabulary, detail cap, dedupe, filters, summary, prune, since, replay");
