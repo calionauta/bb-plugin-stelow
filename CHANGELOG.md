@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.94.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.1...v0.94.0) (2026-10-27)
+
+
+### Features
+
+* record the card answer door, failed tick phases and thread lookups ([#443](https://github.com/calionauta/bb-plugin-stelow/issues/443)) ([e2efebd](https://github.com/calionauta/bb-plugin-stelow/commit/e2efebd67f60daa82d6d02f5e65fcf6e03e1919e))
+
 ## [0.93.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.0...v0.93.1) (2026-10-27)
 
 
