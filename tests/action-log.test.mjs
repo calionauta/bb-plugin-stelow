@@ -57,19 +57,24 @@ function freshDb() {
   recordActionLog(db, { kind: "rpc.call", outcome: "ok", layer: "effect", at: 1_000 });
   let row = listActionLog(db)[0];
   assert.equal(row.layer, "intent", "layer is derived from the kind, never from the caller");
-  assert.equal(row.surface, "rpc", "surface defaults to the kind's catalog entry");
+  assert.equal(row.surface, "rpc", "surface is derived from the kind, never from the caller");
 
   recordActionLog(db, { kind: "rpc.call", outcome: "ok", surface: "cli", at: 2_000 });
   row = listActionLog(db, { limit: 1 })[0];
-  // The implementation allows a valid surface override to win. Pin it so a
-  // future change either keeps it deliberately or fails here loudly.
-  assert.equal(row.surface, "cli", "a caller-supplied surface replaces the catalog value");
+  assert.equal(row.surface, "rpc", "a contradicting caller surface is ignored, not stored");
 
-  assert.throws(
-    () => recordActionLog(db, { kind: "rpc.call", outcome: "ok", surface: "telepathy" }),
-    /action-log: undeclared layer\/surface/,
-  );
-  assert.equal(listActionLog(db).length, 2, "an invalid surface is refused and writes no row");
+  // The caller's surface is no longer read at all, so an undeclared value
+  // cannot make a well-formed kind throw.
+  const tolerated = recordActionLog(db, {
+    kind: "rpc.call",
+    outcome: "ok",
+    surface: "telepathy",
+    at: 3_000,
+  });
+  assert.equal(tolerated.occurrences, 1);
+  assert.equal(listActionLog(db).length, 3, "the entry is kept, with the catalog surface");
+  row = listActionLog(db, { limit: 1 })[0];
+  assert.equal(row.surface, "rpc", "an unknown caller surface is ignored too");
 }
 
 // ── detail is capped; the event survives regardless ─────────────────────────

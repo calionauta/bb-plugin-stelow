@@ -16,7 +16,6 @@ export interface ActionLogEntry {
   kind: string;
   outcome: ActionOutcome;
   actor?: ActionActor;
-  surface?: ActionSurface;
   id?: string;
   opId?: string | null;
   cardId?: string | null;
