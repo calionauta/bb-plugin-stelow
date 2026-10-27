@@ -76,6 +76,8 @@ disables writes without a redeploy; readers keep working.
 | 9 | run transitions (`execution-reconcile-run.ts`) | terminal state; on failure, the raw host payload |
 | 10 | ask lifecycle (`cli-ask.ts`) | asked / answered / persisted / expired, with dwell |
 | 11 | inbox (`inbox.ts`, `inbox-recorders.ts`) | opened and resolved, per rule and reason |
+| 12 | client errors (`reportClientError`, `client-error-report.ts`) | uncaught render/window/promise failures, with a message fingerprint as the cause |
+| 13 | host read misses (`read-streak-wiring.ts`) | one row when a card's state read crosses the 6-tick outage threshold |
 
 Deliberately not recorded: prompt bodies, file contents, assistant text, and a
 tick that changed nothing (the heartbeat already says the tick ran).
@@ -104,12 +106,12 @@ already deletes. Dry runs prune nothing.
    contract before calling the handler, so `rpc cardDetail failed: rpc input
    validation failed` has no field path and no row here. That is an upstream
    fix; meanwhile the log covers handler throws, not schema refusals.
-2. **`ui.error` is declared but not wired.** The kind exists so the wrapper can
-   be added without a migration; until the app-side RPC wrapper lands, a
-   browser-side failure still dies in the console.
-3. **`host.read-miss` is declared but not emitted.** The read-streak logic owns
-   the state; the row is waiting for the seam that flips it.
-4. **The marketplace artifact can lag the SDK it runs against**
+2. **A caught error shown as a toast is not a row.** `reportClientError` covers
+   what escapes React and the window; the ~80 explicit `toast` call sites are
+   handled errors the reader is already told about, and instrumenting them one
+   by one would be a second copy of the message. If a toast ever hides a
+   failure worth trending, record it at the catch site with its own cause.
+3. **The marketplace artifact can lag the SDK it runs against**
    (`dist/server.js built with SDK X, running Y`). Recorded in `bb.log.warn`,
    not here — it is a build-pipeline fact, not a card fact.
 
@@ -135,7 +137,8 @@ ready-to-file asks; filing them is a separate, human-approved step.
 `tests/action-log.test.mjs` covers the lib contract (closed vocabulary,
 dedupe window, cap, retention, replay ordering), `tests/action-log-runtime.test.mjs`
 covers the never-throw recorder, the kill switch and the RPC boundary wrapper,
-and `tests/action-log-wiring.test.mjs` covers the CLI dispatch and every
-`bb stelow log` refusal. The behavioral rule to preserve: removing the recorder
+`tests/action-log-wiring.test.mjs` covers the CLI dispatch and every
+`bb stelow log` refusal, and `tests/action-log-ui-signals.test.mjs` covers the
+message fingerprint, `reportClientError`, and the read-streak row. The behavioral rule to preserve: removing the recorder
 must not change any decision — a missing row is a missing answer, never a
 refused card.

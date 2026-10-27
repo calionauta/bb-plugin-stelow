@@ -1587,10 +1587,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   into one chronological story. The card's Activity section loads the same rows
   on request (closed by default). A failed run records the host's raw payload,
   so "the host reported a failure without a reason" is now countable as
-  `run.no-reason` instead of lost. Details are capped at 2 KB and never carry
-  prompts or file contents; `STELOW_ACTION_LOG=0` disables writes, and
-  `bb stelow gc --apply` prunes to 30 days / 50k rows. Design and gaps:
-  `docs/observability.md`.
+  `run.no-reason` instead of lost. Browser-side failures are recorded too:
+  an error boundary around the panel, the card drawer and the message
+  directives reports uncaught render errors, and window/promise errors while a
+  Stelow surface is mounted are reported through `reportClientError` — each
+  with a message fingerprint as its cause, so a repeating render error is one
+  row with `occurrences` and two different failures stay two causes. A host
+  that stops answering a card's state read writes `host.read-miss` once per
+  outage, at the same 6-tick threshold that prints the warning and latches the
+  card. Details are capped at 2 KB and never carry prompts or file contents;
+  `STELOW_ACTION_LOG=0` disables writes, and `bb stelow gc --apply` prunes to
+  30 days / 50k rows. Design and gaps: `docs/observability.md`.
 - **Retry** (`retryWorker`). Nudges the same worker in place; nothing
   resets. Refused on archived cards — and on completed/blocked ones, where
   reopening happens through a card comment or a fresh restart.
