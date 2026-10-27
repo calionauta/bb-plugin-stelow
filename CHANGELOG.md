@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.96.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.95.1...v0.96.0) (2026-10-27)
+
+
+### Features
+
+* bb stelow next, the host verb the skills already name ([#457](https://github.com/calionauta/bb-plugin-stelow/issues/457)) ([96d863a](https://github.com/calionauta/bb-plugin-stelow/commit/96d863a8697651c636ed7346456e9e7db60e1d26))
+
 ## [0.95.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.95.0...v0.95.1) (2026-10-27)
 
 
