@@ -217,7 +217,8 @@ function runTick(deps: ReconcilerDeps, reconcileExecution?: () => Promise<void>)
       failed.push(name);
       deps.onError(name, error);
     } finally {
-      phases[name] = deps.now() - phaseStarted;
+      // A backwards wall clock (NTP step) must not write negative time.
+      phases[name] = Math.max(0, deps.now() - phaseStarted);
     }
   };
   phase("reconcile live cards", () => reconcileLiveCards(deps));
