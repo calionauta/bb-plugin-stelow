@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../../server";
-import { formatActionTime, summarizeDetail } from "../../lib/action-replay.mjs";
+import { formatActionDuration, formatActionTime, summarizeDetail } from "../../lib/action-replay.mjs";
 import { DisclosureSection } from "../disclosure";
 import { Button } from "../ui/button";
 
@@ -57,7 +57,7 @@ export function CardActivity({ cardId }: { cardId: string }) {
 function ActivityRow({ row }: { row: Row }) {
   const count = row.occurrences > 1 ? ` x${row.occurrences}` : "";
   const cause = row.cause ? ` ${row.cause}` : "";
-  const duration = row.durationMs === null ? "" : ` · ${row.durationMs}ms`;
+  const duration = formatActionDuration(row);
   // A repeated row shows the last time it happened, because that is the
   // question the reader has ("is it still happening?"); the first moment is
   // one click away in `bb stelow log --kind <kind>`.
@@ -69,7 +69,7 @@ function ActivityRow({ row }: { row: Row }) {
       <span className={LEVEL_TONE[row.outcome] ?? "text-foreground"}>
         {row.kind}{cause}{count}
       </span>
-      <span>{duration}</span>
+      <span>{duration ? ` · ${duration.trim()}` : ""}</span>
       {summarizeDetail(row.detail) ? (
         <span className="block pl-4 text-muted-foreground">{summarizeDetail(row.detail).trim()}</span>
       ) : null}

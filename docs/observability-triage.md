@@ -56,8 +56,10 @@ What each number means:
 - `rows` is distinct conditions; `events` is occurrences. A cause with 1 row and
   300 events is one standing failure, not 300 problems — and it is the loudest
   thing in the log. A folded row prints `first→last`; a stale `last` is the
-  alarm, not a stale `first`. Its `durationMs` is the **worst** occurrence, so
-  "the pass is slow" survives being averaged away.
+  alarm, not a stale `first`. Durations print `Xms max · Yms last`: the max
+  keeps one pathological pass visible, the last tells a trend from an outlier.
+- A `card.tick` with a slow `durationMs` carries `detail.phases` (milliseconds
+  per phase), so "the tick took 200 s" names the phase instead of the host log.
 - A **fresh** `lastAt` on `card.tick` / `reconcile.tick` proves the reconciler
   is running. A stale one means it died silently; that is the first thing to
   check when "nothing happens" on the board.

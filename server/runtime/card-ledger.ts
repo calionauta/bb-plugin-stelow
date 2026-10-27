@@ -11,6 +11,7 @@ import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { summarizeTimeline } from "../../lib/card-metrics.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import type { ActionRecorder } from "./action-log-runtime.js";
+import { stageEntryCause } from "../../lib/stage-entry-cause.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -58,7 +59,7 @@ function recordStageEvent(
     outcome: "ok",
     cardId,
     stage,
-    cause: from === null ? "stage.created" : stage === "done" ? "stage.completed" : "stage.advance",
+    cause: stageEntryCause(from, stage),
     detail: { from, to: stage },
   });
 }
