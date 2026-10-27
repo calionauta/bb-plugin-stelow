@@ -62,6 +62,15 @@ assert.ok(
   "an experimental quality reaches the worker instead of a hardcoded production",
 );
 assert.equal(experimental.match(/%[A-Z_]+%/g), null, "the quality value leaves no template token");
+assert.ok(!prompt.includes("red_first="), "no red-first clause when the knob is absent");
+const advisory = buildBuildPrompt(
+  { ...context, knobs: { ...context.knobs, redFirst: "advisory" } },
+  rules,
+);
+assert.ok(
+  advisory.includes("red_first=`advisory`"),
+  "an explicit red-first mode reaches the worker instead of staying in state.md only",
+);
 assert.ok(!prompt.includes("supervisor="), "the retired supervision knob is not stated");
 assert.ok(prompt.includes("exploration=`count=3 hybrid=true`"), "the recorded exploration is stated");
 assert.ok(prompt.includes("Product Spec, Interface, Scopes"), "the recorded review gates are stated");
