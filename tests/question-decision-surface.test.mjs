@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
-import {
-  PROSE_SUMMARY_LIMIT,
-  artifactViewerModeForOption,
-  splitProseSummary,
-  submitBlockReason,
-} from "../lib/question-presentation.mjs";
+import { PROSE_SUMMARY_LIMIT, splitProseSummary } from "../lib/question-prose.mjs";
+import { artifactViewerModeForOption, submitBlockReason } from "../lib/question-presentation.mjs";
 import { cleanOptions } from "../lib/question-batch.mjs";
 
 // Two defects found by looking at a real card, both from the same cause: the

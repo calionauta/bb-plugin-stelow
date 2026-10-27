@@ -12,8 +12,8 @@
  *      a "?" badge, and the counters are gone from the renderer and from
  *      questionCopy() — while the step dots keep their position for assistive
  *      tech and skip, free text, split exclusivity and the atomic submit stay.
- *  R4  the timed-out batch is a DisclosureSection, CLOSED by default, titled
- *      from questionCopy().recoveryHeading.
+ *  R4  live and timed-out questions share ONE decision section: open, amber,
+ *      titled from questionCopy().recoveryHeading, with the count as subtitle.
  *
  * NOT duplicated here: question-presentation / question-decision-surface /
  * split-question-presentation / single-pick-composition / question-needs-note-ui
@@ -140,8 +140,14 @@ test("R3: the batch is not an amber panel, the hero keeps the alert, and the bad
   );
   assert.match(
     read("components/detail/detail-hero.tsx"),
-    /decision: \{ wrap: "border-amber-500\/50 bg-amber-500\/5", dot: "bg-amber-500", alert: true \}/,
-    "the alert really does live on the hero; removing it from both places would leave the state unannounced",
+    /decision: \{ wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: true \}/,
+    "the hero keeps the ALERT but gives up the amber: the gold belongs to the section that holds the answerable "
+    + "decision, and two amber boxes two lines apart read as decoration rather than as a place to act",
+  );
+  assert.match(
+    read("components/detail/detail-question-sections.tsx"),
+    /tone="decision"/,
+    "the decision tone moved to the question section — the component that owns the count, the options and the submit",
   );
   assert.ok(
     !/aria-hidden[^>]*>\s*\?\s*<\/span>/.test(batchCode),
@@ -215,24 +221,6 @@ test("R3: the batch still submits atomically, one payload for every question", (
     "the recovered batch builds its whole payload once too, so a later answer cannot revise work already resumed");
 });
 
-/* ------------------------------------------------------------------ R3 --- */
-test("R3: the accelerator's hooks run before the empty-batch return", () => {
-  // The batch returns null for an empty batch, and the keyboard setup is a
-  // HOOK. Calling it after that return changes the number of hooks between
-  // renders the moment a batch arrives, which React refuses — a crash on the
-  // exact transition this feature exists for (a question appearing).
-  const stepper = blockOf(batchCode, "export function BatchStepper(", "export function QuestionBatch(");
-  const earlyReturn = stepper.indexOf("if (questions.length === 0) return null;");
-  const setup = stepper.indexOf("useStepperKeySetup(");
-  assert.ok(earlyReturn >= 0, "the empty-batch guard is still there");
-  assert.ok(setup >= 0, "the keyboard setup is still wired");
-  assert.ok(
-    setup < earlyReturn,
-    "the accelerator hook must be called BEFORE the empty-batch return: a hook after an early return "
-    + "renders a different number of hooks when a batch arrives, and React throws",
-  );
-});
-
 /* ------------------------------------------------------------------ R5 --- */
 test("R5: the refusal is stated at the field AND at the disabled submit", () => {
   // Two statements of one reason, deliberately. A UX review flagged the
@@ -261,37 +249,25 @@ test("R5: the refusal is stated at the field AND at the disabled submit", () => 
 });
 
 /* ------------------------------------------------------------------ R4 --- */
-test("R4: the timed-out batch is a section from the shared disclosure module", () => {
-  // The import is asserted as the member the section actually needs, not as a
-  // fixed import list: the staleness advisory (which used the other two) moved
-  // to its own file, and a pin that broke on that move was pinning the import
-  // line rather than the reuse.
-  // The recovered batch now lives in its own file, so the pin reads that file:
-  // its import, its section, and its closed default.
-  assert.match(expiredCode, /import \{ DisclosureSection \} from "\.\.\/disclosure";/,
-    "the recovered batch uses the shared section rather than its own header markup");
-  assert.ok(expiredSection.includes("<DisclosureSection"), "the section is the shared disclosure");
-  assert.ok(
-    !expiredSection.includes("<section"),
-    "the hand-rolled <section> shell is gone; a section that draws its own container is the second implementation "
-    + "this module already rejected once",
-  );
-  assert.match(expiredSection, /title=\{copy\.recoveryHeading\}/,
+test("R4: live and recovered questions share one open, amber decision section", () => {
+  const sections = codeOf(read("components/detail/detail-question-sections.tsx"));
+  assert.match(sections, /import \{ DisclosureSection \} from "\.\.\/disclosure";/,
+    "the decision surface uses the shared section rather than its own header markup");
+  assert.match(sections, /title=\{copy\.recoveryHeading\}/,
     "the title comes from questionCopy(), so the heading stays English-only and shared with the host copy");
+  assert.match(sections, /subtitle=\{copy\.needsDecision\(total\)\}/,
+    "the count is the section's own subtitle; it used to live in the hero, one component above the thing it counts");
+  assert.match(sections, /tone="decision"/,
+    "the section wears the decision tone: it is where the reader can act");
+  assert.match(sections, /defaultOpen/,
+    "a blocking decision opens itself — `startsOpen({ blocking: true })` is the one exemption the disclosure module "
+    + "already names, and the reader can still close it");
+  assert.ok(!expiredSection.includes("<DisclosureSection"),
+    "the recovered batch must not open a second section inside the question section");
   assert.match(expiredSection, /mode="expired"/, "the inner batch still takes the recovery door, not the live one");
-  assert.match(expiredSection, /hint=\{`\$\{questions\.length\} timed out`\}/,
-    "the count stays in the hint, so a closed section still tells the reader how much is behind it");
-  assert.ok(
-    !/\bdefaultOpen\b|\bopen=/.test(expiredSection),
-    "a section that opens itself pushes history onto the reader's first screen — and a timed-out batch is neither "
-    + "live nor blocking, the only two exemptions DisclosureSection allows",
-  );
-  assert.match(
-    read("components/disclosure.tsx"),
-    /defaultOpen = false/,
-    "the closed default is the shared module's own promise, not a local omission: this pin would pass on "
-    + "defaultOpen=true otherwise",
-  );
+  assert.match(sections, /expired > 0 \? `\$\{expired\} question\$\{expired === 1 \? "" : "s"\} timed out` : null/,
+    "the count of recovered questions stays in the hint, named as questions — \"9 timed out\" parses as a duration "
+    + "before it parses as a count");
 });
 
-console.log("question surface collapse test ok: one prose cut with a door, one collapsed description, no panel, a closed recovery section");
+console.log("question surface collapse test ok: one prose cut with a door, no panel, one open amber decision section for live and recovered questions");

@@ -53,7 +53,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PROSE_SUMMARY_LIMIT, splitProseSummary } from "../lib/question-presentation.mjs";
+import { PROSE_SUMMARY_LIMIT, splitProseSummary } from "../lib/question-prose.mjs";
 import { codeOf } from "./helpers/source-code.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -230,9 +230,13 @@ test("R1: a non-string degrades to an empty head instead of throwing", () => {
 });
 
 test("R1: one exported rule at 140, and both prose surfaces read it", () => {
-  const presentation = read("lib/question-presentation.mjs");
+  // The rule moved to its own module (2026-10-27) when the question surface
+  // pushed `question-presentation.mjs` over its file budget. The pin follows
+  // the rule, not the filename: a second truncation rule anywhere on the module
+  // that owns it is still the drift this consolidation removed.
+  const prose = read("lib/question-prose.mjs");
   assert.equal(PROSE_SUMMARY_LIMIT, 140, "the limit is the single named number both surfaces cut at");
-  const secondRule = presentation.match(/export (?:const|function) (?!PROSE_SUMMARY_LIMIT)\w*(?:PREVIEW|TRUNC|SUMMARY_LIMIT)\w*/g) ?? [];
+  const secondRule = prose.match(/export (?:const|function) (?!PROSE_SUMMARY_LIMIT)\w*(?:PREVIEW|TRUNC|SUMMARY_LIMIT)\w*/g) ?? [];
   assert.deepEqual(
     secondRule,
     [],
@@ -240,12 +244,12 @@ test("R1: one exported rule at 140, and both prose surfaces read it", () => {
     + `differently. Found: ${secondRule.join(", ")}`,
   );
   assert.equal(
-    (presentation.match(/OPTION_DESCRIPTION_PREVIEW_LIMIT|splitOptionDescriptionPreview/g) ?? []).length,
+    (prose.match(/OPTION_DESCRIPTION_PREVIEW_LIMIT|splitOptionDescriptionPreview/g) ?? []).length,
     0,
     "the 240/option-only rule is gone, not aliased",
   );
   assert.match(
-    read("lib/question-presentation.d.mts"),
+    read("lib/question-prose.d.mts"),
     /export declare const PROSE_SUMMARY_LIMIT: number;/,
     "the type declaration names the rule, so a consumer cannot import a stale name and still compile",
   );

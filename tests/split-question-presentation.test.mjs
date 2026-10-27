@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { SPLIT_QUESTION_GUIDANCE, isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "../lib/question-presentation.mjs";
-import { askTimelineLabels, describeAskSubmission, englishQuestionContentError, questionCopy } from "../lib/question-presentation.mjs";
+import {
+  askTimelineLabels,
+  describeAskSubmission,
+  englishQuestionContentError,
+  questionCopy,
+} from "../lib/question-presentation.mjs";
+import { retiredQuestionVocabularyError } from "../lib/retired-question-vocabulary.mjs";
 
 const original = "Which deliveries should split?";
 const old = `${original}\n\nSelect the deliveries that should become new independent cards. Anything you do not select stays in this card; nothing is discarded. Choose "Keep as one card" to keep the entire request together.`;
@@ -17,6 +23,26 @@ assert.match(splitSelectionNotice(choices, ["Keep as one card"]).text, /no child
 assert.equal(questionCopy().recoveryHeading, "Waiting for you", "recovery uses one concise, English-only status instead of repeated timeout prose");
 assert.equal(englishQuestionContentError("Which delivery should split?", [{ label: "Refactor app.tsx", description: "Break the frontend into modules." }]), null, "English question content is accepted");
 assert.match(englishQuestionContentError("Quais entregáveis devem virar cards?", [{ label: "Refatorar app.tsx", description: "Decompor o frontend." }]) ?? "", /must be written in English/, "Portuguese structured question content is refused before it reaches a card");
+
+// The retired depth ladder. A real card asked "The estimate says this is
+// bigger than the appetite" while no config in this host still exposes one —
+// the question compared the work against a setting the human cannot find.
+// The refusal names the replacement, so the worker's retry can succeed.
+assert.match(
+  retiredQuestionVocabularyError("The estimate says this is bigger than the appetite. Which surface should come off?") ?? "",
+  /retired "appetite" vocabulary[\s\S]*quality and exploration knobs/,
+  "the retired appetite vocabulary is refused with the words that replaced it",
+);
+assert.match(
+  retiredQuestionVocabularyError("Pick a scope", [{ label: "Keep the appetite small", description: "" }]) ?? "",
+  /retired/,
+  "an option label carries the same stale question, so the guard reads options too",
+);
+assert.equal(
+  retiredQuestionVocabularyError("Does the shape fit within the declared quality and exploration knobs?", [{ label: "Fits", description: "" }]),
+  null,
+  "the replacement wording is accepted",
+);
 
 // Timeline labels: the pending row names the wait, the settled row the resolution.
 assert.deepEqual(askTimelineLabels({ batched: false, count: 1 }), {

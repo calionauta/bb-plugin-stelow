@@ -224,11 +224,11 @@ document: a `DESIGN.md` was written here, found to be ~80% duplicated of those
 docstrings, and deleted.
 
 **Known debt, so it is not rediscovered as a surprise:** `text-[11px]` still
-appears in 100 places doing the same job the scale already names — the size is
+appears in 95 places doing the same job the scale already names — the size is
 allowed, the test counts the sites against a ceiling that only ratchets down, and
 the migration is owed but not urgent. The count is measured against
-`components/` + `lib/`, which is why it reads 100 while a `components/`-only grep
-finds 95: both numbers are right and only one is the one this sentence is about.
+`components/` + `lib/`, which is why it reads 95 while a `components/`-only grep
+finds 90: both numbers are right and only one is the one this sentence is about.
 The
 `min-h-11` rule above is the one this section is least able to keep: it is
 stated, not tested, and 82 raw buttons are the standing evidence.

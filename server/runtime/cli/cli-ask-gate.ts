@@ -8,6 +8,7 @@ import {
 import { parseAskGroups } from "../../../lib/question-batch.mjs";
 import { flagValue } from "../../../lib/cli-argv.mjs";
 import { englishQuestionContentError } from "../../../lib/question-presentation.mjs";
+import { retiredQuestionVocabularyError } from "../../../lib/retired-question-vocabulary.mjs";
 import {
   SPLIT_KEEP_LABEL,
   splitEligibility,
@@ -97,11 +98,11 @@ export function parseAskIntent(
     contract: group.contract ?? null,
   }));
   for (const group of groups) {
-    const languageError = englishQuestionContentError(
-      group.question,
-      group.options,
-    );
-    if (languageError) return refuse({ exitCode: 2, stderr: languageError });
+    // One door, two content rules: a question in a retired vocabulary is as
+    // unanswerable as one written in another language, so the first refusal wins.
+    const contentError = englishQuestionContentError(group.question, group.options)
+      ?? retiredQuestionVocabularyError(group.question, group.options);
+    if (contentError) return refuse({ exitCode: 2, stderr: contentError });
   }
   return {
     threadId,

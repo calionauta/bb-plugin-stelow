@@ -130,7 +130,14 @@ test("the type-size debt cannot grow", () => {
   // took four wrong numbers (97 for a .tsx-only scan, 95 for a comment-stripped one, 66 and 54
   // for a stripped button census) and the sanity floor below caught each. Two censuses of one
   // tree that disagree are worse than one, so this file uses the canonical scope.
-  const MIGRATION_DEBT = { "text-[11px]": 102 };
+  // Lowered 102 -> 95 (2026-10-27) with a reason: the question surface is the
+  // place the reader answers from, and the 2x card audit found 11px labels and
+  // 11px option metadata too small there. Nine sites became named steps in that
+  // pass (option glance, preview label, shared-brief chip, needs-note chip, the
+  // staleness file list, the conversation footnote and the removed keyboard
+  // legend). A drop beyond the sanity floor is still a census failure; this one
+  // is the migration the ceiling was waiting for.
+  const MIGRATION_DEBT = { "text-[11px]": 95 };
   const counts = {};
   for (const file of ALL) {
     for (const line of sourceOf(file).split("\n")) {

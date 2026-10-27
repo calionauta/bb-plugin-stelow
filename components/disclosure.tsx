@@ -106,7 +106,67 @@ export function DetailsDisclosure({ summary, children }: { summary: string; chil
 // <details>/<summary> use the `group-open:` variant; controlled buttons pass
 // `open` directly. Native controls already expose expanded state to assistive
 // tech; this mirrors it visually for sighted, low-vision, and lay users.
-export function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+type DisclosureProps = {
+  title: string;
+  subtitle?: React.ReactNode;
+  hint?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+  /** A tone the reader already learned from the hero; never a second surface. */
+  tone?: "decision";
+};
+
+/**
+ * The summary line of a section: chevron, title (and its subtitle), hint, and
+ * an optional action. Extracted from `DisclosureSection` so the function stays
+ * inside its size budget and the label's type steps are decided in one place.
+ */
+function SectionSummary({ isOpen, title, subtitle, hint, action }: {
+  isOpen: boolean;
+  title: string;
+  subtitle?: React.ReactNode;
+  hint?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <summary className={cn(
+      SUMMARY_ROW,
+      "text-sm font-medium",
+      subtitle ? "min-h-12" : "min-h-11",
+    )}>
+      <DisclosureChevron className="mr-1.5" open={isOpen} />
+      {/* A subtitle is how a section names its job; the Workflow map uses the
+          same two-line shape, so the pair reads as one family.
+          The sizes sit one step above the old 14px/12px pair: a section header
+          is where a reader lands asking "where is the thing that needs me?",
+          and the 2x card audit found both the label and its explanation too
+          small at normal viewing distance. */}
+      {subtitle ? (
+        <span className="min-w-0">
+          <span className="block text-[15px] font-semibold leading-5 text-foreground">{title}</span>
+          <span className="block text-[13px] font-normal leading-5 text-muted-foreground">{subtitle}</span>
+        </span>
+      ) : <span className="text-[15px]">{title}</span>}
+      {typeof hint === "string" ? (
+        hint ? <span className="ml-2 truncate text-[13px] font-normal text-muted-foreground">{hint}</span> : null
+      ) : (
+        hint
+          ? (
+            <span className="ml-auto inline-flex shrink-0 items-center overflow-visible pl-2 text-[13px] font-normal text-muted-foreground">
+              {hint}
+            </span>
+          )
+          : null
+      )}
+      {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
+    </summary>
+  );
+}
+
+export function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle, tone }: DisclosureProps) {
   const controlled = open !== undefined;
   // Tracked in state, not left to the `group-open:` variant, and that is a bug fix
   // rather than a preference. The chevron below was rendered WITHOUT `open`, so its
@@ -127,29 +187,9 @@ export function DisclosureSection({ title, subtitle, hint, action, children, def
         if (!controlled) setUncontrolledOpen(next);
         onToggle?.(next);
       }}
-      className={`group ${SECTION_SURFACE}`}
+      className={`group ${SECTION_SURFACE} ${tone === "decision" ? "border-amber-500/50 bg-amber-500/5" : ""}`}
     >
-      <summary className={cn(
-        SUMMARY_ROW,
-        "text-sm font-medium",
-        subtitle ? "min-h-12" : "min-h-11",
-      )}>
-        <DisclosureChevron className="mr-1.5" open={isOpen} />
-        {/* A subtitle is how a section names its job; the Workflow map uses the
-            same two-line shape, so the pair reads as one family. */}
-        {subtitle ? (
-          <span className="min-w-0">
-            <span className="block font-semibold leading-5 text-foreground">{title}</span>
-            <span className="block text-xs font-normal leading-5 text-muted-foreground">{subtitle}</span>
-          </span>
-        ) : <span>{title}</span>}
-        {typeof hint === "string" ? (
-          hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null
-        ) : (
-          hint ? <span className="ml-auto inline-flex shrink-0 items-center overflow-visible pl-2 text-xs font-normal text-muted-foreground">{hint}</span> : null
-        )}
-        {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
-      </summary>
+      <SectionSummary isOpen={isOpen} title={title} subtitle={subtitle} hint={hint} action={action} />
       <div className="space-y-3 px-3 pb-3">{children}</div>
     </details>
   );

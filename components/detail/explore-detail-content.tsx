@@ -64,8 +64,8 @@ function ExploreStatus({ card, detail, stageLabel, state, onChanged }: Pick<Expl
 /**
  * The answerable question, as a SIBLING of the status hero rather than a child.
  * The same placement the Build card uses: a box inside the hero's own box never
- * read as a boundary, so the question gets its own section below it and the
- * hairline between them finally separates two things instead of decorating one.
+ * read as a boundary, so the question gets its own amber decision section below
+ * it and the gap between them separates two things instead of decorating one.
  */
 function ExploreQuestions({ card, detail, state, onChanged }: Pick<ExploreContentProps, "card" | "detail" | "state" | "onChanged">) {
   if (!detail) return null;
