@@ -22,35 +22,26 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
     if (inFlight) return;
     inFlight = true;
     const started = deps.now();
-    let outcome: "ok" | "error" = "ok";
+    const pass = await runReconcilePass(deps, sweep);
     try {
-      await sweep.reconcileRuns();
-      await sweep.reconcileStageEntries();
-      // Last, optional, and unable to fail the pass: ask the forge whether a
-      // card whose ledger still says "owed" has in fact already landed.
-      await deps.reconcilePublications?.().catch(() => undefined);
-    } catch (error) {
-      outcome = "error";
-      if (!isDatabaseClosedError(error)) throw error;
-      // The captured handle died — on a reload the new load owns a new
-      // handle, but this pass (or a surviving timer) still holds the old one.
-      // Rebuild against a live handle so the next pass proceeds; this pass
-      // resolves because a dead handle could conclude nothing truthful.
-      reportClosedHandle(deps, error);
-      const rewired = rewireRules(deps);
-      if (rewired) ({ run, sweep } = rewired);
+      if (pass.failed && !isDatabaseClosedError(pass.failed.error)) {
+        recordTick(deps, started, "error", { failed: [pass.failed.name], phases: pass.phases });
+        throw pass.failed.error;
+      }
+      if (pass.failed) {
+        // The captured handle died — on a reload the new load owns a new
+        // handle, but this pass (or a surviving timer) still holds the old one.
+        // Rebuild against a live handle so the next pass proceeds; this pass
+        // resolves because a dead handle could conclude nothing truthful.
+        reportClosedHandle(deps, pass.failed.error);
+        const rewired = rewireRules(deps);
+        if (rewired) ({ run, sweep } = rewired);
+        recordTick(deps, started, "error", { failed: [pass.failed.name], phases: pass.phases });
+        return;
+      }
+      recordTick(deps, started, "ok", { phases: pass.phases });
     } finally {
       inFlight = false;
-      // A tick that changes nothing still happened. Without this row, a
-      // reconciler looping every 45s and recording 26 duplicate comments was
-      // the only evidence it ran at all; with it, the loop is one row whose
-      // `occurrences` and `last_at` say how long it has been going.
-      deps.actions?.record({
-        kind: "reconcile.tick",
-        outcome,
-        cause: outcome === "ok" ? "reconcile.tick" : "reconcile.error",
-        durationMs: deps.now() - started,
-      });
     }
   }
 
@@ -173,3 +164,57 @@ function reportClosedHandle(deps: ReconcileDeps, error: unknown): void {
 }
 
 export type { ReconcileDeps, ReconcileResult } from "./execution-reconcile-deps.js";
+
+/** One pass, step by step, so a slow tick names the step that took the time. */
+export async function runReconcilePass(
+  deps: ReconcileDeps,
+  sweep: ReturnType<typeof createReconcileSweep>,
+): Promise<{
+  phases: Record<string, number>;
+  failed: { name: string; error: unknown } | null;
+}> {
+  const phases: Record<string, number> = {};
+  let failed: { name: string; error: unknown } | null = null;
+  const step = async (name: string, run: () => Promise<unknown>) => {
+    if (failed) return;
+    const stepStarted = deps.now();
+    try {
+      await run();
+    } catch (error) {
+      failed = { name, error };
+    } finally {
+      // A backwards wall clock (NTP step) must not write negative time.
+      phases[name] = Math.max(0, deps.now() - stepStarted);
+    }
+  };
+  await step("runs", () => sweep.reconcileRuns());
+  await step("stage entries", () => sweep.reconcileStageEntries());
+  // Last, optional, and unable to fail the pass: ask the forge whether a card
+  // whose ledger still says "owed" has in fact already landed.
+  await step(
+    "publications",
+    // `Promise.resolve().then` catches a SYNCHRONOUS throw too; `?.().catch`
+    // only guards a rejection, which made the "cannot fail the pass" comment
+    // false for a callback that threw before returning a promise.
+    () => Promise.resolve().then(() => deps.reconcilePublications?.()).catch(() => undefined),
+  );
+  return { phases, failed };
+}
+
+/** A tick that changes nothing still happened. Without this row, a reconciler
+ * looping every 45s was invisible; with it, the loop is one row whose
+ * `occurrences`, max/last duration and per-step phases say how long and where. */
+function recordTick(
+  deps: ReconcileDeps,
+  started: number,
+  outcome: "ok" | "error",
+  detail: Record<string, unknown>,
+): void {
+  deps.actions?.record({
+    kind: "reconcile.tick",
+    outcome,
+    cause: outcome === "ok" ? "reconcile.tick" : "reconcile.error",
+    durationMs: deps.now() - started,
+    detail,
+  });
+}

@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.95.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.95.0...v0.95.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* name the step that makes the execution reconcile slow ([#455](https://github.com/calionauta/bb-plugin-stelow/issues/455)) ([131ed5d](https://github.com/calionauta/bb-plugin-stelow/commit/131ed5de3968ecd97713ae45eb1ada58ab324487))
+
+## [0.95.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.3...v0.95.0) (2026-10-27)
+
+
+### Features
+
+* name every refusal, stage regression and slow tick in the log ([#454](https://github.com/calionauta/bb-plugin-stelow/issues/454)) ([b0ccad2](https://github.com/calionauta/bb-plugin-stelow/commit/b0ccad28138beb4b44807fe94fda6ea924be82d7))
+
+
+### Bug Fixes
+
+* every launched run logs its start, once, and a failed launch logs why ([#452](https://github.com/calionauta/bb-plugin-stelow/issues/452)) ([e325005](https://github.com/calionauta/bb-plugin-stelow/commit/e3250059d82dfd622bc6d3301ffacfff06b2b3e2))
+
+## [0.94.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.2...v0.94.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* a run start is not a finished run, and run.no-reason is reachable ([#446](https://github.com/calionauta/bb-plugin-stelow/issues/446)) ([133e25f](https://github.com/calionauta/bb-plugin-stelow/commit/133e25f97bbc1b9a8bf3b5f2ce164e036e19cc34))
+
 ## [0.94.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.1...v0.94.2) (2026-10-27)
 
 

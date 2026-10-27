@@ -7,6 +7,7 @@
  * that silently stalls.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 import {
   activeExecutionRun,
   createExecutionRun,
@@ -34,6 +35,7 @@ export type LaunchDeps = {
   prepareStart: (card: WorkerCard, recipe: Recipe, stage: WorkflowStage, context: StartContext) => Promise<PreparedOrError>;
   /** Receipt for the coordinator pause-note when the send itself fails. */
   noteSendFailure?: (cardId: string, targetId: string, body: string) => void;
+  actions?: ActionRecorder;
 };
 
 type PreparedRun = Pick<
@@ -136,15 +138,32 @@ async function launchNativeRun(
       workflowArgs: prepared.args,
     });
     const launched = recordRunIdentity(deps, run.id, native);
+    // The launch is the only moment every run passes through. Recording the
+    // start from the reconciler missed runs whose first observed state was
+    // already `succeeded` (14 of 20 finishes had no start row on the live log).
+    deps.actions?.record({
+      kind: "run.started",
+      outcome: "ok",
+      cardId: card.id,
+      runId: run.id,
+      stage: run.stage,
+      detail: { recipe: run.recipeId },
+    });
     noteRunOwnership(deps, card, prepared, native, run);
     return { ok: true, run: launched, error: null };
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to start the native workflow.";
     const failed = transitionExecutionRun(deps.db, run.id, "failed", { errorCode: "native-start-failed" });
-    return {
-      ok: false,
-      run: failed,
-      error: error instanceof Error ? error.message : "Unable to start the native workflow.",
-    };
+    deps.actions?.record({
+      kind: "run.finished",
+      outcome: "error",
+      cause: "run.start-failed",
+      cardId: card.id,
+      runId: failed.id,
+      stage: run.stage,
+      detail: { recipe: run.recipeId, error: message.slice(0, 300) },
+    });
+    return { ok: false, run: failed, error: message };
   }
 }
 

@@ -37,6 +37,7 @@ export function createExecutionNative(deps: NativeDeps) {
     adapterFor,
     prepareStart: preparer.prepareStart,
     noteSendFailure: deps.logComment,
+    actions: deps.actions,
   });
 
   return {

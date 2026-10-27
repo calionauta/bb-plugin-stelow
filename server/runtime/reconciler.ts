@@ -198,46 +198,51 @@ function releaseTerminalClaims(deps: ReconcilerDeps): void {
  */
 export function startReconciler(deps: ReconcilerDeps, reconcileExecution?: () => Promise<void>) {
   const scheduler = deps.scheduler ?? { setInterval, clearInterval };
-  const tick = () => {
-    if (!(deps.db as { open?: boolean }).open) return;
-    const started = deps.now();
-    const failed: string[] = [];
-    const phase = (name: string, run: () => void) => {
-      try {
-        run();
-      } catch (error) {
-        failed.push(name);
-        deps.onError(name, error);
-      }
-    };
-    phase("reconcile live cards", () => reconcileLiveCards(deps));
-    void deps.maybeBumpSeverity();
-    phase("sweep inbox aging", () => sweepInboxAging(deps));
-    // Renewal runs before the sweep on purpose: a holder the host still
-    // supervises must not have its lease reaped in the same tick that would
-    // have extended it, or the renewal would only ever fire for claims nobody
-    // was about to take.
-    phase("renew live claims", () => renewLiveClaims(deps));
-    phase("release expired claims", () => releaseExpiredClaims(deps));
-    phase("release terminal claims", () => releaseTerminalClaims(deps));
-    // A heartbeat, not an event: the tick itself is what a silent reconciler
-    // never left behind. `occurrences` grows per tick, so the row answers "how
-    // often" without one line per 45 seconds; `last_at` is the liveness proof.
-    deps.actions?.record({
-      kind: "card.tick",
-      outcome: failed.length === 0 ? "ok" : "partial",
-      cause: "card.tick",
-      durationMs: deps.now() - started,
-      // Which phase threw, by name. "Partial" alone sent the reader to the
-      // host log to find out what happened; the row now carries it. The
-      // recorder keeps the latest occurrence's detail for a folded row, so a
-      // phase that starts failing tomorrow is not hidden behind today's set.
-      detail: failed.length > 0 ? { failed } : undefined,
-    });
-    // Last and non-blocking: the execution pass is async and owns its own
-    // in-flight guard, so a slow one must not delay the next card tick.
-    if (reconcileExecution) void reconcileExecution();
-  };
+  const tick = () => runTick(deps, reconcileExecution);
   const timer = scheduler.setInterval(tick, RECONCILE_MS);
   return { tick, dispose: () => scheduler.clearInterval(timer) };
+}
+
+/** One pass, kept out of the timer factory so the factory reads as wiring. */
+function runTick(deps: ReconcilerDeps, reconcileExecution?: () => Promise<void>) {
+  if (!(deps.db as { open?: boolean }).open) return;
+  const started = deps.now();
+  const failed: string[] = [];
+  const phases: Record<string, number> = {};
+  const phase = (name: string, run: () => void) => {
+    const phaseStarted = deps.now();
+    try {
+      run();
+    } catch (error) {
+      failed.push(name);
+      deps.onError(name, error);
+    } finally {
+      // A backwards wall clock (NTP step) must not write negative time.
+      phases[name] = Math.max(0, deps.now() - phaseStarted);
+    }
+  };
+  phase("reconcile live cards", () => reconcileLiveCards(deps));
+  void deps.maybeBumpSeverity();
+  phase("sweep inbox aging", () => sweepInboxAging(deps));
+  // Renewal runs before the sweep on purpose: a holder the host still
+  // supervises must not have its lease reaped in the same tick that would
+  // have extended it, or the renewal would only ever fire for claims nobody
+  // was about to take.
+  phase("renew live claims", () => renewLiveClaims(deps));
+  phase("release expired claims", () => releaseExpiredClaims(deps));
+  phase("release terminal claims", () => releaseTerminalClaims(deps));
+  // A heartbeat, not an event: the tick itself is what a silent reconciler
+  // never left behind. `occurrences` grows per tick, and the detail keeps the
+  // LATEST pass — which phase threw, and how long each phase took, so a slow
+  // tick names its cost instead of sending the reader to the host log.
+  deps.actions?.record({
+    kind: "card.tick",
+    outcome: failed.length === 0 ? "ok" : "partial",
+    cause: "card.tick",
+    durationMs: deps.now() - started,
+    detail: { ...(failed.length > 0 ? { failed } : {}), phases },
+  });
+  // Last and non-blocking: the execution pass is async and owns its own
+  // in-flight guard, so a slow one must not delay the next card tick.
+  if (reconcileExecution) void reconcileExecution();
 }

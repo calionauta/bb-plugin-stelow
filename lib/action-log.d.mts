@@ -44,6 +44,7 @@ export interface ActionLogRow {
   outcome: ActionOutcome;
   cause: string | null;
   durationMs: number | null;
+  lastDurationMs: number | null;
   occurrences: number;
   detail: string;
 }

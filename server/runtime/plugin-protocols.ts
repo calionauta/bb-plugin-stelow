@@ -16,17 +16,18 @@
 // commands, but bb workspaces have no such binary — the plugin wraps the
 // same operations. One sentence everywhere so workers discover the
 // sync-scopes/lock/config equivalents instead of failing on the path.
-export const CLI_EQUIVALENTS =
-  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, "
-  + "your state dir's receipts (audit.md, audit-trail.md, "
-  + "invariants.json, scope-map.json, recon-receipt.json) and stage paths "
-  + "— never discover them with `bb skill list \
-| awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the \
-`bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never \
-run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers \
-a workspace-level claim so sibling cards on this checkout see your files. A `BB-LOCK-BLOCKED` stderr means another live card holds the file — \
-do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when \
-the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.";
+export const CLI_EQUIVALENTS = [
+  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, ",
+  "your state dir's receipts (audit.md, audit-trail.md, ",
+  "invariants.json, scope-map.json, recon-receipt.json) and stage paths ",
+  "— never discover them with `bb skill list | awk` pipelines. Scope sync runs automatically when you advance into execution. ",
+  "Only `sync-scopes`, `lock`, `config get` map to `bb stelow`. `scripts/stelow next` has no `bb stelow` equivalent — the next stage is in ",
+  "`bb stelow playbook`. Never invent `bb stelow <verb>`. Never ",
+  "run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers ",
+  "a workspace-level claim so sibling cards on this checkout see your files. A `BB-LOCK-BLOCKED` stderr means another live card holds the file — ",
+  "do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when ",
+  "the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.",
+].join("");
 
 // The ask contract: how a worker puts a question to the person.
 //

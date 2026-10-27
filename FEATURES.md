@@ -1582,7 +1582,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   plus a 45 s heartbeat for both reconcilers — the card tick names the phases
   that threw when it comes back partial. A repeated
   condition is ONE row with `occurrences` inside a 10-minute window, which is
-  what a 150-restart spawn loop and a 26-comment reconcile loop collapse to.
+  what a 150-restart spawn loop and a 26-comment reconcile loop collapse to;
+  the row keeps the **worst and the last** duration, and a card tick carries
+  per-phase milliseconds, so a slow pass names its cost. Refusals are named by
+  reason (`rpc.refused.thread-archived`, `.host-hold`, …), stage rows say
+  advance vs back, and `card.updated` records only fields classified as state
+  (new columns must be classified or the schema test fails).
   Read it with `bb stelow log [--card] [--kind] [--cause] [--outcome]
   [--layer] [--since 6h|7d|6w] [--limit] [--json]`; `--replay` merges the log
   with the card's stage events, runs, verifications, publications and comments

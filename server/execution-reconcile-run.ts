@@ -122,6 +122,7 @@ export async function reconcileOne(deps: RunDeps, runId: string): Promise<Reconc
   if (!run.runId) {
     if (deps.now() - run.createdAt > 60_000) {
       run = transitionExecutionRun(deps.db, run.id, "failed", { errorCode: "native-start-timeout" });
+      recordRunFinished(deps, run, "error", "run.start-timeout", { state: "start-timeout" });
     }
     return { run, error: null };
   }
@@ -221,8 +222,11 @@ async function applyNativeState(
         settled = transitionExecutionRun(deps.db, run.id, "running", { nativeStatus: "running" });
       }
       settled = transitionExecutionRun(deps.db, run.id, "succeeded", { nativeStatus: "succeeded" });
+      // Only a pass that MOVED the row records the finish. The old code
+      // recorded it on every entry, so one run could log two finishes 24
+      // minutes apart (observed on exec_hqk4quzd).
+      recordRunFinished(deps, settled, "ok", null, native);
     }
-    recordRunFinished(deps, settled, "ok", null, native);
     await deps.dispatch.reconcileArtifacts(card, settled);
     return;
   }
@@ -251,13 +255,7 @@ async function reconcileSimpleState(
     nativeStatus: state,
     errorCode: reason || null,
   });
-  recordRunFinished(
-    deps,
-    next,
-    state === "cancelled" ? "skipped" : "error",
-    state === "failed" ? (reason ? "run.failed" : "run.no-reason") : null,
-    native,
-  );
+  recordStateTransition(deps, { next, state, native });
   if (state !== "failed") return;
   // Quote what was just WRITTEN, never the value this replaced. The old line
   // interpolated `run.nativeStatus` — the status BEFORE the transition — into a
@@ -271,6 +269,36 @@ async function reconcileSimpleState(
     + "The card remains available for retry.",
   );
   await attemptAutoRetry(deps, next);
+}
+
+
+/**
+ * The terminal fact, once per transition.
+ *
+ * A start is recorded by the launcher, not here: an observation of `running`
+ * may never happen (a fast run goes queued→succeeded inside one pass), and
+ * recording it here produced a second start row when it did. The failure cause
+ * is decided from what the HOST sent, not from the rendered sentence:
+ * `failureReason` substitutes "the host reported a failure without a reason",
+ * which is truthy, and made `run.no-reason` unreachable.
+ */
+function recordStateTransition(
+  deps: RunDeps,
+  args: { next: ExecutionRun; state: SimpleState; native: NativeStatus },
+): void {
+  // A start is recorded at the launch, the one moment every run passes
+  // through. An observation of `running` here would be a second row for the
+  // same run, and it misses runs whose first observed state is terminal.
+  if (args.state === "running") return;
+  const hostGaveReason =
+    typeof args.native.scriptError === "string" && args.native.scriptError.trim().length > 0;
+  recordRunFinished(
+    deps,
+    args.next,
+    args.state === "cancelled" ? "skipped" : "error",
+    args.state === "failed" ? (hostGaveReason ? "run.failed" : "run.no-reason") : null,
+    args.native,
+  );
 }
 
 /**

@@ -141,7 +141,7 @@ test("a returned {ok:false, error} records a refusal and returns the value uncha
   assert.equal(rows.length, 1, "a refusal is one row, not a refusal plus a success");
   assert.equal(rows[0].kind, "rpc.call");
   assert.equal(rows[0].outcome, "refused");
-  assert.equal(rows[0].cause, "rpc.refused");
+  assert.equal(rows[0].cause, "rpc.refused.thread-archived");
   assert.equal(rows[0].cardId, "card_9");
   const detail = JSON.parse(rows[0].detail);
   assert.equal(detail.name, "thread.archive");
