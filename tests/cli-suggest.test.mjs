@@ -20,6 +20,21 @@ assert.equal(nearestCommand("ask", null), null);
 // Ties resolve to registration order, so the suggestion never flip-flops.
 assert.equal(nearestCommand("do", ["done", "door", "doctor"]), "done");
 
+// `next` is the verb of the OTHER surface: the vendored skills say
+// `scripts/stelow next` (the helper), and a worker that learned the word there
+// types `bb stelow next`. No edit distance can see that relationship, so the
+// suggestion is the only thing that can point at the command that does exist.
+// Read against the real registry: a rename of `advance` must not leave the
+// suggestion naming a command the dispatcher cannot run.
+const commandNames = stelowCliCommands.map((entry) => entry.name);
+assert.equal(nearestCommand("next", commandNames), "advance", "the helper's verb suggests the command that owns the move");
+assert.equal(nearestCommand("  NEXT  ", commandNames), "advance", "the alias is trimmed and case-folded like every other lookup");
+assert.equal(
+  nearestCommand("zzzzz", commandNames),
+  null,
+  "a word that resembles nothing is still refused: an alias must not turn the suggestion into a guess",
+);
+
 // Help and usage derive from the declared metadata, never pasted prose.
 const commands = [
   { name: "ask", summary: "Ask questions", usage: "bb stelow ask ..." },

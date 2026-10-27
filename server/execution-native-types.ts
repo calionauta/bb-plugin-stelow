@@ -5,6 +5,7 @@
  * file is the single place a shape is named.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 import type { Recipe } from "../lib/recipe-catalog.mjs";
 import type { ExecutionRoute } from "../lib/execution-route.mjs";
 import type { ExecutionRun } from "../lib/execution-run-ledger.mjs";
@@ -71,4 +72,6 @@ export type NativeDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   stateDir: (card: WorkerCard, rootPath: string) => Promise<string | null>;
   logComment: (cardId: string, targetId: string, body: string) => void;
+  /** The flight recorder; absent means "no log", never "no launch". */
+  actions?: ActionRecorder;
 };

@@ -9,18 +9,29 @@
  * the log exists to answer ("how often does a run fail?") unanswerable.
  *
  * What is pinned here is the seam, not the writer: `reconcileOne` is driven
- * with a queued ledger row and a host answer, and the assertions read the
- * entries the recorder was actually handed. The collecting recorder validates
- * each entry against the closed vocabulary in `lib/action-kinds.mjs`, so a kind
+ * with a live ledger row and a host answer, and the assertions read the entries
+ * the recorder was actually handed. The collecting recorder validates each
+ * entry against the closed vocabulary in `lib/action-kinds.mjs`, so a kind
  * emitted at the call site but missing from the catalog fails here instead of
  * vanishing silently through the runtime recorder (which catches the refusal).
  *
- * The answers a single native poll can take from `queued`:
+ * The rule that came out of the audit, and the shape of everything below: the
+ * LAUNCH records `run.started` — it is the one moment every run passes through,
+ * including the ones whose first observed state is already terminal — and the
+ * reconciler records `run.finished` once, when a host answer settles the row.
+ * An observation of `running` is a status update, not an event: it logs nothing
+ * at all, so a polling loop cannot manufacture rows.
  *
- *   running    -> `run.started` (ok), and NOT `run.finished`
+ * The answers one native poll can take from a live row:
+ *
+ *   running    -> no row at all (the launch already recorded the start)
  *   failed     -> `run.finished` (error) with `run.failed` or `run.no-reason`
  *   succeeded  -> `run.finished` (ok) with no payload
  *   cancelled  -> `run.finished` (skipped)
+ *
+ * A run with no native handle settles as `run.start-timeout` once the 60s
+ * startup window passes: a row that waits forever is a card pinned as
+ * "starting" by a host that is never coming back.
  *
  * The `run.no-reason` half of the failure pair is red on the branch that
  * introduced `run.started`: `failureReason` turns a missing `scriptError` into
@@ -30,18 +41,22 @@
  * test that does not name its defect gets "fixed" by deleting it.
  *
  * `succeeded` from `queued` settles in ONE call: `applyNativeState` walks the
- * legal `queued -> running -> succeeded` path before recording, precisely
- * because forcing the illegal direct transition threw into the catch and
- * silently stopped settling rows. The start it crosses on the way is internal
- * bookkeeping and emits no `run.started` — the assertions below say so
- * explicitly so the absence is a decision on record, not an oversight.
+ * legal `queued -> running -> succeeded` path before recording, because forcing
+ * the illegal direct transition threw into the catch and silently stopped
+ * settling rows. The start it crosses is bookkeeping and emits no
+ * `run.started` — asserted below, so the absence is a decision on record.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isActionCause, isActionKind, isActionOutcome } from "../lib/action-kinds.mjs";
-import { createExecutionRun, getExecutionRun } from "../lib/execution-run-ledger.mjs";
+import {
+  createExecutionRun,
+  getExecutionRun,
+  transitionExecutionRun,
+} from "../lib/execution-run-ledger.mjs";
 import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 import { reconcileOne } from "../server/execution-reconcile-run.ts";
+import { createNativeLauncher } from "../server/execution-native-launch.ts";
 
 const CARD = {
   id: "card-1",
@@ -94,16 +109,9 @@ function collectingActions() {
   };
 }
 
-/** One queued run holding a native handle: the row the fixed launch leaves before the host answers. */
-function queuedRun(db, id = "local-1") {
-  return createExecutionRun(db, { ...RUN_INPUT, id, runId: `native-${id}`, now: 100 });
-}
-
-function harness(hostStatus) {
-  const db = executionRunDb(CARD.id);
-  const run = queuedRun(db);
-  const actions = collectingActions();
-  const deps = {
+/** The reconciler's dependency slice over one in-memory ledger. */
+function depsFor(db, actions, hostStatus) {
+  return {
     db,
     now: () => 1_000,
     getCard: () => CARD,
@@ -116,7 +124,18 @@ function harness(hostStatus) {
     dispatch: { reconcileBoundary: async () => {}, reconcileArtifacts: async () => {} },
     actions,
   };
-  return { db, run, actions, deps };
+}
+
+/** One queued run holding a native handle: the row the fixed launch leaves before the host answers. */
+function queuedRun(db, id = "local-1") {
+  return createExecutionRun(db, { ...RUN_INPUT, id, runId: `native-${id}`, now: 100 });
+}
+
+function harness(hostStatus) {
+  const db = executionRunDb(CARD.id);
+  const run = queuedRun(db);
+  const actions = collectingActions();
+  return { db, run, actions, deps: depsFor(db, actions, hostStatus) };
 }
 
 /** Reconcile, and prove the pass did not fall into the unreachable path or emit a bad row. */
@@ -131,24 +150,47 @@ function rowsOfKind(actions, kind) {
   return actions.entries.filter((entry) => entry.kind === kind);
 }
 
-test("a queued run the host reports as running records one run.started and no run.finished", async () => {
+test("observing a run as running records nothing: the launch owns the start row", async () => {
   const h = harness({ state: "running" });
 
   await reconcile(h);
 
   assert.equal(getExecutionRun(h.db, h.run.id).normalizedStatus, "running");
-  const started = rowsOfKind(h.actions, "run.started");
-  assert.equal(started.length, 1, "a transition into running is exactly one start row");
-  assert.equal(started[0].outcome, "ok");
-  assert.equal(started[0].cardId, CARD.id);
-  assert.equal(started[0].runId, h.run.id, "the row names the ledger run, not the host's handle");
-  assert.equal(started[0].stage, "audit");
-  assert.deepEqual(started[0].detail, { recipe: "execution-audit" });
   assert.equal(
-    rowsOfKind(h.actions, "run.finished").length,
+    rowsOfKind(h.actions, "run.started").length,
     0,
-    "starting is not finishing: the bug logged a false error at the moment a run began",
+    "a poll that sees progress did not start the run: recording here would double the launch's own row",
   );
+  assert.equal(rowsOfKind(h.actions, "run.finished").length, 0, "running is not finishing");
+  assert.deepEqual(h.actions.entries, [], "a status update that changes nothing is not an event");
+});
+
+test("a run that never got a native handle is finished once, as a start timeout", async () => {
+  const db = executionRunDb(CARD.id);
+  // 120s before the clock this pass reads: past the 60s startup window, with no
+  // host handle to poll because the launch never returned one.
+  const run = createExecutionRun(db, { ...RUN_INPUT, id: "local-start-timeout", now: 1_000 - 120_000 });
+  const actions = collectingActions();
+  const h = { db, run, actions, deps: depsFor(db, actions, { state: "running" }) };
+
+  await reconcile(h);
+
+  const row = getExecutionRun(h.db, h.run.id);
+  assert.equal(row.normalizedStatus, "failed", "a run nobody can watch does not stay queued forever");
+  assert.equal(row.errorCode, "native-start-timeout", "the row names the window it missed");
+  const finished = rowsOfKind(h.actions, "run.finished");
+  assert.equal(finished.length, 1, "one silent startup is one terminal fact, not one per poll");
+  assert.equal(finished[0].outcome, "error");
+  assert.equal(finished[0].cause, "run.start-timeout");
+  assert.equal(finished[0].cardId, CARD.id);
+  assert.equal(finished[0].runId, h.run.id);
+  assert.equal(finished[0].detail.state, "start-timeout");
+  assert.equal(
+    finished[0].detail.native.state,
+    "start-timeout",
+    "the payload names the outcome that happened, not a host state that never arrived",
+  );
+  assert.equal(rowsOfKind(h.actions, "run.started").length, 0, "nothing started, so nothing may claim it did");
 });
 
 test("a failed run with a script error records run.finished error caused by run.failed", async () => {
@@ -228,4 +270,130 @@ test("a cancelled run records run.finished skipped with no cause", async () => {
   assert.equal(finished[0].runId, h.run.id);
   assert.equal(finished[0].detail.state, "cancelled");
   assert.equal(rowsOfKind(h.actions, "run.started").length, 0);
+});
+
+test("reconciling a settled run twice records one finish, because the second pass is the terminal early return", async () => {
+  const db = executionRunDb(CARD.id);
+  // `running`, not `queued`: this is the row shape a real poll settles, and the
+  // one the old writer could reach repeatedly and record on every entry.
+  const created = createExecutionRun(db, { ...RUN_INPUT, id: "local-settled", runId: "native-settled", now: 100 });
+  const run = transitionExecutionRun(db, created.id, "running", { nativeStatus: "running" });
+  const actions = collectingActions();
+  const h = { db, run, actions, deps: depsFor(db, actions, { state: "succeeded" }) };
+
+  await reconcile(h);
+  assert.equal(rowsOfKind(h.actions, "run.finished").length, 1, "the first pass settles the row and records it");
+  await reconcile(h);
+
+  const finished = rowsOfKind(h.actions, "run.finished");
+  assert.equal(finished.length, 1, "the second pass adds no second finish: the row is terminal, so nothing is re-recorded");
+  assert.equal(finished[0].outcome, "ok");
+  assert.equal(finished[0].cause, null);
+  assert.equal(getExecutionRun(db, run.id).normalizedStatus, "succeeded");
+  assert.deepEqual(h.actions.vocabularyErrors, []);
+});
+
+test("a host that reports succeeded while a card question is open records no finish at all", async () => {
+  // The duplicate-finish question was asked about this shape — `needs_input`
+  // with a host already done — and this row never settles here: a run still
+  // holding an open question is asking one, not finishing, so it records
+  // nothing and stays answerable by a person. The duplicate case above is the
+  // settle path; this is the guard that keeps a poll from closing the boundary.
+  const db = executionRunDb(CARD.id);
+  const created = createExecutionRun(db, { ...RUN_INPUT, id: "local-needs-input", runId: "native-wait", now: 100 });
+  const run = transitionExecutionRun(db, created.id, "needs_input", { nativeStatus: "needs_input" });
+  const actions = collectingActions();
+  const h = { db, run, actions, deps: depsFor(db, actions, { state: "succeeded" }) };
+
+  await reconcile(h);
+  await reconcile(h);
+
+  const row = getExecutionRun(db, run.id);
+  assert.equal(row.normalizedStatus, "needs_input", "a host success does not answer the question on the card");
+  assert.equal(rowsOfKind(h.actions, "run.finished").length, 0, "an open question keeps the run unsettled, so no finish is recorded");
+  assert.deepEqual(h.actions.entries, []);
+});
+
+/**
+ * The launch rule with the host and the staging taken out: `prepareStart` hands
+ * back a run that is already staged, `adapterFor` is the host's own dispatch,
+ * and `bb.sdk.threads.send` is the pause-note (fire-and-forget, so it only has
+ * to resolve). Everything that matters here — the slot claim, the ledger row,
+ * the recorder call — is the real implementation.
+ */
+const PREPARED_START = {
+  recipe: { id: "execution-audit" },
+  stage: { id: "audit" },
+  stateDir: null,
+  workspacePath: "/workspace",
+  artifactRoot: "/workspace/.stelow/runs/exec-1",
+  source: "return { state: 'running' };",
+  sourceHash: "sha256:abc",
+  args: { localRunId: "exec-1", recipeId: "execution-audit", context: {} },
+};
+
+function launchHarness(adapterRun) {
+  const db = executionRunDb(CARD.id);
+  const actions = collectingActions();
+  const deps = {
+    db,
+    actions,
+    bb: { sdk: { threads: { send: async () => ({}) } } },
+    adapterFor: () => ({ run: adapterRun }),
+    prepareStart: async () => ({ prepared: PREPARED_START }),
+  };
+  return { db, actions, deps };
+}
+
+function launch(h) {
+  return createNativeLauncher(h.deps).startNativeStageForCard(
+    CARD,
+    "execution-audit",
+    { prompt: CARD.prompt },
+    "audit",
+  );
+}
+
+test("a successful launch records exactly one run.started and no run.finished", async () => {
+  const h = launchHarness(async () => ({ state: "running", runId: "native-1" }));
+
+  const result = await launch(h);
+
+  assert.equal(result.ok, true, `the launch refused instead of starting: ${result.error}`);
+  assert.deepEqual(h.actions.vocabularyErrors, []);
+  assert.equal(getExecutionRun(h.db, result.run.id).normalizedStatus, "running");
+  const started = rowsOfKind(h.actions, "run.started");
+  assert.equal(started.length, 1, "a launch is exactly one start row, recorded where every run passes");
+  assert.equal(started[0].outcome, "ok");
+  assert.equal(started[0].cardId, CARD.id);
+  assert.equal(started[0].runId, result.run.id, "the row names the ledger run, not the host's handle");
+  assert.equal(started[0].stage, "audit");
+  assert.deepEqual(started[0].detail, { recipe: "execution-audit" });
+  assert.equal(rowsOfKind(h.actions, "run.finished").length, 0, "a dispatch the host accepted is not a run finished");
+});
+
+test("a launch whose adapter throws records one run.finished error caused by run.start-failed", async () => {
+  const h = launchHarness(async () => {
+    throw new Error("host exploded");
+  });
+
+  const result = await launch(h);
+
+  assert.equal(result.ok, false, "a launch the host rejected is reported as a refusal");
+  assert.equal(result.error, "host exploded", "the caller still carries the host's own words");
+  assert.equal(getExecutionRun(h.db, result.run.id).normalizedStatus, "failed");
+  const finished = rowsOfKind(h.actions, "run.finished");
+  assert.equal(finished.length, 1, "one failed dispatch is one finish, not a start and a finish");
+  assert.equal(finished[0].outcome, "error");
+  assert.equal(finished[0].cause, "run.start-failed");
+  assert.equal(finished[0].cardId, CARD.id);
+  assert.equal(finished[0].runId, result.run.id);
+  assert.equal(finished[0].stage, "audit");
+  assert.equal(
+    finished[0].detail.error,
+    "host exploded",
+    "the host's message travels with the row, so the log is investigable",
+  );
+  assert.equal(rowsOfKind(h.actions, "run.started").length, 0, "a run the host refused to start never started");
+  assert.deepEqual(h.actions.vocabularyErrors, []);
 });

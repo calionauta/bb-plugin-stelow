@@ -111,6 +111,7 @@ function buildNative(core: RuntimeCore) {
       core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
     logComment: (cardId, targetId, body) =>
       core.ledger.logCardComment(cardId, "card", targetId, "agent", body),
+    actions: core.actions,
   });
 }
 
