@@ -13,7 +13,7 @@ type BulkVerb = "start" | "archive" | "delete";
  * is disabled rather than erroring after the click. `Select all` names the same
  * reach the confirm dialogs name — the cards the filters left on the board — and
  * `Done` is the exit: leaving select mode has to be a visible control, because
- * outside the mode there is no checkbox and, with nothing selected, no other way
+ * outside the mode there is no mark and, with nothing selected, no other way
  * back.
  */
 export function BulkActionButtons({
@@ -43,7 +43,7 @@ export function BulkActionButtons({
   onClear: () => void;
   onExit: () => void;
 }) {
-  // Selection by hand was the only way in, and the checkbox paid for it on every
+  // Selection by hand was the only way in, and the control paid for it on every
   // tile all the time. `Select all` is disabled when there is nothing further to
   // add, and says so with the count it already reached.
   const allSelected = present > 0 && count >= present;

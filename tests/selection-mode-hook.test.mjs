@@ -41,9 +41,10 @@ const ids = () => screen.getByTestId("ids").textContent;
 
 // --- 1. Entering and leaving the mode costs nothing when it is off ----------
 //
-// The measured complaint: `size-8` + `gap-2` out of a 176–256px content box. The
-// fix is not a smaller box, it is no box — and the proof is that leaving the
-// mode returns the board to a state with no selection at all.
+// The measured complaint: `size-8` + `gap-2` out of a 196–276px content box
+// (`scripts/selection-metrics.mjs`). The fix is not a smaller box, it is no box in
+// the content row — and the proof is that leaving the mode returns the board to a
+// state with no selection at all.
 
 render(h(Probe, { presentIds: ["card_a", "card_b", "card_c"], viewMode: "board" }));
 assert.equal(mode(), "false", "the board starts in normal mode: no tile reserves a checkbox");

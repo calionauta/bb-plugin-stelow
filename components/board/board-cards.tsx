@@ -2,6 +2,7 @@ import { Children, useCallback, useState, type MouseEvent, type ReactNode } from
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
+import { CardSelectRow } from "./card-select-row";
 import { useReturnFocus } from "./use-return-focus";
 import { errorActivityLabel, idleDurationLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview } from "../../lib/card-attention.mjs";
@@ -159,17 +160,24 @@ type BoardCardProps = {
 /**
  * One tile surface, in one of two modes.
  *
- * In select mode the card is a checkbox with a title: the whole tile toggles the
- * selection and nothing opens. That is deliberately different from the normal
- * mode, where the tile opens the card — the two actions used to share one
- * target, which is why the checkbox had to `stopPropagation` on every click and
- * why selecting a card felt like fighting the tile.
+ * In select mode the tile is the toggle: it announces itself with `aria-pressed`,
+ * it opens nothing, and its top line says so with a decorative mark
+ * (`CardSelectRow`). That is deliberately different from the normal mode, where
+ * the tile opens the card — the two actions used to share one target, which is
+ * why the control that used to sit inside the tile had to `stopPropagation` on
+ * every click and why selecting a card felt like fighting the tile.
  *
- * `onToggleSelection` being present IS the mode: a surface that offers selection
- * always offers the toggle with it, so a tile cannot paint a checkbox nobody
- * wired. Every caller that does not pass it (the Bucket and hill galleries, the
- * list and hill views, Research and Explore) reserves no space for a control it
- * does not have.
+ * There is no checkbox. A `<input>` inside a tile that is itself a button is
+ * nested interactive content, and it doubled the tab stops of a column; the mark
+ * is `aria-hidden` and the state reaches assistive tech through the tile.
+ *
+ * `selectMode` arrives here already resolved: `BoardCard` computes the predicate
+ * once (`selectMode === true && typeof onToggleSelection === "function"`) and
+ * passes the RESULT. A shell that re-tested the callback would be a second
+ * computation of the same question, free to disagree with the activation path it
+ * also chooses from that answer. Every caller that does not pass it (the Bucket
+ * and hill galleries, Research and Explore) reserves no space for a line it does
+ * not have.
  */
 function CardShell({ card, ariaNoun, selected, selectMode, onToggleSelection, onOpen, children }: {
   card: BoardCardItem;
@@ -205,12 +213,13 @@ function CardShell({ card, ariaNoun, selected, selectMode, onToggleSelection, on
         else if (!selectMode && (event.key === "w" || event.key === "W")) { event.preventDefault(); openThread(); }
       }}
       title={selectMode
-        ? "Click to add this card to the selection"
+        ? selected ? "Click to remove this card from the selection" : "Click to add this card to the selection"
         : card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`${BOARD_CARD_CLASS} ${liveBorderClass(card) || "border-border hover:border-primary/60"}${selected ? " ring-1 ring-primary" : ""}`}
       aria-label={label}
       aria-pressed={selectMode ? Boolean(selected) : undefined}
     >
+      {selectMode ? <CardSelectRow selected={Boolean(selected)} /> : null}
       {children}
     </div>
   );
@@ -239,15 +248,7 @@ export function BoardCard({ card, onOpen, selected, selectMode, onToggleSelectio
       onToggleSelection={onToggleSelection}
       onOpen={onOpen}
     >
-      <div className={`flex min-w-0 items-start ${selecting ? "gap-2" : ""}`}>
-        {selecting ? (
-          <BoardCardSelect
-            cardId={card.id}
-            displayName={card.displayName}
-            selected={Boolean(selected)}
-            onToggleSelection={onToggleSelection}
-          />
-        ) : null}
+      <div className="flex min-w-0 items-start">
         <div className="min-w-0 flex-1">
           <CardHeading
             title={card.displayName}
@@ -257,59 +258,15 @@ export function BoardCard({ card, onOpen, selected, selectMode, onToggleSelectio
           <CardMetaRows card={card} />
         </div>
       </div>
-      <CardResumeFooter card={card} />
+      {/* The mode's premise is one control per card, and its promise is one tab
+          stop each. A stalled card's Retry is a real second button inside the
+          tile, so it stands down while the reader is selecting — the exit is
+          leaving the mode, and the card keeps its state either way. */}
+      {selecting ? null : <CardResumeFooter card={card} />}
     </CardShell>
   );
 }
 
-
-/**
- * The multi-select checkbox, rendered ONLY in select mode.
- *
- * It is inline at the head of the tile's flex row — in flow, never floating. An
- * earlier version was `absolute left-2 top-2`, a 44px opaque box drawn over the
- * title's first lines, so the card's most important text read through a
- * translucent checkbox; an overlay can always drift back over content, while a
- * flex item cannot overlap by construction.
- *
- * What changed is not its size but its existence. Painted unconditionally, it
- * claimed `size-8` plus a `gap-2` out of a 176–256px content box — 15–18% of
- * every tile, every moment — and its own 34px of top-aligned height set the
- * first line of every short title. All of that to arm a bulk bar that appears
- * only after a reader has already clicked something. In a mode it costs nothing
- * in the state that is true 100% of the time.
- *
- * It still `stopPropagation`s, because the label and the input both sit inside a
- * tile that is now itself a toggle: without it, one click on the box would
- * toggle twice and land where it started.
- */
-function BoardCardSelect({ cardId, displayName, selected, onToggleSelection }: {
-  cardId: string;
-  displayName: string;
-  selected: boolean;
-  onToggleSelection?: (cardId: string) => void;
-}) {
-  return (
-    <label
-      className={
-        "mt-0.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border transition "
-        + (selected
-          ? "border-primary/50 bg-primary/10"
-          : "border-transparent hover:border-border hover:bg-muted/60")
-      }
-      onClick={(event) => event.stopPropagation()}
-    >
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={() => onToggleSelection?.(cardId)}
-        onClick={(event) => event.stopPropagation()}
-        className="size-4 cursor-pointer accent-primary"
-        aria-label={`Select ${displayName}`}
-      />
-    </label>
-  );
-}
 
 /**
  * The scope/task strip under the heading. Progress only — the numbers live

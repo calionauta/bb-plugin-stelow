@@ -1892,16 +1892,28 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Multi-select is a mode, not a checkbox on every tile**
   (`hooks/use-selection-mode.ts`, `components/board/select-mode-toggle.tsx`).
   Build cards carry no selection control until someone asks for one. The
-  checkbox used to be painted on every tile: `size-8` plus a `gap-2` inside a
-  `p-3` tile in a `minmax(240px, 320px)` track, which is 40px out of a 176–256px
-  content box — 15–18% of every card, all the time, plus its own 34px of
-  top-aligned height setting the first line of every short title. And it was not
-  "always available" either: it rendered on the Build kanban only, while the
-  list, the hill, Research, Explore and the Bucket gallery had no multi-select
-  at all. One quiet control in the header (`ListTodo`, 44px, `aria-pressed`)
-  enters the mode; in it, the whole tile is the target and clicking toggles
-  instead of opening, which removes the collision that made the checkbox
-  `stopPropagation` on every click. Three exits and three invariants:
+  control used to be painted on every tile: `size-8` plus a `gap-2` inside a
+  `p-3` tile in a `minmax(240px, 320px)` track, which is 40px out of a 196–276px
+  content box — 20.4% of a narrow card, 14.5% of a wide one, all the time — and
+  it shifted every line under it to the right
+  (`scripts/selection-metrics.mjs` derives that range from the classes; the
+  figure this used to quote was the space *left* after the control, printed as
+  the space available). Its 32px box also set the first line of the
+  title — on cards with no status pills, where the heading was the title line
+  alone; cards with pills were already taller. And it was not "always available"
+  either: it rendered on the Build kanban only, while the list, the hill,
+  Research, Explore and the Bucket gallery had no multi-select at all. One quiet
+  control in the header (`ListTodo`, 44px, `aria-pressed`) enters the mode; in
+  it, the whole tile is the target and clicking toggles instead of opening,
+  which removes the collision that made the old control `stopPropagation` on
+  every click. Inside the mode the tile grows one 20px line at the top carrying a
+  decorative **selection mark** — not a checkbox: it is `aria-hidden`, carries no
+  `<input>`, and the state reaches assistive tech through the tile's own
+  `aria-pressed`, which keeps a column of tiles at one tab stop each instead of
+  two. The line costs no content width, and its height — 26px per card — is
+  measured from the classes rather than asserted; the old box cost none, because
+  every tile's column is already taller than it was. Three exits and three
+  invariants:
   **Done** on the floating bar (which now renders while the mode is on rather
   than while the count is non-zero, because it carries the only visible exit),
   `Esc`, and switching view — each clears the selection, so a bulk bar and its
