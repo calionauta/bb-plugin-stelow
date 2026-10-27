@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.98.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.97.0...v0.98.0) (2026-10-27)
+
+
+### Features
+
+* **jtbd:** contracts for verdict tables, depth bands, and depth-floor counts ([#460](https://github.com/calionauta/bb-plugin-stelow/issues/460)) ([7ddd4f7](https://github.com/calionauta/bb-plugin-stelow/commit/7ddd4f79352d8907b51b42c6fda85557c4f5fbe2))
+
 ## [0.97.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.96.0...v0.97.0) (2026-10-27)
 
 
