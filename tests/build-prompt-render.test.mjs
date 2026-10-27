@@ -53,6 +53,15 @@ assert.ok(
 assert.ok(prompt.includes(context.stateDir), "the owned state dir is named");
 assert.ok(prompt.includes("intent=`feature`"), "the seeded intent is stated");
 assert.ok(prompt.includes("quality=`production`"), "the recorded quality is stated");
+const experimental = buildBuildPrompt(
+  { ...context, knobs: { ...context.knobs, quality: "experimental" } },
+  rules,
+);
+assert.ok(
+  experimental.includes("quality=`experimental`"),
+  "an experimental quality reaches the worker instead of a hardcoded production",
+);
+assert.equal(experimental.match(/%[A-Z_]+%/g), null, "the quality value leaves no template token");
 assert.ok(!prompt.includes("supervisor="), "the retired supervision knob is not stated");
 assert.ok(prompt.includes("exploration=`count=3 hybrid=true`"), "the recorded exploration is stated");
 assert.ok(prompt.includes("Product Spec, Interface, Scopes"), "the recorded review gates are stated");
