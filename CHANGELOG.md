@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.95.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.3...v0.95.0) (2026-10-27)
+
+
+### Features
+
+* name every refusal, stage regression and slow tick in the log ([#454](https://github.com/calionauta/bb-plugin-stelow/issues/454)) ([b0ccad2](https://github.com/calionauta/bb-plugin-stelow/commit/b0ccad28138beb4b44807fe94fda6ea924be82d7))
+
+
+### Bug Fixes
+
+* every launched run logs its start, once, and a failed launch logs why ([#452](https://github.com/calionauta/bb-plugin-stelow/issues/452)) ([e325005](https://github.com/calionauta/bb-plugin-stelow/commit/e3250059d82dfd622bc6d3301ffacfff06b2b3e2))
+
 ## [0.94.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.2...v0.94.3) (2026-10-27)
 
 
