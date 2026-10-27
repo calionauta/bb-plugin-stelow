@@ -93,6 +93,24 @@ test("help and unknown commands still record one cli.call row", async () => {
   assert.equal(actions.recorded[2].detail.verb, "nope");
 });
 
+test("--help and -h answer help and record it as the help verb", async () => {
+  const actions = fakeActions();
+  const dispatch = createCliDispatch({ run: async () => ({ exitCode: 0 }), actions, now: () => 2_000 });
+
+  const canonical = await dispatch(["help"], {});
+  const long = await dispatch(["--help"], {});
+  const short = await dispatch(["-h"], {});
+
+  assert.deepEqual([long.exitCode, short.exitCode], [0, 0], "the spellings a person tries first are not refusals");
+  assert.equal(long.stdout, canonical.stdout, "--help prints exactly what help prints");
+  assert.equal(short.stdout, canonical.stdout, "-h prints exactly what help prints");
+  assert.deepEqual(
+    actions.recorded.map((entry) => [entry.detail.verb, entry.outcome, entry.cause]),
+    [["help", "ok", "cli.read.help"], ["help", "ok", "cli.read.help"], ["help", "ok", "cli.read.help"]],
+    "each alias is one cli.call attributed to help, so it folds with help instead of inventing a verb",
+  );
+});
+
 test("a read verb's success folds by cli.read cause; a write verb's success does not", async () => {
   const actions = fakeActions();
   const stamps = [1_000, 1_007, 2_000, 2_005];
@@ -157,6 +175,28 @@ test("refusal causes are inferred from the exit code or taken from the result ve
     "missing --card",
     "the first stderr line is kept as evidence",
   );
+});
+
+test("a refusal cause names a known verb, stays generic for a typo, and yields to an explicit reason", async () => {
+  const actions = fakeActions();
+  const runs = [
+    ["verify", { exitCode: 1 }],
+    ["done", { exitCode: 2 }],
+    ["nope", { exitCode: 1 }],
+    ["zzz", { exitCode: 2 }],
+    ["done", { exitCode: 1, reason: "done.audit-trail" }],
+  ];
+  let next = 0;
+  const dispatch = createCliDispatch({ run: async () => runs[next++][1], actions, now: () => 6_000 });
+
+  for (const [verb] of runs) await dispatch([verb], {});
+
+  assert.deepEqual(
+    actions.recorded.map((entry) => entry.cause),
+    ["cli.refused.verify", "cli.usage.done", "cli.refused", "cli.usage", "done.audit-trail"],
+    "a known verb's refusal is its own series, a typo is not a verb, and a command's own reason is never rewritten",
+  );
+  assert.equal(actions.recorded[4].detail.verb, "done", "the reasoned row still names the verb it ran");
 });
 
 test("a throwing run records cli.exception once and rethrows the original error", async () => {
