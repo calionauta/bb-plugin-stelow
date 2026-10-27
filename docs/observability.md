@@ -79,7 +79,7 @@ disables writes without a redeploy; readers keep working.
 | # | Point | What lands |
 |---|---|---|
 | 1 | RPC registration (`action-log-rpc.ts`) | one row per invocation: name, card, duration, outcome — all 120+ methods at once. A handler answering `{ ok: false }` is `refused`, not `ok`, with a named cause (`rpc.refused.thread-archived`, `.host-hold`, `.no-thread`, …; `lib/rpc-refusal-cause.mjs`) |
-| 2 | CLI dispatch (`cli-dispatch.ts`) | one row per verb, including `help` and unknown commands; `reason` on `CliResult` separates refusal from crash |
+| 2 | CLI dispatch (`cli-dispatch.ts`) | one row per verb, including `help`/`--help`/`-h` and unknown commands; `reason` on `CliResult` separates refusal from crash; a known verb adds a suffix to the inferred cause (`cli.refused.verify`, `cli.usage.done`) while a typo stays generic |
 | 3 | `updateCard` (`card-state.ts`) | field-level before/after for status, stage, activity, `last_error` |
 | 4 | stage ledger (`card-ledger.ts`) | `from`/`to` plus a derived cause: created, completed, advance, or **back** (`lib/stage-entry-cause.mjs`, order from the stage catalog) |
 | 5 | worker spawn (`workers.ts`) | preset + reason; deduped by cause |

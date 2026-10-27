@@ -75,7 +75,8 @@ What each number means:
 | `rpc.call error` clustered on one method | plugin bug or contract mismatch | read the handler; the RPC wrapper recorded `detail.name` + message, not the input |
 | `rpc.call refused` with `rpc.refused` | a handler answered `{ok:false}` | `detail.name` + `detail.error` say which verb and why; no crash happened |
 | `rpc.validation` | contract mismatch (ours or upstream) | reproduce with the caller; BB's warn has no field path (get-bb/bb#6373) |
-| `cli.call refused` with `cli.usage` | agent misuse of a verb | fix the worker prompt or the message; not a crash |
+| `cli.call refused` with `cli.usage.<verb>` | agent misuse of a known verb | fix the worker prompt or the message; not a crash |
+| `cli.call refused` with `cli.refused.<verb>` | the gate refused that verb | group by the suffix; a typo keeps the generic `cli.refused` |
 | `cli.call refused` with a domain cause (`done.*`, `retry.*`) | gate doing its job, maybe too often | compare with `ok`; if the rate is high, the gate or its copy is wrong |
 | `run.finished error` + `run.no-reason` | host reported a failure with no message | `detail.native` holds the raw payload; usually a recipe that produced no output |
 | `run.unreachable` | host stopped answering mid-run | correlate with `host.read-miss` and `bb.log` |

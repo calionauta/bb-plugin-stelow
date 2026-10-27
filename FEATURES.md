@@ -2254,10 +2254,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
 
-- **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management,
-  fan-out, verify, review. `help [command]` prints one command's contract
-  from the same table that registers it, and an unknown command suggests
-  the nearest name instead of a bare usage dump. Advance mechanics delegate to the upstream `stelow`
+- **`bb stelow` CLI.** status, ask, seed, advance, next, audit-trail, check,
+  decide, doctor, preset management, fan-out, verify, review. `help [command]`
+  (also `--help` / `-h`) prints one command's contract from the same table that
+  registers it, and an unknown command suggests the nearest name instead of a
+  bare usage dump. A refusal's cause names the known verb
+  (`cli.refused.verify`, `cli.usage.done`) so refusals are countable per
+  command, while a typo keeps the generic cause. Advance mechanics delegate to the upstream `stelow`
   helper and skills pinned together at plugin release (no fork and no runtime
   mutation); transitions always resolve from
   the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
