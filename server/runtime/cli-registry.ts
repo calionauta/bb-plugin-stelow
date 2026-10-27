@@ -40,6 +40,7 @@ export const stelowCliCommands: CliCommand[] = [
     "bb stelow preview [status|start|stop] [--card <card_id>] [--json]",
   ),
   command("advance", "Advance to the next Stelow stage", "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>"),
+  command("next", "Print the next stage the workflow allows (read-only)", "bb stelow next [--json] [--project <proj_id>]"),
   command("done", "Commit workflow completion (verified in code)", "bb stelow done [--card <card_id>]"),
   command("split", "Execute the approved card-split proposal (no content args)", "bb stelow split [--card <card_id>]"),
   command("playbook", "Print this card's exact state and playbook paths", "bb stelow playbook [--card <card_id>]"),
