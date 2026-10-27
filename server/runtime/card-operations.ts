@@ -100,7 +100,10 @@ async function retryWorker(
     deps.buildContinueInput(deps.buildNudge(card), "public"),
   );
   if (dispatch.delivery === "refused") {
-    return { ok: false, error: dispatch.error };
+    // The host's 409 "Thread is archived" is accurate and useless: the reader
+    // pressed Retry and needs the door that exists. Restart opens a fresh
+    // worker; Retry can never revive an archived thread.
+    return { ok: false, error: retryRefusal(dispatch.error) };
   }
   if (dispatch.delivery === "queued") {
     // The host took it between the read and the send. Same card state as any
@@ -265,4 +268,12 @@ async function movePhase(
   }
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
+}
+
+/** A refusal that names the exit when the worker thread itself is gone. */
+function retryRefusal(error: string): string {
+  if (/thread is archived|archived thread/i.test(error)) {
+    return "This card's worker thread is archived. Restart the card to open a fresh worker.";
+  }
+  return error;
 }

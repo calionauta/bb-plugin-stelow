@@ -77,7 +77,7 @@ disables writes without a redeploy; readers keep working.
 
 | # | Point | What lands |
 |---|---|---|
-| 1 | RPC registration (`action-log-rpc.ts`) | one row per invocation: name, card, duration, outcome — all 120+ methods at once |
+| 1 | RPC registration (`action-log-rpc.ts`) | one row per invocation: name, card, duration, outcome — all 120+ methods at once. A handler answering `{ ok: false }` is `refused`/`rpc.refused`, not `ok`: otherwise a refused Retry is indistinguishable from a successful one |
 | 2 | CLI dispatch (`cli-dispatch.ts`) | one row per verb, including `help` and unknown commands; `reason` on `CliResult` separates refusal from crash |
 | 3 | `updateCard` (`card-state.ts`) | field-level before/after for status, stage, activity, `last_error` |
 | 4 | stage ledger (`card-ledger.ts`) | `from`/`to` plus a derived cause |

@@ -71,6 +71,7 @@ What each number means:
 | Signal | Likely class | Next step |
 |---|---|---|
 | `rpc.call error` clustered on one method | plugin bug or contract mismatch | read the handler; the RPC wrapper recorded `detail.name` + message, not the input |
+| `rpc.call refused` with `rpc.refused` | a handler answered `{ok:false}` | `detail.name` + `detail.error` say which verb and why; no crash happened |
 | `rpc.validation` | contract mismatch (ours or upstream) | reproduce with the caller; BB's warn has no field path (get-bb/bb#6373) |
 | `cli.call refused` with `cli.usage` | agent misuse of a verb | fix the worker prompt or the message; not a crash |
 | `cli.call refused` with a domain cause (`done.*`, `retry.*`) | gate doing its job, maybe too often | compare with `ok`; if the rate is high, the gate or its copy is wrong |
