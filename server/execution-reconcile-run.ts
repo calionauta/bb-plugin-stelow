@@ -251,13 +251,7 @@ async function reconcileSimpleState(
     nativeStatus: state,
     errorCode: reason || null,
   });
-  recordRunFinished(
-    deps,
-    next,
-    state === "cancelled" ? "skipped" : "error",
-    state === "failed" ? (reason ? "run.failed" : "run.no-reason") : null,
-    native,
-  );
+  recordStateTransition(deps, { card, run, next, state, native });
   if (state !== "failed") return;
   // Quote what was just WRITTEN, never the value this replaced. The old line
   // interpolated `run.nativeStatus` — the status BEFORE the transition — into a
@@ -271,6 +265,43 @@ async function reconcileSimpleState(
     + "The card remains available for retry.",
   );
   await attemptAutoRetry(deps, next);
+}
+
+
+/**
+ * Start or finish, never both.
+ *
+ * A transition into `running` is a START; recording every simple-state move as
+ * `run.finished` made each run log a false error at the moment it began before
+ * its real result (two of those in one card on the first audit). The failure
+ * cause is decided from what the HOST sent, not from the rendered sentence:
+ * `failureReason` substitutes "the host reported a failure without a reason",
+ * which is truthy, and made `run.no-reason` unreachable.
+ */
+function recordStateTransition(
+  deps: RunDeps,
+  args: { card: WorkerCard; run: ExecutionRun; next: ExecutionRun; state: SimpleState; native: NativeStatus },
+): void {
+  if (args.state === "running") {
+    deps.actions?.record({
+      kind: "run.started",
+      outcome: "ok",
+      cardId: args.card.id,
+      runId: args.run.id,
+      stage: args.run.stage,
+      detail: { recipe: args.run.recipeId },
+    });
+    return;
+  }
+  const hostGaveReason =
+    typeof args.native.scriptError === "string" && args.native.scriptError.trim().length > 0;
+  recordRunFinished(
+    deps,
+    args.next,
+    args.state === "cancelled" ? "skipped" : "error",
+    args.state === "failed" ? (hostGaveReason ? "run.failed" : "run.no-reason") : null,
+    args.native,
+  );
 }
 
 /**

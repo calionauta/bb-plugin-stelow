@@ -33,7 +33,7 @@ One append-only table, `action_log`, in the plugin's `data.db`
 |---|---|---|
 | `intent` | who asked | `rpc.call`, `cli.call`, `ui.error` |
 | `decision` | what the plugin chose | `stage.entered`, `card.updated`, `worker.spawn`, `run.retry`, `question.*`, `inbox.*` |
-| `effect` | what happened outside the plugin DB | `run.finished` |
+| `effect` | what happened outside the plugin DB | `run.started`, `run.finished` |
 | `environment` | what the world was doing | `host.read-miss` |
 
 `surface` is `rpc`, `cli`, `tick`, `hook`, `watcher` or `system`. Both the kind
@@ -85,7 +85,7 @@ disables writes without a redeploy; readers keep working.
 | 6 | 45 s card tick (`reconciler.ts`) | heartbeat: frequency, duration, partial outcome |
 | 7 | reconcile pass (`execution-reconcile.ts`) | heartbeat for the execution pass |
 | 8 | auto retry (`execution-auto-retry.ts`) | refused / started / launch-failed with the closed reason |
-| 9 | run transitions (`execution-reconcile-run.ts`) | terminal state; on failure, the raw host payload |
+| 9 | run transitions (`execution-reconcile-run.ts`) | start (queued→running) and terminal state; on failure, the raw host payload |
 | 10 | ask lifecycle (`cli-ask.ts`, `question-answer-log.ts`) | asked / answered / persisted / expired with dwell, from BOTH doors (the CLI wait and answering on the card) |
 | 11 | inbox (`inbox.ts`, `inbox-recorders.ts`) | opened and resolved, per rule and reason |
 | 11b | 45 s card tick (`reconciler.ts`) | heartbeat plus the names of the phases that threw (`outcome: partial`) |
