@@ -1229,17 +1229,19 @@ rather than about the symptom.
 
 > **Historical note (knobs refactor):** this audit describes the Lean/Core/Complete
 > appetite ladder as it existed at audit time. The ladder has since been replaced
-> by explicit run knobs (quality, exploration count + hybrid); legacy
-> appetite values map once to knobs. The audit's reasoning below is preserved as
-> written — only the vocabulary moved.
+> by explicit run knobs (quality, exploration count + hybrid); legacy appetite
+> values map once to knobs, and `appetiteSchema` survives only as a deprecated
+> input alias (`server/contracts.ts:104`). The canonical pickers are
+> `qualitySchema` / `explorationCountSchema` (`server/contracts.ts:105-106`).
+> The audit's reasoning below is preserved as written — only the vocabulary moved.
 
 "Planning depth" is the `appetite` field, and its whole domain is three values:
-`appetiteSchema = z.enum(["Lean", "Core", "Complete"])` (`server/contracts.ts:18`),
+`appetiteSchema = z.enum(["Lean", "Core", "Complete"])` (`server/contracts.ts:104`),
 surfaced as the dialog's `APPETITE_OPTIONS` (`components/creation/creation-settings.tsx:12-16`).
 The running server agrees — `bb plugin rpc inspect stelow createCard` publishes
 that same three-value enum. `Auto` exists, but it is a **`reviewMode`**
 (review gates) value, not a planning depth
-(`reviewModeSchema`, `server/contracts.ts:19-26`); conflating the two is the
+(`reviewModeSchema`, `server/contracts.ts:110-117`); conflating the two is the
 whole error. There is no `auto` to set.
 
 The faithful reading of "let the system choose" is the board default, so that is

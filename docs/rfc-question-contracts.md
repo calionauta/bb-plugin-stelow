@@ -131,7 +131,7 @@ Enforcement points (server/execution-advance.ts):
 
 ## 8. Verification per phase
 
-- `tests/question-contracts.test.mjs`: matrix stage × mode × appetite
+- `tests/question-contracts.test.mjs`: matrix stage × mode × exploration count
   against fixture `state.md` files (AGENTS.md transitions pattern:
   all paths live with fixtures before shipping guard changes).
 - Extend `tests/stage-skips.test.mjs` pinning if `MODE_SKIPS` grows.
