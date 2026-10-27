@@ -1,4 +1,4 @@
-import { refuse, usage, type CliCommandFn, type CliResult, type CliRunContext, type Refusal } from "./cli-contract.js";
+import { refuse, scanFlags, usage, type CliCommandFn, type CliResult, type CliRunContext, type Refusal } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 import { workspaceUnavailable } from "../../../lib/workspace-refusal.mjs";
@@ -8,6 +8,7 @@ const SYNC_SCOPES_USAGE =
   "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]";
 const CONFIG_USAGE =
   "Usage: bb stelow config get <field> [default] [--project <proj_id>]";
+const NEXT_USAGE = "Usage: bb stelow next [--json] [--project <proj_id>]";
 
 type HelperContext = {
   rootPath: string;
@@ -23,6 +24,7 @@ export function createHelperPassthroughCommands(deps: CliDeps): CliCommandFn[] {
     createSyncScopesCommand(deps),
     createScopeCommand(deps),
     createConfigCommand(deps),
+    createNextCommand(deps),
   ];
 }
 
@@ -55,6 +57,36 @@ async function helperContext(
   );
   if (guard) return refuse({ exitCode: 1, stderr: guard });
   return { rootPath, stateDir, card };
+}
+
+
+/**
+ * `scripts/stelow next` is the upstream helper's read-only answer to "what may
+ * this card advance to?". Card workspaces do not contain the helper (the host
+ * wraps it), so the worker-facing equivalent must exist here: without it the
+ * skill names a command that cannot run and a worker guesses `bb stelow next`
+ * — which is exactly the refusal this command turns into a success.
+ */
+function createNextCommand(deps: CliDeps): CliCommandFn {
+  return async (argv, ctx) => {
+    if (argv[0] !== "next") return null;
+    const scan = scanFlags(argv.slice(1), {
+      boolean: ["--json"],
+      valued: ["--project"],
+      usage: NEXT_USAGE,
+    });
+    if (!scan.ok) return scan.result;
+    // `scanFlags` consumes the next token even when it is missing; a bare
+    // `--project` must be a usage refusal, never a silent fallback to the
+    // thread's project.
+    if (argv.includes("--project") && scan.flags.project === undefined) return usage(NEXT_USAGE);
+    const projectId = scan.flags.project ?? ctx.projectId ?? null;
+    const context = await helperContext(deps, ctx, projectId);
+    if ("refusal" in context) return context.refusal;
+    const args = ["next", ...(scan.flags.json ? ["--json"] : [])];
+    const result = await deps.runHelper(args, context.rootPath, context.stateDir ?? undefined);
+    return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
+  };
 }
 
 function createSyncScopesCommand(deps: CliDeps): CliCommandFn {

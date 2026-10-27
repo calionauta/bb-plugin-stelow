@@ -2703,6 +2703,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   worker never enumerates one. Conditional receipts carry no missing-file
   verdict, and without a verified state dir the rows are omitted rather
   than guessed, because a confidently wrong path is worse than a search.
+- **Next stage, read-only** (`bb stelow next [--json]`, `lib/helper-verbs.mjs`).
+  Prints the stage the workflow allows next, from the same pinned helper the
+  skills name (`scripts/stelow next`). Card workspaces do not ship that helper,
+  so this is its host verb — the alternative was a skill telling a worker to run
+  a path that does not exist and the worker inventing `bb stelow next`. The
+  declared verb set is proved against the pinned binary by
+  `tests/helper-verbs.test.mjs`, so a verb the helper stopped answering fails
+  there, not at a worker's turn.
 - **Host-side artifact registration** (`lib/artifact-registration.mjs`).
   A validated native run's staged artifacts are copied to their canonical
   homes and their receipt written by the host, in one pass, instead of
