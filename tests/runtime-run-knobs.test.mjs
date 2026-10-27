@@ -1,6 +1,7 @@
-// Behavior: seeding writes the run knobs and the deprecated alias the upstream
-// helper writes, and the board resolves a stored legacy appetite exactly as the
-// state parser does. Both surfaces used to answer one datum with two rules.
+// Behavior: seeding writes the run knobs and NO appetite alias — the retired
+// word no longer reaches a new state file, while the reader still accepts an
+// appetite in state files seeded before this change. The board resolves that
+// legacy value exactly as the state parser does.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,16 +15,9 @@ const diskFiles = {
   read: async ({ path: target }) => ({ content: fs.readFileSync(target, "utf8") }),
 };
 
-// The write-side alias follows the helper's table, which is NOT the read map:
-// 1 and 4 are lossy on read, but every breadth still writes the alias an old
-// host expects. One workspace per breadth keeps each seed independent.
-const ALIASES = [
-  [1, "Lean"],
-  [2, "Lean"],
-  [3, "Core"],
-  [4, "Complete"],
-  [5, "Complete"],
-];
+// One workspace per breadth keeps each seed independent. 1 and 4 are lossy on
+// read (they are not on the read map), so only 2/3/5 assert the round-trip.
+const BREADTHS = [1, 2, 3, 4, 5];
 
 async function seedInFreshWorkspace(count) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "stelow-knobs-"));
@@ -48,24 +42,24 @@ async function seedInFreshWorkspace(count) {
   return { workspace, state, tracking };
 }
 
-// --- seeding writes the alias the helper writes, never in the template ---
+// --- the retired word never reaches a new state file ---
 assert.doesNotMatch(
   STATE_TEMPLATE,
   /^  appetite:/m,
-  "the canonical template stays free of the alias; only the seeded body carries it",
+  "the canonical template stays free of the retired word",
 );
 
-for (const [count, alias] of ALIASES) {
+for (const count of BREADTHS) {
   const { workspace, state, tracking } = await seedInFreshWorkspace(count);
-  assert.match(
+  assert.doesNotMatch(
     state,
-    new RegExp(`appetite: ${alias} {2}# DEPRECATED alias, knobs above are canonical`),
-    `breadth ${count} writes the ${alias} alias the helper writes`,
+    /^  appetite:/m,
+    `breadth ${count} seeds no appetite line: the knobs above are canonical and the alias is redundant`,
   );
   assert.equal(
     tracking.workflows[0].config.appetite,
-    alias,
-    `breadth ${count} tracking carries ${alias}`,
+    undefined,
+    `breadth ${count} tracking carries no appetite either`,
   );
   if (count === 2 || count === 3 || count === 5) {
     assert.equal(
@@ -138,4 +132,4 @@ assert.equal(defaultRow.quality, "production", "no config reports the documented
 assert.equal(defaultRow.explorationCount, 3, "no config reports the documented breadth default");
 assert.equal(defaultRow.explorationHybrid, true, "no config reports the documented hybrid default");
 
-console.log("run knobs behavior ok: seeded alias, tracking entry, and board/parser agreement");
+console.log("run knobs behavior ok: seeded knobs with no appetite alias, tracking entry, and board/parser agreement");

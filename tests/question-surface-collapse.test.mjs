@@ -242,8 +242,12 @@ test("R5: the refusal is stated at the field AND at the disabled submit", () => 
   // component still renders the sentence, and the footer still passes the
   // refusal to it. A pin on only the call site would pass on a component that
   // renders nothing.
-  assert.match(bodyCode, /className=\{BLOCKED_CLASS \+ " w-full"\}>\{line\}<\/p> : null/,
-    "the footer's reason component still renders the sentence that explains the disabled submit");
+  // The line is now an always-mounted live region: a `role="status"` region
+  // inserted together with its first sentence is not reliably announced.
+  assert.match(bodyCode, /className=\{line \? BLOCKED_CLASS \+ " w-full" : "sr-only"\}/,
+    "the footer's reason region is always mounted and carries the sentence that explains the disabled submit");
+  assert.match(bodyCode, /\{line \?\? ""\}/,
+    "and the sentence is its content, so a change happens inside a region the reader already has");
   assert.match(bodyCode, /<FooterReason blockReason=\{blockReason\} incompleteReason=\{incompleteReason\} \/>/,
     "and the footer feeds it the refusal, so the explanation cannot become unreachable");
 });

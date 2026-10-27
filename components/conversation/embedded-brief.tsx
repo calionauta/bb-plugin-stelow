@@ -1,4 +1,5 @@
 import { ArtifactContent, useArtifactContent } from "../detail/artifact-viewer-dialog";
+import { DetailsDisclosure } from "../disclosure";
 import { Button } from "@/components/ui/button";
 import { artifactViewerModeForOption, sharedQuestionArtifact } from "../../lib/question-presentation.mjs";
 import type { AskArtifact, BatchItem, OpenArtifactHandler } from "./batch-types";
@@ -32,8 +33,13 @@ export function EmbeddedBrief({ cardId, file, onExpand }: {
           Open full viewer ↗
         </Button>
       </div>
+      {/* Evidence, not the decision: collapsed by default so the options are
+          visible on arrival. The full viewer stays one click away above, and
+          this is the read path for a reader who wants the brief in place. */}
       <div className="px-3 pb-3">
-        <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
+        <DetailsDisclosure summary="Show brief">
+          <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
+        </DetailsDisclosure>
       </div>
     </div>
   );

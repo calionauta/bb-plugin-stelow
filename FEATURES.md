@@ -17,7 +17,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   full controls (real inputs, min-h-11 targets) — no hidden select.
   Quality defaults to production, exploration to 3 +
   hybrid, acceptance tests to Strict (Advisory on experimental cards);
-  a legacy appetite default maps once (rigor always strongest). The
+  a legacy appetite default maps once (rigor always strongest), while a
+  newly seeded state file carries the knobs only — the deprecated appetite
+  alias is no longer written, and old state files still read it once. The
   exploration row discloses which design archetypes each count runs
   (2→A,D · 3→A,D,E · 4→A,B,D,E · 5→all, plus hybrid; 1 stays
   model-chosen) behind a closed "Which archetypes" toggle with one-line
@@ -1102,7 +1104,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-presentation.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
+  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-prose.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
@@ -1171,10 +1173,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Gate approvals attach the same document to every option, so per-row Open
   buttons repeated one file N times — friction for zero information. When
   every option carries the same document (resolved path wins, so two
-  spellings still match), the question embeds one capped reader above the
-  rows with an "Open full viewer" exit to quoting and commenting, and the
-  rows hide their buttons; genuinely different documents keep per-row
-  buttons. One decision point renders both halves, so they can never
+  spellings still match), the question embeds one reader above the rows —
+  collapsed behind a "Show brief" disclosure, because a full reader above the
+  options pushed the first answer past the fold — with an "Open full viewer"
+  exit to quoting and commenting, and the rows hide their buttons; genuinely
+  different documents keep per-row buttons. One decision point renders both halves, so they can never
   disagree. Threads (no viewer) keep the filename span.
 - **Human titles on question copy** (`applyScopeLabels`,
   `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
@@ -1302,6 +1305,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   render sites and no owner, so the timeline chip once told readers to find the
   definition in another component. A test fails on a second reader, which is the
   only way the absence of an owner can be caught.
+  The chip states carry words and glyphs, never colour alone, and they stay
+  readable: skipped/off-route chips use full muted text (70% opacity measured
+  3.07:1), the current chip keeps its purple ring and pulse with foreground text
+  (the old purple text measured 3.80:1), and the phase labels use the named
+  section step instead of a 10px label.
 - **Workflow progress** (`ScopeProgress`, `ScopesList`) sits beside the stage
   section, never pretending to be the same thing: progress is where this card
   is, the stage section is which stage it is on and what that stage produces.
@@ -2789,7 +2797,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   assistive tech (their label still reads "Question i of N (answered)"), and the
   note box, explicit skip, split keep-vs-deliver exclusivity and one atomic
   submit are unchanged. The batch has no private keyboard map: every control is
-  a button, input or native disclosure summary, so Tab/Enter/Space work.
+  a button, input or native disclosure summary, so Tab/Enter/Space work. The
+  "show more" families use foreground text with a dotted underline rather than
+  the primary link token, which measured 4.33:1 on the card — below AA for the
+  12px labels the disclosures use.
 - **A question cannot compare work against a setting the config retired**
   (`lib/retired-question-vocabulary.mjs`, `cli-ask-gate.ts`). A real card asked
   "is this bigger than the appetite?" months after `appetite` was replaced by

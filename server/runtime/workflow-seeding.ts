@@ -14,7 +14,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { STATE_TEMPLATE } from "../../lib/state-template.mjs";
-import { explorationCountToLegacyAlias } from "../../lib/workflow-config.mjs";
 import { withRuntimeIgnoreEntry } from "../../lib/card-seed-guard.mjs";
 import {
   ownsWorkflowState,
@@ -157,9 +156,6 @@ async function writeStateFile(
   const redFirstLine = typeof knobs.redFirst === "string" && knobs.redFirst
     ? `  red_first: ${knobs.redFirst}\n`
     : "";
-  const appetiteLine =
-    `  appetite: ${explorationCountToLegacyAlias(knobs.explorationCount)}`
-    + "  # DEPRECATED alias, knobs above are canonical";
   const body = STATE_TEMPLATE.replace("<workflow-id>", workflowId)
     .replace("<workflow-name>", name)
     .replace(
@@ -172,7 +168,7 @@ async function writeStateFile(
       .replace("quality: production", `quality: ${knobs.quality}`)
       .replace("exploration_count: 3", `exploration_count: ${knobs.explorationCount}`)
       .replace("exploration_hybrid: true", `exploration_hybrid: ${knobs.explorationHybrid}`)
-      .replace("  review_mode: Auto", `${redFirstLine}${appetiteLine}\n  review_mode: Auto`)
+      .replace("  review_mode: Auto", `${redFirstLine}\n  review_mode: Auto`)
       .replace(
         "review_mode: Auto",
         `review_gates: ${formatReviewGates(gates)}\n  review_mode: ${rung}`,
@@ -239,9 +235,6 @@ function trackSeededWorkflow(
         quality: knobs.quality,
         exploration_count: knobs.explorationCount,
         exploration_hybrid: knobs.explorationHybrid,
-        // DEPRECATED alias for old hosts, as the upstream seed writes it;
-        // the knobs above are canonical.
-        appetite: explorationCountToLegacyAlias(knobs.explorationCount),
         ...(typeof knobs.redFirst === "string" && knobs.redFirst ? { red_first: knobs.redFirst } : {}),
         review_mode: legacyLabelForGates(gates) ?? "Auto",
         review_gates: gates,

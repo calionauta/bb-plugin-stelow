@@ -22,6 +22,17 @@ import { cn } from "../lib/utils";
 export const SECTION_SURFACE = "rounded-lg border bg-muted/20";
 
 /**
+ * The decision tone, as a surface rather than an appended background.
+ *
+ * `SECTION_SURFACE` already carries `bg-muted/20`, and Tailwind emits that rule
+ * AFTER `bg-amber-500/5`; appending the amber background to the base therefore
+ * lost the colour and left only an amber border. The rendered card is the
+ * receipt: the section has to be the warm surface the reader learned to read as
+ * "this needs you", not a grey box with a coloured outline.
+ */
+export const DECISION_SURFACE = "rounded-lg border border-amber-500/50 bg-amber-500/5";
+
+/**
  * The three disclosure families, named.
  *
  * The chevron was already shared — twelve components import it — which made the
@@ -52,12 +63,17 @@ export const SUMMARY_BASE = [
 export const SUMMARY_ROW = `${SUMMARY_BASE} min-h-11 px-3 py-2`;
 
 /**
- * An inline "show more" inside running text. `text-primary` because it is a
- * control, not a label — and one of the two files that used to carry its own
- * copy of this constant had forgotten the colour, so its "show more" read as
- * body text while its twin elsewhere read as a link.
+ * An inline "show more" inside running text.
+ *
+ * It used to be `text-primary` because it is a control, not a label — but the
+ * primary token measures 4.33:1 on the card, below AA for 12px text. The
+ * dotted underline keeps it reading as a control while the label itself is
+ * foreground-legible; one of the two files that used to carry its own copy of
+ * this constant had forgotten the colour entirely, which is why the family is
+ * named here.
  */
-export const SUMMARY_LINK = `${SUMMARY_BASE} inline-flex min-h-11 text-xs font-medium text-primary hover:underline`;
+export const SUMMARY_LINK = `${SUMMARY_BASE} inline-flex min-h-11 text-xs font-medium text-foreground `
+  + "underline decoration-dotted underline-offset-2 hover:decoration-solid";
 
 /**
  * Whether a section starts open.
@@ -85,11 +101,22 @@ export function DisclosureChevron({ className = "", open }: { className?: string
 // Convention for progressive disclosure: short visible line, details behind
 // an explicit toggle. Use instead of ad-hoc <details> so every "learn more"
 // reads and behaves the same.
+// Foreground text plus an underline, not the link colour: the primary token
+// measures 4.33:1 on the card, below AA for 14px text, and this summary is the
+// only door onto the details. The dotted underline keeps it reading as a
+// control while the label itself is legible.
+const DETAILS_SUMMARY_CLASS = [
+  "inline-flex min-h-11 cursor-pointer items-center gap-1.5",
+  "text-sm font-medium text-foreground underline decoration-dotted underline-offset-2",
+  "hover:decoration-solid",
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+].join(" ");
+
 export function DetailsDisclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <details open={open} onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}>
-      <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-sm font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+      <summary className={DETAILS_SUMMARY_CLASS}>
         <DisclosureChevron open={open} />{summary}
       </summary>
       <div className="space-y-1 pb-1 text-sm leading-relaxed text-muted-foreground">{children}</div>
@@ -187,7 +214,7 @@ export function DisclosureSection({ title, subtitle, hint, action, children, def
         if (!controlled) setUncontrolledOpen(next);
         onToggle?.(next);
       }}
-      className={`group ${SECTION_SURFACE} ${tone === "decision" ? "border-amber-500/50 bg-amber-500/5" : ""}`}
+      className={`group ${tone === "decision" ? DECISION_SURFACE : SECTION_SURFACE}`}
     >
       <SectionSummary isOpen={isOpen} title={title} subtitle={subtitle} hint={hint} action={action} />
       <div className="space-y-3 px-3 pb-3">{children}</div>

@@ -84,7 +84,6 @@ export function BatchCustomInput({
         onChange={(event) => onType(event.target.value)}
         placeholder={copy.customPlaceholder}
         className={INPUT_CLASS}
-        data-batch-note=""
         aria-invalid={invalid ? true : undefined}
         aria-describedby={invalid && error ? "batch-note-error" : undefined}
       />
@@ -240,7 +239,14 @@ function FooterReason({ blockReason, incompleteReason }: {
   // `role="status"` (not `note`) because this line CHANGES as answers land: a
   // note is static text, and the one fact a sighted reader gets from the
   // disappearing orange line is the one a screen-reader user was never told.
-  return line ? <p role="status" className={BLOCKED_CLASS + " w-full"}>{line}</p> : null;
+  // The region stays MOUNTED (empty is visually hidden) because a live region
+  // inserted together with its first sentence is not reliably announced; the
+  // change has to happen inside a region the reader already has.
+  return (
+    <p role="status" className={line ? BLOCKED_CLASS + " w-full" : "sr-only"}>
+      {line ?? ""}
+    </p>
+  );
 }
 
 function FooterButtons({

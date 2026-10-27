@@ -1,6 +1,7 @@
 import { CURRENT_STAGE_PILL_CLASS } from "../dashboard/build-status-pills";
 import { PHASE_LABELS, STAGE_SEQUENCE, STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { stageSummary } from "../../lib/stage-vocabulary-surfaces.mjs";
+import { TEXT_SECTION } from "../../lib/design-tokens";
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
 // chip: passed / current / upcoming. Clicking an allowed target advances or
@@ -23,8 +24,13 @@ function chipTone({ isCurrent, passed, skipReason, isOffRoute, canAdvance }: {
 }): string {
   if (isCurrent) return CURRENT_STAGE_PILL_CLASS;
   if (passed) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  if (skipReason ?? isOffRoute) return "border border-dashed border-border text-muted-foreground/70";
-  if (canAdvance) return "border border-primary/40 text-primary";
+  // 70% opacity put the dashed chip at 3.07:1 on the card — below AA at 12px.
+  // The dashed border, the ⊘ and the line-through already carry the state, so
+  // the word can stay at full muted contrast (5.5:1).
+  if (skipReason ?? isOffRoute) return "border border-dashed border-border text-muted-foreground";
+  // The advance invitation is the border and the dot; the label stays readable
+  // rather than borrowing the link colour at 4.33:1.
+  if (canAdvance) return "border border-primary/40 text-foreground";
   return "border border-dashed border-border text-muted-foreground";
 }
 
@@ -75,7 +81,7 @@ function StageChip({ stage, current, currentStage, terminal, legal, offRoute, sk
   // shows a ⊘ and its reason, and an off-route stage is struck through. What is gone is
   // the pointer and the click handler, not the information.
   return (
-    <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
+    <span key={stage} className="inline-flex shrink-0 items-center gap-1">
       <span
         title={dimmedTitle}
         className={stageChip({ isCurrent, passed, skipReason, isOffRoute, canAdvance })}
@@ -119,7 +125,7 @@ export function StageTimeline({ currentStage, nextStages, artifacts, skips, offR
         return (
           <div key={band}>
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{BAND_LABEL[band] ?? band}</span>
+              <span className={TEXT_SECTION}>{BAND_LABEL[band] ?? band}</span>
               <span className={`h-px flex-1 ${bandActive ? "bg-primary/40" : hasAnyPassed ? "bg-emerald-500/30" : "bg-border"}`} />
             </div>
             <div className="flex gap-1 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">

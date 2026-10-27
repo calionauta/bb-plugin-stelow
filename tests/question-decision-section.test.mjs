@@ -244,8 +244,9 @@ test("R3: a completed batch does not submit on Cmd/Ctrl+Enter", () => {
   fireEvent.click(screen.getByText("First yes"));
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByText("Second no"));
-  fireEvent.keyDown(document.querySelector("input[data-batch-note]") ?? document.body, { key: "Enter", metaKey: true });
-  fireEvent.keyDown(document.querySelector("input[data-batch-note]") ?? document.body, { key: "Enter", ctrlKey: true });
+  const note = screen.getByRole("textbox");
+  fireEvent.keyDown(note, { key: "Enter", metaKey: true });
+  fireEvent.keyDown(note, { key: "Enter", ctrlKey: true });
   assert.equal(submits, 0,
     "the chord used to submit from inside the note; a complete batch still submits only through its button");
 });
