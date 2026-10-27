@@ -93,6 +93,12 @@ export const stelowCliCommands: CliCommand[] = [
   ),
   command("storage", "Worktree disk usage attributed to cards, heaviest first (read-only)", "bb stelow storage [--json] [--card <card_id>]"),
   command(
+    "log",
+    "What the plugin recorded doing: RPCs, CLI verbs, decisions and effects (read-only)",
+    "bb stelow log [--json] [--card <card_id>] [--kind <kind>] [--cause <code>]",
+    "[--outcome <o>] [--layer <l>] [--since 6h|7d|6w] [--limit <n>] [--replay]",
+  ),
+  command(
     "manifest",
     "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)",
     "bb stelow manifest [--json] [--card <card_id>]",

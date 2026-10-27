@@ -7,6 +7,7 @@ import {
 } from "../../lib/card-claims.mjs";
 import { CLAIM_TERMINAL_STATUSES, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { sweepEventSeverity } from "../../lib/inbox-events.mjs";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type ReleasedFile = { workspacePath: string; file: string };
@@ -29,6 +30,8 @@ type ReconcilerDeps = {
   now: () => number;
   onError: (phase: string, error: unknown) => void;
   scheduler?: Scheduler;
+  /** The flight recorder; absent means "no log", never "no tick". */
+  actions?: ActionRecorder;
 };
 
 function notifyReleased(deps: ReconcilerDeps, released: ReleasedFile[]): void {
@@ -197,16 +200,35 @@ export function startReconciler(deps: ReconcilerDeps, reconcileExecution?: () =>
   const scheduler = deps.scheduler ?? { setInterval, clearInterval };
   const tick = () => {
     if (!(deps.db as { open?: boolean }).open) return;
-    try { reconcileLiveCards(deps); } catch (error) { deps.onError("reconcile live cards", error); }
+    const started = deps.now();
+    let errors = 0;
+    const phase = (name: string, run: () => void) => {
+      try {
+        run();
+      } catch (error) {
+        errors += 1;
+        deps.onError(name, error);
+      }
+    };
+    phase("reconcile live cards", () => reconcileLiveCards(deps));
     void deps.maybeBumpSeverity();
-    sweepInboxAging(deps);
+    phase("sweep inbox aging", () => sweepInboxAging(deps));
     // Renewal runs before the sweep on purpose: a holder the host still
     // supervises must not have its lease reaped in the same tick that would
     // have extended it, or the renewal would only ever fire for claims nobody
     // was about to take.
-    try { renewLiveClaims(deps); } catch (error) { deps.onError("renew live claims", error); }
-    try { releaseExpiredClaims(deps); } catch (error) { deps.onError("release expired claims", error); }
-    try { releaseTerminalClaims(deps); } catch (error) { deps.onError("release terminal claims", error); }
+    phase("renew live claims", () => renewLiveClaims(deps));
+    phase("release expired claims", () => releaseExpiredClaims(deps));
+    phase("release terminal claims", () => releaseTerminalClaims(deps));
+    // A heartbeat, not an event: the tick itself is what a silent reconciler
+    // never left behind. `occurrences` grows per tick, so the row answers "how
+    // often" without one line per 45 seconds; `last_at` is the liveness proof.
+    deps.actions?.record({
+      kind: "card.tick",
+      outcome: errors === 0 ? "ok" : "partial",
+      cause: "card.tick",
+      durationMs: deps.now() - started,
+    });
     // Last and non-blocking: the execution pass is async and owns its own
     // in-flight guard, so a slow one must not delay the next card tick.
     if (reconcileExecution) void reconcileExecution();

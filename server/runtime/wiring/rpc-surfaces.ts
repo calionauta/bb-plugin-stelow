@@ -93,9 +93,37 @@ function cardReaderHandlers(cards: CardSurfaces) {
   };
 }
 
+/**
+ * The card's activity, newest first, in the shape the RPC contract declares.
+ *
+ * `detail` is passed through as the stored JSON string: the card renders the
+ * row, and a caller that needs the payload parses it deliberately rather than
+ * receiving an `any`-shaped object it did not ask for.
+ */
+function cardActivity(
+  core: RuntimeCore,
+  input: { cardId: string; limit?: number },
+) {
+  const rows = core.actions
+    .list({ cardId: input.cardId, limit: input.limit ?? 50 })
+    .map((row) => ({
+      at: Number(row.at),
+      kind: String(row.kind),
+      outcome: String(row.outcome),
+      cause: typeof row.cause === "string" ? row.cause : null,
+      occurrences: Number(row.occurrences ?? 1),
+      durationMs: Number.isFinite(Number(row.durationMs)) ? Number(row.durationMs) : null,
+      detail: typeof row.detail === "string" ? row.detail : "{}",
+    }));
+  return { rows, events: rows.reduce((sum, row) => sum + row.occurrences, 0) };
+}
+
 /** Register every Stelow RPC on the host, from the assembled surfaces. */
 export function registerStelowRpc(deps: RpcSurfacesDeps): void {
-  registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps));
+  registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps), {
+    actions: deps.core.actions,
+    now: deps.core.now,
+  });
 }
 
 /** The handler table: the surfaces by name, plus the inline decisions. */
@@ -117,6 +145,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...cards.cardOperations,
     ...cards.artifactReviews,
     ...cardReaderHandlers(cards),
+    cardActivity: (input: { cardId: string; limit?: number }) => cardActivity(core, input),
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),
     catchUp: (input: { cardId: string }) => core.briefings.catchUp(input.cardId),

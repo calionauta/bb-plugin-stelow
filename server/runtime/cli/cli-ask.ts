@@ -82,6 +82,13 @@ async function blockOnAnswer(
     groups.flatMap((group) => group.options),
   );
   const askedAt = deps.now();
+  deps.actions?.record({
+    kind: "question.asked",
+    outcome: "ok",
+    cardId,
+    threadId,
+    detail: { groups: groups.length, tag: intent.tag, batched: intent.batched },
+  });
   // The pending interaction exists host-side only once requestInput runs,
   // so the inbox row cannot be minted synchronously here. Kick one early
   // sync that observes it: without this the row waits for the 45s tick
@@ -94,6 +101,28 @@ async function blockOnAnswer(
   // the answer RPCs, and advance/moveCard, on both tracks.
   // See lib/question-store.
   deps.updateCard(cardId, askFinishedUpdates());
+  return finishAsk(deps, { cardId, threadId, groups, askedAt, requested, intent, signal, timeoutMs });
+}
+
+/**
+ * Where the wait left things: answered, persisted onto the card, or ended for
+ * good. Split from the blocking section above because this half is a decision
+ * about four endings, and the half above is the mechanics of asking.
+ */
+function finishAsk(
+  deps: CliDeps,
+  args: {
+    cardId: string;
+    threadId: string;
+    groups: AskGroup[];
+    askedAt: number;
+    requested: Requested;
+    intent: { threadId: string; tag: AskTag; groups: AskGroup[]; batched: boolean };
+    signal: AbortSignal | undefined;
+    timeoutMs: number;
+  },
+): Promise<CliResult> {
+  const { cardId, threadId, groups, askedAt, requested } = args;
   // Cancellation without an answer falls into two buckets. Transient
   // infrastructure reasons (timeout, plugin reload/restart, aborted request)
   // mean the user simply never answered: persist the question so it stays
@@ -104,9 +133,66 @@ async function blockOnAnswer(
   const transientCancel =
     requested.failed ||
     classifyAskCancel(requested.result.outcome, cancelReason) === "persist";
-  if (transientCancel)
-    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested, timeoutMs);
-  return answerOutcome(deps, cardId, intent, requested);
+  if (transientCancel) {
+    // The interaction ended but the question did not: it moved onto the card,
+    // where it stays answerable. A separate kind keeps "the clock ran out" and
+    // "the user has not answered yet" from being counted as the same event.
+    deps.actions?.record({
+      kind: "question.persisted",
+      outcome: "skipped",
+      cause: requested.failed ? "question.request-failed" : "question.interrupted",
+      cardId,
+      threadId,
+      durationMs: deps.now() - askedAt,
+      detail: { groups: groups.length },
+    });
+    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested, args.timeoutMs);
+  }
+  recordQuestionOutcome(deps, {
+    cardId,
+    threadId,
+    askedAt,
+    outcome: requested.result.outcome,
+    failed: requested.failed,
+    groups: groups.length,
+  });
+  return answerOutcome(deps, cardId, args.intent, requested);
+}
+
+/**
+ * How the wait ended, in one row: answered, or gone without an answer.
+ *
+ * The dwell time is the number the card could never show — 32 questions had
+ * expired and nothing recorded how long each one waited, so "the user ignores
+ * questions" and "the wait was five seconds" read identically. A cause keeps
+ * the two apart: `question.dismissed` is a person saying no, `question.timeout`
+ * is the clock, and neither is a crash.
+ */
+function recordQuestionOutcome(
+  deps: CliDeps,
+  args: {
+    cardId: string;
+    threadId: string;
+    askedAt: number;
+    outcome: string;
+    failed: boolean;
+    groups: number;
+  },
+): void {
+  const answered = args.outcome === "submitted";
+  deps.actions?.record({
+    kind: answered ? "question.answered" : "question.expired",
+    outcome: answered ? "ok" : "skipped",
+    cause: answered
+      ? null
+      : args.failed
+        ? "question.request-failed"
+        : `question.${args.outcome.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`,
+    cardId: args.cardId,
+    threadId: args.threadId,
+    durationMs: deps.now() - args.askedAt,
+    detail: { groups: args.groups, outcome: args.outcome, failed: args.failed },
+  });
 }
 
 type Requested = { result: AskOutcome; failed: boolean };

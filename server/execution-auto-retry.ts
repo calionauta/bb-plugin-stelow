@@ -25,6 +25,7 @@ import { refusalNeedsAttention, refusalRecord, retryDecision } from "../lib/retr
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -36,6 +37,8 @@ export type AutoRetryDeps = {
   native: ExecutionNative;
   /** Optional: present in the runtime wiring, absent in narrow tests. */
   noteInboxEvent?: (cardId: string, body: string) => void;
+  /** The flight recorder; absent means "no log", never "no retry". */
+  actions?: ActionRecorder;
 };
 
 export type AutoRetryResult = { retried: boolean; runId: string | null };
@@ -99,6 +102,15 @@ export async function attemptAutoRetry(
   });
   if (!decision.retry) {
     recordRefusal(deps, failedRun, card, decision);
+    deps.actions?.record({
+      kind: "run.retry",
+      outcome: "refused",
+      cause: "retry.refused",
+      cardId: failedRun.cardId,
+      runId: failedRun.id,
+      stage: failedRun.stage,
+      detail: { reason: decision.reason, exit: decision.exit },
+    });
     return idle;
   }
   const attempt = (failedRun.autoRetryCount ?? 0) + 1;
@@ -106,6 +118,32 @@ export async function attemptAutoRetry(
   // real, non-archived card on the failed stage, so the handler does not have to
   // re-assert it at each use.
   const liveCard = card as NonNullable<typeof card>;
+  return launchRetry(deps, failedRun, liveCard, attempt);
+}
+
+/**
+ * The launch, and what it did. Split out because the decision above and the
+ * launch below answer different questions: the first is "should this be
+ * retried", the second is "did the host accept it", and each owns its own
+ * failure vocabulary.
+ */
+async function launchRetry(
+  deps: AutoRetryDeps,
+  failedRun: ExecutionRun,
+  liveCard: WorkerCard,
+  attempt: number,
+): Promise<AutoRetryResult> {
+  const idle: AutoRetryResult = { retried: false, runId: null };
+  const record = (outcome: "error" | "skipped", cause: string) =>
+    deps.actions?.record({
+      kind: "run.retry",
+      outcome,
+      cause,
+      cardId: failedRun.cardId,
+      runId: failedRun.id,
+      stage: failedRun.stage,
+      detail: { attempt },
+    });
   let started;
   try {
     started = await deps.native.startNativeStageForCard(
@@ -117,9 +155,13 @@ export async function attemptAutoRetry(
   } catch {
     // Fail-soft stays: the launch caller already reported this refusal, so a second
     // report from here would double-count it.
+    record("error", "retry.launch-failed");
     return idle;
   }
-  if (!started.run) return idle;
+  if (!started.run) {
+    record("skipped", "retry.no-run");
+    return idle;
+  }
   // The budget stamp is a same-state evidence patch — the one write the
   // ledger allows without a state move — so the count travels with the chain.
   return recordRetry(deps, failedRun, liveCard, started.run, attempt);
@@ -141,6 +183,15 @@ function recordRetry(
   attempt: number,
 ): AutoRetryResult {
   transitionExecutionRun(deps.db, run.id, run.normalizedStatus, { autoRetryCount: attempt });
+  deps.actions?.record({
+    kind: "run.retry",
+    outcome: "ok",
+    cause: "retry.started",
+    cardId: failedRun.cardId,
+    runId: run.id,
+    stage: failedRun.stage,
+    detail: { attempt, previousRunId: failedRun.id, recipe: failedRun.recipeId },
+  });
   deps.logComment(
     card.id,
     run.id,

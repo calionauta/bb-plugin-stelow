@@ -41,6 +41,8 @@ import { projectRoot } from "./root-paths.js";
 import { BUILD_INFO } from "../plugin-paths.js";
 import { TRACK_PROTOCOL_CLAUSES } from "./track-protocol-clauses.js";
 import { createAskTimeoutSetting } from "./ask-timeout-setting.js";
+import { createActionRecorder } from "./action-log-runtime.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 export type RuntimeCore = ReturnType<typeof createRuntimeCore>;
 
@@ -61,22 +63,31 @@ export function createRuntimeCore(bb: BbPluginApi) {
   const db = bb.storage.database();
   const now = () => Date.now();
   const { askTimeoutMs } = createAskTimeoutSetting(bb);
-  const ledger = createCardLedger({ db, now });
+  // Runner order matters: `startPluginUpdates` opens the migration pass, and
+  // the recorder must exist after it so its table is already there. The
+  // recorder is built before services because every surface below receives it.
   const pluginUpdates = startPluginUpdates(bb, db, now);
-  const services = createRuntimeServices({ bb, db, now, randomId });
+  const actions: ActionRecorder = createActionRecorder({
+    db,
+    now,
+    onFailure: (message) => bb.log.warn(message),
+  });
+  const ledger = createCardLedger({ db, now, actions });
+  const services = createRuntimeServices({ bb, db, now, randomId, actions });
   // The tracks carry the NARROWER bag: no stages and no gates means no stage,
   // advance, split, recon or seed clause, and the track half of the completion
   // rule instead of the build-only payload. Named as a bag so the set is
   // declared in one place rather than assembled at this call site.
   const prompts = createTrackPrompts(TRACK_PROTOCOL_CLAUSES);
-  const workers = createWorkerRuntime({ bb, db, now, services, ledger, prompts });
-  const deps = { bb, db, now, services, ledger, prompts };
+  const workers = createWorkerRuntime({ bb, db, now, services, ledger, prompts, actions });
+  const deps = { bb, db, now, services, ledger, prompts, actions };
   return {
     bb,
     db,
     now,
     randomId,
     askTimeoutMs,
+    actions,
     ledger,
     prompts,
     pluginUpdates,
@@ -88,6 +99,15 @@ export function createRuntimeCore(bb: BbPluginApi) {
       workerEnvironmentOf: workers.workers.workerEnvironmentOf,
     }),
     ...createDecisionAndTrackCore(bb, db, now, services),
+    ...staticSeams(),
+  };
+}
+
+/** The seams with no state of their own: pure reads and paths a surface needs
+ * without a factory. Collected here so the core's construction stays a list of
+ * *things that are built*, in the order they must be built. */
+function staticSeams() {
+  return {
     roundRelPath,
     strategyList,
     strategyRounds,

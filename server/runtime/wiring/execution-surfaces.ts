@@ -161,10 +161,7 @@ function buildReconcile(
   });
   return createExecutionReconcile({
     reconcilePublications: publication.reconcilePublications,
-    db,
-    bb,
-    now,
-    randomId,
+    db, bb, now, randomId, actions: core.actions,
     getCard,
     cardWorkspace,
     fetchPendingQuestions: core.fetchPendingQuestions,
@@ -359,6 +356,7 @@ export function registerExecutionLifecycle(
     maybeBumpSeverity: core.decision.maybeBumpSeverity,
     notifyClaimWaiters: core.notifyClaimWaiters,
     disposeWorkers: () => workers.dispose(),
+    actions: core.actions,
   });
 }
 

@@ -11,6 +11,7 @@ import { scopeMapApprovalContract } from "./scope-map-rpc-contract.js";
 import { lifecycleRpcContract } from "./lifecycle-rpc-contract.js";
 import { platformRpcContract } from "./platform-rpc-contract.js";
 import { executionRpcContract } from "./execution-contract.js";
+import { activityRpcContract } from "./activity-rpc-contract.js";
 
 export const RPC_FRAGMENTS = [
   cardRpcContract,
@@ -25,6 +26,7 @@ export const RPC_FRAGMENTS = [
   workspaceRecoveryRpcContract,
   platformRpcContract,
   executionRpcContract,
+  activityRpcContract,
 ];
 
 type FragmentUnionToIntersection<Fragment> = (Fragment extends unknown ? (value: Fragment) => void : never) extends

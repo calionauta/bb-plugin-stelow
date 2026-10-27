@@ -27,6 +27,7 @@ import type {
   WorkerScheduler,
   WorkerSpawnArgs,
 } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 export { runWorkerMigrations } from "./workers-migrations.js";
 // Re-exported so the callers that already imported these from here keep
@@ -66,6 +67,8 @@ export type WorkerDeps = {
    */
   titleRefresh?: { request: ((cardId: string) => void) | null };
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
+  /** The flight recorder; absent means "no log", never "no spawn". */
+  actions?: ActionRecorder;
 };
 
 function recordThread(
@@ -76,6 +79,19 @@ function recordThread(
   reason: string,
 ): number {
   const closed = recordWorkerThread(deps.db, cardId, threadId, presetId, reason);
+  // One row per thread creation, with the reason as its cause. The cause is
+  // what turns the 26/10 spawn loop — 189 threads, 150 identical restarts —
+  // into ONE row with `occurrences: 150`, while a manual Start still reads as
+  // itself. No row is dropped here: the dedupe window is the recorder's, and
+  // the count is always preserved on the row that survives.
+  deps.actions?.record({
+    kind: "worker.spawn",
+    outcome: "ok",
+    cause: reason === "start" ? "worker.start" : "worker.restart",
+    cardId,
+    threadId,
+    detail: { preset: presetId, reason },
+  });
   // A fresh spawn is the explicit clear for preset staleness: the new thread
   // was born after every override, so a carried flag would offer a Restart
   // for staleness that no longer exists.

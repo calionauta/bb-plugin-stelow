@@ -19,6 +19,7 @@ import type { Workers } from "../../workers.js";
 import type { WorkerCard } from "../../workers-types.js";
 import type { CliResult, CliRunContext } from "./cli-contract.js";
 import type { rpcContract } from "../../rpc-contract.js";
+import type { ActionRecorder } from "../action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type PresetServer = ReturnType<typeof createPresetServer>;
@@ -82,6 +83,10 @@ export type CliDeps = {
   bb: BbPluginApi;
   now: () => number;
   randomId: (prefix: string) => string;
+  /** The plugin's own flight recorder, so `bb stelow log` reads the same rows
+   * the surfaces write instead of a second, CLI-only history. Optional so a
+   * narrow test can build the bag without a database-backed log. */
+  actions?: ActionRecorder;
   getCard: (cardId: string) => WorkerCard | undefined;
   getCardByWorkerThread: (threadId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<CardWorkspace | null>;

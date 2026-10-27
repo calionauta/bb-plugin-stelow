@@ -10,6 +10,7 @@
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { summarizeTimeline } from "../../lib/card-metrics.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -21,20 +22,45 @@ export function randomId(prefix: string): string {
 export type CardLedgerDeps = {
   db: Db;
   now: () => number;
+  actions?: ActionRecorder;
 };
 
+/**
+ * The stage trail, plus the row that says WHY it moved.
+ *
+ * `card_stage_events` carries (card, stage, entered_at) and nothing else, so
+ * "when did this card move" has an answer and "why did it move" does not. The
+ * cause is derived here rather than added as a column: creation, completion and
+ * an ordinary advance are the only three writers, and deriving keeps the
+ * metrics table unchanged for every reader that already computes dwell from it.
+ * */
 function recordStageEvent(
   deps: CardLedgerDeps,
   cardId: string,
   stage: string,
 ): void {
+  let from: string | null = null;
   try {
+    const previous = deps.db
+      .prepare(
+        "SELECT stage FROM card_stage_events WHERE card_id = ? ORDER BY entered_at DESC, id DESC LIMIT 1",
+      )
+      .get(cardId) as { stage?: string } | undefined;
+    from = typeof previous?.stage === "string" ? previous.stage : null;
     deps.db.prepare(
       "INSERT INTO card_stage_events (card_id, stage, entered_at) VALUES (?, ?, ?)",
     ).run(cardId, stage, deps.now());
   } catch {
     /* metrics-only; never block */
   }
+  deps.actions?.record({
+    kind: "stage.entered",
+    outcome: "ok",
+    cardId,
+    stage,
+    cause: from === null ? "stage.created" : stage === "done" ? "stage.completed" : "stage.advance",
+    detail: { from, to: stage },
+  });
 }
 function stageEvents(
   deps: CardLedgerDeps,

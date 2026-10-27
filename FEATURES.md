@@ -1573,6 +1573,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 5. Recover
 *When the worker stalls or fails, I want one obvious fix.*
 
+- **Activity log** (`action_log`, `bb stelow log`, `cardActivity`). The plugin
+  records its own decisions and failures, not only the agent's turns: every RPC
+  invocation and every CLI verb (with duration and a closed refusal `reason`),
+  every card field change, stage entry, worker spawn, run retry and terminal
+  run, question asked/answered/persisted/expired with dwell time, inbox rows
+  opened and resolved, plus a 45 s heartbeat for both reconcilers. A repeated
+  condition is ONE row with `occurrences` inside a 10-minute window, which is
+  what a 150-restart spawn loop and a 26-comment reconcile loop collapse to.
+  Read it with `bb stelow log [--card] [--kind] [--cause] [--outcome]
+  [--layer] [--since 6h|7d|6w] [--limit] [--json]`; `--replay` merges the log
+  with the card's stage events, runs, verifications, publications and comments
+  into one chronological story. The card's Activity section loads the same rows
+  on request (closed by default). A failed run records the host's raw payload,
+  so "the host reported a failure without a reason" is now countable as
+  `run.no-reason` instead of lost. Details are capped at 2 KB and never carry
+  prompts or file contents; `STELOW_ACTION_LOG=0` disables writes, and
+  `bb stelow gc --apply` prunes to 30 days / 50k rows. Design and gaps:
+  `docs/observability.md`.
 - **Retry** (`retryWorker`). Nudges the same worker in place; nothing
   resets. Refused on archived cards — and on completed/blocked ones, where
   reopening happens through a card comment or a fresh restart.

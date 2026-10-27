@@ -45,7 +45,10 @@ export function registerStelowCommand(deps: CliSurfaceDeps): void {
       answerExpiredQuestions: deps.gates.answerExpiredQuestions,
     },
   );
-  registerStelowCli(deps.bb, (argv, context) => run(argv, context));
+  registerStelowCli(deps.bb, (argv, context) => run(argv, context), {
+    actions: deps.core.actions,
+    now: deps.core.now,
+  });
 }
 
 /** The inspection command: reads, never writes, and refuses what it cannot. */
@@ -153,6 +156,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     bb,
     now: core.now,
     randomId: core.randomId,
+    actions: core.actions,
     getCard: core.getCard,
     cardWorkspace: core.cardWorkspace,
     updateCard: core.updateCard,

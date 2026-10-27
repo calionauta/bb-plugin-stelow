@@ -29,6 +29,11 @@ None pending — all operator guides migrated (see above).
   bugs, and how a Mermaid fence or `.mmd` artifact renders on read with the
   bundled `pele` (source is the artifact, a failed render falls back to it).
 - `runtime-architecture.md` — server module map and lifecycle boundary.
+- `observability.md` — the plugin's own flight recorder: `action_log`, the
+  closed kind/cause vocabulary, the dedupe rule, every instrumentation point,
+  `bb stelow log`/`--replay`, retention, and the remaining gaps (upstream RPC
+  validation field path, `ui.error`, `host.read-miss`). Referenced from
+  `FEATURES.md` (Recover).
 - `runtime-integration-2026-09.md` — dated extraction record.
 - `remaining-debt-audit.md` — phase record of a merged branch's size-debt
   repair; the live census is `scripts/source-debt.json` plus

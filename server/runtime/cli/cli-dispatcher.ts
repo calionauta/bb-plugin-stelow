@@ -14,6 +14,7 @@ import { createGapsCommand } from "./cli-gaps.js";
 import { createGcCommand } from "./cli-gc.js";
 import { createHelperPassthroughCommands } from "./cli-helper-passthrough.js";
 import { createLockCommand } from "./cli-lock.js";
+import { createLogCommand } from "./cli-log.js";
 import { createManifestCommand } from "./cli-manifest.js";
 import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
@@ -46,6 +47,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createGapsCommand(deps),
     createMetricsCommand(deps),
     createStorageCommand(deps),
+    createLogCommand(deps),
     createGcCommand(deps),
     createManifestCommand(deps),
     createExportCommand(deps, exportRunBundle),

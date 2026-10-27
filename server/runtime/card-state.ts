@@ -5,6 +5,7 @@ import { assertCardStatus } from "../../lib/card-status.mjs";
 import { HELD_ACTIVITY } from "../../lib/host-hold.mjs";
 import { stripArchivedResuscitation } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type CardFields = Partial<
@@ -49,6 +50,9 @@ type CardUpdaterDeps = {
     resolvedAt: number,
     resolution: InboxResolutionReason,
   ) => unknown;
+  /** The flight recorder. Optional in narrow tests; the runtime always passes
+   * one, so a missing recorder means "no log", never "no card update". */
+  actions?: ActionRecorder;
 };
 
 type UpdateOptions = { suppressCompletionEvent?: boolean; restoreFromArchive?: boolean };
@@ -84,9 +88,58 @@ export function createCardUpdater(deps: CardUpdaterDeps) {
     if (!Object.keys(finalWrite).some((key) => key !== "updated_at")) return;
     writeCard(deps.db, cardId, finalWrite);
     const current = deps.getCard(cardId);
+    recordCardUpdate(deps, cardId, previous, current, changed, finalWrite);
     if (previous && current) reconcileTransitions(deps, cardId, previous, current, options);
     deps.bb.realtime.publish("card-state", { cardId });
   };
+}
+
+/**
+ * One row per state change, with the before/after of the four fields that
+ * answer "why does this card look like that?".
+ *
+ * The old design kept only `last_error`, so a loop that wrote 150 errors left
+ * one slot reading "unknown error" while the cause was three writes earlier.
+ * The row is not deduped: two unrelated updates carrying the same field name
+ * are two facts, and collapsing them by a cause this call does not have would
+ * hide the second. Text columns are measured, never copied — `last_assistant_text`
+ * already lives on the card and in the thread, and a log that duplicates prose
+ * is a second copy of the database.
+ */
+function recordCardUpdate(
+  deps: CardUpdaterDeps,
+  cardId: string,
+  previous: WorkerCard | undefined,
+  current: WorkerCard | undefined,
+  changed: string[],
+  write: Record<string, unknown>,
+): void {
+  if (!deps.actions || changed.length === 0) return;
+  const before = previous as unknown as Record<string, unknown> | undefined;
+  const after = current as unknown as Record<string, unknown> | undefined;
+  const detail: Record<string, unknown> = { fields: changed };
+  for (const key of ["status", "stage", "activity"]) {
+    if (!changed.includes(key)) continue;
+    detail[key] = { from: before?.[key] ?? null, to: after?.[key] ?? write[key] ?? null };
+  }
+  if (changed.includes("last_error")) {
+    detail.lastError = truncateText(after?.last_error ?? write.last_error);
+  }
+  if (changed.includes("accepted_at") && after?.accepted_at != null) {
+    detail.acceptedAt = after.accepted_at;
+  }
+  deps.actions.record({
+    kind: "card.updated",
+    outcome: "ok",
+    cardId,
+    stage: typeof after?.stage === "string" ? after.stage : null,
+    detail,
+  });
+}
+
+function truncateText(value: unknown, limit = 300): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
 function isDatabaseOpen(db: Db): boolean {

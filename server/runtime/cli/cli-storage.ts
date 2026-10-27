@@ -46,19 +46,50 @@ export function createStorageCommand(deps: CliDeps): CliCommandFn {
     rows.sort((a, b) => (b.bytes ?? -1) - (a.bytes ?? -1));
     const total = rows.reduce((sum, row) => sum + (row.bytes ?? 0), 0);
     const unknown = rows.filter((row) => row.bytes === null).length;
+    const actionLog = actionLogUsage(deps);
     if (json)
       return {
         exitCode: 0,
         stdout: JSON.stringify(
-          { totalBytes: total, worktrees: rows.length, unreadable: unknown, rows },
+          { totalBytes: total, worktrees: rows.length, unreadable: unknown, actionLog, rows },
           null,
           2,
         ),
       };
     if (rows.length === 0)
-      return { exitCode: 0, stdout: "No worktrees reported." };
-    return { exitCode: 0, stdout: storageLines(rows, total, unknown).join("\n") };
+      return { exitCode: 0, stdout: `No worktrees reported.\n${actionLogLine(actionLog)}` };
+    return {
+      exitCode: 0,
+      stdout: `${storageLines(rows, total, unknown).join("\n")}\n${actionLogLine(actionLog)}`,
+    };
   };
+}
+
+/**
+ * The flight recorder's own footprint. It is capped by `gc --apply`, and a cap
+ * nobody can see is indistinguishable from a leak — so the number a person
+ * would use to decide "is this table the problem?" is printed beside the
+ * worktrees, which is the other answer to the same question.
+ */
+function actionLogUsage(deps: CliDeps): { rows: number; events: number; oldest: number | null; newest: number | null } {
+  try {
+    const row = deps.db
+      .prepare("SELECT COUNT(*) AS rows, COALESCE(SUM(occurrences), 0) AS events, MIN(at) AS oldest, MAX(last_at) AS newest FROM action_log")
+      .get() as { rows?: number; events?: number; oldest?: number | null; newest?: number | null };
+    return {
+      rows: Number(row?.rows ?? 0),
+      events: Number(row?.events ?? 0),
+      oldest: row?.oldest ?? null,
+      newest: row?.newest ?? null,
+    };
+  } catch {
+    return { rows: 0, events: 0, oldest: null, newest: null };
+  }
+}
+
+function actionLogLine(usage: ReturnType<typeof actionLogUsage>): string {
+  if (usage.rows === 0) return "Action log: empty.";
+  return `Action log: ${usage.rows} rows / ${usage.events} events${usage.oldest ? `, oldest ${new Date(usage.oldest).toISOString().slice(0, 10)}` : ""}`;
 }
 
 async function collectWorktrees(

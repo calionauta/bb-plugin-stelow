@@ -21,6 +21,8 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
   async function reconcile(): Promise<void> {
     if (inFlight) return;
     inFlight = true;
+    const started = deps.now();
+    let outcome: "ok" | "error" = "ok";
     try {
       await sweep.reconcileRuns();
       await sweep.reconcileStageEntries();
@@ -28,6 +30,7 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
       // card whose ledger still says "owed" has in fact already landed.
       await deps.reconcilePublications?.().catch(() => undefined);
     } catch (error) {
+      outcome = "error";
       if (!isDatabaseClosedError(error)) throw error;
       // The captured handle died — on a reload the new load owns a new
       // handle, but this pass (or a surviving timer) still holds the old one.
@@ -38,6 +41,16 @@ export function createExecutionReconcile(deps: ReconcileDeps) {
       if (rewired) ({ run, sweep } = rewired);
     } finally {
       inFlight = false;
+      // A tick that changes nothing still happened. Without this row, a
+      // reconciler looping every 45s and recording 26 duplicate comments was
+      // the only evidence it ran at all; with it, the loop is one row whose
+      // `occurrences` and `last_at` say how long it has been going.
+      deps.actions?.record({
+        kind: "reconcile.tick",
+        outcome,
+        cause: outcome === "ok" ? "reconcile.tick" : "reconcile.error",
+        durationMs: deps.now() - started,
+      });
     }
   }
 
@@ -107,6 +120,7 @@ function wireReconcileRules(deps: ReconcileDeps) {
     logComment: deps.logComment,
     publishCard: deps.publishCard,
     native: deps.native,
+    actions: deps.actions,
     dispatch: {
       reconcileBoundary: boundary.reconcileBoundary,
       reconcileArtifacts: artifacts.reconcileArtifacts,

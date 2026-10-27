@@ -6,22 +6,17 @@ import {
   ensureInboxSeverityColumns,
   insertInboxEvent,
   listInboxEvents,
-  markQuestionsAnswered,
-  QUESTION_WAITING_SUMMARY,
   resolveActionInboxEvents,
   resolveAllInboxEvents,
-  upsertPausedEvent,
-  syncQuestionInboxEvents,
   type InboxEventInput,
   type InboxResolutionReason,
 } from "../lib/inbox-events.mjs";
-import {
-  ensureInboxOccurrencesColumn,
-  recordErrorInboxEvent,
-} from "../lib/inbox-error-event.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { parseSeverityReasons } from "../lib/inbox-severity.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
+import { createAnswerMarker, createAttentionRecorders, createQuestionSync } from "./inbox-recorders.js";
 import {
   createArchiveHandler,
   createCardReadHandler,
@@ -140,9 +135,11 @@ export interface InboxServerDeps {
   randomId: (prefix: string) => string;
   publish: Publish;
   listProjects: () => Promise<Array<{ id: string; name: string }>>;
+  /** The flight recorder; absent means "no log", never "no inbox". */
+  actions?: ActionRecorder;
 }
 
-type InboxContext = Pick<InboxServerDeps, "db" | "now" | "randomId"> & {
+type InboxContext = Pick<InboxServerDeps, "db" | "now" | "randomId" | "actions"> & {
   changed: (payload: Record<string, unknown>) => void;
 };
 
@@ -173,7 +170,19 @@ function createRecorder(ctx: InboxContext) {
       occurredAt,
       holder,
     });
-    if (inserted) ctx.changed({ cardId: card.id });
+    // A row that was not inserted is a repeat of a standing condition, and the
+    // inbox already carries it. Recording only the insert keeps this log about
+    // what the inbox did, not about how often it was asked.
+    if (inserted) {
+      ctx.changed({ cardId: card.id });
+      ctx.actions?.record({
+        kind: "inbox.opened",
+        outcome: "ok",
+        cause: `inbox.${kind}`,
+        cardId: card.id,
+        detail: { kind, dedupeKey, holder: holder?.file ?? null },
+      });
+    }
   };
 }
 
@@ -184,8 +193,16 @@ function createResolver(ctx: InboxContext) {
     kinds: ActionKind[] = ["question", "error", "paused"],
     reason: InboxResolutionReason | null = null,
   ) => {
-    if (resolveActionInboxEvents(ctx.db, cardId, resolvedAt, kinds, reason) > 0) {
+    const resolved = resolveActionInboxEvents(ctx.db, cardId, resolvedAt, kinds, reason);
+    if (resolved > 0) {
       ctx.changed({ cardId });
+      ctx.actions?.record({
+        kind: "inbox.resolved",
+        outcome: "ok",
+        cause: `inbox.resolved.${reason ?? "unspecified"}`,
+        cardId,
+        detail: { kinds, rows: resolved },
+      });
     }
   };
 }
@@ -197,50 +214,16 @@ function createResolver(ctx: InboxContext) {
  */
 function createTerminalResolver(ctx: InboxContext) {
   return (cardId: string, resolvedAt: number, reason: InboxResolutionReason | null = null) => {
-    if (resolveAllInboxEvents(ctx.db, cardId, resolvedAt, reason) > 0) {
+    const resolved = resolveAllInboxEvents(ctx.db, cardId, resolvedAt, reason);
+    if (resolved > 0) {
       ctx.changed({ cardId });
-    }
-  };
-}
-
-function createQuestionSync(ctx: InboxContext) {
-  // `questionSummary` / `questionCount` are optional so every existing caller
-  // keeps working: a caller that cannot name the question still mints the row
-  // it used to, and the row falls back to the generic sentence at read time.
-  return (
-    cardId: string,
-    interactionIds: string[],
-    occurredAt = ctx.now(),
-    question: { summary?: string | null; count?: number | null; kind?: string | null } = {},
-  ) => {
-    // explicitEmpty: every caller of this wrapper verified its read first —
-    // question-inbox returns null (skip) on a failed poll rather than [],
-    // and the answer door passes its own verified open set. An empty list
-    // here means "looked, nothing open", never "the read failed".
-    const result = syncQuestionInboxEvents(ctx.db, {
-      cardId,
-      interactionIds,
-      occurredAt,
-      createId: () => ctx.randomId("evt"),
-      summary: QUESTION_WAITING_SUMMARY,
-      questionSummary: question.summary ?? null,
-      questionCount: question.count ?? null,
-      questionKind: question.kind === "split" ? "split" : null,
-      explicitEmpty: true,
-    });
-    const fields = ["inserted", "resolved", "reopened", "pausedSuperseded"] as const;
-    if (fields.some((field) => result[field] > 0)) ctx.changed({ cardId });
-  };
-}
-
-function createAnswerMarker(ctx: InboxContext) {
-  return (cardId: string, interactionIds: string[]) => {
-    // The answer door resolved the rows; without a publish the clearance is
-    // invisible until the next 45s tick or thread event mints something else.
-    // Publish only when rows actually resolved — a silent answer (unknown
-    // ids) stays silent instead of churning every badge on the board.
-    if (markQuestionsAnswered(ctx.db, { cardId, interactionIds, occurredAt: ctx.now() }) > 0) {
-      ctx.changed({ cardId });
+      ctx.actions?.record({
+        kind: "inbox.resolved",
+        outcome: "ok",
+        cause: `inbox.resolved.${reason ?? "unspecified"}`,
+        cardId,
+        detail: { kinds: "all", rows: resolved },
+      });
     }
   };
 }
@@ -316,36 +299,7 @@ export function createInboxServer(deps: InboxServerDeps) {
   return {
     handlers: createInboxHandlers(ctx, deps),
     record: createRecorder(ctx),
-    // One open paused row per card, refreshed rather than duplicated — see
-    // lib/inbox-events upsertPausedEvent for why a stream of identical rows
-    // for a single stuck card is inflation, not attention.
-    upsertPaused: (cardId: string, summary: string, idleAt: number) => {
-      const touched = upsertPausedEvent(ctx.db, {
-        cardId,
-        summary,
-        idleAt,
-        nowMs: ctx.now(),
-        createId: () => ctx.randomId("evt"),
-      });
-      if (touched) ctx.changed({ cardId });
-    },
-    // One open error row per card, for the same reason as upsertPaused: a
-    // worker that keeps failing is one thing to look at, not one thing per
-    // failure. Differs in the two ways the kind demands — it reopens a resolved
-    // row (a failure after someone dealt with the last one is a NEW need, and
-    // INSERT OR IGNORE would drop it), and it counts occurrences (the badge
-    // needs the repetition, and counting rows would only measure the bug).
-    recordError: (cardId: string, summary: string, occurredAt: number) => {
-      const result = recordErrorInboxEvent(ctx.db, {
-        id: ctx.randomId("evt"),
-        cardId,
-        kind: "error",
-        summary,
-        occurredAt,
-      });
-      ctx.changed({ cardId });
-      return result;
-    },
+    ...createAttentionRecorders(ctx),
     resolve: createResolver(ctx),
     resolveAll: createTerminalResolver(ctx),
     syncPendingQuestion: createQuestionSync(ctx),

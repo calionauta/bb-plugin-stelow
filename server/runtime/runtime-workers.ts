@@ -30,6 +30,7 @@ import { WORKER_PROTOCOL_CLAUSES } from "./worker-protocol-clauses.js";
 import type { RuntimeServices } from "./runtime-services.js";
 import type { CardLedger } from "./card-ledger.js";
 import type { TrackPrompts } from "./track-prompts.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 export type WorkerRuntimeDeps = {
   bb: BbPluginApi;
@@ -38,6 +39,8 @@ export type WorkerRuntimeDeps = {
   services: RuntimeServices;
   ledger: CardLedger;
   prompts: TrackPrompts;
+  /** The flight recorder shared by every surface; optional in narrow tests. */
+  actions?: ActionRecorder;
 };
 
 export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
@@ -51,6 +54,7 @@ export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
     db: deps.db,
     bb: deps.bb,
     now: deps.now,
+    actions: deps.actions,
     getCard: services.getCard,
     updateCard: services.updateCard,
     comment: (cardId, body) =>
