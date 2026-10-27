@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.93.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.0...v0.93.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* make the action log readable for liveness, not just for history ([#442](https://github.com/calionauta/bb-plugin-stelow/issues/442)) ([2b0924f](https://github.com/calionauta/bb-plugin-stelow/commit/2b0924f4bb39df08420ecd50f1b8048022e8f1ed))
+* stop the update check when the plugin is disposed ([#439](https://github.com/calionauta/bb-plugin-stelow/issues/439)) ([3b19568](https://github.com/calionauta/bb-plugin-stelow/commit/3b195682f4b6744a9f972ef42c0381e3bc8ee59a))
+
 ## [0.93.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.92.0...v0.93.0) (2026-10-27)
 
 
