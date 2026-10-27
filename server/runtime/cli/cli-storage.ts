@@ -89,7 +89,21 @@ function actionLogUsage(deps: CliDeps): { rows: number; events: number; oldest: 
 
 function actionLogLine(usage: ReturnType<typeof actionLogUsage>): string {
   if (usage.rows === 0) return "Action log: empty.";
-  return `Action log: ${usage.rows} rows / ${usage.events} events${usage.oldest ? `, oldest ${new Date(usage.oldest).toISOString().slice(0, 10)}` : ""}`;
+  // The span, not just the date: a table born an hour ago and a table with a
+  // month of history print the same "oldest" day, and every rate read against
+  // a longer `--since` is understated until the reader knows which one it is.
+  const span = usage.oldest && usage.newest ? formatHistorySpan(usage.newest - usage.oldest) : "unknown";
+  const oldest = usage.oldest ? `, oldest ${new Date(usage.oldest).toISOString().slice(0, 10)}` : "";
+  return `Action log: ${usage.rows} rows / ${usage.events} events, ${span} of history${oldest}`;
+}
+
+/** `18 min`, `7 h`, `12 d` — the resolution a reader needs to trust a rate. */
+function formatHistorySpan(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 90) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.round(hours / 24)} d`;
 }
 
 async function collectWorktrees(

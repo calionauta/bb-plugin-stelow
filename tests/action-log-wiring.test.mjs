@@ -66,7 +66,11 @@ test("help and unknown commands still record one cli.call row", async () => {
   assert.equal(actions.recorded[0].kind, "cli.call");
   assert.equal(actions.recorded[0].actor, "agent", "CLI invocations are actor=agent, not plugin");
   assert.equal(actions.recorded[0].outcome, "ok");
-  assert.equal(actions.recorded[0].cause, null, "a success names no condition");
+  assert.equal(
+    actions.recorded[0].cause,
+    "cli.read.help",
+    "an inspection success names a repeatable condition so it folds",
+  );
   assert.equal(actions.recorded[0].detail.verb, "help");
   assert.equal(actions.recorded[0].detail.exitCode, 0);
 
@@ -87,6 +91,35 @@ test("help and unknown commands still record one cli.call row", async () => {
   assert.equal(actions.recorded[2].outcome, "refused");
   assert.equal(actions.recorded[2].cause, "cli.usage");
   assert.equal(actions.recorded[2].detail.verb, "nope");
+});
+
+test("a read verb's success folds by cli.read cause; a write verb's success does not", async () => {
+  const actions = fakeActions();
+  const stamps = [1_000, 1_007, 2_000, 2_005];
+  let stamp = 0;
+  const dispatch = createCliDispatch({
+    run: async () => ({ exitCode: 0 }),
+    actions,
+    now: () => stamps[stamp++],
+  });
+
+  const read = await dispatch(["storage"], {});
+  const write = await dispatch(["done"], {});
+
+  assert.equal(read.exitCode, 0);
+  assert.equal(write.exitCode, 0);
+  assert.deepEqual(
+    actions.recorded.map((entry) => entry.cause),
+    ["cli.read.storage", null],
+    "inspection success is a repeatable condition; a write success is not",
+  );
+  assert.deepEqual(actions.recorded.map((entry) => entry.outcome), ["ok", "ok"]);
+  assert.deepEqual(actions.recorded.map((entry) => entry.detail.verb), ["storage", "done"]);
+  assert.deepEqual(
+    actions.recorded.map((entry) => entry.durationMs),
+    [7, 5],
+    "the duration still measures each invocation",
+  );
 });
 
 test("refusal causes are inferred from the exit code or taken from the result verbatim", async () => {

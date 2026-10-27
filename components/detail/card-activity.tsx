@@ -58,9 +58,13 @@ function ActivityRow({ row }: { row: Row }) {
   const count = row.occurrences > 1 ? ` x${row.occurrences}` : "";
   const cause = row.cause ? ` ${row.cause}` : "";
   const duration = row.durationMs === null ? "" : ` · ${row.durationMs}ms`;
+  // A repeated row shows the last time it happened, because that is the
+  // question the reader has ("is it still happening?"); the first moment is
+  // one click away in `bb stelow log --kind <kind>`.
+  const when = formatActionTime(row.occurrences > 1 ? row.lastAt : row.at);
   return (
     <li className="text-xs text-muted-foreground">
-      <span className="tabular-nums">{formatActionTime(row.at)}</span>
+      <span className="tabular-nums">{when}</span>
       {" · "}
       <span className={LEVEL_TONE[row.outcome] ?? "text-foreground"}>
         {row.kind}{cause}{count}

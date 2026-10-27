@@ -70,6 +70,8 @@ export function createLogCommand(deps: LogDeps): CliCommandFn {
       return replay(deps, filter.cardId, filter.since, scan.flags.json === "true");
     }
     const rows = deps.actions.list(filter);
+    const historySince = oldestRecordedAt(deps);
+    const shortHistory = filter.since !== undefined && historySince !== null && historySince > filter.since;
     if (scan.flags.json === "true") {
       return {
         exitCode: 0,
@@ -78,6 +80,7 @@ export function createLogCommand(deps: LogDeps): CliCommandFn {
             rows: rows.length,
             events: rows.reduce((sum, row) => sum + (row.occurrences ?? 1), 0),
             since: filter.since ?? null,
+            historySince,
             actions: rows.map((row) => ({ ...row, detail: decodeDetail(row.detail) })),
           },
           null,
@@ -87,7 +90,8 @@ export function createLogCommand(deps: LogDeps): CliCommandFn {
     }
     const events = rows.reduce((sum, row) => sum + (row.occurrences ?? 1), 0);
     const header = `${rows.length} row${rows.length === 1 ? "" : "s"} · ${events} event${events === 1 ? "" : "s"}`
-      + (filter.since ? ` · since ${formatActionTime(filter.since)}` : "");
+      + (filter.since ? ` · since ${formatActionTime(filter.since)}` : "")
+      + (shortHistory ? ` · history starts ${formatActionTime(historySince)}` : "");
     return { exitCode: 0, stdout: `${header}\n${formatActionRows(rows)}` };
   };
 }
@@ -227,7 +231,9 @@ function collectActionEntries(
   const rows = deps.actions?.list({ cardId, since, limit: REPLAY_SOURCE_LIMIT }) ?? [];
   return rows.map((row) => ({
     at: row.at,
-    summary: `[${row.kind}] ${row.outcome}${row.cause ? ` ${row.cause}` : ""}${summarizeDetail(row.detail)}`,
+    summary: `[${row.kind}] ${row.outcome}${row.cause ? ` ${row.cause}` : ""}`
+      + (row.occurrences > 1 ? ` x${row.occurrences} (last ${formatActionTime(row.lastAt)})` : "")
+      + summarizeDetail(row.detail),
   }));
 }
 
@@ -247,4 +253,17 @@ function rows(
 function firstLine(value: unknown, limit: number): string {
   const text = String(value ?? "").trim().split("\n")[0] ?? "";
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+/** The oldest row ever recorded, so a rate can say "the window is shorter than
+ * you asked for" instead of silently dividing by a full one. */
+function oldestRecordedAt(deps: LogDeps): number | null {
+  try {
+    const row = deps.db.prepare("SELECT MIN(at) AS oldest FROM action_log").get() as {
+      oldest?: number | null;
+    };
+    return Number.isFinite(Number(row?.oldest)) ? Number(row.oldest) : null;
+  } catch {
+    return null;
+  }
 }
