@@ -1,7 +1,7 @@
 {
   "$comment": "Versioned upstream-first allowlist. Every vendored path that differs from the pinned upstream commit must be named here with its reason, or scripts/check-upstream-drift.mjs (CI) fails. Behavioral entries document standing host policy divergences from upstream playbook defaults. A fork healed by an upstream sync goes stale (warned, then dropped) — never widened silently.",
-  "pin": "1ed37f9c1eaafb951051850f1923e5c44d764f2a",
-  "upstream_version": "0.85.0-alpha",
+  "pin": "91f015823defa4a2f936cf43dedc6ef245f002d6",
+  "upstream_version": "0.86.0-alpha",
   "forks": [
     {
       "area": "fail-observed-vs-tdd",

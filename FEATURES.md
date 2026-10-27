@@ -2694,14 +2694,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   worker never enumerates one. Conditional receipts carry no missing-file
   verdict, and without a verified state dir the rows are omitted rather
   than guessed, because a confidently wrong path is worse than a search.
-- **Next stage, read-only** (`bb stelow next [--json]`, `lib/helper-verbs.mjs`).
-  Prints the stage the workflow allows next, from the same pinned helper the
-  skills name (`scripts/stelow next`). Card workspaces do not ship that helper,
-  so this is its host verb — the alternative was a skill telling a worker to run
-  a path that does not exist and the worker inventing `bb stelow next`. The
-  declared verb set is proved against the pinned binary by
-  `tests/helper-verbs.test.mjs`, so a verb the helper stopped answering fails
-  there, not at a worker's turn.
+- **Workflow verbs, one table** (`lib/workflow-verbs.mjs`). Every verb the
+  upstream skills name is classified exactly once as `helper` (the host wraps
+  the pinned helper), `host` (the host implements it with card integration), or
+  `internal` (no worker-facing command). `scripts/stelow <verb>` maps to
+  `bb stelow <verb>` when help lists it, and the prompt says a verb outside that
+  list does not exist. This is why `bb stelow next`, `bb stelow audit-trail`
+  and `bb stelow check breadboard` exist: card workspaces do not ship
+  `scripts/stelow`, so a skill naming that path needs a host verb or it sends a
+  worker to a dead path. `bb stelow decide` was implemented and missing from
+  help; it is listed now. `ask`, `decide`, `seed` and `status` are host-owned
+  (not helper passthroughs); `guard-judge` has no worker command because the
+  host decides through its Decision API. A test parses the pinned helper's
+  usage and fails when an upstream verb is unclassified, and the declared helper
+  set is proved against the pinned binary by `tests/helper-verbs.test.mjs`, so a
+  verb the helper stopped answering fails there, not at a worker's turn.
 - **Host-side artifact registration** (`lib/artifact-registration.mjs`).
   A validated native run's staged artifacts are copied to their canonical
   homes and their receipt written by the host, in one pass, instead of

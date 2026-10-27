@@ -214,9 +214,13 @@ test("formatted duration shows the max, and the last only when they differ", () 
 // `scripts/stelow next` is the verb a worker reaches for first, and there is no
 // `bb stelow next`. The clause is the only thing stopping a model from
 // inventing it, so it is pinned by its stable phrases rather than its wording.
-test("the CLI clause maps scripts/stelow next and forbids inventing a verb", () => {
+test("the CLI clause maps scripts/stelow to help and forbids inventing a verb", () => {
   assert.equal(typeof CLI_EQUIVALENTS, "string");
-  assert.match(CLI_EQUIVALENTS, /`next` map/, "the clause says next has a host verb");
+  assert.match(
+    CLI_EQUIVALENTS,
+    /`scripts\/stelow <verb>` → `bb stelow <verb>` when `bb stelow help` lists it/,
+    "the mapping is defined by the help surface, not a second list",
+  );
   assert.match(
     CLI_EQUIVALENTS,
     /Never invent (a )?`bb stelow <verb>`/,
