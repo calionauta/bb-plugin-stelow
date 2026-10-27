@@ -135,7 +135,12 @@ export function registerAutomationSchedule(
 
 /** The recorder is optional so a narrow test can register the table without
  * inventing a database; production always passes the core's instance. */
-export type ActionRecordOptions = { actions?: ActionRecorder; now?: () => number };
+export type ActionRecordOptions = {
+  actions?: ActionRecorder;
+  now?: () => number;
+  /** Thread-only inputs (a lookup by thread) still get their card attributed. */
+  resolveCardId?: (threadId: string) => string | null;
+};
 
 export function registerRpcHandlers(
   bb: BbPluginApi,
@@ -144,7 +149,12 @@ export function registerRpcHandlers(
   options: ActionRecordOptions = {},
 ): void {
   const recorded = options.actions
-    ? withActionRecorder(handlers as unknown as Record<string, (...args: unknown[]) => unknown>, options.actions, options.now)
+    ? withActionRecorder(
+      handlers as unknown as Record<string, (...args: unknown[]) => unknown>,
+      options.actions,
+      options.now,
+      options.resolveCardId,
+    )
     : handlers;
   bb.rpc.register(contract, recorded as RpcHandlers, { experimental_discoverable: true });
 }

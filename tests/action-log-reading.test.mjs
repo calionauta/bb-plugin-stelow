@@ -66,6 +66,26 @@ function freshDb() {
   );
 }
 
+// ── a folded row keeps the LATEST detail, while duration keeps the max ──────
+{
+  const db = freshDb();
+  const base = 50_000_000;
+  const repeated = { kind: "card.tick", outcome: "partial", cause: "card.tick", cardId: "card_1" };
+
+  recordActionLog(db, { ...repeated, at: base, durationMs: 900, detail: { failed: ["a"] } });
+  recordActionLog(db, { ...repeated, at: base + 1_000, durationMs: 20, detail: { failed: ["b"] } });
+
+  const [row] = listActionLog(db);
+  assert.equal(row.occurrences, 2, "one condition stays one row");
+  assert.deepEqual(
+    JSON.parse(row.detail),
+    { failed: ["b"] },
+    "the detail is the latest evidence: a phase failing now must not hide behind yesterday's list",
+  );
+  assert.equal(row.durationMs, 900, "duration still keeps the worst occurrence, not the latest");
+  assert.equal(row.lastAt, base + 1_000, "lastAt names when the latest detail was seen");
+}
+
 // ── the list/--json shape carries both moments ──────────────────────────────
 {
   const db = freshDb();
@@ -121,4 +141,4 @@ function freshDb() {
   assert.equal(stamps(repeated).length, 2);
 }
 
-console.log("action log reading test ok: worst duration, both moments, last-activity ordering, text form");
+console.log("action log reading test ok: worst duration, latest detail, both moments, last-activity ordering, text form");

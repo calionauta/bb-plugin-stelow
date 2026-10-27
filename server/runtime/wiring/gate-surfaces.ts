@@ -110,6 +110,7 @@ function buildQuestionAnswers(
   return createQuestionAnswers({
     bb,
     db,
+    actions: core.actions,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,

@@ -54,6 +54,10 @@ export function withActionRecorder<Handlers extends HandlerBag>(
   handlers: Handlers,
   actions: ActionRecorder,
   now: () => number = Date.now,
+  /** Resolves a thread-only input to its card, for the few lookups whose
+   * contract has no `cardId` (`cardByWorkerThread`). Optional: without it the
+   * row is still written, attributed to the thread. */
+  resolveCardId?: (threadId: string) => string | null,
 ): Handlers {
   const wrapped: HandlerBag = {};
   for (const [name, handler] of Object.entries(handlers)) {
@@ -64,8 +68,8 @@ export function withActionRecorder<Handlers extends HandlerBag>(
     wrapped[name] = async (...args: unknown[]) => {
       const started = now();
       const input = args[0];
-      const cardId = inputString(input, "cardId");
       const threadId = inputString(input, "threadId");
+      const cardId = inputString(input, "cardId") ?? cardFromThread(threadId, resolveCardId);
       try {
         const output = await handler(...args);
         actions.record({
@@ -94,4 +98,18 @@ export function withActionRecorder<Handlers extends HandlerBag>(
     };
   }
   return wrapped as Handlers;
+}
+
+/** A resolver is allowed to fail: an unreadable lookup costs the attribution,
+ * never the row. */
+function cardFromThread(
+  threadId: string | null,
+  resolve: ((threadId: string) => string | null) | undefined,
+): string | null {
+  if (!threadId || !resolve) return null;
+  try {
+    return resolve(threadId) ?? null;
+  } catch {
+    return null;
+  }
 }
