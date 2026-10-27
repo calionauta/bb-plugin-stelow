@@ -34,13 +34,18 @@ export function createCliDispatch(deps: CliDispatchDeps) {
 
   async function route(argv: string[], context: CliRunContext): Promise<CliResult> {
     if (argv[0] === "help") return cliHelpResult(argv);
+    // `--help`/`-h` are the spellings a person and a model try first. They were
+    // an unknown command (two refusals in one day), so they now answer help.
+    if (argv[0] === "--help" || argv[0] === "-h") {
+      return cliHelpResult(["help", ...argv.slice(1)]);
+    }
     if (!argv[0]) return cliUnknownResult(argv);
     return deps.run(argv, context);
   }
 
   return async function dispatch(argv: string[], context: CliRunContext): Promise<CliResult> {
     const started = now();
-    const verb = argv[0] ?? "";
+    const verb = argv[0] === "--help" || argv[0] === "-h" ? "help" : (argv[0] ?? "");
     const cardId = flagValue(argv, "--card");
     try {
       const result = await route(argv, context);
@@ -97,7 +102,7 @@ function recordCliResult(
     // gets its own, which is what stops the log from measuring itself.
     cause: call.result.exitCode === 0
       ? successCause(call.verb)
-      : (call.result.reason ?? causeForExit(call.result.exitCode)),
+      : (call.result.reason ?? causeForExit(call.result.exitCode, call.verb)),
     cardId: call.cardId,
     threadId: call.threadId,
     durationMs: call.now() - call.started,
@@ -128,12 +133,22 @@ function recordCliFailure(
   });
 }
 
-/** 2 is the CLI's usage/no-card exit; 1 is a refusal with a written reason. */
-function causeForExit(exitCode: number): string {
-  if (exitCode === 2) return "cli.usage";
-  if (exitCode === 1) return "cli.refused";
+/**
+ * 2 is the CLI's usage/no-card exit; 1 is a refusal with a written reason.
+ *
+ * A KNOWN verb gets its own suffix, so a week of `verify` refusals is not one
+ * `cli.refused` line with the `done` refusals folded in. A typo keeps the
+ * generic cause: it is not a verb, and naming it would create a series per
+ * misspelling.
+ */
+function causeForExit(exitCode: number, verb: string): string {
+  const suffix = KNOWN_VERBS.has(verb) ? `.${verb}` : "";
+  if (exitCode === 2) return `cli.usage${suffix}`;
+  if (exitCode === 1) return `cli.refused${suffix}`;
   return "cli.failed";
 }
+
+const KNOWN_VERBS = new Set(stelowCliCommands.map((command) => command.name));
 
 function firstLine(value: string | undefined, limit = 300): string {
   const line = String(value ?? "").trim().split("\n")[0] ?? "";
