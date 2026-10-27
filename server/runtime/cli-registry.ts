@@ -41,6 +41,23 @@ export const stelowCliCommands: CliCommand[] = [
   ),
   command("advance", "Advance to the next Stelow stage", "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>"),
   command("next", "Print the next stage the workflow allows (read-only)", "bb stelow next [--json] [--project <proj_id>]"),
+  command(
+    "audit-trail",
+    "Build, check or print the portable audit trail (read-only unless build)",
+    "bb stelow audit-trail build|check|path [--strict] [--json] [--project <proj_id>]",
+  ),
+  command(
+    "check",
+    "Check a breadboard map against the interface rule (read-only)",
+    "bb stelow check breadboard <map.json> [--json] [--strict] [--project <proj_id>]",
+  ),
+  command(
+    "decide",
+    "Record a decided selection, or open a challenge against a receipt",
+    "bb stelow decide --selected <option> [--rejected a,b] [--scopes s1,s2]",
+    "[--reason <text>] [--supersedes r-old] [--challenge ch-id] [--card <id>]",
+    "| bb stelow decide --open-challenge --against <receipt> --reason <text>",
+  ),
   command("done", "Commit workflow completion (verified in code)", "bb stelow done [--card <card_id>]"),
   command("split", "Execute the approved card-split proposal (no content args)", "bb stelow split [--card <card_id>]"),
   command("playbook", "Print this card's exact state and playbook paths", "bb stelow playbook [--card <card_id>]"),

@@ -9,6 +9,10 @@ const SYNC_SCOPES_USAGE =
 const CONFIG_USAGE =
   "Usage: bb stelow config get <field> [default] [--project <proj_id>]";
 const NEXT_USAGE = "Usage: bb stelow next [--json] [--project <proj_id>]";
+const AUDIT_TRAIL_USAGE =
+  "Usage: bb stelow audit-trail build|check|path [--strict] [--json] [--project <proj_id>]";
+const CHECK_USAGE =
+  "Usage: bb stelow check breadboard <map.json> [--json] [--strict] [--project <proj_id>]";
 
 type HelperContext = {
   rootPath: string;
@@ -25,6 +29,8 @@ export function createHelperPassthroughCommands(deps: CliDeps): CliCommandFn[] {
     createScopeCommand(deps),
     createConfigCommand(deps),
     createNextCommand(deps),
+    createAuditTrailCommand(deps),
+    createCheckCommand(deps),
   ];
 }
 
@@ -87,6 +93,74 @@ function createNextCommand(deps: CliDeps): CliCommandFn {
     const result = await deps.runHelper(args, context.rootPath, context.stateDir ?? undefined);
     return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
   };
+}
+
+
+/** `audit-trail build|check|path` is a worker step in execution-critique; the
+ * helper owns the rule, this only resolves the card's state dir and passes the
+ * subcommand through. */
+function createAuditTrailCommand(deps: CliDeps): CliCommandFn {
+  return async (argv, ctx) => {
+    if (argv[0] !== "audit-trail") return null;
+    const args = argv.slice(1);
+    const sub = args[0];
+    if (!sub || !["build", "check", "path"].includes(sub)) return usage(AUDIT_TRAIL_USAGE);
+    return passThroughHelper(deps, ctx, {
+      helperArgs: ["audit-trail", sub],
+      rest: args.slice(1),
+      usage: AUDIT_TRAIL_USAGE,
+      boolean: ["--strict", "--json"],
+    });
+  };
+}
+
+/** `check breadboard <map>` — the interface-selection gate's read-only check. */
+function createCheckCommand(deps: CliDeps): CliCommandFn {
+  return async (argv, ctx) => {
+    if (argv[0] !== "check") return null;
+    const args = argv.slice(1);
+    if (args[0] !== "breadboard" || !args[1]) return usage(CHECK_USAGE);
+    return passThroughHelper(deps, ctx, {
+      helperArgs: ["check", "breadboard", args[1]],
+      rest: args.slice(2),
+      usage: CHECK_USAGE,
+      boolean: ["--json", "--strict"],
+    });
+  };
+}
+
+/** The shared tail of the stateless passthroughs: flags, workspace, helper. */
+async function passThroughHelper(
+  deps: CliDeps,
+  ctx: CliRunContext,
+  options: {
+    helperArgs: string[];
+    rest: string[];
+    usage: string;
+    boolean: string[];
+  },
+): Promise<CliResult> {
+  const scan = scanFlags(options.rest, {
+    boolean: options.boolean,
+    valued: ["--project"],
+    usage: options.usage,
+  });
+  if (!scan.ok) return scan.result;
+  if (options.rest.includes("--project") && scan.flags.project === undefined) {
+    return usage(options.usage);
+  }
+  const projectId = scan.flags.project ?? ctx.projectId ?? null;
+  const context = await helperContext(deps, ctx, projectId);
+  if ("refusal" in context) return context.refusal;
+  const forwarded = options.boolean
+    .filter((flag) => scan.flags[flag.slice(2)] === "true")
+    .flatMap((flag) => [flag]);
+  const result = await deps.runHelper(
+    [...options.helperArgs, ...forwarded],
+    context.rootPath,
+    context.stateDir ?? undefined,
+  );
+  return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
 function createSyncScopesCommand(deps: CliDeps): CliCommandFn {
