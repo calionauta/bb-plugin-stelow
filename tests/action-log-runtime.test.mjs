@@ -128,6 +128,78 @@ test("the RPC wrapper records one rpc.call row without the input payload", async
   assert.ok(!JSON.stringify(rows[0]).includes("SECRET"), "and no other column copies it either");
 });
 
+test("a returned {ok:false, error} records a refusal and returns the value unchanged", async () => {
+  const db = freshDb();
+  const actions = createActionRecorder({ db, now: () => 11_000 });
+  const refusal = { ok: false, error: "HTTP 409: Thread is archived" };
+  const wrapped = withActionRecorder({ "thread.archive": async () => refusal }, actions, () => 11_000);
+
+  const returned = await wrapped["thread.archive"]({ cardId: "card_9" });
+  assert.equal(returned, refusal, "the handler's value is returned unchanged");
+
+  const rows = listActionLog(db);
+  assert.equal(rows.length, 1, "a refusal is one row, not a refusal plus a success");
+  assert.equal(rows[0].kind, "rpc.call");
+  assert.equal(rows[0].outcome, "refused");
+  assert.equal(rows[0].cause, "rpc.refused");
+  assert.equal(rows[0].cardId, "card_9");
+  const detail = JSON.parse(rows[0].detail);
+  assert.equal(detail.name, "thread.archive");
+  assert.equal(detail.error, "HTTP 409: Thread is archived");
+});
+
+test("a bare {ok:false} records the default refusal message", async () => {
+  const db = freshDb();
+  const actions = createActionRecorder({ db, now: () => 11_000 });
+  const wrapped = withActionRecorder({ "card.refuse": async () => ({ ok: false }) }, actions, () => 11_000);
+
+  assert.deepEqual(await wrapped["card.refuse"]({}), { ok: false });
+  const rows = listActionLog(db);
+  assert.equal(rows[0].outcome, "refused");
+  assert.equal(rows[0].cause, "rpc.refused");
+  assert.equal(JSON.parse(rows[0].detail).error, "refused");
+});
+
+test("a refusal message is capped at 300 characters plus an ellipsis", async () => {
+  const db = freshDb();
+  const actions = createActionRecorder({ db, now: () => 11_000 });
+  const wrapped = withActionRecorder(
+    { "card.refuse": async () => ({ ok: false, error: "x".repeat(500) }) },
+    actions,
+    () => 11_000,
+  );
+
+  await wrapped["card.refuse"]({});
+  const detail = JSON.parse(listActionLog(db)[0].detail);
+  assert.equal(detail.error.length, 301);
+  assert.equal(detail.error, `${"x".repeat(300)}…`);
+  assert.ok(detail.error.endsWith("…"));
+});
+
+test("a returned {ok:true} records a success with no error detail", async () => {
+  const db = freshDb();
+  const actions = createActionRecorder({ db, now: () => 11_000 });
+  const wrapped = withActionRecorder({ "card.noop": async () => ({ ok: true }) }, actions, () => 11_000);
+
+  assert.deepEqual(await wrapped["card.noop"]({}), { ok: true });
+  const rows = listActionLog(db);
+  assert.equal(rows[0].outcome, "ok");
+  assert.equal(rows[0].cause, null);
+  assert.deepEqual(JSON.parse(rows[0].detail), { name: "card.noop" }, "detail has only the name");
+});
+
+test("a primitive return value records a success", async () => {
+  const db = freshDb();
+  const actions = createActionRecorder({ db, now: () => 11_000 });
+  const wrapped = withActionRecorder({ "card.count": async () => 42 }, actions, () => 11_000);
+
+  assert.equal(await wrapped["card.count"]({}), 42);
+  const rows = listActionLog(db);
+  assert.equal(rows[0].outcome, "ok");
+  assert.equal(rows[0].cause, null);
+  assert.deepEqual(JSON.parse(rows[0].detail), { name: "card.count" });
+});
+
 test("the RPC wrapper records an error cause and rethrows the original error", async () => {
   const db = freshDb();
   const actions = createActionRecorder({ db, now: () => 7_000 });

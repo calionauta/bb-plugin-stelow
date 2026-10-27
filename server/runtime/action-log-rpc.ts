@@ -72,27 +72,10 @@ export function withActionRecorder<Handlers extends HandlerBag>(
       const cardId = inputString(input, "cardId") ?? cardFromThread(threadId, resolveCardId);
       try {
         const output = await handler(...args);
-        actions.record({
-          kind: "rpc.call",
-          actor: "client",
-          outcome: "ok",
-          cardId,
-          threadId,
-          durationMs: now() - started,
-          detail: { name },
-        });
+        recordRpcResult(actions, { name, cardId, threadId, started, now, output });
         return output;
       } catch (error) {
-        actions.record({
-          kind: "rpc.call",
-          actor: "client",
-          outcome: "error",
-          cause: errorCause(error),
-          cardId,
-          threadId,
-          durationMs: now() - started,
-          detail: { name, message: messageOf(error) },
-        });
+        recordRpcError(actions, { name, cardId, threadId, started, now, error });
         throw error;
       }
     };
@@ -112,4 +95,54 @@ function cardFromThread(
   } catch {
     return null;
   }
+}
+
+/** The `{ ok: false, error }` shape most Stelow RPCs answer with on a domain
+ * refusal. Null for anything else, including `ok: true`. */
+function domainRefusal(output: unknown): string | null {
+  if (typeof output !== "object" || output === null) return null;
+  const record = output as { ok?: unknown; error?: unknown };
+  if (record.ok !== false) return null;
+  const message = typeof record.error === "string" && record.error.length > 0
+    ? record.error
+    : "refused";
+  return message.length > 300 ? `${message.slice(0, 300)}…` : message;
+}
+
+type RpcCall = {
+  name: string;
+  cardId: string | null;
+  threadId: string | null;
+  started: number;
+  now: () => number;
+};
+
+/** One row for a returned value, including the `{ ok: false }` refusals a
+ * handler answers with instead of throwing. */
+function recordRpcResult(actions: ActionRecorder, call: RpcCall & { output: unknown }): void {
+  const refusal = domainRefusal(call.output);
+  actions.record({
+    kind: "rpc.call",
+    actor: "client",
+    outcome: refusal ? "refused" : "ok",
+    cause: refusal ? "rpc.refused" : null,
+    cardId: call.cardId,
+    threadId: call.threadId,
+    durationMs: call.now() - call.started,
+    detail: refusal ? { name: call.name, error: refusal } : { name: call.name },
+  });
+}
+
+/** One row for a handler that threw. */
+function recordRpcError(actions: ActionRecorder, call: RpcCall & { error: unknown }): void {
+  actions.record({
+    kind: "rpc.call",
+    actor: "client",
+    outcome: "error",
+    cause: errorCause(call.error),
+    cardId: call.cardId,
+    threadId: call.threadId,
+    durationMs: call.now() - call.started,
+    detail: { name: call.name, message: messageOf(call.error) },
+  });
 }
