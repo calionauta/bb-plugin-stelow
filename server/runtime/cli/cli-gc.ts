@@ -97,10 +97,14 @@ async function applyGc(
 ): Promise<CliResult> {
   const safe = candidates.filter((c) => c.safe);
   const removed = await removeSafe(deps, safe);
+  // Retention rides the one command that already deletes: `gc` is where an
+  // operator looks when storage grows, and a second command that prunes would
+  // be a second thing to remember. Dry runs prune nothing.
+  const actionLog = deps.actions?.prune() ?? { deleted: 0, kept: 0 };
   if (json)
     return {
       exitCode: 0,
-      stdout: JSON.stringify({ ...tally(candidates), applied: true, removed }, null, 2),
+      stdout: JSON.stringify({ ...tally(candidates), applied: true, removed, actionLog }, null, 2),
     };
   return {
     exitCode: 0,
@@ -111,6 +115,9 @@ async function applyGc(
       ...removed.map((id) => `- ${id}`),
       ...(candidates.some((c) => !c.safe)
         ? ["", `Left alone (work is not integrated yet): ${candidates.filter((c) => !c.safe).length}`]
+        : []),
+      ...(actionLog.deleted > 0
+        ? ["", `Pruned ${actionLog.deleted} action-log row${actionLog.deleted === 1 ? "" : "s"} (${actionLog.kept} kept).`]
         : []),
     ].join("\n"),
   };

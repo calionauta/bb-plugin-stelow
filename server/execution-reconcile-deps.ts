@@ -9,6 +9,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ExecutionRun } from "../lib/execution-run-ledger.mjs";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -44,6 +45,8 @@ export type ReconcileDeps = {
    * and the reconcile still runs.
    */
   reconcilePublications?: () => Promise<void>;
+  /** The flight recorder; absent means "no log", never "no reconcile". */
+  actions?: ActionRecorder;
 };
 
 /**

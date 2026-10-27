@@ -14,6 +14,7 @@ import { ScopeProgressTrack } from "../dashboard/build-status-pills";
 import { CurrentStagePill } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
 import { FileOccupancy } from "./file-occupancy";
+import { CardActivity } from "./card-activity";
 import { BuildGaps, type GapSummary } from "./progress/build-gaps";
 import { ProgressRegion } from "./progress/progress-region";
 import { ScopeXray } from "./scope-xray";
@@ -210,6 +211,9 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
             <FileOccupancy occupancy={detail.fileOccupancy} cardId={card.id} />
           </ProgressRegion>
         ) : null}
+        <ProgressRegion title="Activity" hint="what the plugin recorded doing on this card">
+          <CardActivity cardId={card.id} />
+        </ProgressRegion>
         {detail.scopeXray ? (
           <ProgressRegion title="Approved scope map" hint="what the card agreed to do">
             <ScopeXray xray={detail.scopeXray} />

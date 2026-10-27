@@ -9,6 +9,8 @@ import { createPresetServer } from "../presets.js";
 import { createScopeProgressSync } from "../scope-progress-sync.js";
 import { createCliDispatch, type CliRunContext, type CliResult } from "./cli-dispatch.js";
 import { stelowCliCommands } from "./cli-registry.js";
+import { withActionRecorder } from "./action-log-rpc.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 import { startReconciler, type Scheduler } from "./reconciler.js";
 import {
   reconcileLiveCardsOnStartup,
@@ -34,6 +36,8 @@ type CoreDependencyOptions = {
   db: Db;
   now: () => number;
   randomId: (prefix: string) => string;
+  /** The flight recorder shared with the rest of the runtime. */
+  actions?: ActionRecorder;
 };
 
 export function createCoreDependencies(options: CoreDependencyOptions) {
@@ -51,6 +55,7 @@ export function createCoreDependencies(options: CoreDependencyOptions) {
     randomId: options.randomId,
     publish: (event, payload) => options.bb.realtime.publish(event, payload),
     listProjects: () => options.bb.sdk.projects.list(),
+    actions: options.actions,
   });
   return { cardStore, presetServer, inbox };
 }
@@ -69,6 +74,8 @@ type LifecycleDependencies = {
   notifyClaimWaiters: (workspacePath: string, files: string[]) => Promise<void>;
   disposeWorkers: () => void;
   scheduler?: Scheduler;
+  /** The flight recorder; passed through to the 45s card tick. */
+  actions?: ActionRecorder;
 };
 
 export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
@@ -85,6 +92,7 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
   const reconciler = startReconciler({
     db: deps.db,
     bb: deps.bb,
+    actions: deps.actions,
     syncThreadState: deps.syncThreadState,
     scopeProgress: createScopeProgressSync({
       getCard: deps.getCard,
@@ -125,19 +133,28 @@ export function registerAutomationSchedule(
   );
 }
 
+/** The recorder is optional so a narrow test can register the table without
+ * inventing a database; production always passes the core's instance. */
+export type ActionRecordOptions = { actions?: ActionRecorder; now?: () => number };
+
 export function registerRpcHandlers(
   bb: BbPluginApi,
   contract: typeof rpcContract,
   handlers: RpcHandlers,
+  options: ActionRecordOptions = {},
 ): void {
-  bb.rpc.register(contract, handlers, { experimental_discoverable: true });
+  const recorded = options.actions
+    ? withActionRecorder(handlers as unknown as Record<string, (...args: unknown[]) => unknown>, options.actions, options.now)
+    : handlers;
+  bb.rpc.register(contract, recorded as RpcHandlers, { experimental_discoverable: true });
 }
 
 export function registerStelowCli(
   bb: BbPluginApi,
   run: (argv: string[], context: CliRunContext) => Promise<CliResult>,
+  options: ActionRecordOptions = {},
 ): void {
-  const dispatch = createCliDispatch({ run });
+  const dispatch = createCliDispatch({ run, actions: options.actions, now: options.now });
   bb.cli.register({
     name: "stelow",
     summary: "Inspect and interact with Stelow workflows",

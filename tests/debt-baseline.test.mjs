@@ -37,6 +37,10 @@ const functionBaseline = new Map(Object.entries(ledger.functions));
 // line. "baseline N" is the gate's own wording for debt the pre-branch tree
 // already carried; "recorded N" is debt the ledger holds.
 const inheritedBaseline = [
+  // app.tsx is touched for the first time here (error boundaries), so the gate
+  // now reports the callback debt it always carried. It did not grow: the
+  // ledger recorded 56 before this branch and the callback is 56 after it.
+  "app.tsx:callback#1: 56 lines (baseline 56)",
   "components/creation/create-build-dialog.tsx:useCreateBuildSubmit#1: 57 lines (baseline 65)",
   "components/detail/build-diff.tsx:DiffFile#1: 54 lines (baseline 54)",
   // The unlinked-create branch and the mirrored-comment row moved into their

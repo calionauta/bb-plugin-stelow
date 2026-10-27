@@ -18,6 +18,7 @@ import { attemptAutoRetry } from "./execution-auto-retry.js";
 import type { ReconcileBoundary, ReconcileResult } from "./execution-reconcile-deps.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -58,6 +59,8 @@ export type RunDeps = {
    * decision can reach the inbox. Absent in narrow tests, which is why the retry
    * handler treats it as optional and never depends on it to record. */
   noteInboxEvent?: (cardId: string, body: string) => void;
+  /** The flight recorder; absent means "no log", never "no reconcile". */
+  actions?: ActionRecorder;
 };
 
 const SIMPLE_STATES = ["queued", "running", "failed", "cancelled"] as const;
@@ -162,6 +165,7 @@ function unreachable(deps: RunDeps, run: ExecutionRun, error: unknown): Reconcil
       `Native ${failed.recipeId} stopped answering after ${Math.round(NATIVE_UNREACHABLE_MS / 1000)}s `
       + "and the run was marked failed. Retry run to try it again.",
     );
+    recordRunFinished(deps, failed, "error", "run.unreachable", { state: "unreachable" });
     deps.publishCard(failed.cardId);
   }
   return {
@@ -218,6 +222,7 @@ async function applyNativeState(
       }
       settled = transitionExecutionRun(deps.db, run.id, "succeeded", { nativeStatus: "succeeded" });
     }
+    recordRunFinished(deps, settled, "ok", null, native);
     await deps.dispatch.reconcileArtifacts(card, settled);
     return;
   }
@@ -246,6 +251,13 @@ async function reconcileSimpleState(
     nativeStatus: state,
     errorCode: reason || null,
   });
+  recordRunFinished(
+    deps,
+    next,
+    state === "cancelled" ? "skipped" : "error",
+    state === "failed" ? (reason ? "run.failed" : "run.no-reason") : null,
+    native,
+  );
   if (state !== "failed") return;
   // Quote what was just WRITTEN, never the value this replaced. The old line
   // interpolated `run.nativeStatus` — the status BEFORE the transition — into a
@@ -259,6 +271,39 @@ async function reconcileSimpleState(
     + "The card remains available for retry.",
   );
   await attemptAutoRetry(deps, next);
+}
+
+/**
+ * The run's terminal fact, with the host's raw payload attached when it failed.
+ *
+ * The one case where the reason mattered most — "the host reported a failure
+ * without a reason" — was also the case where the payload was thrown away, so
+ * the code could state the gap and could not investigate it. `native` is the
+ * snapshot of what the host actually said, capped by the recorder's detail
+ * limit; the row itself stays small. `run.no-reason` is a countable cause, so
+ * the next ten of these read as ten, not as ten prose comments.
+ */
+function recordRunFinished(
+  deps: RunDeps,
+  run: ExecutionRun,
+  outcome: "ok" | "error" | "skipped",
+  cause: string | null,
+  native: NativeStatus,
+): void {
+  deps.actions?.record({
+    kind: "run.finished",
+    outcome,
+    cause,
+    cardId: run.cardId,
+    runId: run.id,
+    stage: run.stage,
+    detail: {
+      recipe: run.recipeId,
+      state: native.state,
+      errorCode: run.errorCode ?? null,
+      ...(outcome === "error" ? { native } : {}),
+    },
+  });
 }
 
 /** What the row looks like before and after: the tell for "this really moved". */

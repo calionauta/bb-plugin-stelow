@@ -14,6 +14,7 @@ import { createScoredBatchJudge } from "../decisions/scored-batch-judge.js";
 import { createCoreDependencies } from "./composition.js";
 import { createCardUpdater, createClaimWaiterNotifier } from "./card-state.js";
 import { ERRORS } from "./card-errors.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -22,6 +23,9 @@ export type RuntimeServiceDeps = {
   db: Db;
   now: () => number;
   randomId: (prefix: string) => string;
+  /** The flight recorder. Optional so a narrow test can build services without
+   * a log; every production surface passes the core's one instance. */
+  actions?: ActionRecorder;
 };
 
 /** The two writers every surface mutates cards through. */
@@ -39,6 +43,7 @@ function createCardWriters(
       recordErrorInbox: core.inbox.recordError,
       resolveInbox: core.inbox.resolve,
       resolveAllInbox: core.inbox.resolveAll,
+      actions: deps.actions,
     }),
     // A claim waiter resumes a specific PAUSE, so it needs the action
     // resolver, not the terminal one: a card freed from a wait is going back

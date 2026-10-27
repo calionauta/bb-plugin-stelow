@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { ensureActionLogTable } from "../lib/action-log.mjs";
 import { ensureAutoContinueColumns } from "../lib/auto-continue.mjs";
 import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
@@ -169,6 +170,12 @@ function createExecutionTables(db: Db): void {
 function createFeatureTables(db: Db): void {
   createQuestionTables(db);
   createExecutionTables(db);
+  // The flight recorder's table lives outside the host's hashed migration
+  // ledger: it is created idempotently on every boot, so an install that
+  // skipped a release still gets it and a reader never has to know which
+  // migration introduced it. The recorder is built after this pass, so the
+  // first write of a boot always finds the table.
+  ensureActionLogTable(db);
 }
 
 export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number): void {

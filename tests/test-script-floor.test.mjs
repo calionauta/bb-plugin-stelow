@@ -56,7 +56,7 @@ try {
   writeFixture(["test:contrast-wiring"]);
   assert.throws(
     () => assertTestScriptFloor(readScripts(fixturePath)),
-    /declares 88 "test:" scripts, below the recorded floor of 89 — 1 CI band\(s\) went missing/,
+    /declares 89 "test:" scripts, below the recorded floor of 90 — 1 CI band\(s\) went missing/,
     "one deleted band falls under the floor and is refused by name, not silently accepted",
   );
 
