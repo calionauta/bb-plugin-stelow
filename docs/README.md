@@ -34,6 +34,11 @@ None pending — all operator guides migrated (see above).
   `bb stelow log`/`--replay`, retention, and the remaining gaps (upstream RPC
   validation field path, `ui.error`, `host.read-miss`). Referenced from
   `FEATURES.md` (Recover).
+- `observability-triage.md` — the operator loop: where each signal lives, the
+  ten-minute weekly sweep, how to read rates and cause counts, the triage
+  decision table, the LLM audit prompt and its independent-verify pass, and
+  what the log can never tell you. The saved workflow is
+  `.bb/workflows/observability-review.js` (`bb workflows run --file …`).
 - `runtime-integration-2026-09.md` — dated extraction record.
 - `remaining-debt-audit.md` — phase record of a merged branch's size-debt
   repair; the live census is `scripts/source-debt.json` plus
