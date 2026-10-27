@@ -8,9 +8,10 @@ import { codeOf } from "./source-code.mjs";
  * `line-clamp-2` works by declaring `display: -webkit-box`, and the utility
  * compiles into the same `@layer utilities` as `.block{display:block}` at the
  * same (0,1,0) specificity — so source order decides. In the Inbox row the two
- * sat side by side, `.block` came later in the built stylesheet (byte 17,921
- * against 17,312), and the two-line cap that the row documented for itself had
- * never applied at any width. On a phone that was half of the reported
+ * sat side by side, `.block` comes after `.line-clamp-2` in the built
+ * stylesheet, and the two-line cap that the row documented for itself had never
+ * applied at any width. (The relationship is stable; the byte offsets that prove
+ * it today are not, so this comment states the order and not a number.) On a phone that was half of the reported
  * "row occupies the whole screen vertically".
  *
  * So the rule is: a class group may declare a `line-clamp-*` token or a `block`
