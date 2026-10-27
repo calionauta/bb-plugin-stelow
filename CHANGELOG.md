@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.94.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.0...v0.94.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* a refused RPC is not a successful one, and Retry names the door ([#445](https://github.com/calionauta/bb-plugin-stelow/issues/445)) ([9021fd0](https://github.com/calionauta/bb-plugin-stelow/commit/9021fd0fc3e1454ab978151251b85712ba15c709))
+
 ## [0.94.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.1...v0.94.0) (2026-10-27)
 
 
