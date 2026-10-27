@@ -230,29 +230,48 @@ test("a partial tick records which phase threw, and a clean tick records ok", ()
 
   try {
     reconciler.tick();
-    const partial = listActionLog(log, { outcome: "partial" });
-    assert.equal(partial.length, 1, "one tick that lost a phase is one row");
-    assert.equal(partial[0].kind, "card.tick");
-    assert.equal(partial[0].cause, "card.tick");
-    assert.deepEqual(
-      JSON.parse(partial[0].detail),
-      { failed: ["reconcile live cards"] },
-      "the row names the phase, so a reader does not have to open the host log",
-    );
-    assert.equal(typeof partial[0].durationMs, "number");
-    assert.ok(partial[0].durationMs > 0, "the tick's elapsed time is measured, not hardcoded");
-    assert.deepEqual(errors, ["reconcile live cards"], "the host log is told once, by name");
-
+    assertPartialTick(log, errors);
     failLiveQuery = false;
     reconciler.tick();
-    const ok = listActionLog(log, { outcome: "ok", kind: "card.tick" });
-    assert.equal(ok.length, 1, "the clean tick is not folded onto the partial one");
-    assert.equal(ok[0].occurrences, 1);
-    assert.deepEqual(JSON.parse(ok[0].detail), {}, "a clean tick carries no failed list");
+    assertCleanTick(log);
   } finally {
     reconciler.dispose();
     log.close();
   }
 });
+
+function assertPartialTick(log, errors) {
+  const partial = listActionLog(log, { outcome: "partial" });
+  assert.equal(partial.length, 1, "one tick that lost a phase is one row");
+  assert.equal(partial[0].kind, "card.tick");
+  assert.equal(partial[0].cause, "card.tick");
+  const detail = JSON.parse(partial[0].detail);
+  assert.deepEqual(
+    detail.failed,
+    ["reconcile live cards"],
+    "the row names the phase, so a reader does not have to open the host log",
+  );
+  assert.equal(
+    typeof detail.phases["reconcile live cards"],
+    "number",
+    "the row also says how long each phase took",
+  );
+  assert.equal(typeof partial[0].durationMs, "number");
+  assert.ok(partial[0].durationMs > 0, "the tick's elapsed time is measured, not hardcoded");
+  assert.deepEqual(errors, ["reconcile live cards"], "the host log is told once, by name");
+}
+
+function assertCleanTick(log) {
+  const ok = listActionLog(log, { outcome: "ok", kind: "card.tick" });
+  assert.equal(ok.length, 1, "the clean tick is not folded onto the partial one");
+  assert.equal(ok[0].occurrences, 1);
+  const detail = JSON.parse(ok[0].detail);
+  assert.equal("failed" in detail, false, "a clean tick carries no failed list");
+  assert.deepEqual(
+    Object.keys(detail.phases).sort(),
+    ["reconcile live cards", "release expired claims", "release terminal claims", "renew live claims", "sweep inbox aging"],
+    "every phase reports its own duration, even on a clean tick",
+  );
+}
 
 console.log("action log coverage test ok: question wait, answer dwell, resolver attribution, partial tick");

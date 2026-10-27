@@ -44,6 +44,7 @@ export const activityRpcContract = {
           cause: z.string().nullable(),
           occurrences: z.number(),
           durationMs: z.number().nullable(),
+          lastDurationMs: z.number().nullable(),
           detail: z.string(),
         }),
       ),

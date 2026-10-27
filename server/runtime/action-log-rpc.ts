@@ -19,6 +19,7 @@
  * recover.
  */
 import type { ActionRecorder } from "./action-log-runtime.js";
+import { rpcRefusalCause } from "../../lib/rpc-refusal-cause.mjs";
 
 type Handler = (...args: unknown[]) => unknown;
 type HandlerBag = Record<string, Handler>;
@@ -125,7 +126,7 @@ function recordRpcResult(actions: ActionRecorder, call: RpcCall & { output: unkn
     kind: "rpc.call",
     actor: "client",
     outcome: refusal ? "refused" : "ok",
-    cause: refusal ? "rpc.refused" : null,
+    cause: refusal ? rpcRefusalCause(refusal) : null,
     cardId: call.cardId,
     threadId: call.threadId,
     durationMs: call.now() - call.started,

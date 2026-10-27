@@ -115,6 +115,9 @@ function cardReaderHandlers(cards: CardSurfaces) {
       cause: typeof row.cause === "string" ? row.cause : null,
       occurrences: Number(row.occurrences ?? 1),
       durationMs: Number.isFinite(Number(row.durationMs)) ? Number(row.durationMs) : null,
+      lastDurationMs: Number.isFinite(Number(row.lastDurationMs))
+        ? Number(row.lastDurationMs)
+        : null,
       detail: typeof row.detail === "string" ? row.detail : "{}",
     }));
   return { rows, events: rows.reduce((sum, row) => sum + row.occurrences, 0) };

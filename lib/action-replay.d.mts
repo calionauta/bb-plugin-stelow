@@ -18,3 +18,4 @@ export declare function replayTimeline(
 export declare function formatActionTime(at: number): string;
 export declare function formatActionRows(rows: Array<Record<string, any>>): string;
 export declare function summarizeDetail(detail: unknown, limit?: number): string;
+export declare function formatActionDuration(row: Record<string, any>): string;

@@ -32,7 +32,7 @@ One append-only table, `action_log`, in the plugin's `data.db`
 | layer | question | examples |
 |---|---|---|
 | `intent` | who asked | `rpc.call`, `cli.call`, `ui.error` |
-| `decision` | what the plugin chose | `stage.entered`, `card.updated`, `worker.spawn`, `run.retry`, `question.*`, `inbox.*` |
+| `decision` | what the plugin chose | `stage.entered` (advance/back), `card.updated`, `worker.spawn`, `run.retry`, `question.*`, `inbox.*` |
 | `effect` | what happened outside the plugin DB | `run.started`, `run.finished` |
 | `environment` | what the world was doing | `host.read-miss` |
 
@@ -51,22 +51,23 @@ or in the comment the event points at.
 
 ## Two rules that keep it readable
 
-1. **A repeat is one row.** Deduplication keys on `(kind, outcome, cause, card)`
-   inside a 10-minute window and increments `occurrences` / `last_at`. This is
-   what turns the 150-restart loop and the 26-comment reconcile loop into one
-   row each. It only applies when a cause is present: two unrelated successful
-   RPCs are not "the same event", so they stay two rows.
+1. **A repeat is one row.** Deduplication keys on
+   `(kind, outcome, cause, card, stage)` inside a 10-minute window and
+   increments `occurrences` / `last_at`. This is what turns the 150-restart loop
+   and the 26-comment reconcile loop into one row each. It only applies when a
+   cause is present: two unrelated successful RPCs are not "the same event", so
+   they stay two rows. `stage` is part of the key so three advances in ten
+   minutes stay three positions, not one row labelled with the last hop.
 2. **The detail is evidence, not a copy of the database.** No prompts, no file
    contents, no assistant text. RPC inputs are never recorded — the card id is
    enough to join. A detail over the cap is replaced by its size.
-3. **A folded row keeps the worst duration, the latest detail, and prints both
-   moments.** The duration of a row with `occurrences > 1` is the slowest
-   occurrence (MAX), not the one that created the row — a 5.7 s reconcile pass
-   must not read 12 ms. `detail` moves to the latest occurrence, so a tick that
+3. **A folded row keeps the worst and the last duration, the latest detail,
+   and prints both moments.** `duration_ms` is the slowest occurrence (MAX) and
+   `last_duration_ms` the most recent — a max alone makes one 200 s tick look
+   like every tick. `detail` moves to the latest occurrence, so a tick that
    starts failing a different phase tomorrow does not show today's list. The
    text form prints `first→last` so a condition that stopped an hour ago cannot
-   look live; the card shows the last moment, because that is the question the
-   reader has.
+   look live; the card shows the last moment.
 
 Logging never blocks the action it records: the lib validates and throws (a
 programmer error, red in tests); `server/runtime/action-log-runtime.ts` catches,
@@ -77,12 +78,12 @@ disables writes without a redeploy; readers keep working.
 
 | # | Point | What lands |
 |---|---|---|
-| 1 | RPC registration (`action-log-rpc.ts`) | one row per invocation: name, card, duration, outcome — all 120+ methods at once. A handler answering `{ ok: false }` is `refused`/`rpc.refused`, not `ok`: otherwise a refused Retry is indistinguishable from a successful one |
+| 1 | RPC registration (`action-log-rpc.ts`) | one row per invocation: name, card, duration, outcome — all 120+ methods at once. A handler answering `{ ok: false }` is `refused`, not `ok`, with a named cause (`rpc.refused.thread-archived`, `.host-hold`, `.no-thread`, …; `lib/rpc-refusal-cause.mjs`) |
 | 2 | CLI dispatch (`cli-dispatch.ts`) | one row per verb, including `help` and unknown commands; `reason` on `CliResult` separates refusal from crash |
 | 3 | `updateCard` (`card-state.ts`) | field-level before/after for status, stage, activity, `last_error` |
-| 4 | stage ledger (`card-ledger.ts`) | `from`/`to` plus a derived cause |
+| 4 | stage ledger (`card-ledger.ts`) | `from`/`to` plus a derived cause: created, completed, advance, or **back** (`lib/stage-entry-cause.mjs`, order from the stage catalog) |
 | 5 | worker spawn (`workers.ts`) | preset + reason; deduped by cause |
-| 6 | 45 s card tick (`reconciler.ts`) | heartbeat: frequency, duration, partial outcome |
+| 6 | 45 s card tick (`reconciler.ts`) | heartbeat: frequency, max/last duration, partial outcome, and per-phase milliseconds in `detail.phases` |
 | 7 | reconcile pass (`execution-reconcile.ts`) | heartbeat for the execution pass |
 | 8 | auto retry (`execution-auto-retry.ts`) | refused / started / launch-failed with the closed reason |
 | 9 | run transitions (`execution-reconcile-run.ts`) | start (queued→running) and terminal state; on failure, the raw host payload |
@@ -90,6 +91,7 @@ disables writes without a redeploy; readers keep working.
 | 11 | inbox (`inbox.ts`, `inbox-recorders.ts`) | opened and resolved, per rule and reason |
 | 11b | 45 s card tick (`reconciler.ts`) | heartbeat plus the names of the phases that threw (`outcome: partial`) |
 | 12 | client errors (`reportClientError`, `client-error-report.ts`) | uncaught render/window/promise failures, with a message fingerprint as the cause |
+| 14 | card updates (`card-state.ts`, `lib/card-log-fields.mjs`) | only columns classified as state; every other column has a written reason, and a schema test fails when a new column is in neither list |
 | 13 | host read misses (`read-streak-wiring.ts`) | one row when a card's state read crosses the 6-tick outage threshold |
 
 Deliberately not recorded: prompt bodies, file contents, assistant text, and a
