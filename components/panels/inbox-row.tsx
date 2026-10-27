@@ -102,13 +102,26 @@ function InboxEntryLine({ entry }: { entry: InboxNotification }) {
   if (!question) return <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>;
   const more = typeof entry.questionCount === "number" && entry.questionCount > 1 ? entry.questionCount : null;
   return (
-    <span
-      className="mt-0.5 line-clamp-2 block text-sm text-foreground"
-      title={question}
-      aria-label={more ? `${question} Plus ${more - 1} more question${more - 1 === 1 ? "" : "s"}.` : question}
-    >
-      {splitProseSummary(question).head}
-      {more ? <span className="text-muted-foreground"> · +{more - 1} more</span> : null}
+    // No `block` beside `line-clamp-2`: both compile into `@layer utilities`
+    // at equal specificity, and `.block{display:block}` sits AFTER the clamp
+    // rule in the built stylesheet, so the clamp's own `display:-webkit-box`
+    // never applied and the two-line cap has never worked at any width. Doing
+    // it again reads as a harmless display hint and silently unclamps the row.
+    <span className="mt-0.5 flex items-baseline gap-1">
+      <span
+        className="line-clamp-2 min-w-0 text-sm text-foreground"
+        title={question}
+        aria-label={more ? `${question} Plus ${more - 1} more question${more - 1 === 1 ? "" : "s"}.` : question}
+      >
+        {splitProseSummary(question).head}
+      </span>
+      {more ? (
+        // Outside the clamped span on purpose. A count rendered inside it is
+        // the first thing the cap cuts: measured at 360 px the suffix sat 56 px
+        // below the clamp box, so a row covering three questions showed two and
+        // said nothing about the rest — exactly when the cap started working.
+        <span className="shrink-0 text-xs text-muted-foreground">+{more - 1} more</span>
+      ) : null}
     </span>
   );
 }
@@ -181,7 +194,12 @@ function InboxEntryTarget({ entry, copy, ask, onOpen, onHolderChip }: {
         ask();
       }}
       className={
-        "flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left "
+        // `grow basis-[16rem]`, never `flex-1`: flex-1 is `flex-basis: 0`, which
+        // is exactly the permission the row needs to withhold so the text keeps
+        // a measure and the action cluster takes a second line instead. The
+        // class list is a plain concatenation (not cn()), so a leftover flex-1
+        // would not be deduped — it would lose only on stylesheet order.
+        "flex min-h-11 min-w-0 grow basis-[16rem] cursor-pointer items-start gap-3 rounded-sm text-left "
         + "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
       }
     >
@@ -190,6 +208,55 @@ function InboxEntryTarget({ entry, copy, ask, onOpen, onHolderChip }: {
       </span>
       <InboxEntryBody entry={entry} presentation={inboxEventPresentation(entry)} onHolderChip={onHolderChip} />
     </button>
+  );
+}
+
+/**
+ * The row's action cluster, as ONE node.
+ *
+ * The wrapper is the whole point: `ItemActions` returns a fragment, so without
+ * it the row had no element to move onto a second line and no element a test
+ * could assert. `ml-auto` is the cluster's resting place at both widths —
+ * right of the text when the row fits, and the right edge under the text when
+ * it wraps, so "Set aside" does not become the most reachable control in the
+ * bottom-left corner. Its own `flex-wrap` is the overflow fallback: a narrower
+ * host panel or a larger browser text size makes the buttons wrap among
+ * themselves instead of pushing past the row's edge. That fallback only works
+ * because the cluster can shrink (`min-w-0`) — a `shrink-0` cluster keeps its
+ * content width at every container size, so its `flex-wrap` would never have
+ * anything to wrap and the row would overflow by the difference instead.
+ */
+function InboxRowActions({ ask, entry, action, onMarkRead, onMarkUnread, onSetAside, onBringBack }: {
+  ask: (() => void) | null;
+  entry: InboxNotification;
+  action: "archive" | "restore";
+  onMarkRead: () => void;
+  onMarkUnread: () => void;
+  onSetAside: () => void;
+  onBringBack: () => void;
+}) {
+  return (
+    <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+      {ask ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-11 shrink-0"
+          onClick={ask}
+          title="Answer on its own, without opening the card"
+        >
+          Answer
+        </Button>
+      ) : null}
+      <ItemActions
+        entry={entry}
+        action={action}
+        onMarkRead={onMarkRead}
+        onMarkUnread={onMarkUnread}
+        onSetAside={onSetAside}
+        onBringBack={onBringBack}
+      />
+    </div>
   );
 }
 
@@ -208,20 +275,15 @@ export function InboxEntry({
   // The second door, offered only where the gate allows it.
   const ask = onOpenAsk(entry);
   return (
-    <div className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
+    // `flex-wrap` is what lets the cluster leave the text's line; it does
+    // nothing on its own, because the target's old `flex-1` (basis 0) never
+    // asked for a break. The measure on the target is the mechanism, wrapping
+    // is the consequence — and both follow the row's own width, so a narrow
+    // docked panel on a desktop reflows exactly like a phone does.
+    <div className={`flex flex-wrap items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
       <InboxEntryTarget entry={entry} copy={copy} ask={ask} onOpen={onOpen} onHolderChip={onHolderChip} />
-      {ask ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0 self-center"
-          onClick={ask}
-          title="Answer on its own, without opening the card"
-        >
-          Answer
-        </Button>
-      ) : null}
-      <ItemActions
+      <InboxRowActions
+        ask={ask}
         entry={entry}
         action={action}
         onMarkRead={onMarkRead}

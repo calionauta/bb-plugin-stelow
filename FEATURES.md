@@ -2859,6 +2859,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on any non-question row, on a host that cannot open an option's document, and
   for any batch containing a split question, whose answer creates child cards
   and belongs on the card.
+- **The Inbox row keeps its text a measure instead of feeding it to the
+  buttons** (`components/panels/inbox-row.tsx`). At a phone width the row's
+  text used to be the leftover: the actions were `shrink-0` and the click target
+  was `flex-1` — `flex-basis: 0` — so a 360 px viewport left the body about
+  20 px, one character per line, and a row ten times taller than it reads. The
+  row now wraps: the click target keeps a 16 rem measure
+  (`grow basis-[16rem]`, never `flex-1`) and the actions are a single cluster
+  (`ml-auto`, `min-w-0`, `flex-wrap`) that takes its own line when the row
+  cannot hold both, and whose own buttons wrap rather than overflow when even
+  that line is too narrow. The reflow follows the PANEL's width, not the device — a
+  narrow docked panel on a desktop wraps the same way — because the host passes
+  no width to the panel and the plugin has no container queries. `Answer` keeps
+  its narrow `sm` shape and gains the same `min-h-11` floor as its neighbours,
+  and the ask line's two-line clamp works for the first time: it shared a class
+  list with `block`, whose `display:block` beat the clamp at equal specificity,
+  so a line documented to cap at two lines rendered uncapped. The `+N more`
+  counter for a batch sits outside the clamped span, because a count inside it
+  is the first thing a working cap cuts.
 - **Stale-question notices** (`bb stelow ask` snapshots, `lib/question-staleness.mjs`).
   Asking records what each questioned document contained and where its
   checkout stood (doc hash + Git HEAD, latest wins per card and path).
