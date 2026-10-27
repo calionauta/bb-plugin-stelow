@@ -170,3 +170,77 @@ test("help advertises the verb the family claims", () => {
   assert.equal(help.exitCode, 0, "help next answers instead of falling back to unknown command");
   assert.match(help.stdout, /bb stelow next \[--json\] \[--project <proj_id>\]/);
 });
+
+/** `audit-trail` and `check` are the other two helper verbs a worker is told to
+ * run, and a card workspace contains no `scripts/stelow`: the passthrough is the
+ * only door. What these tests pin is the argv, because the helper owns the rule
+ * and the host must not reinterpret it — a subcommand the helper does not answer
+ * (`audit-trail nope`) or a missing breadboard map must refuse as usage before a
+ * card, a root or a spawn is resolved. */
+
+test("audit-trail build --strict forwards the subcommand and the helper's flag", async () => {
+  const { invoke, calls } = helperDeps();
+  const result = await invoke(["audit-trail", "build", "--strict"]);
+  assert.equal(result.exitCode, 0, "a helper success stays a success");
+  assert.deepEqual(
+    calls.helper,
+    [{ args: ["audit-trail", "build", "--strict"], root: "/w", stateDir: "/w/.stelow/state" }],
+    "the subcommand and --strict reach the helper against the card's owned state dir",
+  );
+});
+
+test("audit-trail path --json forwards --json untouched", async () => {
+  const stdout = "/w/.stelow/state/audit-trail.md\n";
+  const { invoke, calls } = helperDeps({ helper: { code: 0, stdout, stderr: "" } });
+  const result = await invoke(["audit-trail", "path", "--json"]);
+  assert.deepEqual(
+    result,
+    { exitCode: 0, stdout, stderr: "" },
+    "--json is the helper's flag, so the helper's answer comes back unrendered",
+  );
+  assert.deepEqual(calls.helper.map((call) => call.args), [["audit-trail", "path", "--json"]]);
+});
+
+test("audit-trail refuses an unknown subcommand before any work", async () => {
+  const { invoke, calls } = helperDeps();
+  const result = await invoke(["audit-trail", "nope"]);
+  assert.equal(result.exitCode, 2, "a subcommand the helper does not answer is usage, not a spawn");
+  assert.match(result.stderr, /Usage: bb stelow audit-trail build\|check\|path/);
+  assert.deepEqual(calls.helper, [], "the unknown subcommand never reaches the helper");
+  assert.deepEqual(calls.cards, [], "and never resolves a card");
+  assert.deepEqual(calls.roots, [], "or a project root");
+});
+
+test("check breadboard forwards the map path and --json", async () => {
+  const { invoke, calls } = helperDeps({ helper: { code: 0, stdout: "{}", stderr: "" } });
+  const result = await invoke(["check", "breadboard", "map.json", "--json"]);
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(
+    calls.helper.map((call) => call.args),
+    [["check", "breadboard", "map.json", "--json"]],
+    "the map path is the helper's second argument, not a host-resolved absolute path",
+  );
+});
+
+test("check without a map path is a usage refusal, never a helper call", async () => {
+  for (const argv of [["check", "breadboard"], ["check"]]) {
+    const { invoke, calls } = helperDeps();
+    const result = await invoke(argv);
+    assert.equal(result.exitCode, 2, `${argv.join(" ")}: the missing map is a usage refusal`);
+    assert.match(
+      result.stderr,
+      /Usage: bb stelow check breadboard <map\.json>/,
+      `${argv.join(" ")}: the refusal names the shape the verb accepts`,
+    );
+    assert.deepEqual(calls.helper, [], `${argv.join(" ")}: no helper call`);
+    assert.deepEqual(calls.cards, [], `${argv.join(" ")}: no card lookup`);
+  }
+});
+
+test("help advertises decide, the command that used to exist only by memory", () => {
+  const entry = stelowCliCommands.find((command) => command.name === "decide");
+  assert.ok(entry, "decide is declared in the registry the help text renders from");
+  const help = cliHelpResult(["help", "decide"]);
+  assert.equal(help.exitCode, 0, "help decide answers instead of falling back to unknown command");
+  assert.match(help.stdout, /bb stelow decide/, "the usage line names the host command");
+});

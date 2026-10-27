@@ -121,7 +121,7 @@ function renderBoard(board: Board, json: boolean): CliResult {
   };
 }
 
-function statusCommand(
+async function statusCommand(
   argv: string[],
   context: CliRunContext,
   deps: InspectionDeps,
@@ -134,18 +134,40 @@ function statusCommand(
   if (!card) return deps.loadBoard(projectId ?? null).then((board) => (
     renderBoard(board, argv.includes("--json"))
   ));
-  return deps.cardWorkspace(card).then((workspace) => {
-    if (!workspace?.path) {
-      return {
-        exitCode: 1,
-        stderr: CARD_WORKSPACE_UNAVAILABLE,
-      };
-    }
-    return deps
-      .boardFromRoot(workspace.path, card.dir_hash)
-      .then((board) => withQuestionCounts(board, card, deps))
-      .then((enriched) => renderBoard(enriched, argv.includes("--json")));
-  });
+  const workspace = await deps.cardWorkspace(card);
+  if (!workspace?.path) {
+    return { exitCode: 1, stderr: CARD_WORKSPACE_UNAVAILABLE };
+  }
+  const json = argv.includes("--json");
+  const board = await deps
+    .boardFromRoot(workspace.path, card.dir_hash)
+    .then((value) => withQuestionCounts(value, card, deps));
+  const rendered = renderBoard(board, json);
+  if (!json) return rendered;
+  // In a card context, `status --json` must also answer what the skills parse
+  // from the upstream helper: `current_stage`, `intent`, `config`. The board
+  // stays (a worker may want it), and the workflow fields are merged on top.
+  // A failed helper read leaves the board untouched; an unknown stage is never
+  // invented.
+  const stateDir = card.dir_hash
+    ? await deps.workflowStateDir(workspace.path, card.id, card.dir_hash)
+    : null;
+  // A card that owns a state dir but whose dir cannot be resolved must not
+  // fall back to the workspace root: the helper would read the PROJECT's
+  // state.md and merge another workflow's stage into this card's status.
+  if (card.dir_hash && !stateDir) return rendered;
+  const helper = await deps
+    .runHelper(["status", "--json"], workspace.path, stateDir ?? undefined)
+    .catch(() => null);
+  if (!helper || helper.code !== 0) return rendered;
+  try {
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({ ...board, ...JSON.parse(helper.stdout) }, null, 2),
+    };
+  } catch {
+    return rendered;
+  }
 }
 
 /**
