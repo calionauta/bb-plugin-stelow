@@ -22,7 +22,7 @@ export type BuildPromptContext = {
   stateDir: string;
   intent: string;
   managedWorktree: boolean;
-  knobs: { quality: string; explorationCount: number; explorationHybrid: boolean };
+  knobs: { quality: string; explorationCount: number; explorationHybrid: boolean; redFirst?: string };
   reviewGates: string;
   reviewRung: string;
   instructions: string | null;
@@ -41,6 +41,9 @@ export function buildBuildPrompt(
 ): string {
   // One parameterized builder: the shared prefix is byte-identical across
   // spawn/restart/reseed, and only this tail differs per card.
+  const redFirstClause = context.knobs.redFirst
+    ? `, red_first=\`${context.knobs.redFirst}\``
+    : "";
   const tail = [
     context.managedWorktree ? MANAGED_WORKTREE_NOTE : "",
     `Your workflow owns its own state dir (${context.stateDir}) — its state.md holds name, intent, current_stage, status.`,
@@ -49,7 +52,8 @@ export function buildBuildPrompt(
       + ` (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise`
       + ` question via the form above only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled.`
       + ` Run knobs (quality=\`${context.knobs.quality}\`,`
-      + ` exploration=\`count=${context.knobs.explorationCount} hybrid=${context.knobs.explorationHybrid}\`) and review gates=\`${context.reviewGates}\``
+      + ` exploration=\`count=${context.knobs.explorationCount} hybrid=${context.knobs.explorationHybrid}\`${redFirstClause}`
+      + `) and review gates=\`${context.reviewGates}\``
       + ` (${context.reviewRung}) are already recorded in state.md — use them, never re-ask.`,
     "Order of work, always: (1) triage — settle intent and record it in state.md; (2) load only the skills `bb stelow playbook` names for your "
       + "current stage; (3) advance stages and do the work. Use `bb stelow advance <stage>` to change stages (do NOT hand-edit current_stage).",

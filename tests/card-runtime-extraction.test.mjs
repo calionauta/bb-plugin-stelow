@@ -68,6 +68,68 @@ test("card detail keeps removed projects and unreadable state fail-soft", async 
   assert.ok(result.stageSkips.skipped.length > 0);
 });
 
+const detailState = (...configLines) =>
+  ["---", "workflow_id: card_1", "config:", ...configLines.map((line) => `  ${line}`), "---"].join("\n");
+
+function detailWithState(state) {
+  const row = card({ dir_hash: "sw-1" });
+  return detailDeps(row, {
+    cardWorkspace: async () => ({ path: "/repo", hostId: null }),
+    stateDir: async () => "/repo/.stelow/2026-01-02/sw-1",
+    bb: {
+      sdk: {
+        projects: { get: async () => ({ name: "Project" }) },
+        files: {
+          read: async ({ path: target }) => {
+            if (target.endsWith("state.md")) return { content: state };
+            return { content: "" };
+          },
+          listPaths: async () => ({ paths: [] }),
+        },
+        threads: { get: async () => ({ environmentId: "env_1" }) },
+      },
+      realtime: { publish: () => undefined },
+    },
+  });
+}
+
+test("card detail computes stage skips from the parsed state config", async () => {
+  // Regression: the detail used to read `reviewMode`/`reviewGates` off a
+  // stageSkips block that carried neither, so every card silently reported no
+  // skips. These go through the handler, not through skippedStages directly.
+  const auto = await createCardDetailHandler(detailWithState(detailState(
+    "quality: production",
+    "exploration_count: 3",
+    "exploration_hybrid: true",
+    "review_mode: Auto",
+  )))({ cardId: "card_1" });
+  assert.ok(
+    auto.stageSkips.skipped.some((entry) => entry.stage === "plan-gate"),
+    "Auto skips plan-gate through the assembly path",
+  );
+  assert.ok(
+    auto.stageSkips.skipped.some((entry) => entry.stage === "diff-gate"),
+    "Auto skips diff-gate through the assembly path",
+  );
+
+  const strict = await createCardDetailHandler(detailWithState(detailState(
+    "quality: production",
+    "exploration_count: 3",
+    "exploration_hybrid: true",
+    "review_mode: Product Spec + Interface + Tech Review + Code Diff",
+  )))({ cardId: "card_1" });
+  assert.deepEqual(strict.stageSkips.skipped, [], "the strictest route skips nothing");
+
+  const legacy = await createCardDetailHandler(detailWithState(detailState(
+    "appetite: Lean",
+    "review_mode: Auto",
+  )))({ cardId: "card_1" });
+  assert.ok(
+    legacy.stageSkips.skipped.some((entry) => entry.stage === "plan-gate"),
+    "a legacy appetite state still resolves skips through the parser",
+  );
+});
+
 function mutationDeps(row) {
   const calls = [];
   const db = database();
