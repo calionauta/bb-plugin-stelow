@@ -86,6 +86,26 @@ function freshDb() {
   assert.equal(row.lastAt, base + 1_000, "lastAt names when the latest detail was seen");
 }
 
+// ── stage is part of the key: two positions never fold into one ─────────────
+{
+  const db = freshDb();
+  const base = 60_000_000;
+  const advance = { kind: "stage.entered", outcome: "ok", cause: "stage.advance", cardId: "card_1" };
+
+  recordActionLog(db, { ...advance, stage: "select", at: base });
+  recordActionLog(db, { ...advance, stage: "setup", at: base + 1_000 });
+  recordActionLog(db, { ...advance, stage: "select", at: base + 2_000 });
+
+  const rows = listActionLog(db);
+  assert.equal(rows.length, 2, "select and setup are two positions, not one repeated condition");
+  assert.equal(rows[0].stage, "select");
+  assert.equal(rows[0].occurrences, 2, "the second select folds onto the first");
+  assert.equal(rows[0].at, base, "at stays the first select");
+  assert.equal(rows[0].lastAt, base + 2_000, "lastAt moves to the most recent select");
+  assert.equal(rows[1].stage, "setup");
+  assert.equal(rows[1].occurrences, 1, "a position visited once is not inflated by the other");
+}
+
 // ── the list/--json shape carries both moments ──────────────────────────────
 {
   const db = freshDb();
@@ -141,4 +161,4 @@ function freshDb() {
   assert.equal(stamps(repeated).length, 2);
 }
 
-console.log("action log reading test ok: worst duration, latest detail, both moments, last-activity ordering, text form");
+console.log("action log reading test ok: worst duration, latest detail, stage-keyed folds, both moments, last-activity ordering, text form");

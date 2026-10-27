@@ -114,18 +114,24 @@ function recordCardUpdate(
   changed: string[],
   write: Record<string, unknown>,
 ): void {
-  if (!deps.actions || changed.length === 0) return;
+  if (!deps.actions) return;
+  // Only fields that change the card's state are worth a row. Every turn
+  // rewrites `last_assistant_text` (and `updated_at`), and logging those made
+  // one `card.updated` row per model message whose only content was "the prose
+  // changed" — the prose the recorder is forbidden to keep.
+  const meaningful = changed.filter((key) => MEANINGFUL_CARD_FIELDS.has(key));
+  if (meaningful.length === 0) return;
   const before = previous as unknown as Record<string, unknown> | undefined;
   const after = current as unknown as Record<string, unknown> | undefined;
-  const detail: Record<string, unknown> = { fields: changed };
+  const detail: Record<string, unknown> = { fields: meaningful };
   for (const key of ["status", "stage", "activity"]) {
-    if (!changed.includes(key)) continue;
+    if (!meaningful.includes(key)) continue;
     detail[key] = { from: before?.[key] ?? null, to: after?.[key] ?? write[key] ?? null };
   }
-  if (changed.includes("last_error")) {
+  if (meaningful.includes("last_error")) {
     detail.lastError = truncateText(after?.last_error ?? write.last_error);
   }
-  if (changed.includes("accepted_at") && after?.accepted_at != null) {
+  if (meaningful.includes("accepted_at") && after?.accepted_at != null) {
     detail.acceptedAt = after.accepted_at;
   }
   deps.actions.record({
@@ -274,6 +280,24 @@ function recordNewFailure(
     deps.resolveInbox(cardId, current.updated_at, ["error"], "superseded");
   }
 }
+
+/** The card fields a state change is made of. Everything else a write touches
+ * (`last_assistant_text`, `updated_at`, a derived timestamp) is bookkeeping the
+ * log must not turn into one row per model turn. */
+const MEANINGFUL_CARD_FIELDS = new Set([
+  "status",
+  "stage",
+  "activity",
+  "last_error",
+  "accepted_at",
+  "worker_preset_id",
+  "preset_restart_pending",
+  "worker_thread_id",
+  "kind",
+  "dir_hash",
+  "workspace_path",
+  "read_miss_since",
+]);
 
 type ClaimWaiterDeps = {
   db: Db;
