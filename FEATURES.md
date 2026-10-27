@@ -1577,8 +1577,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   records its own decisions and failures, not only the agent's turns: every RPC
   invocation and every CLI verb (with duration and a closed refusal `reason`),
   every card field change, stage entry, worker spawn, run retry and terminal
-  run, question asked/answered/persisted/expired with dwell time, inbox rows
-  opened and resolved, plus a 45 s heartbeat for both reconcilers. A repeated
+  run, question asked/answered/persisted/expired with dwell time from both the
+  CLI wait and an answer given on the card, inbox rows opened and resolved,
+  plus a 45 s heartbeat for both reconcilers — the card tick names the phases
+  that threw when it comes back partial. A repeated
   condition is ONE row with `occurrences` inside a 10-minute window, which is
   what a 150-restart spawn loop and a 26-comment reconcile loop collapse to.
   Read it with `bb stelow log [--card] [--kind] [--cause] [--outcome]

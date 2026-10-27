@@ -125,6 +125,8 @@ export function registerStelowRpc(deps: RpcSurfacesDeps): void {
   registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps), {
     actions: deps.core.actions,
     now: deps.core.now,
+    resolveCardId: (threadId) =>
+      deps.core.ledger.getCardByWorkerThread(threadId)?.id ?? null,
   });
 }
 

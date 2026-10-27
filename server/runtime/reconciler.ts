@@ -201,12 +201,12 @@ export function startReconciler(deps: ReconcilerDeps, reconcileExecution?: () =>
   const tick = () => {
     if (!(deps.db as { open?: boolean }).open) return;
     const started = deps.now();
-    let errors = 0;
+    const failed: string[] = [];
     const phase = (name: string, run: () => void) => {
       try {
         run();
       } catch (error) {
-        errors += 1;
+        failed.push(name);
         deps.onError(name, error);
       }
     };
@@ -225,9 +225,14 @@ export function startReconciler(deps: ReconcilerDeps, reconcileExecution?: () =>
     // often" without one line per 45 seconds; `last_at` is the liveness proof.
     deps.actions?.record({
       kind: "card.tick",
-      outcome: errors === 0 ? "ok" : "partial",
+      outcome: failed.length === 0 ? "ok" : "partial",
       cause: "card.tick",
       durationMs: deps.now() - started,
+      // Which phase threw, by name. "Partial" alone sent the reader to the
+      // host log to find out what happened; the row now carries it. The
+      // recorder keeps the latest occurrence's detail for a folded row, so a
+      // phase that starts failing tomorrow is not hidden behind today's set.
+      detail: failed.length > 0 ? { failed } : undefined,
     });
     // Last and non-blocking: the execution pass is async and owns its own
     // in-flight guard, so a slow one must not delay the next card tick.

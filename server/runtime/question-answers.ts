@@ -1,6 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { consumeAnsweredContract } from "../../lib/question-contracts.mjs";
 import { commitRecoveryAnswers, recordAnswerTrail } from "../../lib/question-answer-recording.mjs";
+import type { ActionRecorder } from "./action-log-runtime.js";
+import { questionWaitStart, recordCardAnswer } from "./question-answer-log.js";
 import type { PremiseObserver } from "../../lib/premise-staleness.mjs";
 import { cleanAnswerList } from "../../lib/question-store.mjs";
 import {
@@ -86,6 +88,8 @@ export type QuestionAnswersDeps = {
     body: string,
   ) => void;
   updateCard: (cardId: string, fields: Record<string, unknown>) => void;
+  /** The flight recorder; optional in narrow tests. */
+  actions?: ActionRecorder;
   hasOpenQuestions: (cardId: string, ids: string[] | null) => boolean;
   /**
    * Read at call time, never captured: the execution layer binds it after this
@@ -215,6 +219,7 @@ async function answerQuestions(
   const card = deps.getCard(input.cardId);
   if (!card?.worker_thread_id) return refusal("This card has no worker thread.");
   if (deps.isArchivedCard(card)) return refusal(deps.errors.cardArchived);
+  const askedAt = questionWaitStart(deps, input.cardId);
   try {
     const live = await respondToLiveAsks(deps, card, input.answers);
     if (live.decisions.length === 0) return noQuestionAnswered(deps, input.cardId);
@@ -249,6 +254,7 @@ async function answerQuestions(
       ...answeredCardPatch(openQuestionIds.length > 0),
       ...answerDeliveryCardPatch(resume.verdict, card.last_assistant_text, openQuestionIds.length > 0),
     });
+    recordCardAnswer(deps, input.cardId, card.worker_thread_id ?? null, "live", live.decisions.length, askedAt);
     return delivered(live.decisions.length, resume.verdict);
   } catch (error) {
     return refusal(error instanceof Error ? error.message : "Unable to answer the questions.");
@@ -332,6 +338,7 @@ async function answerExpiredQuestions(
   const card = deps.getCard(input.cardId);
   if (!card) return refusal(deps.errors.cardNotFound);
   if (deps.isArchivedCard(card)) return refusal(deps.errors.cardArchived);
+  const askedAt = questionWaitStart(deps, input.cardId);
   const openRows = openExpiredRows(deps, input.cardId);
   if (openRows.length === 0) {
     return refusal(
@@ -362,6 +369,7 @@ async function answerExpiredQuestions(
     decisions.decisions,
     openQuestionIds,
   );
+  recordCardAnswer(deps, input.cardId, card.worker_thread_id ?? null, "expired", decisions.decisions.length, askedAt);
   return delivered(decisions.decisions.length, verdict);
 }
 

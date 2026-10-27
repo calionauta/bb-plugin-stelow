@@ -59,12 +59,14 @@ or in the comment the event points at.
 2. **The detail is evidence, not a copy of the database.** No prompts, no file
    contents, no assistant text. RPC inputs are never recorded — the card id is
    enough to join. A detail over the cap is replaced by its size.
-3. **A folded row keeps the worst duration, and prints both moments.** The
-   duration of a row with `occurrences > 1` is the slowest occurrence (MAX), not
-   the one that created the row — a 5.7 s reconcile pass must not read 12 ms.
-   The text form prints `first→last` so a condition that stopped an hour ago
-   cannot look live; the card shows the last moment, because that is the
-   question the reader has.
+3. **A folded row keeps the worst duration, the latest detail, and prints both
+   moments.** The duration of a row with `occurrences > 1` is the slowest
+   occurrence (MAX), not the one that created the row — a 5.7 s reconcile pass
+   must not read 12 ms. `detail` moves to the latest occurrence, so a tick that
+   starts failing a different phase tomorrow does not show today's list. The
+   text form prints `first→last` so a condition that stopped an hour ago cannot
+   look live; the card shows the last moment, because that is the question the
+   reader has.
 
 Logging never blocks the action it records: the lib validates and throws (a
 programmer error, red in tests); `server/runtime/action-log-runtime.ts` catches,
@@ -84,8 +86,9 @@ disables writes without a redeploy; readers keep working.
 | 7 | reconcile pass (`execution-reconcile.ts`) | heartbeat for the execution pass |
 | 8 | auto retry (`execution-auto-retry.ts`) | refused / started / launch-failed with the closed reason |
 | 9 | run transitions (`execution-reconcile-run.ts`) | terminal state; on failure, the raw host payload |
-| 10 | ask lifecycle (`cli-ask.ts`) | asked / answered / persisted / expired, with dwell |
+| 10 | ask lifecycle (`cli-ask.ts`, `question-answer-log.ts`) | asked / answered / persisted / expired with dwell, from BOTH doors (the CLI wait and answering on the card) |
 | 11 | inbox (`inbox.ts`, `inbox-recorders.ts`) | opened and resolved, per rule and reason |
+| 11b | 45 s card tick (`reconciler.ts`) | heartbeat plus the names of the phases that threw (`outcome: partial`) |
 | 12 | client errors (`reportClientError`, `client-error-report.ts`) | uncaught render/window/promise failures, with a message fingerprint as the cause |
 | 13 | host read misses (`read-streak-wiring.ts`) | one row when a card's state read crosses the 6-tick outage threshold |
 
