@@ -103,34 +103,39 @@ already deletes. Dry runs prune nothing.
 ## Known gaps (next, in cost order)
 
 1. **Validation rejections never reach the wrapper.** BB validates against the
-   contract before calling the handler, so `rpc cardDetail failed: rpc input
-   validation failed` has no field path and no row here. That is an upstream
-   fix; meanwhile the log covers handler throws, not schema refusals.
+   contract before calling the handler, so the recorder covers handler throws,
+   not schema refusals; the warn's missing field path is filed upstream
+   ([get-bb/bb#6373](https://github.com/get-bb/bb/issues/6373)).
 2. **A caught error shown as a toast is not a row.** `reportClientError` covers
    what escapes React and the window; the ~80 explicit `toast` call sites are
    handled errors the reader is already told about, and instrumenting them one
    by one would be a second copy of the message. If a toast ever hides a
    failure worth trending, record it at the catch site with its own cause.
-3. **The marketplace artifact can lag the SDK it runs against**
-   (`dist/server.js built with SDK X, running Y`). Recorded in `bb.log.warn`,
-   not here — it is a build-pipeline fact, not a card fact.
+3. **A mismatched published bundle is a fallback, not a row.** BB ignores a
+   prebuilt dist built with another SDK and loads from source, so the plugin
+   never observes it from the inside; the warn is the host's, and the fact is
+   a build-pipeline detail rather than a card fact.
 
 ## Upstream proposals (Phase 4)
 
-Two recurring noises are not this plugin's to fix. Both are written here as
-ready-to-file asks; filing them is a separate, human-approved step.
+One ask is filed, one turned out to be already handled by the host.
 
-1. **Name the field on an RPC validation refusal.** BB logs
+1. **Name the field on an RPC validation refusal.** Filed as
+   [get-bb/bb#6373](https://github.com/get-bb/bb/issues/6373). BB logs
    `rpc cardDetail failed: rpc input validation failed` with no path, so the
-   operator knows a request was rejected and not which key was wrong. The
-   contract is known at the registration point; a zod error carries
-   `issue.path`. Ask: include the path and the received keys (never the values)
-   in the warn line. Observed 3 times (24 Sep → 23 Oct).
-2. **Ship a marketplace artifact built with the SDK it runs against.**
-   `dist/server.js built with SDK 0.6.15, running 0.6.49` appeared 5 times
-   (20–22 Sep) because BB rebuilds from source while the published dist lags.
-   Ask: either rebuild the published artifact on install, or make the version
-   check refuse the boot with a named remedy instead of a warn.
+   operator knows a request was rejected and not which key was wrong. The host
+   already computes `issues[].path` in `validateRpcValue` and drops it one frame
+   later in the warn line; the ask is to keep it (and the received key names,
+   never the values) in the message.
+2. **The marketplace artifact lag is already a fallback, not a failure.**
+   `dist/server.js built with SDK X, running SDK Y` appeared 5 times
+   (20–22 Sep). Current BB (0.46.1) checks `server.meta.json`, and on a
+   mismatched or stale bundle it logs and **loads from source**
+   (`ignoring prebuilt dist/server.js … loading from source`), rebuilding the
+   app bundle the same way. So no upstream ask: the warn is the price of a
+   correct fallback, and refusing the boot would be worse. The plugin's own
+   `npm run build` writes `server.meta.json`, which is what makes the check
+   possible.
 
 ## Verification
 
