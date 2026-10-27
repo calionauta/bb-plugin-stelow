@@ -97,6 +97,11 @@ The card's **Activity** section (`cardActivity` RPC) is the same rows on
 demand: closed by default, loaded by a button, because the answer is a database
 read the reader has not asked for yet.
 
+The operator loop built on these commands — the weekly sweep, the triage table,
+and the LLM audit prompt with its independent-verify pass — is in
+`docs/observability-triage.md`; the saved workflow is
+`.bb/workflows/observability-review.js`.
+
 Retention is 30 days / 50,000 rows, pruned by `gc --apply` — the command that
 already deletes. Dry runs prune nothing.
 
