@@ -3335,6 +3335,20 @@ it did not have:
   board keeps its last verified activity, the execution reconciler does not
   mark a boundary question as sent, and `bb stelow done` refuses with a
   retryable exit rather than closing a card over a question it could not see.
+- **A successful read of zero questions ENDS an await.** The stored `activity`
+  column is a projection, and nothing rewrites it when the question it named is
+  answered, expires, or leaves with the thread that carried it — so
+  `awaiting-answer` was a one-way door: the rule was
+  `openQuestions > 0 ? "awaiting-answer" : stored`, which treats a resolved
+  question and an unreadable source as the same input. Three cards sat amber
+  with nothing to answer (card_hce4tykn, card_qimjr9z4, card_g89gtmwt), and one
+  worker was refused with "the card won't take a second question while one is
+  pending" by the card it had already answered. The rule now has the three
+  states it always needed, in `lib/card-activity.mjs`: unknown keeps the
+  projection, a live question re-asserts the wait, and zero ends it. `error`
+  and `held` describe the worker and outrank the count. Pinned by
+  `tests/card-activity.test.mjs` for both projections separately, because the
+  board and the detail are two readers of one column and they drifted.
 - A research/explore worker that is verifiably running clears the previous
   `last_error`, as the build projection always did. Only the resume paths used
   to clear it, so a card that failed once kept telling the reader to reseed,

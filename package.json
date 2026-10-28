@@ -59,7 +59,7 @@
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:ask-gate": "node tests/ask-gate.test.mjs && node tests/ask-shape.test.mjs && node tests/scope-ask-gate.test.mjs && node tests/ask-timeout.test.mjs",
     "test:question-substance": "node tests/question-substance.test.mjs",
-    "test:status-question-state": "node tests/status-question-state.test.mjs",
+    "test:status-question-state": "node tests/status-question-state.test.mjs && node tests/card-activity.test.mjs",
     "test:ask-contracts": "node tests/ask-contracts.test.mjs && node tests/contrast-ask-door.test.mjs",
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/scope-labels.test.mjs && node tests/single-pick-composition.test.mjs && node tests/exclusive-pick.test.mjs && node tests/question-needs-note.test.mjs && node tests/question-batch.test.mjs && node tests/question-form.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/option-section-mismatch.test.mjs",
