@@ -179,7 +179,7 @@ export function BuildPanel({
   const viewState = buildViewState(state, rpc);
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
           {state.isInitialLoad ? <TrackSkeleton /> : (
             <BuildPanelView

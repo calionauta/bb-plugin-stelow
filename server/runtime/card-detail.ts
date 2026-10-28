@@ -11,6 +11,7 @@ import {
 } from "../scopes.js";
 import { workflowStateRelativeDir } from "../../lib/workflow-state-identity.mjs";
 import { blockedFileWait } from "../../lib/lock-blocked.mjs";
+import { effectiveActivity as projectedActivity } from "../../lib/card-activity.mjs";
 import { holdSentence } from "../../lib/host-hold.mjs";
 import { liveRun, runSentence } from "../../lib/native-run.mjs";
 import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
@@ -304,15 +305,12 @@ function readComments(db: Db, cardId: string) {
 }
 
 function effectiveActivity(card: WorkerCard, openQuestions: number | null) {
-  if (card.activity === "error") return "error";
-  // `null` is an UNKNOWN question read, which is neither "a question is
-  // waiting" nor "the wait ended": the card's recorded activity is the last
-  // verified projection, so it stands. A zero would look like "go ahead".
-  if (openQuestions === null) {
-    return card.activity as "idle" | "running" | "awaiting-answer" | "error";
-  }
-  if (openQuestions > 0) return "awaiting-answer";
-  return card.activity as "idle" | "running" | "awaiting-answer" | "error";
+  // The rule lives in `lib/card-activity.mjs` so the board projection and this
+  // detail projection cannot answer the same question differently.
+  return projectedActivity(
+    card.activity as "idle" | "running" | "awaiting-answer" | "error" | "held",
+    openQuestions,
+  );
 }
 
 function presetBand(card: WorkerCard): string {

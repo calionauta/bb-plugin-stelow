@@ -196,7 +196,7 @@ with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 ### UI vocabulary: a design rule with no test is not a rule
 
 `AGENTS.md` has said *"touch targets are `min-h-11`; every clickable gets
-`cursor-pointer`"* for a long time, and 82 raw `<button>` elements sat next to a
+`cursor-pointer`"* for a long time, and 81 raw `<button>` elements sat next to a
 shared `ui/Button` that 62 files import while 26 never touch it. A sentence in
 markdown does not intercept a commit. So UI rules here are enforced, and the
 enforcement is what tells you the rule is real:
@@ -211,6 +211,8 @@ enforcement is what tells you the rule is real:
 | Every fact on the card has exactly one home | `card-information-hierarchy` |
 | An optional tool is advertised in the About panel only if the vendored methodology names it, or a ledger entry says why not | `host-tool-consumers` |
 | Every installable tool declares how it installs, and the pin is enforced rather than displayed | `runtime-platform` |
+| A row's actions never squeeze its text: the controls are one cluster after the text, and the text keeps a non-zero measure | `inbox-row-layout` |
+| A `line-clamp-*` class never shares a class list with `block`, or the clamp silently never applies | `card-design-tokens` |
 
 Adding a UI rule means adding its test in the same commit. If the test cannot
 be written, the rule is a preference and belongs in review, not here. Known

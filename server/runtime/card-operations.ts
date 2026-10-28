@@ -241,7 +241,14 @@ async function moveStatus(
     const started = await deps.workers.fresh(cardId, "start");
     if (!started.ok) return { ok: false, error: started.error };
   }
-  deps.updateCard(cardId, { status }, { suppressCompletionEvent: true });
+  // Archiving through the drag is a terminal move, and a terminal card shows no
+  // worker state. Writing only `status` left five cards archived-and-`error`
+  // (three), archived-and-`running` (one) and archived-and-`awaiting-answer`
+  // (one): the hero rendered a live-looking state on a card the reader had just
+  // put away. `cancelCard` always wrote `{status:"archived", activity:"idle"}`;
+  // the drag reached the same place by a path that did not.
+  const activity = status === "archived" ? { activity: "idle" as const } : {};
+  deps.updateCard(cardId, { status, ...activity }, { suppressCompletionEvent: true });
   if (status === "completed") deps.recordStageEvent(cardId, "done");
   if (isClaimTerminal(status)) await deps.releaseClaims(cardId);
   return { ok: true, error: null };
