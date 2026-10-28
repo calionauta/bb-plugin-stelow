@@ -223,6 +223,24 @@ assert.equal(contractForBuildArtifact("critiques/critique-report.md")?.id, "plan
 assert.equal(contractForBuildArtifact(".stelow-codebase-critique/critique-report.md")?.id, "codebase-critique", "codebase path wins");
 assert.equal(contractForBuildArtifact(".stelow-ux-critique/live-audit-report.md")?.id, "ux-critique", "live audit matches");
 assert.equal(contractForBuildArtifact("notes.md", "# Execution Critique Report\n" + pad(900))?.id, "execution-critique", "title fallback matches");
+// A run's own output is evidence, not a deliverable — and the native audit
+// stage writes a report with exactly the title the fallback above matches, so
+// the title rule used to demand a gaps: registry from a file the run never
+// authored for review. `done` then refused in both directions: the audit trail
+// requires every .md registered, and registering one made it fail as an
+// execution critique. Card card_qimjr9z4 hit this with a green run and a
+// merged PR.
+for (const runPath of [
+  "runs/exec_8r8mkbkq/audit/evidence.md",
+  "runs/exec_8r8mkbkq/audit/requirements.md",
+  ".stelow/2026-10-01/sw-card_x/runs/exec_1/verification/ui-review.md",
+]) {
+  assert.equal(
+    contractForBuildArtifact(runPath, "# Execution Critique Report\n" + pad(900)),
+    null,
+    `run output carries no stage contract: ${runPath}`,
+  );
+}
 assert.equal(contractForBuildArtifact("audit.md", pad(900)), null, "audit never matches");
 assert.equal(contractForBuildArtifact("gate-approved.md", pad(900)), null, "receipts never match");
 assert.equal(contractForBuildArtifact("notes.md", pad(900)), null, "unknown docs never match");
