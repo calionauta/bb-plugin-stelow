@@ -77,7 +77,7 @@ export const cardRpcContract = {
           intent: z.string(),
           projectId: z.string(),
           projectName: z.string(),
-          workspaceKind: z.enum(["project", "exploratory"]),
+          workspaceKind: z.enum(["project", "exploratory", "worktree"]),
           workspacePath: z.string().nullable(),
           environmentLabel: z.string().nullable(),
           kind: z.enum(["build", "research", "explore"]),

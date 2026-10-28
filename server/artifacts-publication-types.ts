@@ -6,7 +6,7 @@ export type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 export interface PublicationCard {
   id: string;
   status: string;
-  workspace_kind: "project" | "exploratory";
+  workspace_kind: "project" | "exploratory" | "worktree";
   workspace_host_id: string | null;
   kind: string;
   intent: string;
