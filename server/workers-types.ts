@@ -19,7 +19,16 @@ export type WorkerCard = {
   spawn_retry_count: number | null;
   spawn_retry_thread: string | null;
   attachments: string;
-  workspace_kind: "project" | "exploratory";
+  /**
+   * Which checkout the card works in.
+   *
+   * `worktree` is a recorded linked checkout (an operator points a card at the
+   * tree that holds its work). The resolver has always honoured it; the type did
+   * not, and the RPC contracts below enumerate the same three, because a value
+   * the DB can hold but a contract refuses is a 500 on every board read — which
+   * is exactly what happened on 2026-10-28.
+   */
+  workspace_kind: "project" | "exploratory" | "worktree";
   workspace_path: string | null;
   workspace_host_id: string | null;
   kind: "build" | "research" | "explore";
