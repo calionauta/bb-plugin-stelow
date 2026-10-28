@@ -223,24 +223,6 @@ assert.equal(contractForBuildArtifact("critiques/critique-report.md")?.id, "plan
 assert.equal(contractForBuildArtifact(".stelow-codebase-critique/critique-report.md")?.id, "codebase-critique", "codebase path wins");
 assert.equal(contractForBuildArtifact(".stelow-ux-critique/live-audit-report.md")?.id, "ux-critique", "live audit matches");
 assert.equal(contractForBuildArtifact("notes.md", "# Execution Critique Report\n" + pad(900))?.id, "execution-critique", "title fallback matches");
-// A run's own output is evidence, not a deliverable — and the native audit
-// stage writes a report with exactly the title the fallback above matches, so
-// the title rule used to demand a gaps: registry from a file the run never
-// authored for review. `done` then refused in both directions: the audit trail
-// requires every .md registered, and registering one made it fail as an
-// execution critique. Card card_qimjr9z4 hit this with a green run and a
-// merged PR.
-for (const runPath of [
-  "runs/exec_8r8mkbkq/audit/evidence.md",
-  "runs/exec_8r8mkbkq/audit/requirements.md",
-  ".stelow/2026-10-01/sw-card_x/runs/exec_1/verification/ui-review.md",
-]) {
-  assert.equal(
-    contractForBuildArtifact(runPath, "# Execution Critique Report\n" + pad(900)),
-    null,
-    `run output carries no stage contract: ${runPath}`,
-  );
-}
 assert.equal(contractForBuildArtifact("audit.md", pad(900)), null, "audit never matches");
 assert.equal(contractForBuildArtifact("gate-approved.md", pad(900)), null, "receipts never match");
 assert.equal(contractForBuildArtifact("notes.md", pad(900)), null, "unknown docs never match");
@@ -276,6 +258,43 @@ assert.equal(depths.length, 1, "only the thin spec-product surfaces");
 assert.equal(depths[0].path, "plans/spec-product_v1.md", "path named");
 assert.ok(depths[0].failures.length > 0, "failures detailed");
 assert.deepEqual(buildDocDepths("no manifest here", () => null), [], "no manifest means no depths");
+
+// A run's own output is evidence, not a deliverable: the native audit stage
+// writes its report under runs/exec_*/audit/ with the same title a deliverable
+// carries, and judging it demanded a gaps: registry the run never authored.
+// `done`'s audit trail requires every .md registered, so registering one made
+// completion impossible — card card_qimjr9z4's exact dead end. The gap FLEET
+// view still reads these files; only the depth bar skips them.
+const runState = `artifacts:
+  - stage: audit
+    kind: document
+    path: runs/exec_1/audit/evidence.md
+    label: evidence
+  - stage: audit
+    kind: document
+    path: runs/exec_1/audit/requirements.md
+    label: requirements
+`;
+const runFiles = {
+  "runs/exec_1/audit/evidence.md": "# Execution Critique Report\n" + pad(900),
+  "runs/exec_1/audit/requirements.md": "# Execution Critique Report\n" + pad(900),
+};
+assert.deepEqual(
+  buildDocDepths(runState, (path) => runFiles[path] ?? null),
+  [],
+  "a run's report is not judged as a deliverable",
+);
+const deliverableState = `artifacts:
+  - stage: audit
+    kind: document
+    path: audit/report.md
+    label: execution critique
+`;
+assert.equal(
+  buildDocDepths(deliverableState, () => "# Execution Critique Report\n" + pad(900)).length,
+  1,
+  "a deliverable critique still faces the depth bar",
+);
 
 // Explore verify renders depth failures; old 3-arg calls keep working.
 const failReport = exploreVerifyReport("card_1", "shape-up", false, ["expected at least 800 words, found 120"]);
