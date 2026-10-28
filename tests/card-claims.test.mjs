@@ -7,6 +7,7 @@ import {
   checkWorkspaceClaims,
   clearClaimWaiters,
   ensureCardClaimsTables,
+  leaseIsLive,
   liveClaimsForWorkspace,
   normalizeClaimPath,
   releaseAllCardClaims,
@@ -53,20 +54,23 @@ assert.equal(own.conflicts.length, 0, "a card never conflicts with itself");
 let other = acquireWorkspaceClaims(db, { cardId: "card_b", workspacePath: "/other/checkout", files: ["src/a.ts"], nowMs: T0 + 3 });
 assert.equal(other.acquired.length, 1, "same path in another workspace is a different claim");
 
+// Check is read-only room state and renews the caller's own leases.
+// Times are monotonic through this file, because a lease is only meaningful
+// against a clock that moves forward — `leaseIsLive` depends on exactly that.
+let seen = checkWorkspaceClaims(db, { cardId: "card_c", workspacePath: WS, files: ["src/a.ts", "src/free.ts"], nowMs: T0 + 4 });
+assert.deepEqual(seen.free, ["src/free.ts"], "check reports exactly the free files");
+assert.equal(seen.conflicts[0].heldBy, "card_a", "check names the live holder");
+const before = db.prepare("SELECT expires_at FROM card_claims WHERE workspace_path = ? AND file_path = ?").get(WS, "src/b.ts").expires_at;
+checkWorkspaceClaims(db, { cardId: "card_a", workspacePath: WS, files: ["src/b.ts"], nowMs: T0 + 5000 });
+const after = db.prepare("SELECT expires_at FROM card_claims WHERE workspace_path = ? AND file_path = ?").get(WS, "src/b.ts").expires_at;
+assert.ok(after > before, "check from the owner renews the lease (heartbeat)");
+
 // Expired claims are stolen, and the steal names the previous holder.
 let stolen = acquireWorkspaceClaims(db, { cardId: "card_b", workspacePath: WS, files: ["src/a.ts"], scope: "scope-2", nowMs: T0 + CLAIM_TTL_MS + 10 });
 assert.equal(stolen.stolen.length, 1, "an expired claim is stolen");
 assert.equal(stolen.stolen[0].previousHolder, "card_a", "the steal names the crashed holder");
 assert.ok(stolen.stolen[0].fencing > first.acquired[0].fencing, "a steal advances the fencing epoch");
 
-// Check is read-only room state and renews the caller's own leases.
-let seen = checkWorkspaceClaims(db, { cardId: "card_c", workspacePath: WS, files: ["src/a.ts", "src/free.ts"], nowMs: T0 + 4 });
-assert.deepEqual(seen.free, ["src/free.ts"], "check reports exactly the free files");
-assert.equal(seen.conflicts[0].heldBy, "card_b", "check names the live holder");
-const before = db.prepare("SELECT expires_at FROM card_claims WHERE workspace_path = ? AND file_path = ?").get(WS, "src/b.ts").expires_at;
-checkWorkspaceClaims(db, { cardId: "card_a", workspacePath: WS, files: ["src/b.ts"], nowMs: T0 + 5000 });
-const after = db.prepare("SELECT expires_at FROM card_claims WHERE workspace_path = ? AND file_path = ?").get(WS, "src/b.ts").expires_at;
-assert.ok(after > before, "check from the owner renews the lease (heartbeat)");
 
 // Waiters: blocked cards register, release wakes exactly them.
 addClaimWaiters(db, { cardId: "card_c", workspacePath: WS, files: ["src/a.ts", "src/other.ts"], nowMs: T0 + 5 });
@@ -104,3 +108,29 @@ assert.equal(swept[0].previousHolder, "card_old", "the sweep names the crashed h
 assert.equal(liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T1 + CLAIM_TTL_MS + 6000 }).some((row) => row.file_path === "src/new.ts"), true, "live claims survive the sweep");
 
 console.log("card-claims: ok");
+
+// --- A lease can never outlive its own TTL. --------------------------------
+// Six claims for one parked card held AGENTS.md, package.json and FEATURES.md
+// for 67 hours against a 30-minute TTL, blocking every other card on the shared
+// checkout. `expires_at` further out than one TTL from NOW can only come from a
+// clock that ran ahead when the row was written, so it is not evidence that a
+// holder is still there: the next acquire takes it over and rewrites it, and the
+// table converges on the first read instead of needing a repair pass.
+assert.equal(leaseIsLive(T0 + CLAIM_TTL_MS, T0, CLAIM_TTL_MS), true, "a fresh lease is live");
+assert.equal(leaseIsLive(T0 - 1, T0, CLAIM_TTL_MS), false, "an elapsed lease is not");
+assert.equal(
+  leaseIsLive(T0 + CLAIM_TTL_MS * 100, T0, CLAIM_TTL_MS),
+  false,
+  "a lease 100 TTLs out cannot be a live holder: its clock ran ahead",
+);
+
+const skewedWs = "/skewed/checkout";
+acquireWorkspaceClaims(db, { cardId: "card_a", workspacePath: skewedWs, files: ["AGENTS.md"], nowMs: T0 });
+// Simulate the skewed write: a write at a clock two days ahead.
+db.prepare("UPDATE card_claims SET expires_at = ? WHERE workspace_path = ? AND file_path = ?")
+  .run(T0 + CLAIM_TTL_MS * 100, skewedWs, "AGENTS.md");
+const reclaim = acquireWorkspaceClaims(db, { cardId: "card_b", workspacePath: skewedWs, files: ["AGENTS.md"], nowMs: T0 + 1000 });
+assert.equal(reclaim.stolen.length, 1, "the stretched lease is taken over instead of blocking a sibling");
+assert.equal(reclaim.stolen[0].previousHolder, "card_a", "and the takeover names who held it");
+const repaired = db.prepare("SELECT expires_at FROM card_claims WHERE workspace_path = ? AND file_path = ?").get(skewedWs, "AGENTS.md").expires_at;
+assert.equal(repaired, T0 + 1000 + CLAIM_TTL_MS, "the row is rewritten at the real TTL");

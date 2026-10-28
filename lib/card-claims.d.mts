@@ -9,6 +9,18 @@ type Db = {
   transaction(fn: (...args: any[]) => any): (...args: any[]) => any;
 };
 export declare const CLAIM_TTL_MS: number;
+
+/**
+ * Whether a stored lease is live at `nowMs`.
+ *
+ * A lease can never outlive its own TTL, so an expiry further out than one TTL
+ * from now was written by a clock that ran ahead and is not evidence of a holder.
+ */
+export declare function leaseIsLive(
+  expiresAt: unknown,
+  nowMs: number,
+  ttlMs: number,
+): boolean;
 export declare function ensureCardClaimsTables(db: Db): void;
 export declare function nextFencing(db: Db, workspacePath: string): number;
 export declare function normalizeClaimPath(raw: unknown): string | null;
