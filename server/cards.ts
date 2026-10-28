@@ -1,8 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { existsSync } from "node:fs";
 import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { effectiveActivity } from "../lib/card-activity.mjs";
+import { defaultProjectSource, resolveCardWorkspacePath } from "../lib/card-workspace.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
@@ -36,13 +38,31 @@ export function createCardStore(bb: BbPluginApi, db: Db) {
 
   const cardWorkspace = async (card: WorkerCard): Promise<Workspace | null> => {
     if (card.workspace_kind === "exploratory") {
-      return card.workspace_path
-        ? { path: card.workspace_path, hostId: card.workspace_host_id }
-        : null;
+      // Kept as-is rather than routed through the rule: an exploratory card's
+      // workspace is its own directory by definition and never falls back to a
+      // project source, so a missing one is UNKNOWN, not "use the checkout".
+      return resolveCardWorkspacePath(
+        {
+          workspaceKind: card.workspace_kind,
+          workspacePath: card.workspace_path,
+          workspaceHostId: card.workspace_host_id,
+        },
+        null,
+      );
     }
     const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    return source?.path ? { path: source.path, hostId: source.hostId } : null;
+    // A card that recorded a linked worktree works there: the project's default
+    // source is a different directory holding a different branch, and binding
+    // verify/scan/done to it is the dead end that kept finished cards at audit.
+    return resolveCardWorkspacePath(
+      {
+        workspaceKind: card.workspace_kind,
+        workspacePath: card.workspace_path,
+        workspaceHostId: card.workspace_host_id,
+      },
+      defaultProjectSource(project),
+      existsSync,
+    );
   };
 
   return { getCard, cardWorkspace };
