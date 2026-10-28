@@ -93,9 +93,13 @@ test("the untested touch-target and cursor rules cannot grow", () => {
   // a real conversion, not a blind scanner — the failure mode this floor exists to catch is a
   // scan that stops seeing most of its subject, and it would land tens below, not one. If this
   // number is ever lowered again, the reason goes here.
+  //
+  // Lowered 82 -> 81 with a reason (2026-10-28): Build and Explore each carried their own copy
+  // of the attention control, and both copies became one `PanelHeader` — two raw elements out,
+  // one in. Same test, same justification: exactly one fewer real element, not a blind scan.
   assert.ok(
-    buttons >= 82,
-    `the census sees the raw buttons (found ${buttons}, expected at least 82) — a lower number `
+    buttons >= 81,
+    `the census sees the raw buttons (found ${buttons}, expected at least 81) — a lower number `
     + "means this scan stopped matching, not that the tree has fewer buttons",
   );
   assert.ok(
