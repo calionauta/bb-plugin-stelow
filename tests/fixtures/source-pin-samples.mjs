@@ -28,3 +28,24 @@ export const entrypointRead = () => `const text = ${READ}(new URL("../server.ts"
 
 /** A file that reads nothing at all. */
 export const noReads = "import x from \"./y.mjs\";";
+
+/**
+ * A file that only DESCRIBES the discovered-directory rule.
+ *
+ * The classifier's own test sat in the census for six weeks because its
+ * docstring explains "a walk that discovers files with `readdirSync`". A rule
+ * that counts prose about itself is a rule that cannot be documented, so the
+ * samples live here — the ratchet scans `tests/*.test.mjs` as text, and this
+ * fixture is outside that scan by construction.
+ */
+export const proseAboutTheRule = () => [
+  "// a walk that discovers files with readdirSync and reads ../lib/ by variable",
+  "/* readdirSync over components/ is the subtle half */",
+  "export const nothing = 1;",
+].join("\n");
+
+/** The same signal, in code: comment stripping must not blind the rule. */
+export const walkInCode = () => [
+  `const files = ${DIR}(${JSON.stringify("components")});`,
+  `for (const f of files) { const text = ${READ}(f, "utf8"); }`,
+].join("\n");
