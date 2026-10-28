@@ -24,7 +24,7 @@ export type BuildPanelState = {
   collapsedListGroups: Record<string, boolean>;
   githubAuthMissing: boolean;
   githubAutomationEnabled: boolean;
-  /** True when the board is in multi-select mode; tiles render no checkbox without it. */
+  /** True when the board is in multi-select mode; tiles render no selection mark without it. */
   selectMode: boolean;
   enterSelectMode: () => void;
   exitSelectMode: () => void;

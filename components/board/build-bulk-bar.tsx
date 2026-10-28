@@ -146,7 +146,7 @@ async function runBulkDelete(eligible: Card[], skipped: BulkPartition["skipped"]
  * It renders whenever the MODE is on, not whenever the count is non-zero. That
  * difference is the whole exit: the bar carries `Done` (leaving the mode), and a
  * bar that vanished at zero selection would leave a reader with an armed board,
- * no checkbox outside it, and no visible way back to normal.
+ * no selection mark outside it, and no visible way back to normal.
  *
  * `presentIds` is what the board is currently showing, and it is what
  * `Select all` may reach. A bulk verb scoped to everything a filter left on

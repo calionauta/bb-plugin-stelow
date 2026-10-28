@@ -4,8 +4,8 @@ import { Icon } from "@/components/ui/icon";
 /**
  * The door to multi-select.
  *
- * Selection was a checkbox painted on every tile, which is why it cost 15–18%
- * of a card's content width in a state where nobody was selecting anything. It
+ * Selection was a checkbox painted on every tile, which is why it cost a fifth
+ * of a narrow card's content width in a state where nobody was selecting. It
  * is a mode now, and this is the one control that opens it: quiet (a secondary
  * affordance beside the view toggle, never a CTA), and labelled for a screen
  * reader even though it shows only an icon.

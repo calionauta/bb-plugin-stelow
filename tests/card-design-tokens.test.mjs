@@ -171,9 +171,9 @@ test("a disclosure does not re-spell a family it could name", () => {
 test("no local copy of a shared constant hides under a shared name", () => {
   // The most expensive kind of duplication: a constant whose NAME says shared,
   // duplicated, with different contents. Nothing in review catches that.
-  const shared = /\b(SECTION_SURFACE|SUMMARY_ROW|SUMMARY_LINK|SUMMARY_BASE|TEXT_STATE|TEXT_SECTION|TEXT_BODY|TEXT_META)\b/;
+  const shared = /\b(SECTION_SURFACE|SUMMARY_ROW|SUMMARY_LINK|SUMMARY_BASE|TEXT_STATE|TEXT_SECTION|TEXT_BODY|TEXT_META|SELECTION_MARK_CLASS)\b/;
   const offenders = ALL
-    .filter((file) => !file.includes("disclosure") && !file.includes("design-tokens"))
+    .filter((file) => !file.includes("disclosure") && !file.includes("design-tokens") && !file.includes("selection-mark"))
     .flatMap((file) => codeLinesOf(file)
       .filter((line) => new RegExp(`^(const|let)\\s+${shared.source}`).test(line.trim()))
       .map((line) => `${file}: ${line.trim().slice(0, 70)}`));

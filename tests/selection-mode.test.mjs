@@ -15,10 +15,20 @@ import { codeOf } from "./helpers/source-code.mjs";
  *    importantes"
  *  - "e nao sei se eles precisam estar sempre disponiveis e visiveis"
  *
- * Measured, before: the checkbox was `size-8` (32px) plus a `gap-2` (8px) inside
- * a `p-3` tile in a `minmax(240px, 320px)` track. The content box is 216px at the
- * narrow end, so the control claimed 40/216 — 18.5% — of every tile, permanently,
- * and its own 34px of top-aligned height set the first line of every short title.
+ * Measured, before: the control was `size-8` (32px) plus a `gap-2` (8px) inside a
+ * `p-3` tile in a `minmax(240px, 320px)` track. The content box is 196–276px
+ * once the column's `p-2` and border and the tile's border are charged, so the
+ * control claimed 40px of it — 20.4% at the narrow end, 14.5% at the wide one —
+ * and it shifted every line under it to the right. `scripts/selection-metrics.mjs`
+ * derives that range and the control's successors; this file asserts the numbers
+ * it produces instead of restating arithmetic of its own.
+ *
+ * The height claim this docstring used to make (that the box's own 32px set the
+ * first line of every short title) was only half true: it held on
+ * a card with no status pills, where the heading was the title line alone, and
+ * never on a card with pills, whose inner column was already ~50px tall. The
+ * module encodes both cases because a number that is right half the time is how
+ * prose ends up wrong in six places.
  *
  * And it was not "always available": it rendered on the Build kanban only. Not on
  * the list, not on the hill, not on Research or Explore, not in the Bucket
@@ -35,6 +45,7 @@ const read = (relative) => readFileSync(join(root, relative), "utf8");
 const code = (relative) => codeOf(read(relative));
 
 const boardCards = code("components/board/board-cards.tsx");
+const selectRow = code("components/board/card-select-row.tsx");
 const panelView = code("components/panels/build-panel-view.tsx");
 const bulkBar = code("components/board/build-bulk-bar.tsx");
 // The buttons were extracted when the bar file reached its line budget; the rule
@@ -45,7 +56,6 @@ const strip = code("components/panels/build-control-strip.tsx");
 const gallery = code("components/board/card-gallery.tsx");
 const selectionHook = code("hooks/use-selection-mode.ts");
 const toggle = code("components/board/select-mode-toggle.tsx");
-const layout = read("lib/kanban-layout.mjs");
 
 /** One function's own body, from its declaration to the first top-level close. */
 function bodyOf(source, declaration) {
@@ -58,22 +68,39 @@ function bodyOf(source, declaration) {
 
 const boardCard = bodyOf(boardCards, "export function BoardCard(");
 const cardShell = bodyOf(boardCards, "function CardShell(");
-const cardSelect = bodyOf(boardCards, "function BoardCardSelect(");
 
-test("the tile's checkbox exists only in select mode", () => {
+test("the mark is gated on the mode, and the mode is gated on the callback", () => {
+  // Two facts, one guard. `selecting` is computed ONCE, in BoardCard, and its
+  // result is what reaches CardShell: a shell that re-tested the callback would be
+  // a second computation of the same question, free to disagree with the
+  // activation path it also chooses from. And the callback half is not decorative
+  // — a tile told the mode without a toggle would paint an aria-pressed control
+  // whose click records nothing.
   assert.ok(
     boardCard.includes('const selecting = selectMode === true && typeof onToggleSelection === "function"'),
-    "the checkbox is gated on the MODE, not merely on the callback being passed: a caller that wires a "
-    + "toggle without entering the mode must still reserve no space",
+    "the mark is gated on the MODE, not merely on the callback: a caller that wires a toggle without "
+    + "entering the mode must still reserve no space",
   );
   assert.ok(
-    boardCard.includes("{selecting ? (") && boardCard.includes("<BoardCardSelect"),
-    "and the checkbox is rendered behind that gate — a checkbox outside it is the 18% this fix removed",
+    boardCard.includes("selectMode={selecting}"),
+    "and the shell receives the resolved boolean, so there is exactly one place that decides",
   );
   assert.ok(
-    boardCard.includes('className={`flex min-w-0 items-start ${selecting ? "gap-2" : ""}`}'),
-    "the gap beside the checkbox is conditional too: reserving the gutter without the box is the same bug "
-    + "one size smaller",
+    !cardShell.includes("typeof onToggleSelection"),
+    "CardShell does not re-ask the question the caller already answered",
+  );
+  assert.ok(
+    cardShell.includes("{selectMode ? <CardSelectRow"),
+    "the line is rendered by the shell on that boolean, so no surface can paint a mark nobody wired",
+  );
+  assert.ok(
+    boardCard.includes('className="flex min-w-0 items-start"'),
+    "and the content row carries no conditional gutter: a static className is what makes the reservation "
+    + "impossible, not a conditional that happens to be empty",
+  );
+  assert.ok(
+    !boardCards.includes("BoardCardSelect"),
+    "the control that charged 40px of content width is gone, not merely hidden",
   );
 });
 
@@ -277,28 +304,22 @@ test("the selection cannot outlive the surface that drew it", () => {
   );
 });
 
-test("a tile outside select mode claims no width for a control it does not have", () => {
-  // The numbers this fix is about, asserted against the classes that produce
-  // them: the tile is `p-3`, the track is bounded at 240px, and the checkbox —
-  // when it renders at all — is 32px plus an 8px gap.
-  assert.ok(layout.includes('expanded: "minmax(240px, 320px)"'), "the track is still the bounded one");
-  assert.ok(boardCards.includes("bg-card p-3"), "and the tile's own gutter is unchanged");
-  assert.ok(cardSelect.includes("size-8"), "the checkbox is 32px");
+test("the line sits above the heading and changes nothing else on the tile", () => {
   assert.ok(
-    boardCard.includes('${selecting ? "gap-2" : ""}'),
-    "so its 40px of cost (32 + 8) only exists while someone is selecting — in the 240px track that is 18.5% "
-    + "of the content box, which is what 'tirando espaco de coisas importantes' was about",
+    cardShell.includes("{selectMode ? <CardSelectRow selected={Boolean(selected)} /> : null}\n      {children}"),
+    "the line renders before the children, so it is the tile's first line rather than a row inside the heading",
+  );
+  assert.ok(
+    selectRow.includes('className="mb-1.5 flex h-5 items-center"'),
+    "and it is 20px tall plus a 6px margin — the height the metrics module prices",
+  );
+  assert.ok(
+    boardCards.includes('className="min-w-0 space-y-1.5"'),
+    "the heading keeps its own stack, so no existing row was restyled to make room for the line",
+  );
+  assert.ok(
+    boardCards.includes("bg-card p-3"),
+    "and the tile keeps its gutter, which is what keeps the content box at the range the module derives",
   );
 });
 
-test("the checkbox no longer needs to fight the tile for its own clicks", () => {
-  // It still stops propagation, and the reason is now different and worth
-  // stating: the tile around it is itself a toggle in this mode, so an
-  // unstoppered click would toggle twice and land where it started.
-  const stops = cardSelect.split("event.stopPropagation()").length - 1;
-  assert.equal(
-    stops,
-    2,
-    "both the label and the input stop propagation: the tile toggles too, so an unstoppered pair would cancel itself",
-  );
-});

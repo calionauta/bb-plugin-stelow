@@ -1,4 +1,5 @@
 import { DisclosureChevron } from "../disclosure";
+import { selectionMarkClass } from "./selection-mark";
 import { formatDuration } from "../../lib/card-metrics.mjs";
 import { relativeTime } from "../../lib/relative-time.mjs";
 import { orderedDoingNow } from "../../lib/doing-now.mjs";
@@ -163,13 +164,11 @@ function TrackListRow({ card, meta, onOpen, onOpenThread, selection }: {
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
         {selecting ? (
-          <span
-            aria-hidden
-            className={
-              "mt-1 size-4 shrink-0 rounded border transition "
-              + (selected ? "border-primary bg-primary" : "border-border bg-transparent")
-            }
-          />
+          // The same mark the board's tile line renders, imported rather than
+          // re-spelled: two surfaces describing one selection state must not be
+          // able to drift apart. `mt-1` is this row's own alignment, not the
+          // token's business.
+          <span aria-hidden className={`${selectionMarkClass(selected)} mt-1`} />
         ) : null}
         <span className={rowTone(card)} />
         <ListRowIdentity card={card} meta={meta} />
@@ -182,15 +181,18 @@ function TrackListRow({ card, meta, onOpen, onOpenThread, selection }: {
 /**
  * What the row says about itself in each mode.
  *
- * In select mode a row is a checkbox: it names the selection action and
- * announces itself as pressed. Outside it, a row opens the card and `W` opens the
- * worker thread. W is refused inside the mode, matching the kanban tile — pressing
- * it there would navigate away from a selection the reader is building.
+ * In select mode a row is the toggle: it names the action it will perform —
+ * `Select` or `Deselect`, which are not the same sentence — and announces itself
+ * as pressed. It carries no mark of its own beyond the shared one, because the
+ * row IS the control here, exactly as the tile is on the board. Outside the mode a
+ * row opens the card and `W` opens the worker thread; W is refused inside the
+ * mode, matching the kanban tile, where it would navigate away from a selection
+ * the reader is building.
  */
 function rowAffordance(card: ListCard, selecting: boolean, selected: boolean) {
   return {
     title: selecting
-      ? "Add this card to the selection"
+      ? selected ? "Remove this card from the selection" : "Add this card to the selection"
       : card.workerThreadId ? "Open card · W opens the worker thread" : "Open card",
     "aria-label": selecting
       ? `${selected ? "Deselect" : "Select"} card ${card.displayName}.`

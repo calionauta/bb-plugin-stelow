@@ -9,8 +9,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
  *  - "o checkbox ta ocupando muito espaço nos cards. tirando espaco de coisas
  *    importantes" — the selection checkbox is `size-8` (32px) plus a `gap-2`
  *    inside a `p-3` tile whose track is `minmax(240px, 320px)`. The content box
- *    is 176–256px, so the checkbox claimed 15–18% of it, and its own 34px of
- *    top-aligned height set the first line of every short title.
+ *    is 196–276px once the column's padding and border and the tile's border are
+ *    charged, so the control claimed 20.4% of a narrow card and 14.5% of a wide
+ *    one. Its 32px box set no height at all: the heading's column is floored by
+ *    the title line plus the context row every tile renders, which together
+ *    exceed the box — so the 26px line that replaced it is entirely new height.
+ *    `scripts/selection-metrics.mjs` derives the floor, the line and the growth.
  *  - "e nao sei se eles precisam estar sempre disponiveis e visiveis" — they
  *    were not "always available" either. The checkbox rendered on the Build
  *    kanban only: not on the list, not on the hill, not on Research or Explore,
