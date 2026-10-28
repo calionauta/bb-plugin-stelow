@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TEXT_META, TEXT_SECTION, TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
 import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
+import { scanForClampDisplayConflicts } from "./helpers/line-clamp-scan.mjs";
 
 /**
  * The card's vocabulary must be named, or it cannot be checked.
@@ -381,4 +382,15 @@ test("the owed-clause list is derived from the bag, never written out", () => {
     /export const BUILD_PATH_CLAUSES = \[/,
     "and never a hand-written array again, which is what went stale",
   );
+});
+
+test("no class group clamps a line and resets its display at the same time", () => {
+  // `.line-clamp-N` works by declaring `display:-webkit-box`; `.block` declares
+  // `display:block`. Equal specificity, so source order decides — and `.block`
+  // came later, so the Inbox ask line's documented two-line cap never applied.
+  // The scan lives in `tests/helpers/line-clamp-scan.mjs`; this file owns the
+  // assertion because it already reads `components/` as text (pin ratchet).
+  const { clamped, offenders } = scanForClampDisplayConflicts(repoRoot);
+  assert.ok(clamped.has("/components/panels/inbox-row.tsx"), "the Inbox ask line must be scanned; a scan that sees nothing fails nothing");
+  assert.deepEqual(offenders, [], `a clamp sharing a class list with \`block\` never caps: ${offenders.join("; ")}`);
 });
