@@ -32,6 +32,12 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { recordPublication } from "./artifacts-publication-status.js";
 import { integrationProof, type GitRunner } from "./integration-proof.js";
 import { hasRecordedIntegration } from "../lib/integration-pending.mjs";
+import {
+  createProbeBackoff,
+  PROBE_PASS_BUDGET_MS,
+  PROBE_PASS_LIMIT,
+  type ProbeBackoff,
+} from "../lib/publication-probe-backoff.mjs";
 import type {
   ArtifactsPublicationDeps,
   PublicationCard,
@@ -72,7 +78,8 @@ function publicationDepsFor(core: PublicationReconcileCore): ArtifactsPublicatio
 }
 
 export function createPublicationReconcile(core: PublicationReconcileCore) {
-  return { reconcilePublications: () => reconcilePublications(core) };
+  const backoff = createProbeBackoff();
+  return { reconcilePublications: () => reconcilePublications(core, backoff) };
 }
 
 /**
@@ -83,6 +90,7 @@ function pendingCandidates(db: Db): string[] {
   const rows = db.prepare(`
     SELECT id FROM cards
      WHERE status = 'completed' AND coalesce(workspace_kind, '') <> 'exploratory'
+     ORDER BY updated_at ASC
   `).all() as Array<{ id: string }>;
   return rows.map((row) => row.id);
 }
@@ -117,35 +125,78 @@ async function provedLanding(
   return verdict.proof === "content" ? { prUrl: null, by: "content" } : null;
 }
 
-export async function reconcilePublications(core: PublicationReconcileCore): Promise<void> {
+export async function reconcilePublications(
+  core: PublicationReconcileCore,
+  backoff: ProbeBackoff = createProbeBackoff(),
+): Promise<void> {
   const deps = publicationDepsFor(core);
   const failures: string[] = [];
-  for (const cardId of pendingCandidates(core.db)) {
-    try {
-      if (hasRecordedIntegration(core.db, cardId)) continue;
-      const card = core.getCard(cardId);
-      if (!card) continue;
-      const landing = await provedLanding(core, card);
-      if (!landing) continue;
-      recordPublication(
-        deps,
-        cardId,
-        landing.by === "pr" ? "pull_request_merge" : "reconciled_integrated",
-        landing.by === "pr"
-          ? "Reconciled: this card's pull request is merged, so its work is already on the base branch."
-          : "Reconciled: the base branch already contains this branch's files, so the work is integrated."
-            + " Proved by content — the proof a squash merge leaves and a commit id does not.",
-        null,
-        landing.prUrl,
-      );
-    } catch (error) {
-      // A reconcile pass does not fail on one card — the next tick retries, and
-      // a bad card must not stop the others. It does not swallow the card
-      // either: a silent catch is how a permanently broken card stays invisible
-      // while the board keeps saying the same thing forever.
-      failures.push(`${cardId} (${error instanceof Error ? error.message : String(error)})`);
-    }
+  const startedAt = core.now();
+  const probed = dueCandidates(core, backoff, startedAt);
+  for (const cardId of probed) {
+    await probeCard(core, backoff, cardId, deps, failures);
   }
+  reportFailures(core, failures);
+}
+
+/** The cards this pass may ask about: due, and bounded by the per-pass limit. */
+function dueCandidates(
+  core: PublicationReconcileCore,
+  backoff: ProbeBackoff,
+  startedAt: number,
+): string[] {
+  const due: string[] = [];
+  for (const cardId of pendingCandidates(core.db)) {
+    if (due.length >= PROBE_PASS_LIMIT) break;
+    if (core.now() - startedAt >= PROBE_PASS_BUDGET_MS) break;
+    if (backoff.due(cardId, core.now())) due.push(cardId);
+  }
+  return due;
+}
+
+/** One card, one proof. A failure backs the card off; an answered ledger entry
+ * forgets it. */
+async function probeCard(
+  core: PublicationReconcileCore,
+  backoff: ProbeBackoff,
+  cardId: string,
+  deps: ArtifactsPublicationDeps,
+  failures: string[],
+): Promise<void> {
+  try {
+    if (hasRecordedIntegration(core.db, cardId)) {
+      backoff.succeeded(cardId);
+      return;
+    }
+    const card = core.getCard(cardId);
+    if (!card) {
+      backoff.succeeded(cardId);
+      return;
+    }
+    const landing = await provedLanding(core, card);
+    if (!landing) {
+      backoff.failed(cardId, core.now());
+      return;
+    }
+    recordPublication(
+      deps,
+      cardId,
+      landing.by === "pr" ? "pull_request_merge" : "reconciled_integrated",
+      landing.by === "pr"
+        ? "Reconciled: this card's pull request is merged, so its work is already on the base branch."
+        : "Reconciled: the base branch already contains this branch's files, so the work is integrated."
+          + " Proved by content — the proof a squash merge leaves and a commit id does not.",
+      null,
+      landing.prUrl,
+    );
+    backoff.succeeded(cardId);
+  } catch (error) {
+    failures.push(`${cardId} (${error instanceof Error ? error.message : String(error)})`);
+    backoff.failed(cardId, core.now());
+  }
+}
+
+function reportFailures(core: PublicationReconcileCore, failures: string[]): void {
   if (failures.length > 0) {
     const shown = failures.slice(0, 3).join(", ");
     const more = failures.length > 3 ? `, and ${failures.length - 3} more` : "";
