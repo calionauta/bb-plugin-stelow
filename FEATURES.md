@@ -463,6 +463,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the board label map, never a pasted string. Moving a card that already has a
   worker into the Bucket is refused with a named exit (parking it would
   orphan the worker) — archive it or move it to a phase instead.
+- **The header explains the board at any width** (`PanelHeader`). Build,
+  Explore and Research each carried their own copy of one header, and the copy
+  turned from a column into a row at `sm` — 640px — which is the width where
+  the explanation and the action grid stopped fitting beside each other rather
+  than started. The explanation is the member that gives up its width, so on a
+  tablet the sentence that teaches the track wrapped into a tall narrow column
+  of text, and reported as "o texto de explicação do board fica espremido e
+  longo e tudo quebra" the layout was doing exactly what it was told. The three
+  copies became one component: a column until `lg`, where prose plus a row of
+  buttons genuinely fits; the explanation at `max-w-prose` with balanced
+  wrapping; the actions a two-column thumb grid on a phone and a wrapping row
+  above it. The scroll hint stopped switching at `sm` too — a 768px tablet was
+  told "Use Shift + scroll", an instruction only a keyboard can follow, so the
+  touch hint now runs to `lg`. The loading skeleton reserves the same shape, so
+  content landing does not move the page. Pinned by
+  `tests/panel-header-responsive.test.mjs`; the header is shared, never
+  re-spelled per track.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). Board filters are multi-select facets shared by
@@ -3353,6 +3370,20 @@ it did not have:
   board keeps its last verified activity, the execution reconciler does not
   mark a boundary question as sent, and `bb stelow done` refuses with a
   retryable exit rather than closing a card over a question it could not see.
+- **A successful read of zero questions ENDS an await.** The stored `activity`
+  column is a projection, and nothing rewrites it when the question it named is
+  answered, expires, or leaves with the thread that carried it — so
+  `awaiting-answer` was a one-way door: the rule was
+  `openQuestions > 0 ? "awaiting-answer" : stored`, which treats a resolved
+  question and an unreadable source as the same input. Three cards sat amber
+  with nothing to answer (card_hce4tykn, card_qimjr9z4, card_g89gtmwt), and one
+  worker was refused with "the card won't take a second question while one is
+  pending" by the card it had already answered. The rule now has the three
+  states it always needed, in `lib/card-activity.mjs`: unknown keeps the
+  projection, a live question re-asserts the wait, and zero ends it. `error`
+  and `held` describe the worker and outrank the count. Pinned by
+  `tests/card-activity.test.mjs` for both projections separately, because the
+  board and the detail are two readers of one column and they drifted.
 - A research/explore worker that is verifiably running clears the previous
   `last_error`, as the build projection always did. Only the resume paths used
   to clear it, so a card that failed once kept telling the reader to reseed,

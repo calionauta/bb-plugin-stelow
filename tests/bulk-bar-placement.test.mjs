@@ -9,6 +9,7 @@ import * as bulkEligibility from "../lib/bulk-eligibility.mjs";
 import * as bulkDeleteBatch from "../lib/bulk-delete-batch.mjs";
 import * as kanban from "../lib/kanban-layout.mjs";
 import * as vocabulary from "../lib/workflow-vocabulary.mjs";
+import { panelHeaderStub } from "./helpers/panel-header-stub.mjs";
 
 /**
  * The bulk bar floats, so selecting a card does not move the board.
@@ -148,6 +149,7 @@ const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "
   "./build-control-strip": { BuildControlStrip: marker("BuildControlStrip") },
   "../board/track-lists": { BuildList: marker("BuildList") },
   "../board/board-column": { BoardColumn: marker("BoardColumn") },
+  "./panel-header": panelHeaderStub(),
   "../board/archived-delete-props": { archivedDeleteProps: () => undefined },
   "../board/use-delete-archived-cards": { useDeleteArchivedCards: () => async () => {} },
   "../board/board-cards": { BoardCard: marker("BoardCard") },

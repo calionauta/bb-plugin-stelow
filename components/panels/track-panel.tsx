@@ -116,7 +116,7 @@ export function TrackPanel({
   const View = PanelView as React.ComponentType<Record<string, unknown>>;
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
           {state.isInitialLoad ? <TrackSkeleton columns={4} /> : (
             <View
@@ -223,7 +223,7 @@ function TrackViewForKind({ state, dialogs, openCreate, openPresets, openCard, n
 function TrackPanelShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
           {children}
         </div>
