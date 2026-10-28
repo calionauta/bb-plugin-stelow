@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { recordedWorkspace } from "../lib/worker-workspace.mjs";
 import type { WorkerCard } from "./workers-types.js";
 
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
@@ -112,4 +113,47 @@ export async function continuingEnvironment(
 ): Promise<ThreadEnvironment> {
   const environment = await workerEnvironmentOf(deps, card).catch(() => null);
   return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
+}
+
+/**
+ * Remember the checkout a freshly spawned worker actually got.
+ *
+ * A card on a `new-worktree` preset works in a managed checkout, and every gate
+ * that matters — the host test run, the security scan, `done` — must bind to
+ * THAT directory. Nothing recorded it, so `cardWorkspace` answered the project's
+ * shared source and the gates ran against a tree the card never wrote; the
+ * refusal names the symptom and no card action clears it.
+ *
+ * Best-effort and post-spawn: a failure here must never turn a started worker
+ * into a failed start. `recordedWorkspace` refuses to guess, so an unknown
+ * environment or one that resolves to the project writes nothing.
+ */
+export async function recordWorkerWorkspace(
+  deps: {
+    bb: BbPluginApi;
+    getCard: (cardId: string) => WorkerCard | undefined;
+    updateCard: (cardId: string, fields: Record<string, unknown>) => void;
+  },
+  cardId: string,
+  attempts = 3,
+): Promise<void> {
+  const card = deps.getCard(cardId);
+  if (!card?.worker_thread_id) return;
+  // A fresh environment may still be provisioning when the spawn returns, and
+  // `workerEnvironmentOf` only answers for a READY one. Three short tries cover
+  // the gap without turning the spawn into a wait; a card that misses all three
+  // is recorded on its next restart.
+  let environment = await workerEnvironmentOf(deps, card).catch(() => null);
+  for (let attempt = 1; attempt < attempts && !environment?.path; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    environment = await workerEnvironmentOf(deps, card).catch(() => null);
+  }
+  if (!environment?.path) return;
+  const project = await deps.bb.sdk.projects
+    .get({ projectId: card.project_id })
+    .catch(() => null);
+  const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
+  const recorded = recordedWorkspace(environment.path, source?.path ?? null);
+  if (!recorded) return;
+  deps.updateCard(cardId, { ...recorded, workspace_host_id: environment.hostId ?? null });
 }

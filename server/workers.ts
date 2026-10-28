@@ -15,6 +15,7 @@ import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
 import {
   continuingEnvironment,
+  recordWorkerWorkspace,
   workerEnvironmentOf,
   type PresetParams,
   type ThreadEnvironment,
@@ -167,6 +168,10 @@ async function fresh(
   // an endless spawn loop. The episode clears on the first worker output
   // (`build-thread-sync`), which is the real proof that it started.
   if (!options?.automatic) resetSpawnRetry(deps.db, cardId);
+  // The worker got a checkout, and the gates must bind to it. Fire-and-forget:
+  // a started worker must not become a failed start because the environment was
+  // still provisioning, and the record is retried on the next restart.
+  void recordWorkerWorkspace(deps, cardId).catch(() => undefined);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }
