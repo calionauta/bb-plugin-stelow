@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.99.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.2...v0.99.0) (2026-10-28)
+
+
+### Features
+
+* one open, readable decision section on the card ([#462](https://github.com/calionauta/bb-plugin-stelow/issues/462)) ([94a8aa8](https://github.com/calionauta/bb-plugin-stelow/commit/94a8aa8fb21b5778e165c4a4d25bbce5b937ab20))
+
+
+### Bug Fixes
+
+* move the board's select mark to a line above the title ([#451](https://github.com/calionauta/bb-plugin-stelow/issues/451)) ([f7155b1](https://github.com/calionauta/bb-plugin-stelow/commit/f7155b10df84be3ec1973da25a6b80b4810e5d8f))
+
 ## [0.98.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.1...v0.98.2) (2026-10-28)
 
 
