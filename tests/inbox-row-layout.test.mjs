@@ -9,7 +9,7 @@ import {
 } from "./helpers/render-component.mjs";
 import { inboxAction } from "../lib/inbox-panel-state.mjs";
 import * as presentation from "../lib/inbox-event-presentation.mjs";
-import { splitProseSummary } from "../lib/question-presentation.mjs";
+import { splitProseSummary } from "../lib/question-prose.mjs";
 
 /**
  * An Inbox row must not spend its text column on its own buttons.
@@ -54,7 +54,7 @@ const InboxEntry = loadComponent("components/panels/inbox-row.tsx", "InboxEntry"
   // The real presentation/action modules, not fakes: the row's own copy and
   // state words are contracts (`tests/inbox-panel.test.mjs`), and a stub here
   // would let this file stay green while the row said something else.
-  "../../lib/question-presentation.mjs": { splitProseSummary },
+  "../../lib/question-prose.mjs": { splitProseSummary },
   "../../lib/inbox-event-presentation.mjs": presentation,
   "../../lib/inbox-panel-state.mjs": { inboxAction },
 });
