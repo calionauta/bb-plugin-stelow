@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.100.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.99.0...v0.100.0) (2026-10-28)
+
+
+### Features
+
+* the board shows a failed run, and a tap opens the reason ([#481](https://github.com/calionauta/bb-plugin-stelow/issues/481)) ([ce96f2e](https://github.com/calionauta/bb-plugin-stelow/commit/ce96f2eca31c0b40e851c911bf5623df27d7816e))
+
+
+### Bug Fixes
+
+* a card stops wearing a state its worker is not in ([#477](https://github.com/calionauta/bb-plugin-stelow/issues/477)) ([152764f](https://github.com/calionauta/bb-plugin-stelow/commit/152764f35922973521dc40a8eae56371f50d310e))
+* a card that recorded a worktree works in it ([#474](https://github.com/calionauta/bb-plugin-stelow/issues/474)) ([bb4bb4c](https://github.com/calionauta/bb-plugin-stelow/commit/bb4bb4cca3862ecce9f0c6a15561ccc7ded7e7a3))
+* a quota refusal is not a rate limit, and the advice says so ([#478](https://github.com/calionauta/bb-plugin-stelow/issues/478)) ([e874c62](https://github.com/calionauta/bb-plugin-stelow/commit/e874c62716606aa45a2d81d5fec47d09cc58ff53))
+* a resolved question ends the wait it described ([#469](https://github.com/calionauta/bb-plugin-stelow/issues/469)) ([ad4abc2](https://github.com/calionauta/bb-plugin-stelow/commit/ad4abc2c07c87e42a6d50d8de519a73bf90c7864))
+* a run's own output is not part of the card's document inventory ([#482](https://github.com/calionauta/bb-plugin-stelow/issues/482)) ([8184d3f](https://github.com/calionauta/bb-plugin-stelow/commit/8184d3f1b620b0416697b4304b494b9781fdc38a))
+* no auto-continue into a provider that just refused, and no lease past its TTL ([#480](https://github.com/calionauta/bb-plugin-stelow/issues/480)) ([290e580](https://github.com/calionauta/bb-plugin-stelow/commit/290e58006d564a93cf3e78721fd466790e54d232))
+* one panel load at a time, one queued behind it ([#472](https://github.com/calionauta/bb-plugin-stelow/issues/472)) ([f7810f8](https://github.com/calionauta/bb-plugin-stelow/commit/f7810f86fa6dc9215ab516f5ce9220820ed904f1))
+* raise happy-dom past CVE-2026-33943 ([#473](https://github.com/calionauta/bb-plugin-stelow/issues/473)) ([72f977d](https://github.com/calionauta/bb-plugin-stelow/commit/72f977d44a5a6b93642a94acc1deb3e05faadad6))
+* the depth bar skips a run's own output, while the gaps view still reads it ([#479](https://github.com/calionauta/bb-plugin-stelow/issues/479)) ([9159a26](https://github.com/calionauta/bb-plugin-stelow/commit/9159a26e5436a4f6a02b6e534d4eca0362e83082))
+* the inbox row stops feeding its text to its buttons ([#471](https://github.com/calionauta/bb-plugin-stelow/issues/471)) ([56648bd](https://github.com/calionauta/bb-plugin-stelow/commit/56648bdcd91862d76118c284c47fc0b56104ac3e))
+* the panel header keeps its explanation readable below lg ([#470](https://github.com/calionauta/bb-plugin-stelow/issues/470)) ([1abf8fc](https://github.com/calionauta/bb-plugin-stelow/commit/1abf8fc379a17e863eb85a8195e39fd615d60388))
+
 ## [0.99.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.2...v0.99.0) (2026-10-28)
 
 
