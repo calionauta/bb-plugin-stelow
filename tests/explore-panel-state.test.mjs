@@ -9,6 +9,7 @@ import {
   techniqueLabelsById,
 } from "../lib/explore-panel-state.mjs";
 import { loadComponent, renderTree } from "./helpers/render-component.mjs";
+import { panelHeaderStub } from "./helpers/panel-header-stub.mjs";
 
 // Explore is a config of the generic track panel, not a shell of its own. The
 // pins that used to guard that delegation as text — five regexes over four
@@ -297,6 +298,7 @@ const trackView = loadComponent("components/panels/track-panel-view.tsx", "Track
   "../board/board-filters": { FiltersBar: stubFor("FiltersBar") },
   "../board/board-view-toggle": { ViewToggle: stubFor("ViewToggle") },
   "../board/board-column": { BoardColumn: stubFor("BoardColumn") },
+  "./panel-header": panelHeaderStub(),
   "../board/archived-delete-props": { archivedDeleteProps: (args) => args },
   "../board/use-delete-archived-cards": { useDeleteArchivedCards: () => () => {} },
   "@get-bb/plugin-sdk/app": { useRpc: () => ({ call: async () => ({}) }) },

@@ -7,6 +7,7 @@ import {
   BUILD_BOARD_VISIBLE_COLUMNS,
 } from "../../lib/workflow-vocabulary.mjs";
 import { BuildControlStrip } from "./build-control-strip";
+import { BoardScrollHint, PanelHeader } from "./panel-header";
 import { BuildList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
 import { archivedDeleteProps } from "../board/archived-delete-props";
@@ -19,7 +20,6 @@ import { BulkBarSlot } from "../board/build-bulk-bar";
 import { boardBottomPadding } from "../../lib/bulk-bar-placement.mjs";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
-import { cn } from "../../lib/utils";
 import type { BuildPanelState } from "./build-panel-types";
 
 
@@ -47,36 +47,14 @@ type BuildHeaderProps = {
   onOpenGithub: () => void;
 };
 
-function BuildHeaderIntro({
-  attentionCount,
-  onAttention,
-}: Pick<BuildHeaderProps, "attentionCount" | "onAttention">) {
-  return (
-    <div className="min-w-0">
-      <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-        An AI agent carries each card through a structured workflow—from triage
-        to scope-by-scope execution—pausing for your decisions wherever your
-        review mode requires it.
-      </p>
-      {attentionCount > 0 ? (
-        <button
-          type="button"
-          onClick={onAttention}
-          className={cn(
-            "mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4",
-            "hover:underline focus-visible:outline focus-visible:outline-2",
-            "focus-visible:outline-primary dark:text-amber-300",
-          )}
-          aria-label={`Show the ${attentionCount} ${attentionCount === 1 ? "card" : "cards"} that need attention`}
-        >
-          {attentionCount} {attentionCount === 1 ? "item needs" : "items need"}{" "}
-          your attention
-        </button>
-      ) : null}
-    </div>
-  );
-}
+/**
+ * The header's copy. The sentence is the track's own explanation, so it keeps
+ * the full width of a narrow panel instead of being folded beside the actions.
+ */
+const BUILD_BLURB =
+  "An AI agent carries each card through a structured workflow—from triage to "
+  + "scope-by-scope execution—pausing for your decisions wherever your review "
+  + "mode requires it.";
 
 function BuildHeaderActions(props: BuildHeaderProps) {
   return (
@@ -118,13 +96,13 @@ function BuildHeaderActions(props: BuildHeaderProps) {
 
 function BuildHeader(props: BuildHeaderProps) {
   return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <BuildHeaderIntro
-        attentionCount={props.attentionCount}
-        onAttention={props.onAttention}
-      />
-      <BuildHeaderActions {...props} />
-    </header>
+    <PanelHeader
+      title="Build"
+      blurb={BUILD_BLURB}
+      attentionCount={props.attentionCount}
+      onAttention={props.onAttention}
+      actions={<BuildHeaderActions {...props} />}
+    />
   );
 }
 
@@ -255,7 +233,11 @@ function BuildBoardKanban({ state, onOpenCard }: {
           // The bottom padding reserves the strip the floating bulk bar occupies, and only
           // while it is present: an unselected board keeps its full height.
           `flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain ${boardBottomPadding(state.selectMode)}`,
-          "md:grid md:snap-none md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden",
+          // A tablet gets the grid, but not the fixed height: the header above it
+          // is stacked until `lg`, so reserving a viewport height here would make
+          // the page scroll and the columns scroll at once. Natural height until
+          // `lg`, then the bounded column scroller the desktop board is.
+          "md:grid md:snap-none lg:h-[clamp(20rem,calc(100dvh-17rem),48rem)] lg:overflow-y-hidden",
         ].join(" ")}
         style={{
           // The mobile tracks are applied as explicit widths on the children instead of a
@@ -346,14 +328,7 @@ export function BuildPanelView(props: Props) {
       {state.cards.length === 0 && !state.loading ? (
         <EmptyBuildState onNewIssue={props.onNewIssue} />
       ) : null}
-      {state.viewMode === "board" ? (
-        <p className="text-xs text-muted-foreground">
-          <span className="sm:hidden">Swipe sideways to view every stage.</span>
-          <span className="hidden sm:inline">
-            Use Shift + scroll to move across stages.
-          </span>
-        </p>
-      ) : null}
+      {state.viewMode === "board" ? <BoardScrollHint /> : null}
       <FlowStrip
         rpc={state.rpc}
         projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}

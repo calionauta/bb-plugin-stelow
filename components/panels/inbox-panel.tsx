@@ -211,7 +211,7 @@ export function InboxPanel() {
   const openAsk = openAskDoor(rpc, navigate, load);
 
   return (
-    <div className="h-full overflow-auto bg-background p-4 md:p-6">
+    <div className="h-full overflow-auto bg-background p-3 sm:p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-5">
         <header>
           <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
