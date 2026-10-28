@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { cn } from "../../lib/utils";
+import { PanelHeader, BoardScrollHint } from "./panel-header";
 import { kanbanGridColumns } from "../../lib/kanban-layout.mjs";
 import type { BoardView } from "../../lib/board-views.mjs";
 import type { BoardCardItem } from "../board/board-cards";
@@ -112,53 +112,39 @@ export type TrackViewProps = {
 function TrackHeader(props: TrackViewProps) {
   const attentionCount = props.state.attentionCount;
   return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight">{props.config.title}</h1>
-        <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-          {props.config.headerBlurb}
-        </p>
-        {attentionCount > 0 ? (
-          <button
-            type="button"
-            onClick={() => props.state.setAttention(true)}
-            className={cn(
-              "mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4",
-              "hover:underline focus-visible:outline focus-visible:outline-2",
-              "focus-visible:outline-primary dark:text-amber-300",
-            )}
-            aria-label={`Show the ${attentionCount} ${attentionCount === 1 ? "card" : "cards"} that need attention`}
+    <PanelHeader
+      title={props.config.title}
+      blurb={props.config.headerBlurb}
+      attentionCount={attentionCount}
+      onAttention={() => props.state.setAttention(true)}
+      actions={(
+        <>
+          <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={props.onNewTrack}>
+            <Icon name="Plus" className="h-4 w-4" aria-hidden />
+            {props.config.newLabel}
+          </Button>
+          <BucketGalleryButton
+            cards={(props.state.grouped.inbox ?? []) as unknown as BoardCardItem[]}
+            onOpenCard={(card) => props.onOpenCard(card, card.id)}
+          />
+          <Button
+            className="min-h-11 w-full sm:w-auto sm:flex-none"
+            variant="outline"
+            onClick={props.onOpenPresets}
+            title={props.config.presetsTitle}
           >
-            {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
-          </button>
-        ) : null}
-      </div>
-      <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-        <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={props.onNewTrack}>
-          <Icon name="Plus" className="h-4 w-4" aria-hidden />
-          {props.config.newLabel}
-        </Button>
-        <BucketGalleryButton
-          cards={(props.state.grouped.inbox ?? []) as unknown as BoardCardItem[]}
-          onOpenCard={(card) => props.onOpenCard(card, card.id)}
-        />
-        <Button
-          className="min-h-11 w-full sm:w-auto sm:flex-none"
-          variant="outline"
-          onClick={props.onOpenPresets}
-          title={props.config.presetsTitle}
-        >
-          <Icon name="Settings" className="h-4 w-4" aria-hidden />
-          Agent Presets
-        </Button>
-      </div>
-    </header>
+            <Icon name="Settings" className="h-4 w-4" aria-hidden />
+            Agent Presets
+          </Button>
+        </>
+      )}
+    />
   );
 }
 
 function TrackFilters({ state, config }: { state: TrackViewState; config: TrackViewConfig }) {
   return (
-    <div className="flex items-start gap-2 border-b pb-3">
+    <div className="flex flex-wrap items-start gap-2 border-b pb-3">
       <div className="min-w-0 flex-1">
         <FiltersBar
           projects={state.data.projects as unknown as Array<{ id: string; name: string }>}
@@ -199,7 +185,7 @@ function TrackBoard(props: TrackViewProps) {
   return (
     <div
       data-testid="kanban-board"
-      className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
+      className="grid justify-start gap-3 overflow-x-auto lg:h-[clamp(20rem,calc(100dvh-17rem),48rem)] lg:overflow-y-hidden"
       style={{ gridTemplateColumns: kanbanGridColumns(LIGHTWEIGHT_VISIBLE_COLUMNS, state.collapsedColumns) }}
     >
       {LIGHTWEIGHT_VISIBLE_COLUMNS.map((column) => (
@@ -230,12 +216,7 @@ export function TrackPanelView(props: TrackViewProps) {
       <TrackHeader {...props} />
       {props.dialogs}
       <TrackFilters state={props.state} config={props.config} />
-      {props.state.viewMode === "board" ? (
-        <p className="text-xs text-muted-foreground">
-          <span className="sm:hidden">Swipe sideways to view every stage.</span>
-          <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-        </p>
-      ) : null}
+      {props.state.viewMode === "board" ? <BoardScrollHint /> : null}
       <TrackBoard {...props} />
     </>
   );
