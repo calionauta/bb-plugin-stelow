@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ItemActions } from "./inbox-item-actions";
 import { Button } from "../ui/button";
-import { splitProseSummary } from "../../lib/question-presentation.mjs";
+import { splitProseSummary } from "../../lib/question-prose.mjs";
 import {
   inboxDisplayReasons,
   inboxEventPresentation,

@@ -1,32 +1,17 @@
-import { DisclosureSection } from "../disclosure";
-import { questionCopy } from "../../lib/question-presentation.mjs";
 import { QuestionBatch } from "./question-batch";
 import type { BatchItem, ExpiredQuestionItem, OpenArtifactHandler } from "./batch-types";
 
 /**
  * The RECOVERED (timed-out) question batch.
  *
- * Its own file rather than a tail on `question-batch.tsx` because it is a
- * different decision surface with a different shape: a collapsed section that
- * starts closed, where the live batch is the hero's own action. It also keeps
- * that file inside its line budget.
+ * It draws NO section of its own any more. The live batch and this one are the
+ * same decision ("what is the card still waiting on me for"), so
+ * `DetailQuestionSections` owns the one "Waiting for you" section — title,
+ * count, amber tone, open state — and this component keeps only the batch and
+ * the mapping from stored rows to the shared stepper. Two sections for one
+ * decision made the live copy look like an alert and the recovered copy like
+ * history, when both are the card's blocking work.
  */
-
-// The recovered batch is the one place a section is still the right shape, and
-// that is not a contradiction of the live question's container-less treatment.
-// An OPEN box around the action restates the hero, which is why the live batch
-// lost its frame. A COLLAPSED row with a header is what `disclosure.tsx` calls a
-// section of the card, and this batch is neither live nor blocking — the worker
-// already moved on — so `startsOpen()` correctly returns false for it.
-//
-// It keeps a header because the caveat has to live somewhere while the section
-// is closed: every option the reader picked is retained, and a later answer
-// cannot revise work already resumed. Without the row, a timed-out question
-// exists only as an unexplained extra count in the hero.
-// A timed-out question is the same question with no title of its own — the
-// recovered batch draws its prompt where the live one draws a heading. Named
-// rather than inlined so the mapping is one thing to read, and so the JSX above
-// does not carry a 150-character expression.
 function expiredBatchItems(questions: ExpiredQuestionItem[]): BatchItem[] {
   return questions.map((q) => ({
     id: q.id,
@@ -46,23 +31,13 @@ export function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenA
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   if (questions.length === 0) return null;
-  const copy = questionCopy();
   return (
-    <DisclosureSection
-      title={copy.recoveryHeading}
-      hint={`${questions.length} timed out`}
-    >
-      <p className="text-xs leading-5 text-muted-foreground">
-        These questions timed out before they were answered. Every option you picked is kept
-        exactly as you left it — a later answer cannot revise work the worker already resumed.
-      </p>
-      <QuestionBatch
-        cardId={cardId}
-        mode="expired"
-        questions={expiredBatchItems(questions)}
-        onAnswered={onAnswered}
-        onOpenArtifact={onOpenArtifact}
-      />
-    </DisclosureSection>
+    <QuestionBatch
+      cardId={cardId}
+      mode="expired"
+      questions={expiredBatchItems(questions)}
+      onAnswered={onAnswered}
+      onOpenArtifact={onOpenArtifact}
+    />
   );
 }

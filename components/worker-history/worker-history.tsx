@@ -235,7 +235,7 @@ export function WorkerSection({ card, detail, presetStale, restarting, onRestart
         <Pill tone="bg-muted text-muted-foreground" title={pillTitle}>
           {presetPill}
           {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+            <span className="ml-1.5 font-mono text-xs text-muted-foreground">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
           ) : null}
         </Pill>
         <Button size="sm" variant="outline" onClick={onPreset} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>

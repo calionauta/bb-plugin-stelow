@@ -51,6 +51,11 @@ function show(current, onOpenArtifact) {
 // the rows, and NO per-row Open buttons repeating the same file.
 show(question([briefDoc(), briefDoc(), briefDoc()]), () => {});
 assert.ok(screen.getByText("Brief for this question: brief.md"), "the shared brief embeds one reader above the rows");
+const briefDisclosure = screen.getByText("Brief for this question: brief.md")
+  .closest("div.rounded-md")?.querySelector("details");
+assert.ok(briefDisclosure, "the brief's reader is a disclosure, not a 46dvh block between the question and its options");
+assert.equal(briefDisclosure.open, false,
+  "evidence starts closed: a full reader above the rows pushed the first option past the fold on the live card");
 assert.ok(screen.getByText("Open full viewer ↗"), "the full viewer stays one click away");
 assert.ok(screen.getByText("Option 1"), "the rows still render under the brief");
 assert.equal(screen.queryAllByText(/Open:/).length, 0, "no per-row Open button repeats the shared file");

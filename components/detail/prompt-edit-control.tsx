@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { DisclosureChevron, SUMMARY_LINK } from "../disclosure";
-import { splitProseSummary } from "../../lib/question-presentation.mjs";
+import { splitProseSummary } from "../../lib/question-prose.mjs";
 
 export const PROMPT_MAX_CHARS = 20_000;
 

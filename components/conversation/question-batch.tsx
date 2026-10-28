@@ -1,10 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import { questionCopy } from "../../lib/question-presentation.mjs";
-import { isSplitQuestion, splitQuestionText, splitSelectionNotice, submitBlockReason } from "../../lib/question-presentation.mjs";
-import { artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
-import { BatchKeyLegend, BatchKeyOverlay, useBatchKeys } from "./batch-keys-ui";
+import { isSplitQuestion, splitQuestionText, splitSelectionNotice } from "../../lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "../../lib/split-proposal.mjs";
-import { boundaryOptions } from "./boundary-question-frame";
 import { preselectedAnswers, toggleSinglePick } from "../../lib/question-batch.mjs";
 import { BatchAnswerBody, BatchFooter } from "./batch-answer-body";
 import { useAnswerSubmit } from "./use-answer-submit";
@@ -115,140 +112,11 @@ function useBatchSelection(questions: BatchItem[]) {
 // The controls themselves live in ./batch-answer-body; this owns position,
 // framing, and submission.
 //
-// The frame went with the counters. It used to be a bordered amber panel with a
-// "?" badge and `role="alert"`, and it is rendered INSIDE the card's hero
-// section — which is already a section surface wearing the amber decision tone.
-// So a bordered box sat inside a bordered box, announcing "a question exists"
-// two lines below the hero that had already said exactly that, in amber text on
-// an amber wash. The hero owns the alert (HERO_STYLE.decision.alert); a second
-// live region for one fact is worse than one. What marks the boundary now is
-// position (the hairline in detail-question-sections), the default-open state,
-// and the option rows' own frames.
-/**
- * The batch's keyboard wiring, as one hook.
- *
- * Extracted from `BatchStepper`, which was over its function budget once the
- * accelerator landed. The stepper owns the shape of the surface; this owns what
- * each key does to the selection it is given.
- */
-/**
- * What each key does to this batch, as a plain object.
- *
- * Module scope rather than inline, so `useStepperKeys` reads as the wiring it is
- * and neither function crosses the size budget. Every handler that needs the
- * current question tolerates its absence, because this map is built on renders
- * where the batch is empty too.
- */
-function stepperKeyHandlers({
-  questions, sel, current, shownOptions, firstDocument, busy, focusNote, onSubmit, onOpenArtifact,
-}: {
-  questions: BatchItem[];
-  sel: ReturnType<typeof useBatchSelection>;
-  current: BatchItem | null;
-  shownOptions: BatchItem["options"];
-  firstDocument: BatchItem["options"][number] | undefined;
-  busy: boolean;
-  focusNote: () => void;
-  onSubmit: (answers: string[][]) => void;
-  onOpenArtifact?: OpenArtifactHandler;
-}): Parameters<typeof useBatchKeys>[0]["handlers"] {
-  return {
-    onPick: (optionIndex) => {
-      if (!current) return;
-      const option = shownOptions[optionIndex];
-      if (option) sel.pick(current, option.label);
-    },
-    onMove: sel.setIndex,
-    onFocusNote: focusNote,
-    onToggleSkip: () => {
-      if (!current) return;
-      if (sel.skipped.has(current.id)) sel.unskip(current);
-      else sel.skip(current);
-    },
-    onOpenDocument: () => {
-      if (!firstDocument?.artifact || !onOpenArtifact) return;
-      onOpenArtifact(firstDocument.artifact, artifactViewerModeForOption(firstDocument.label), firstDocument.label);
-    },
-    // The SAME guard the footer's button uses. Calling `onSubmit` bare sent a
-    // `needsNote` pick with an empty note — the exact case the field refusal
-    // exists to prevent — and allowed a second submit while one was in flight.
-    // A chord must shortcut the button's REFUSALS too, not just its action.
-    onSubmit: () => {
-      const blockReason = submitBlockReason(questions, sel.selected, sel.custom);
-      if (!sel.complete || busy || blockReason !== null) return;
-      onSubmit(questions.map((q) => sel.merged(q.id)));
-    },
-  };
-}
-
-function useStepperKeys({
-  questions,
-  sel,
-  allowSkip,
-  busy,
-  onOpenArtifact,
-  onSubmit,
-  focusNote,
-}: {
-  questions: BatchItem[];
-  sel: ReturnType<typeof useBatchSelection>;
-  allowSkip: boolean;
-  busy: boolean;
-  onOpenArtifact?: OpenArtifactHandler;
-  onSubmit: (answers: string[][]) => void;
-  focusNote: () => void;
-}) {
-  // Read the current question from the selection rather than taking it as an
-  // argument, because every hook above must run even for an empty batch — and
-  // an empty batch has no current question to pass in.
-  const current = sel.current;
-  // The options the reader can actually SEE. A boundary question may render none
-  // of them (`boundaryOptions`), and the digit keys must index that same list:
-  // indexing the raw options would let `1` pick an invisible option and complete
-  // the batch from a question the reader never answered.
-  const shownOptions = current ? boundaryOptions(current) : [];
-  const firstDocument = shownOptions.find((option) => option.artifact);
-  return useBatchKeys({
-    questions,
-    index: sel.index,
-    setIndex: sel.setIndex,
-    canSkip: allowSkip,
-    hasDocument: Boolean(firstDocument?.artifact) && Boolean(onOpenArtifact),
-    optionCount: shownOptions.length,
-    handlers: stepperKeyHandlers({
-      questions, sel, current, shownOptions, firstDocument, busy, focusNote, onSubmit, onOpenArtifact,
-    }),
-  });
-}
-
-/**
- * The stepper's accelerator, with the one indirection it needs.
- *
- * `o` focuses the note by walking down from the container, but the container
- * ref lives on the hook the handlers are passed TO — so one ref carries the
- * handler into the binding. Bundled here because the stepper is a layout
- * function and this is the whole of its keyboard setup.
- */
-function useStepperKeySetup({
-  questions, sel, allowSkip, busy, onOpenArtifact, onSubmit,
-}: {
-  questions: BatchItem[];
-  sel: ReturnType<typeof useBatchSelection>;
-  allowSkip: boolean;
-  busy: boolean;
-  onOpenArtifact?: OpenArtifactHandler;
-  onSubmit: (answers: string[][]) => void;
-}) {
-  // The ref breaks a cycle: `focusNote` must call the binding that is created
-  // by PASSING `focusNote`. One ref carries the callback into the binding, and
-  // only `keys` needs to leave this hook.
-  const focusNoteRef = useRef<{ focusNote: () => void } | null>(null);
-  const focusNote = useCallback(() => focusNoteRef.current?.focusNote(), []);
-  const keys = useStepperKeys({ questions, sel, allowSkip, busy, onOpenArtifact, onSubmit, focusNote });
-  focusNoteRef.current = keys;
-  return keys;
-}
-
+// There is NO keyboard accelerator, on purpose (2026-10-27). The digit, arrow
+// and chord layer was invisible enough that a reader could not tell it existed,
+// and it competed with the browser's own keys beside a live worker terminal.
+// The controls are buttons, inputs and a native details summary: every one is
+// reachable and operable with Tab/Enter/Space without a private router.
 export function BatchStepper({ cardId, questions, allowSkip, busy, error, submitLabel, onSubmit, onOpenArtifact }: {
   cardId?: string;
   questions: BatchItem[];
@@ -260,10 +128,6 @@ export function BatchStepper({ cardId, questions, allowSkip, busy, error, submit
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   const sel = useBatchSelection(questions);
-  // A hook, so it runs even for an empty batch — calling it after the early
-  // return below would change the hook count the moment a batch arrived
-  // (tests/question-surface-collapse.test.mjs pins the order).
-  const keys = useStepperKeySetup({ questions, sel, allowSkip, busy, onOpenArtifact, onSubmit });
   if (questions.length === 0) return null;
   const current = sel.current!;
   const copy = questionCopy();
@@ -272,7 +136,6 @@ export function BatchStepper({ cardId, questions, allowSkip, busy, error, submit
   const isDone = (id: string): boolean => isDoneById(questions, sel.skipped, sel.merged, id);
   return (
     <StepperSurface
-      keys={keys}
       questions={questions}
       sel={sel}
       current={current}
@@ -292,20 +155,14 @@ export function BatchStepper({ cardId, questions, allowSkip, busy, error, submit
 }
 
 /**
- * The batch's markup. Split from `BatchStepper` — which owns selection and the
- * keyboard binding — so neither function crosses the size budget, and so the
- * layout can be read without reading the state machine behind it.
- *
- * No ring, no `tabIndex` on the container: the keys arrive by bubbling from the
- * focused child, so this div is never a focus target, and a ring on a
- * non-focusable element is dead CSS. A `tabIndex={0}` would add an empty tab
- * stop before the real controls, which is worse than none.
+ * The batch's markup. Split from `BatchStepper` — which owns the selection
+ * state — so neither function crosses the size budget, and so the layout can be
+ * read without reading the state machine behind it.
  */
 function StepperSurface({
-  keys, questions, sel, current, copy, prompt, splitNotice, isDone,
+  questions, sel, current, copy, prompt, splitNotice, isDone,
   cardId, allowSkip, busy, error, submitLabel, onSubmit, onOpenArtifact,
 }: {
-  keys: { containerRef: React.RefObject<HTMLDivElement | null>; showKeys: boolean; closeKeys: () => void };
   questions: BatchItem[];
   sel: ReturnType<typeof useBatchSelection>;
   current: BatchItem;
@@ -322,7 +179,7 @@ function StepperSurface({
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   return (
-    <div ref={keys.containerRef} className="space-y-2">
+    <div className="space-y-2">
       <BatchQuestionHeading questions={questions} index={sel.index} copy={copy} current={current} prompt={prompt} onSelectDot={sel.setIndex} isDone={isDone} />
       <BatchAnswerBody
         cardId={cardId}
@@ -344,8 +201,6 @@ function StepperSurface({
         canSkip={allowSkip}
         onSubmit={onSubmit}
       />
-      <BatchKeyOverlay open={keys.showKeys} onClose={keys.closeKeys} />
-      <BatchKeyLegend multiQuestion={questions.length > 1} canSkip={allowSkip} />
     </div>
   );
 }

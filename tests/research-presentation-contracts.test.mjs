@@ -167,8 +167,8 @@ assert.match(
 );
 assert.match(
   cliAsk,
-  /englishQuestionContentError\(\s*group\.question,\s*group\.options,\s*\)/,
-  "the CLI rejects Portuguese structured question content before it can create a mismatched card form",
+  /englishQuestionContentError\(group\.question, group\.options\)\s*\n\s*\?\? retiredQuestionVocabularyError\(group\.question, group\.options\)/,
+  "the ask gate rejects Portuguese content AND the retired appetite vocabulary at one door, with the replacement named",
 );
 assert.match(
   cliAskRun,
@@ -239,8 +239,14 @@ assert.match(
 // file: the same topology, at its current home.
 assert.match(
   answerBody,
-  /\{sel\.isLastQuestion[\s\S]{0,220}?disabled=\{!sel\.complete \|\| busy \|\| blockReason !== null\}/,
-  "the batch action only renders on the last step and waits for every decision",
+  /if \(!\(sel\.isLastQuestion \|\| sel\.complete\)\) return null;/,
+  "Submit appears when the batch is done, not only on the last step: a reader who answered the last question "
+  + "first and then navigated back to the pending one otherwise has no visible door",
+);
+assert.match(
+  answerBody,
+  /function SubmitButton[\s\S]{0,900}?disabled=\{!sel\.complete \|\| busy \|\| blockReason !== null\}/,
+  "and it still waits for every decision and for the note refusal",
 );
 assert.match(
   answerBody,

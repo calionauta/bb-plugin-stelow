@@ -8,9 +8,9 @@ import type { BatchItem } from "./batch-types";
  * The question's heading: the step dots, its title, its prompt, and the two
  * advisories (staleness, split exclusivity) that travel with it.
  *
- * Cut out of `question-batch.tsx` when the keyboard layer moved in: that file
- * was at its line budget and a surface with a runner, a pair of door handles
- * and two paragraphs of placement reasoning is a good place to stop adding.
+ * Cut out of `question-batch.tsx` when that file reached its line budget: a
+ * surface with a runner, a pair of door handles and two paragraphs of placement
+ * reasoning is a good place to stop adding.
  */
 
 const DOT_TONE = "border-border bg-background/40 text-muted-foreground";
@@ -82,9 +82,12 @@ export function BatchQuestionHeading({ questions, index, copy, current, prompt, 
       {questions.length > 1 ? (
         <BatchStepDots questions={questions} index={index} onSelect={onSelectDot} isDone={isDone} copy={copy} />
       ) : null}
-      {current.title ? <div className="text-sm font-medium text-foreground">{current.title}</div> : null}
+      {current.title ? <div className="text-[15px] font-medium leading-6 text-foreground">{current.title}</div> : null}
       {current.boundary ? <BoundaryQuestionFrame boundary={current.boundary} /> : null}
-      {prompt ? <p className="text-sm leading-relaxed text-muted-foreground">{prompt}</p> : null}
+      {/* The question is the thing the reader came to answer, so it reads at
+          the request's own size (15px) in the foreground colour. At 14px muted
+          it was the same weight as the metadata explaining it. */}
+      {prompt ? <p className="text-[15px] leading-6 text-foreground">{prompt}</p> : null}
       {current.staleness ? <StalenessNotice staleness={current.staleness} /> : null}
     </>
   );

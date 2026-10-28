@@ -99,10 +99,11 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
  * is the whole point. The question used to render inside the hero's own
  * `SECTION_SURFACE` box, so a bordered box sat inside a bordered box and the
  * hairline between them separated nothing — a reader could not tell where the
- * status ended and the answerable question began, which is exactly what the
- * deleted amber frame had been doing badly. As a sibling the boundary is real:
- * one box is the status, the next is the decision, and the gap between them is
- * the card's own section rhythm.
+ * status ended and the answerable question began. As a sibling the boundary is
+ * real: one box is the neutral status, the next is the amber decision section
+ * (detail-question-sections), and the gap between them is the card's own
+ * section rhythm. The gold moved down with the questions on 2026-10-27; the
+ * hero no longer competes with the thing it points at.
  */
 function QuestionsAndSplit({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
   return (

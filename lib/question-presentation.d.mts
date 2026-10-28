@@ -14,6 +14,9 @@ export declare function questionCopy(): {
   continue: string;
   continueWithAnswers: (count: number) => string;
   recoveryHeading: string;
+  needsDecision: (count: number) => string;
+  liveLead: string;
+  expiredLead: string;
 };
 export declare function englishQuestionContentError(question: unknown, options?: Array<{ label?: unknown; description?: unknown }> | null): string | null;
 export declare function askTimelineLabels(options: { batched?: unknown; count?: unknown }): {
@@ -23,11 +26,6 @@ export declare function askTimelineLabels(options: { batched?: unknown; count?: 
 export declare function describeAskSubmission(value: unknown): {
   title?: string;
   detail?: string;
-};
-export declare const PROSE_SUMMARY_LIMIT: number;
-export declare function splitProseSummary(text: unknown, limit?: unknown): {
-  head: string;
-  tail: string | null;
 };
 export declare function submitBlockReason(
   questions: unknown,
