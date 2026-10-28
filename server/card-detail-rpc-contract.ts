@@ -127,6 +127,15 @@ export const cardDetailRpcContract = {
         }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
+        // The board's run-failure signal, so the detail card TYPE matches the
+        // board card type. The detail renders `blockingRun` (stage-scoped) — this
+        // is not a second place the reason is shown.
+        runFailure: z
+          .object({
+            label: z.string(),
+            detail: z.string(),
+          })
+          .nullable(),
         integrationPending: z.object({
           state: z.enum(["unpublished", "local", "unmerged"]),
           label: z.string(),

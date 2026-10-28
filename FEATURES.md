@@ -1295,8 +1295,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   reads Not started instead. The same stage/type summary is reused in the open card. A blue
   live border means a worker is executing; an amber attention border means the
   card is waiting on the user, so neither state needs another tag. Idle
-  recovery is a separate Resume action. Tiles signal failures with the Failed
-  chip only — the reason stays one hover away on the chip, while the full error
+  recovery is a separate Resume action. Tiles signal failures with one failure
+  chip in two sources: `Stopped with an error` when the worker thread stopped,
+  `Run failed` when the card's newest host run failed — the worker wins when
+  both coincide, and the run failure then lives only in Execution runs. The
+  reason rides the chip's hover tooltip, a tap-or-keyboard panel anchored to
+  the chip, and the card's accessible description, while the full error
   text and its retry live in the open card. The same compact hierarchy is reused
   in Build, Research, and Explore, so narrow columns do not turn a title or a
   workflow state into an ambiguous, clipped chip.

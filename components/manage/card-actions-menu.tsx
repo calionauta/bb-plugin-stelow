@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { useDismissMenu } from "@/components/ui/use-dismiss-menu";
 import {
   Dialog,
   DialogClose,
@@ -33,34 +34,10 @@ export type ManageCardState = {
   needsAttention: boolean;
 };
 
-// Dismiss-anywhere for popovers: an outside press or Escape closes and
-// returns focus to the trigger. The close callback should be stable so
-// listeners attach once per open.
-function useDismissMenu(open: boolean, onClose: () => void) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutsidePress = (event: MouseEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return;
-      onClose();
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-      triggerRef.current?.focus();
-    };
-    document.addEventListener("mousedown", closeOnOutsidePress);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsidePress);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open, onClose]);
-  return { rootRef, triggerRef };
-}
+// Dismiss-anywhere for popovers: an outside press or Escape closes and returns
+// focus to the trigger. The hook now lives in `components/ui/use-dismiss-menu.ts`
+// so the board's run-failure popover shares ONE owner of the listener contract —
+// see that file for the outside-press focus defect it fixed while moving.
 
 // The open menu: reclassify plus the policy-gated destructive entries,
 // separated when both families show.

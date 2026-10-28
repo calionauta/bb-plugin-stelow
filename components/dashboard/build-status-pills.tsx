@@ -227,6 +227,18 @@ export function PausedChip({ label, detail }: { label: string; detail: string })
  * alarm rather than two. This is the label the border could not carry —
  * `card_e3u00eb4` was outlined in amber like a card waiting for an answer,
  * and nothing on the card said otherwise.
+ *
+ * ONE CHIP, TWO SOURCES. This renders whichever failure the card has: the worker
+ * thread stopping (`errorActivityLabel`, labelled "Stopped with an error") or the
+ * newest host run failing (`runFailure`, labelled "Run failed"). `CardMetaRows`
+ * picks between them and there is no second chip — so two reds are structurally
+ * impossible rather than merely forbidden by a precedence rule.
+ *
+ * The docstring above used to imply the border always pulses for an errored card.
+ * It does not: `liveBorderClass` returns "" unless the activity is
+ * error/running/awaiting-answer or the card needs attention, so an idle card
+ * showing this chip has a still border. Corrected here rather than left to mislead
+ * the next reader.
  */
 export function ErrorChip({ label, detail }: { label: string; detail: string }) {
   return (

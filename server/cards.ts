@@ -15,6 +15,7 @@ import { isDoneStatus } from "../lib/trackables.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
 import { readCardStatus } from "../lib/card-status.mjs";
 import { stallCount } from "../lib/worker-ledger.mjs";
+import { runFailure } from "../lib/run-failure.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
 import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -168,6 +169,35 @@ function projectLabel(projectNames: Map<string, string>, row: WorkerCard): strin
   return projectNames.get(row.project_id) ?? row.project_id;
 }
 
+/**
+ * The card's derived signals, read once per row and spread into the projection.
+ *
+ * These travel BESIDE `activity`, never inside it. Each is a measurement or a
+ * recorded fact about something other than the card's own thread state, so folding
+ * any of them into `activity` would erase the last verified projection the board is
+ * showing — the mistake `readMissSince` is annotated against below.
+ *
+ * They live here, in `server/cards.ts`, rather than in a helper module because
+ * `tests/creation-contracts.test.mjs` pins the literal
+ * `hasPendingReview: hasPendingReview(deps.db, row.id)` against the server source.
+ * Keeping that expression verbatim keeps the pin green; moving it to a new file or
+ * renaming the argument turns it red. The grouping exists for the LINE BUDGET, not
+ * for taste: `enrichCard` sat at 49 of a 50-line ceiling, so the four derivations move
+ * out as one spread and the new field fits. Never solve a budget by compressing a
+ * comment or packing a line — both fail `quality:shape`.
+ */
+function cardSignals(deps: CardsDeps, row: WorkerCard) {
+  return {
+    hasPendingReview: hasPendingReview(deps.db, row.id),
+    integrationPending: integrationPending(deps.db, row),
+    stallCount: stallCount(deps.db, row.id),
+    // The newest failed host run, as the tile's second failure source. It is a
+    // recorded fact about a run, not about the worker thread, so it travels
+    // beside `activity` like the other three.
+    runFailure: runFailure(deps.db, row),
+  };
+}
+
 async function enrichCard(
   deps: CardsDeps,
   workspaceFor: (card: WorkerCard) => Promise<Workspace | null>,
@@ -205,13 +235,11 @@ async function enrichCard(
     // would erase the last verified projection the board is currently showing.
     readMissSince: row.read_miss_since ?? null,
     needsAttention: attention !== null,
-    hasPendingReview: hasPendingReview(deps.db, row.id),
-    integrationPending: integrationPending(deps.db, row),
+    ...cardSignals(deps, row),
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
     ...idleClock(row),
-    stallCount: stallCount(deps.db, row.id),
     scopeSummary: scopeTally(summary),
     doingNow: summary.doingNow,
     executingScope: summary.executingScope,

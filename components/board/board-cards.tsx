@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { CardSelectRow } from "./card-select-row";
 import { useReturnFocus } from "./use-return-focus";
+import { ReasonPopover } from "../ui/reason-popover";
 import { errorActivityLabel, idleDurationLabel, liveBorderClass, pausedActivityLabel, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview } from "../../lib/card-attention.mjs";
 import { formatDuration } from "../../lib/card-metrics.mjs";
@@ -12,7 +13,6 @@ import {
   ActivityPill,
   BuildStatusPills,
   DoingNowPill,
-  ErrorChip,
   IntegrationPendingChip,
   PausedChip,
   LightweightStatusPills,
@@ -66,6 +66,19 @@ export function CardRetryButton({ cardId, label }: { cardId: string; label: stri
  * grows: every chip costs a line of conditional and the render function was on
  * its size budget before the pause fix needed a comment in it.
  */
+/**
+ * The failure sentence the card's accessible description must carry, or null.
+ *
+ * Both card roots are `role="button"`, and that role makes descendants
+ * presentational — so a chip's own text and its `title=` are removed from the
+ * accessibility tree. Hover reaches a sighted pointer user and nothing else; a
+ * screen-reader user would get the chip's existence and never the reason.
+ */
+function cardFailureSentence(card: BoardCardItem): string | null {
+  const stopped = errorActivityLabel(card) ?? card.runFailure;
+  return stopped ? `${stopped.label}: ${stopped.detail}` : null;
+}
+
 function CardAlertChips({ card, stopped, paused }: {
   card: BoardCardItem;
   stopped: { label: string; detail: string } | null;
@@ -73,7 +86,7 @@ function CardAlertChips({ card, stopped, paused }: {
 }) {
   return (
     <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-      {stopped ? <ErrorChip label={stopped.label} detail={stopped.detail} /> : null}
+      {stopped ? <ReasonPopover label={stopped.label} detail={stopped.detail} /> : null}
       {paused ? <PausedChip label={paused.label} detail={paused.detail} /> : null}
       {card.integrationPending ? (
         <IntegrationPendingChip
@@ -114,7 +127,12 @@ function CardContextRow({ card }: { card: BoardCardItem }) {
 }
 
 export function CardMetaRows({ card }: { card: BoardCardItem }) {
-  const stopped = errorActivityLabel(card);
+  // ONE failure slot, TWO SOURCES: the worker thread's failure wins, and the
+  // newest failed host run is the fallback. Collapsing them here is what makes
+  // two red chips structurally impossible rather than merely forbidden by a
+  // precedence rule — and the run failure is what a card whose worker is fine
+  // but whose run died had no way to show.
+  const stopped = errorActivityLabel(card) ?? card.runFailure;
   const paused = pausedActivityLabel(card);
   // ONE chip per state. A paused card used to wear two — `Paused` from
   // `pausedActivityLabel` and `Paused. Resume it.` from an amber attention
@@ -124,6 +142,7 @@ export function CardMetaRows({ card }: { card: BoardCardItem }) {
   // on the border, which is the surface that still has something new to say
   // (see `liveBorderClass`).
   const showAlerts =
+    card.runFailure != null ||
     stopped != null ||
     paused != null ||
     card.integrationPending != null ||
@@ -197,10 +216,14 @@ function CardShell({ card, ariaNoun, selected, selectMode, onToggleSelection, on
   const openThread = useCallback(() => {
     if (card.workerThreadId) navigate.toThread(card.workerThreadId);
   }, [navigate, card.workerThreadId]);
+  const failureSentence = cardFailureSentence(card);
   const activate = selectMode ? toggleSelection : open;
+  // `role="button"` makes descendants presentational, so the chip's own text and
+  // its `title=` never reach a screen reader. The failure sentence rides the
+  // root's label — the only channel that does.
   const label = selectMode
     ? `${selected ? "Deselect" : "Select"} ${card.displayName}.`
-    : `Open ${ariaNoun} ${card.displayName}.`;
+    : `Open ${ariaNoun} ${card.displayName}.${failureSentence ? ` ${failureSentence}` : ""}`;
   return (
     <div
       role="button"
