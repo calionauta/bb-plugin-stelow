@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isRateLimitFailure, rateLimitAdvice, retryWindowFromError } from "../lib/rate-limit-refusal.mjs";
+import { isQuotaFailure, isRateLimitFailure, quotaAdvice, rateLimitAdvice, retryWindowFromError } from "../lib/rate-limit-refusal.mjs";
 import { isOwnershipRefusal } from "../lib/ownership-refusal.mjs";
 
 /**
@@ -99,7 +99,41 @@ for (const bad of [
   assert.match(rateLimitAdvice(bad), /wait a while/, "and the advice degrades to a phrase rather than a wrong number");
 }
 
+// --- The refusal that only LOOKS like a rate limit. ------------------------
+// Card card_gaaj2ke9's error was "Insufficient account funds" wrapped in a
+// message that also says "Rate limit exceeded", so it matched the rate-limit
+// branch and the hero advised waiting — advice that never clears an unfunded
+// account.
+const QUOTA = 'Internal error: Rate limit exceeded. Please try again later.: '
+  + '{"service":"session","errorName":"provider.quota"}';
+
+assert.equal(isQuotaFailure(QUOTA), true, "the quota cause is recognised by name");
+assert.equal(
+  isRateLimitFailure(QUOTA),
+  false,
+  "and it is NOT a rate limit: waiting is the advice that never clears it",
+);
+assert.equal(
+  rateLimitAdvice(QUOTA),
+  null,
+  "so the rate-limit sentence does not claim it",
+);
+const quota = quotaAdvice(QUOTA);
+assert.ok(quota, "and the quota sentence exists");
+assert.match(quota, /account balance/, "naming the real cause");
+assert.match(quota, /Top up/, "and the action that clears it");
+assert.doesNotMatch(quota, /wait /, "never telling the reader to wait");
+
+// A genuine 429 keeps its own advice, unchanged.
+const realLimit = "Server requested 21600s retry delay (max: 90s). 429 Rate limit exceeded.";
+assert.equal(isQuotaFailure(realLimit), false);
+assert.equal(isRateLimitFailure(realLimit), true);
+assert.equal(quotaAdvice(realLimit), null);
+
+// Neither cause answers to "answer below".
+assert.equal(quotaAdvice("boom"), null, "an ordinary error gets neither sentence");
+
 console.log(
   "rate-limit refusal ok: the cause is recognised by status code, the window is read or refused, "
-    + "and the advice names a door instead of the answer box",
+    + "the advice names a door instead of the answer box, and a quota refusal is not a clock",
 );
