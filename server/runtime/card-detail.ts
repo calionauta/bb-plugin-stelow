@@ -27,6 +27,7 @@ import { readHostHold } from "./worker-hold.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];
+import { runFailure } from "../../lib/run-failure.mjs";
 import type {
   Attachment,
   CardDetailDeps,
@@ -61,7 +62,11 @@ async function readCardDetail(
     const card = deps.getCard(cardId);
     if (!card) throw new Error(deps.cardNotFound);
     const inputs = await loadDetailInputs(deps, card, cardId);
-    return assembleDetail(deps, inputs);
+    const detail = await assembleDetail(deps, inputs);
+    // The board's run-failure signal, so the detail card TYPE matches the board
+    // card type. The detail renders `blockingRun` (stage-scoped) instead; this is
+    // not a second place the reason is shown.
+    return { ...detail, card: { ...detail.card, runFailure: runFailure(deps.db, card) } };
 }
 
 /**

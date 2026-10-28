@@ -67,6 +67,12 @@ for (const [path, deliverable] of [
   ["context/state.md", false],
   ["drafts/draft-1.md", false],
   ["plans/nested/drafts/draft-2.md", false],
+  // A run's own output is evidence, not a card document. Its report carries a
+  // deliverable title, which is exactly why the inventory has to exclude the
+  // directory rather than trust the name.
+  ["runs/exec_8r8mkbkq/audit/evidence.md", false],
+  ["runs/exec_8r8mkbkq/audit/requirements.md", false],
+  [".stelow/2026-10-01/sw-card_x/runs/exec_1/verification/ui-review.md", false],
   ["plans\\spec-tech_v1.md", true],
   ["context/recon-receipt.json", false],
   ["session.log", false],
