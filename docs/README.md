@@ -68,8 +68,20 @@ None pending — all operator guides migrated (see above).
 - `audits/*.md` - the dated records as a class; `audits/README.md`
   enumerates them, so a new record needs no second list here.
 - `audits/` — dated audit and evaluation records, deleted as a unit when stale.
-  `2026-10-23-scope-6-record.md` covers the prompt cache economy of the
-  research and explore spawns and the per-track completion rule.
+  Seven 2026-10-23 records:
+  - `2026-10-23-scope-1-record.md` — boundary contract between card, host and
+    worker.
+  - `2026-10-23-scope-2-record.md` — one reader for the current stage, where
+    seven regexes stood.
+  - `2026-10-23-scope-2-s4-record.md` — the timeline applies the stage policies
+    to skipped stages.
+  - `2026-10-23-scope-4-rest-record.md` — claims, the merge lock, and the
+    reconciler's cost.
+  - `2026-10-23-scope-5-record.md` — clause integrity for the user-input
+    contract.
+  - `2026-10-23-scope-6-record.md` — the prompt cache economy of the research
+    and explore spawns, and the per-track completion rule.
+  - `2026-10-23-scope-7-record.md` — dead code deleted, stale prose corrected.
 - `runs/` — per-card execution evidence, never linked from user docs.
 
 ## Rules
