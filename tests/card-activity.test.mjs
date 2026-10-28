@@ -1,8 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { codeOf } from "./helpers/source-code.mjs";
 import { effectiveActivity, attentionFromQuestions } from "../lib/card-activity.mjs";
 
 /**
@@ -68,37 +64,14 @@ assert.equal(attentionFromQuestions("awaiting-answer", null), "question");
 assert.equal(attentionFromQuestions("idle", 4), "question");
 assert.equal(attentionFromQuestions("running", 0), null);
 
-// --- 8. Both projections call the shared rule. -----------------------------
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const board = codeOf(readFileSync(join(root, "server/cards.ts"), "utf8"));
-const detail = codeOf(readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"));
-
-for (const [name, source] of [["board", board], ["detail", detail]]) {
-  const boardImport =
-    'import { effectiveActivity } from "../lib/card-activity.mjs"';
-  const detailImport =
-    'import { effectiveActivity as projectedActivity } from "../../lib/card-activity.mjs"';
-  assert.ok(
-    source.includes(boardImport) || source.includes(detailImport),
-    `the ${name} projection imports the shared activity rule`,
-  );
-}
-
-// The regression this guards: returning the stored column unchanged after a
-// successful read of zero. Asserted on the shape, because the shape is what a
-// future edit restores.
-assert.doesNotMatch(
-  board,
-  /pending\.length > 0 \|\| deps\.openExpiredQuestionIds\(row\.id\)\.length > 0\s*\?\s*"awaiting-answer"\s*:\s*activity/,
-  "the board path no longer falls back to the stored column when nothing is open",
-);
-assert.doesNotMatch(
-  detail,
-  /if \(openQuestions > 0\) return "awaiting-answer";\s*\n\s*return card\.activity/,
-  "the detail path no longer falls back to the stored column when nothing is open",
-);
+// --- 8. The wiring is a typecheck contract, not a text pin. ----------------
+// `server/cards.ts` and `server/runtime/card-detail.ts` both import
+// `effectiveActivity`; a missing export or a dropped import fails
+// `npm run typecheck`. That is a real gate, so this file asserts the rule and
+// leaves the wiring to it — a source-text pin here would pass on broken logic
+// and break on a rename, which is the trade the source-pin ratchet refuses.
 
 console.log(
-  "card activity ok: a resolved question ends the wait, an unreadable source does not, "
-  + "and both projections share the rule",
+  "card activity ok: a resolved question ends the wait, "
+  + "an unreadable source does not, and a worker state outranks the count",
 );
