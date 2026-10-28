@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifySourcePin } from "../scripts/source-pin-classify.mjs";
-import { discoveredRead, entrypointRead, literalRead, noReads } from "./fixtures/source-pin-samples.mjs";
+import { discoveredRead, entrypointRead, literalRead, noReads, proseAboutTheRule, walkInCode } from "./fixtures/source-pin-samples.mjs";
 
 /**
  * The ratchet's counting rule, tested on its own.
@@ -16,6 +16,22 @@ import { discoveredRead, entrypointRead, literalRead, noReads } from "./fixtures
  * The sample sources live in tests/fixtures/ — a test file embedding
  * `readFileSync("…")` in a template literal would itself look like a pin.
  */
+
+test("a file that only DESCRIBES the rule does not count as breaking it", async () => {
+  // The classifier's own test sat in the census for six weeks: its docstring
+  // explains "a walk that discovers files with `readdirSync`", and the
+  // whole-file directory heuristic read that sentence as code. A rule that
+  // counts prose about itself is a rule that cannot be documented.
+  const result = classifySourcePin(proseAboutTheRule());
+  assert.equal(result.sourcePin, false, "prose about a pin is not a pin");
+  assert.equal(result.dynamicDirPin, false);
+});
+
+test("the same signal in CODE still counts", async () => {
+  // Stripping comments must not blind the rule it protects.
+  const code = walkInCode();
+  assert.equal(classifySourcePin(code).dynamicDirPin, true);
+});
 
 test("a literal read of a source file is a pin", () => {
   assert.equal(classifySourcePin(literalRead("server/runtime/card-detail.ts")).sourcePin, true);

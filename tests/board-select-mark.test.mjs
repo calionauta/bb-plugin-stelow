@@ -76,6 +76,8 @@ const BoardCard = loadComponent("components/board/board-cards.tsx", "BoardCard",
   "../../lib/card-attention.mjs": cardAttention,
   "../../lib/card-metrics.mjs": cardMetrics,
   "../../lib/doing-now.mjs": doingNow,
+
+  "../ui/reason-popover": { ReasonPopover: (props) => ({ type: "span", props, children: [] }) },
 });
 
 const card = {

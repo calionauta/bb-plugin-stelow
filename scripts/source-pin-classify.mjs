@@ -31,6 +31,13 @@ export const FIXTURE_PATTERN = /(\.state\.md|package\.json|skills\/|data\/|stelo
 // skills fixtures.
 export const SOURCE_DIRECTORY_PATTERN = /["'`](?:server|components|hooks|lib)(?:\/|["'`])/;
 
+/** The file without its comments, so a sentence about a rule is not the rule. */
+export function stripComments(text) {
+  return String(text ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 /** Every `readFileSync(...)` call, as a balanced-paren slice of one window. */
 export function readCallWindows(text) {
   const windows = [];
@@ -65,6 +72,13 @@ export function classifySourcePin(text) {
   if (windows.length === 0) return { sourcePin: false, entrypointPin: false, windows: 0, dynamicDirPin: false };
   const entrypointPin = windows.some((window) => ENTRYPOINT_PATTERN.test(window));
   const literalSourcePin = windows.some((window) => SOURCE_PATTERN.test(window));
-  const dynamicDirPin = /readdirSync/.test(text) && SOURCE_DIRECTORY_PATTERN.test(text);
+  // Prose is stripped before the discovered-directory signal is read. A test that
+  // DOCUMENTS the rule ("a walk that discovers files with `readdirSync`…") was
+  // being counted as one that commits it: the classifier's own test file, whose
+  // only real reads are fixtures, sat in the census for six weeks and cost a slot
+  // the ratchet may never grow. The read windows above still judge literal text —
+  // a read call is code — but the directory signal is a whole-file heuristic and
+  // must not read comments.
+  const dynamicDirPin = /readdirSync/.test(stripComments(text)) && SOURCE_DIRECTORY_PATTERN.test(stripComments(text));
   return { sourcePin: literalSourcePin || dynamicDirPin, entrypointPin, windows: windows.length, dynamicDirPin };
 }
