@@ -34,6 +34,33 @@ assert.equal(shouldAutoContinue({ ...base, stage: "audit" }).proceed, false, "th
 assert.equal(shouldAutoContinue({ ...base, transitioningIntoIdle: false }).proceed, false, "only a fresh idle edge resumes (no per-poll loops)");
 assert.equal(shouldAutoContinue({ ...base, progressed: false }).proceed, false, "a silent stop stays paused (stuck, not chatty)");
 
+// A provider that refused the last turn is not a worker that stopped.
+//
+// Measured case: thread thr_3ai9we6jap failed its spawn turn on
+// `provider.quota`, idled 18 hours, and was nudged on its next idle edge with
+// "Continue the Stelow workflow now from the current stage" — into the same
+// refusal. The nudge counted the failure text as "progress" because it differed
+// from the last idle baseline, which is the hole this closes.
+const QUOTA_REFUSAL = 'Internal error: Rate limit exceeded. Please try again later.: '
+  + '{"service":"session","errorName":"provider.quota"}';
+const RATE_REFUSAL = "Server requested 21600s retry delay (max: 90s). 429 Rate limit exceeded.";
+
+for (const [label, lastError] of [["quota", QUOTA_REFUSAL], ["rate limit", RATE_REFUSAL]]) {
+  const decision = shouldAutoContinue({ ...base, lastError });
+  assert.equal(decision.proceed, false, `a ${label} refusal blocks the nudge`);
+  assert.match(decision.reason, /provider refused/, `and the reason names the provider, not the worker`);
+}
+assert.equal(
+  shouldAutoContinue({ ...base, lastError: "the worker threw a TypeError" }).proceed,
+  true,
+  "an ordinary failure is not a provider refusal and keeps the existing behaviour",
+);
+assert.equal(
+  shouldAutoContinue({ ...base, lastError: null }).proceed,
+  true,
+  "no recorded error changes nothing",
+);
+
 // Budget: consecutive nudges without a stage advance stop at the cap, then
 // the card falls through to the human-visible paused path.
 assert.equal(MAX_AUTO_CONTINUES >= 1, true, "the budget is a positive cap");

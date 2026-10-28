@@ -259,6 +259,43 @@ assert.equal(depths[0].path, "plans/spec-product_v1.md", "path named");
 assert.ok(depths[0].failures.length > 0, "failures detailed");
 assert.deepEqual(buildDocDepths("no manifest here", () => null), [], "no manifest means no depths");
 
+// A run's own output is evidence, not a deliverable: the native audit stage
+// writes its report under runs/exec_*/audit/ with the same title a deliverable
+// carries, and judging it demanded a gaps: registry the run never authored.
+// `done`'s audit trail requires every .md registered, so registering one made
+// completion impossible — card card_qimjr9z4's exact dead end. The gap FLEET
+// view still reads these files; only the depth bar skips them.
+const runState = `artifacts:
+  - stage: audit
+    kind: document
+    path: runs/exec_1/audit/evidence.md
+    label: evidence
+  - stage: audit
+    kind: document
+    path: runs/exec_1/audit/requirements.md
+    label: requirements
+`;
+const runFiles = {
+  "runs/exec_1/audit/evidence.md": "# Execution Critique Report\n" + pad(900),
+  "runs/exec_1/audit/requirements.md": "# Execution Critique Report\n" + pad(900),
+};
+assert.deepEqual(
+  buildDocDepths(runState, (path) => runFiles[path] ?? null),
+  [],
+  "a run's report is not judged as a deliverable",
+);
+const deliverableState = `artifacts:
+  - stage: audit
+    kind: document
+    path: audit/report.md
+    label: execution critique
+`;
+assert.equal(
+  buildDocDepths(deliverableState, () => "# Execution Critique Report\n" + pad(900)).length,
+  1,
+  "a deliverable critique still faces the depth bar",
+);
+
 // Explore verify renders depth failures; old 3-arg calls keep working.
 const failReport = exploreVerifyReport("card_1", "shape-up", false, ["expected at least 800 words, found 120"]);
 assert.equal(failReport.pass, false, "depth failure fails");
