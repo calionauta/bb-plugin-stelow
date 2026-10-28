@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
+import { effectiveActivity } from "../lib/card-activity.mjs";
 import { defaultProjectSource, resolveCardWorkspacePath } from "../lib/card-workspace.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
@@ -221,15 +222,17 @@ async function liveActivity(
   deps: CardsDeps,
   row: WorkerCard,
 ): Promise<"idle" | "running" | "awaiting-answer" | "error" | "held"> {
-  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
+  const activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
   if (activity === "error" || !row.worker_thread_id) return activity;
   const pending = await deps.fetchPendingQuestions(row.worker_thread_id);
-  // An unreadable question source is UNKNOWN, not zero: keep the last verified
-  // projection instead of claiming the card has nothing to answer.
-  if (pending === null) return activity;
-  return pending.length > 0 || deps.openExpiredQuestionIds(row.id).length > 0
-    ? "awaiting-answer"
-    : activity;
+  // An unreadable question source is UNKNOWN, not zero: `null` keeps the last
+  // verified projection. A successful read of zero ENDS an await — the stored
+  // column is never rewritten when its question is answered or expires, so
+  // trusting it here left three cards amber with nothing to answer.
+  const openQuestions = pending === null
+    ? null
+    : pending.length + deps.openExpiredQuestionIds(row.id).length;
+  return effectiveActivity(activity, openQuestions);
 }
 
 function attentionState(
