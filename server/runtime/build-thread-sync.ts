@@ -331,6 +331,7 @@ async function resumeWithProgress(
     progressed,
     autoCount: snapshot.card.auto_continue_count ?? 0,
     autoStage: snapshot.card.auto_continue_stage ?? null,
+    lastError: snapshot.card.last_error ?? null,
   });
   const vetoed = decision.proceed &&
     !(await deps.vetContinuation(snapshot.lastOutput == null
