@@ -3657,6 +3657,39 @@ before serialising, so it refused the whole call. Fixed at the three call sites 
 such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
 reintroduce it.
 
+**A quota refusal stopped being advised as a rate limit.** The provider wraps
+*"Insufficient account funds"* inside a message that also reads *"Rate limit exceeded"*, so
+the rate-limit branch matched first and the hero told the reader to wait — advice that never
+clears an unfunded account. `isQuotaFailure` now names that cause, `rateLimitAdvice` refuses
+to claim it, and `quotaAdvice` states the only card-side fix (top up, or switch this card's
+provider or model). A genuine 429 keeps exactly the advice it had.
+`tests/rate-limit-refusal.test.mjs` pins both directions.
+
+**A card archived by a drag stopped wearing a live worker state.** Five cards archived
+within three seconds of each other by a bulk drag kept `activity` at `error` (three),
+`running` (one) and `awaiting-answer` (one), so the hero rendered a live-looking state on a
+card the reader had just put away. `cancelCard` always wrote `status: archived` **and**
+`activity: idle`; the drag reached the same terminal place by a path that wrote only
+`status`. A terminal card now projects no worker state from any path.
+
+**A deleted worker thread stopped being re-reported as missing.** Two cards sat on
+`HTTP 404: Thread not found` with the dead id still recorded: every poll rewrote the same raw
+host string, every Retry re-read the same missing thread, and one still advertised "The agent
+is waiting for your answer to continue" over a thread that had been deleted. The string
+appeared nowhere in `server/**` or `lib/**`, so nothing could tell a gone thread from a host
+hiccup. The projection now clears the dead id and names the action (start a new worker),
+while an ordinary read failure keeps both the raw message and the worker id — a transport
+fault must not orphan a worker that is still there.
+
+**A provider refusal stopped earning an automatic nudge.** A thread whose turn failed on
+`provider.quota` idled for 18 hours and was then told "Continue the Stelow workflow now from
+the current stage" on its next idle edge — into the same refusal, which counted as progress
+because the output differed from the last idle baseline. Auto-continue now refuses when the
+card's last error is a quota or rate-limit refusal, and says so; an ordinary failure keeps
+the existing behaviour. In the same pass, a file claim can no longer outlive its own TTL: six
+claims for one parked card held `AGENTS.md`, `package.json` and `FEATURES.md` for 67 hours
+against a 30-minute TTL, blocking every other card on the shared checkout.
+
 **A worker's orientation cost is measured and shown, not assumed.** A worker's first
 turn is the most expensive and least informed: it has just been handed a
 12,000-character prompt naming its stage, and the skill family it used to be told to
