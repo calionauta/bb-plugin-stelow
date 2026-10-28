@@ -17,7 +17,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   full controls (real inputs, min-h-11 targets) — no hidden select.
   Quality defaults to production, exploration to 3 +
   hybrid, acceptance tests to Strict (Advisory on experimental cards);
-  a legacy appetite default maps once (rigor always strongest). The
+  a legacy appetite default maps once (rigor always strongest), while a
+  newly seeded state file carries the knobs only — the deprecated appetite
+  alias is no longer written, and old state files still read it once. The
   exploration row discloses which design archetypes each count runs
   (2→A,D · 3→A,D,E · 4→A,B,D,E · 5→all, plus hybrid; 1 stays
   model-chosen) behind a closed "Which archetypes" toggle with one-line
@@ -637,11 +639,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the top of the open card and then removed again, and the reason is the rule
   worth keeping. Its four fields were the blocker, the stage, the file count and
   the scope tally — and all four were already on the card in a better place: the
-  hero's title is the authoritative state line ("Needs your decision — 2
-  questions", "Working — Execution"), the progress disclosure's hint is the
-  scope tally and its action button is the file count, both visible with those
-  sections closed. So the strip added a fifteenth bordered box and a ninth
-  border treatment to restate the card four times. The rule the hierarchy test
+  hero's title is the authoritative state line ("At Critique — your answer is pending",
+  "Working — Execution"), the question section owns the count of decisions it
+  holds ("Needs your decision — 2 questions"), and the progress disclosure's
+  hint is the scope tally with its action button as the file count, both
+  visible with those sections closed. So the strip added a fifteenth bordered
+  box and a ninth border treatment to restate the card four times. The rule the hierarchy test
   pins: a fact stated at the top of the card must be stated where it is DECIDED,
   not where it is convenient, and nothing above a section may repeat what that
   section's own hint will already say.
@@ -1047,18 +1050,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Other on ordinary questions, and explicit Skip (AI uses its
   recommendation). One atomic
   submit answers everything — one worker resume, one inbox resolution. The
-  final submit action appears only on the last step and remains unavailable
-  until every question has a decision (answer or explicit Skip); timed-out
-  batches follow the same all-or-nothing rule, so recovery never resumes work
-  from partial context.
+  submit action appears on the last step and, once every question has a
+  decision, on any step the reader navigated back to; it stays unavailable
+  until the whole batch is done (answer or explicit Skip). Timed-out batches
+  follow the same all-or-nothing rule, so recovery never resumes work from
+  partial context.
   Workers batch independent questions into one `bb stelow ask` call
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
-  Timed-out asks stay answerable on the card, batched the same way —
-  behind a **closed "Waiting for you" disclosure**, because the worker already
-  moved on and the recovered batch is neither live nor blocking: the row carries
-  the caveat (every option you picked is kept, and a later answer cannot revise
-  work already resumed) and the funnel inside is Submit-only, with no skip —
+  Timed-out asks stay answerable on the card, batched the same way — inside the
+  **open "Waiting for you" decision section**, because the card is still waiting
+  on those decisions even though the worker already moved on: the section says
+  so in its own words (every option you picked is kept, and a later answer
+  cannot revise work already resumed) and the funnel inside is Submit-only, with
+  no skip —
   except on terminal cards: a completed or archived card serves no expired
   questions (`isTerminalCardStatus`), because its open asks closed with it and
   submitting would wake nothing the card can still use. Answered ones stay
@@ -1099,7 +1104,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-presentation.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
+  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-prose.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
@@ -1168,10 +1173,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Gate approvals attach the same document to every option, so per-row Open
   buttons repeated one file N times — friction for zero information. When
   every option carries the same document (resolved path wins, so two
-  spellings still match), the question embeds one capped reader above the
-  rows with an "Open full viewer" exit to quoting and commenting, and the
-  rows hide their buttons; genuinely different documents keep per-row
-  buttons. One decision point renders both halves, so they can never
+  spellings still match), the question embeds one reader above the rows —
+  collapsed behind a "Show brief" disclosure, because a full reader above the
+  options pushed the first answer past the fold — with an "Open full viewer"
+  exit to quoting and commenting, and the rows hide their buttons; genuinely
+  different documents keep per-row buttons. One decision point renders both halves, so they can never
   disagree. Threads (no viewer) keep the filename span.
 - **Human titles on question copy** (`applyScopeLabels`,
   `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
@@ -1299,6 +1305,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   render sites and no owner, so the timeline chip once told readers to find the
   definition in another component. A test fails on a second reader, which is the
   only way the absence of an owner can be caught.
+  The chip states carry words and glyphs, never colour alone, and they stay
+  readable: skipped/off-route chips use full muted text (70% opacity measured
+  3.07:1), the current chip keeps its purple ring and pulse with foreground text
+  (the old purple text measured 3.80:1), and the phase labels use the named
+  section step instead of a 10px label.
 - **Workflow progress** (`ScopeProgress`, `ScopesList`) sits beside the stage
   section, never pretending to be the same thing: progress is where this card
   is, the stage section is which stage it is on and what that stage produces.
@@ -2786,16 +2797,32 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   document in a `bb stelow ask`), and unselected gates keep the LLM receipt.
   Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
-  beside the amber panel); the inline glance expands below. **The question itself
-  is not a panel.** The stepper renders as part of the card's hero section,
-  under a neutral hairline, with no bordered amber box, no `?` badge and no
-  `role="alert"` — the hero already owns the alert and the amber, so a second
-  amber container announcing "a question exists" two lines below it left nothing
-  reading as the primary action (amber text on an amber wash). The step dots, the
-  counters and the batch-progress sentences that restated the hero went with it;
-  the dots keep their position for assistive tech (their label still reads
-  "Question i of N (answered)"), and the note box, explicit skip, split
-  keep-vs-deliver exclusivity and one atomic submit are unchanged.
+  beside the decision section); a long description and the inline glance expand
+  at the END of the same option, through the shared `DetailsDisclosure` so the
+  chevron rotates like every other accordion. **The decision itself owns the
+  amber.** The hero names the card's state and stays neutral ("At Critique — your
+  answer is pending"); below it one "Waiting for you" section holds the live and recovered
+  questions, opens itself, carries the count as its subtitle ("Needs your
+  decision — 9 questions") and wears the decision tone. Two amber boxes two
+  lines apart made the gold look decorative; one amber box around the answerable
+  decision is a place the reader can act. The step dots keep their position for
+  assistive tech (their label still reads "Question i of N (answered)"), and the
+  note box, explicit skip, split keep-vs-deliver exclusivity and one atomic
+  submit are unchanged. The batch has no private keyboard map: every control is
+  a button, input or native disclosure summary, so Tab/Enter/Space work. The
+  "show more" families use foreground text with a dotted underline rather than
+  the primary link token, which measured 4.33:1 on the card — below AA for the
+  12px labels the disclosures use.
+- **A question cannot compare work against a setting the config retired**
+  (`lib/retired-question-vocabulary.mjs`, `cli-ask-gate.ts`). A real card asked
+  "is this bigger than the appetite?" months after `appetite` was replaced by
+  `quality` and the exploration knobs, so the human was asked to weigh the work
+  against a setting the config no longer exposes. The ask gate now refuses the
+  retired word in the question, the option labels and the descriptions, names
+  the replacement ("the declared quality and exploration knobs") and asks for
+  one retry — the same door, and the same one-retry contract, as the English-only
+  guard. The parser still accepts a legacy `appetite:` line once, because old
+  state files must keep working; only the human-facing vocabulary is retired.
 - **A selected plan or diff gate cannot approve itself**
   (`question-contracts-gate.ts`). `plan-gate` and `diff-gate` have no upstream
   question contract yet, so the host enforces the one rule the methodology
@@ -2805,29 +2832,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   automatic or fail open. The review itself is the existing artifact viewer plus
   excerpt comments, which ride the answer — no separate visual-review UI is
   required.
-- **Answering without the mouse** (`lib/batch-keys.mjs`,
-  `components/conversation/batch-keys-ui.tsx`). The question batch is
-  answerable from the keys: `1`-`9` pick an option, `←`/`→` (or `j`/`k`) move
-  between questions, `o` focuses the note, `s` toggles skip, `x` opens the
-  option's document, `?` lists every shortcut, and `Cmd`/`Ctrl`+`Enter` submits
-  — the same chord the description editor already saves with, so the card
-  teaches one chord rather than two. The listener is bound to the question
-  CONTAINER, never the document, because the card renders as a thread tab beside
-  a live worker terminal and a global listener would take that terminal's keys.
-  Digits and letters are inert whenever the caret is in a text field: typing
-  "3 items" in the note must not jump to question 3. A key the accelerator does
-  not claim is left alone, and a terse legend stays on screen — `?` opens the
-  complete list, but the visible line is what makes the keys discoverable
-  without one.
 - **A question's own refusal, at the field** (`BatchCustomInput`). The
-  needs-note refusal used to arrive only as a line under the footer, which is
-  fine with a mouse — the reader is already looking there when they press the
-  button. From the keyboard it is not: `Cmd`/`Ctrl`+`Enter` is pressed from
-  INSIDE the note, and the refusal landed where the reader was not looking. The
-  note now carries `aria-invalid` plus a `role="alert"` description naming what
-  is wrong, and focus stays in the field with the text intact. The batch-level
-  refusal still names its own cause under the footer, so the two never become
-  two homes for one fact.
+  needs-note refusal used to arrive only as a line under the footer, while the
+  reader was looking at the note they had just filled. The note now carries
+  `aria-invalid` plus a `role="alert"` description naming what is wrong, and
+  focus stays in the field with the text intact. The batch-level refusal still
+  names its own cause under the footer, so the two never become two homes for
+  one fact. The question batch has no private keyboard shortcuts: every control
+  is a button, input or native disclosure summary, so Tab/Enter/Space work
+  without teaching a second key map.
 - **The Inbox row names the ask, and can open it alone**
   (`lib/inbox-question-route.mjs`, `components/detail/card-ask-body.tsx`). Two
   related fixes to one defect: a question row is a door onto a decision, and it

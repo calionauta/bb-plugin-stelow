@@ -15,19 +15,41 @@ type BuildCardState = {
   readMissSince?: number | null;
 };
 
-export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: { children: ReactNode; tone?: string; className?: string; title?: string; icon?: ReactNode }) {
-  return <span title={title} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{icon ? <span aria-hidden className="inline-flex">{icon}</span> : null}{children}</span>;
+const PILL_CLASS =
+  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
+
+export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: {
+  children: ReactNode;
+  tone?: string;
+  className?: string;
+  title?: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <span title={title} className={`${PILL_CLASS} ${tone} ${className}`}>
+      {icon ? <span aria-hidden className="inline-flex">{icon}</span> : null}
+      {children}
+    </span>
+  );
 }
 
 // The live checkpoint treatment, shared by the timeline cursor and the
 // Workflow progress header: one pulsing shape for "where this card is".
-export const CURRENT_STAGE_PILL_CLASS = "bg-primary/15 text-primary ring-2 ring-primary/60 stelow-stage-pulse";
+// Foreground text on the translucent primary wash: the purple frame and the
+// pulsing ring still mark the current stage, while the label clears AA (the
+// old `text-primary` on the same wash measured 3.80:1 at 11px).
+export const CURRENT_STAGE_PILL_CLASS = "bg-primary/15 text-foreground ring-2 ring-primary/60 stelow-stage-pulse";
 
 export function CurrentStagePill({ stage }: { stage: string }) {
-  return <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${CURRENT_STAGE_PILL_CLASS}`} title="Current workflow checkpoint.">
-    <span aria-hidden>●</span>
-    {stageLabel(stage)}
-  </span>;
+  return (
+    <span
+      className={`${PILL_CLASS} px-2.5 ${CURRENT_STAGE_PILL_CLASS}`}
+      title="Current workflow checkpoint."
+    >
+      <span aria-hidden>●</span>
+      {stageLabel(stage)}
+    </span>
+  );
 }
 
 // One representative glyph per chip kind, so a stage never reads as a type
@@ -260,7 +282,10 @@ export function DoingNowPill({ names }: { names: string[] }) {
   if (!Array.isArray(names) || names.length === 0) return null;
   const [first, ...rest] = names;
   return (
-    <span title={rest.length > 0 ? `Doing now: ${names.join(" · ")}` : `Doing now: ${first}`} className="inline-flex min-w-0 max-w-full cursor-default items-center gap-1 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+    <span
+      title={rest.length > 0 ? `Doing now: ${names.join(" · ")}` : `Doing now: ${first}`}
+      className={`${PILL_CLASS} min-w-0 max-w-full cursor-default truncate bg-primary/10 text-foreground`}
+    >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
       <span className="truncate">{first}{rest.length > 0 ? ` +${rest.length}` : ""}</span>
     </span>

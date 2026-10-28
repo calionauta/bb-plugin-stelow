@@ -54,15 +54,32 @@ export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: H
 
 // Needs-a-human states first: archived history, then open questions. An
 // open question always wins — answering resumes the worker on its own.
+//
+// The COUNT is deliberately absent here. It belongs to the question section
+// below (detail-question-sections), which is the component that owns the
+// decision, its options and its answer. The hero names the card's state; a
+// second count in the state line made the summary look like the place to act.
+// The amber tone moved with the count: the hero says "waiting for you", the
+// section is the thing that needs you.
 function attentionHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } | null {
   const archived = archivedCardDetailPresentation(card, stageLabel);
   if (archived) return archived.hero;
-  const pending = (detail?.pendingQuestions?.length ?? 0) + (detail?.expiredQuestions?.length ?? 0);
+  const live = detail?.pendingQuestions?.length ?? 0;
+  const pending = live + (detail?.expiredQuestions?.length ?? 0);
   if (pending === 0) return null;
+  // A live question resumes the worker; a timed-out one does not. Saying
+  // "the agent resumes" over recovered questions is the same lie the expired
+  // section used to carry, one screen higher.
   return {
     kind: "decision",
-    title: pending === 1 ? "Needs your decision to continue" : `Needs your decision — ${pending} questions`,
-    sub: "Answer below and the agent resumes on its own.",
+    // "At <stage> — ..." is the calm hero's grammar, so a waiting card reads as
+    // the same kind of sentence in a different state. The words "Waiting for
+    // you" belong to the question section's title, one component below: saying
+    // it here too put the same phrase on screen twice in three lines.
+    title: `At ${stageLabel(card.stage)} — your answer is pending`,
+    sub: live > 0
+      ? "The agent is paused until you answer."
+      : "The questions timed out; your answers still close the card's open decisions.",
   };
 }
 
@@ -202,7 +219,12 @@ function unreadableHero(card: HeroCardState): { kind: HeroKind; title: string; s
 }
 
 export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }> = {
-  decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
+  // Neutral on purpose (2026-10-27): the hero names the state, the question
+  // section below wears the amber and holds the count. Two amber boxes two
+  // lines apart made the gold read as decoration on a summary; one gold box
+  // around the answerable decision is a place the reader can act. `alert`
+  // stays — a screen reader must still hear that the card started waiting.
+  decision: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: true },
   error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
   paused: { wrap: "border-amber-500/40 bg-amber-500/5", dot: "bg-amber-500", alert: false },
   // Held reads between paused and calm on purpose: it is a real wait, so it

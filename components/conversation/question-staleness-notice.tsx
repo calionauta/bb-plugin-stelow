@@ -16,13 +16,13 @@ import type { QuestionStalenessNotice } from "./batch-types";
  * means" is stated before "what changed", because the first thing a person has
  * to decide is whether it matters.
  *
- * Cut out of `question-batch.tsx` when the keyboard layer moved in: that file
- * was at its line budget. One class for both disclosures (preview and touched
- * paths) so a keyboard focus ring reads identically wherever one appears.
+ * Cut out of `question-batch.tsx` when that file reached its line budget. One
+ * class for both disclosures (preview and touched paths) so a keyboard focus
+ * ring reads identically wherever one appears.
  */
 /** The advisory's frame: amber, because it asks the reader to look before deciding. */
 const NOTICE_CLASS =
-  "rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs "
+  "rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-[13px] "
   + "leading-relaxed text-amber-900 dark:text-amber-200";
 
 /** Where the reader goes when the plan and the code have parted. */
@@ -57,7 +57,7 @@ export function StalenessNotice({ staleness }: { staleness: QuestionStalenessNot
             <DisclosureChevron />
             {paths.length} file{paths.length === 1 ? "" : "s"} touched
           </summary>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-[11px]">
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 font-mono text-xs">
             {paths.map((path) => <li key={path} className="break-all">{path}</li>)}
           </ul>
         </details>

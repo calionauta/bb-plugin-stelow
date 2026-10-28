@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { PROSE_SUMMARY_LIMIT, splitProseSummary } from "../lib/question-presentation.mjs";
+import { PROSE_SUMMARY_LIMIT, splitProseSummary } from "../lib/question-prose.mjs";
 
 // Short descriptions render inline, untouched — the collapse must never eat
 // a decision that already fits at a glance.

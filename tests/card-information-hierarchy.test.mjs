@@ -12,10 +12,11 @@ import { DEPENDENCY_STATE } from "../lib/scope-dependency-relations.mjs";
  * and then had to be removed again. Its four fields were the blocker, the
  * stage, the file count and the scope tally — and every one of them was
  * ALREADY on the card, in a better place: the hero's title is the authoritative
- * state line ("Needs your decision — 2 questions", "Working — Execution"), the
- * progress disclosure's hint is a scope tally, and its action button plus the
- * Artifacts hint are file counts. So the strip added a fifteenth bordered box
- * and a ninth border treatment in order to restate the card four times.
+ * state line ("At Critique — your answer is pending", "Working — Execution"), the question
+ * section's subtitle is the decision count, the progress disclosure's hint is a
+ * scope tally, and its action button plus the Artifacts hint are file counts. So
+ * the strip added a fifteenth bordered box and a ninth border treatment in order
+ * to restate the card four times.
  *
  * That is the failure this pins. It is not a styling opinion — it is the
  * difference between a card that reads as one thing and a card that reads as a
@@ -24,9 +25,10 @@ import { DEPENDENCY_STATE } from "../lib/scope-dependency-relations.mjs";
  *
  * The rule it enforces: a fact stated at the top of the card must be stated
  * where it is DECIDED, not where it happens to be convenient. The hero decides
- * the card's state. A section that owns a thing reports that thing. Nothing
+ * the card's STATE; the question section decides HOW MANY decisions are open and
+ * what answering does. A section that owns a thing reports that thing. Nothing
  * above a section may repeat what that section will say when opened — and a
- * disclosure's hint counts as "when opened", because a hint is visible with the
+ * disclosure's subtitle counts as "when opened", because it is visible with the
  * section closed.
  */
 
@@ -34,11 +36,14 @@ import { DEPENDENCY_STATE } from "../lib/scope-dependency-relations.mjs";
 const FACT_HOMES = [
   {
     fact: "what the card is waiting on you for",
-    decidedIn: "components/detail/detail-hero.tsx",
-    // The hero's decision branch. A second copy anywhere above the sections
-    // would be the same sentence in a different box.
-    evidence: /title: pending === 1 \? "Needs your decision to continue"/,
-    because: "the hero is the card's one authoritative state line; a second copy is a duplicate box, not a summary",
+    decidedIn: "components/detail/detail-question-sections.tsx",
+    // The decision section's own subtitle. The hero names the state
+    // ("At Critique — your answer is pending") but the COUNT belongs to the component
+    // that holds the questions, the options and the submit, not to a summary
+    // line above them.
+    evidence: /subtitle=\{copy\.needsDecision\(total\)\}/,
+    because: "the section that owns the decision owns how many decisions there are; a count in the hero made the "
+      + "summary look like the place to act",
   },
   {
     fact: "which stage the card is at",
