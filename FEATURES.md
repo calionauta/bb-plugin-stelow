@@ -2876,6 +2876,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on any non-question row, on a host that cannot open an option's document, and
   for any batch containing a split question, whose answer creates child cards
   and belongs on the card.
+- **The Inbox row keeps its text a measure instead of feeding it to the
+  buttons** (`components/panels/inbox-row.tsx`). At a phone width the row's
+  text used to be the leftover: the actions were `shrink-0` and the click target
+  was `flex-1` — `flex-basis: 0` — so a 360 px viewport left the body about
+  20 px, one character per line, and a row ten times taller than it reads. The
+  row now wraps: the click target keeps a 16 rem measure
+  (`grow basis-[16rem]`, never `flex-1`) and the actions are a single cluster
+  (`ml-auto`, `min-w-0`, `flex-wrap`) that takes its own line when the row
+  cannot hold both, and whose own buttons wrap rather than overflow when even
+  that line is too narrow. The reflow follows the PANEL's width, not the device — a
+  narrow docked panel on a desktop wraps the same way — because the host passes
+  no width to the panel and the plugin has no container queries. `Answer` keeps
+  its narrow `sm` shape and gains the same `min-h-11` floor as its neighbours,
+  and the ask line's two-line clamp works for the first time: it shared a class
+  list with `block`, whose `display:block` beat the clamp at equal specificity,
+  so a line documented to cap at two lines rendered uncapped. The `+N more`
+  counter for a batch sits outside the clamped span, because a count inside it
+  is the first thing a working cap cuts.
 - **Stale-question notices** (`bb stelow ask` snapshots, `lib/question-staleness.mjs`).
   Asking records what each questioned document contained and where its
   checkout stood (doc hash + Git HEAD, latest wins per card and path).
@@ -3352,6 +3370,20 @@ it did not have:
   board keeps its last verified activity, the execution reconciler does not
   mark a boundary question as sent, and `bb stelow done` refuses with a
   retryable exit rather than closing a card over a question it could not see.
+- **A successful read of zero questions ENDS an await.** The stored `activity`
+  column is a projection, and nothing rewrites it when the question it named is
+  answered, expires, or leaves with the thread that carried it — so
+  `awaiting-answer` was a one-way door: the rule was
+  `openQuestions > 0 ? "awaiting-answer" : stored`, which treats a resolved
+  question and an unreadable source as the same input. Three cards sat amber
+  with nothing to answer (card_hce4tykn, card_qimjr9z4, card_g89gtmwt), and one
+  worker was refused with "the card won't take a second question while one is
+  pending" by the card it had already answered. The rule now has the three
+  states it always needed, in `lib/card-activity.mjs`: unknown keeps the
+  projection, a live question re-asserts the wait, and zero ends it. `error`
+  and `held` describe the worker and outrank the count. Pinned by
+  `tests/card-activity.test.mjs` for both projections separately, because the
+  board and the detail are two readers of one column and they drifted.
 - A research/explore worker that is verifiably running clears the previous
   `last_error`, as the build projection always did. Only the resume paths used
   to clear it, so a card that failed once kept telling the reader to reseed,

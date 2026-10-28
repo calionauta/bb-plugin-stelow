@@ -27,7 +27,7 @@
     "pele": "1.8.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.4.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "^0.4.108",
@@ -59,7 +59,7 @@
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:ask-gate": "node tests/ask-gate.test.mjs && node tests/ask-shape.test.mjs && node tests/scope-ask-gate.test.mjs && node tests/ask-timeout.test.mjs",
     "test:question-substance": "node tests/question-substance.test.mjs",
-    "test:status-question-state": "node tests/status-question-state.test.mjs",
+    "test:status-question-state": "node tests/status-question-state.test.mjs && node tests/card-activity.test.mjs",
     "test:ask-contracts": "node tests/ask-contracts.test.mjs && node tests/contrast-ask-door.test.mjs",
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/scope-labels.test.mjs && node tests/single-pick-composition.test.mjs && node tests/exclusive-pick.test.mjs && node tests/question-needs-note.test.mjs && node tests/question-batch.test.mjs && node tests/question-form.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/option-section-mismatch.test.mjs",
@@ -109,7 +109,7 @@
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs && node tests/vendor-contracts.test.mjs && node tests/stelow-pin.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/refresh-discipline.test.mjs && npm run --silent test:helper-verbs && npm run --silent test:boundary",
     "test:helper-verbs": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/helper-verbs.test.mjs",
     "test:boundary": "node tests/boundary-parity.test.mjs",
-    "test:inbox": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/server-inbox.test.mjs && node tests/sqlite-columns.test.mjs && node tests/inbox-flows.test.mjs && node tests/question-sync-kick.test.mjs && node tests/inbox-error-dedupe.test.mjs && node tests/inbox-severity.test.mjs && node tests/inbox-event-presentation.test.mjs && node tests/inbox-panel.test.mjs && node tests/inbox-question-route.test.mjs && node tests/inbox-question-line.test.mjs && node tests/relative-time.test.mjs && node tests/card-claims.test.mjs && node tests/card-terminal.test.mjs && node tests/card-claim-key.test.mjs && node tests/claims-lifecycle.test.mjs && node tests/lock-protocol-contract.test.mjs && node tests/card-restore-pending.test.mjs && node --test tests/lock-blocked-affordance.test.mjs && node --test tests/inbox-stable-order.test.mjs && node --test tests/inbox-order-state.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/question-inbox-own-plugin.test.mjs",
+    "test:inbox": "node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/server-inbox.test.mjs && node tests/sqlite-columns.test.mjs && node tests/inbox-flows.test.mjs && node tests/question-sync-kick.test.mjs && node tests/inbox-error-dedupe.test.mjs && node tests/inbox-severity.test.mjs && node tests/inbox-event-presentation.test.mjs && node tests/inbox-panel.test.mjs && node tests/inbox-question-route.test.mjs && node tests/inbox-question-line.test.mjs && node tests/inbox-row-layout.test.mjs && node tests/relative-time.test.mjs && node tests/card-claims.test.mjs && node tests/card-terminal.test.mjs && node tests/card-claim-key.test.mjs && node tests/claims-lifecycle.test.mjs && node tests/lock-protocol-contract.test.mjs && node tests/card-restore-pending.test.mjs && node --test tests/lock-blocked-affordance.test.mjs && node --test tests/inbox-stable-order.test.mjs && node --test tests/inbox-order-state.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/question-inbox-own-plugin.test.mjs",
     "typecheck": "tsc --noEmit",
     "quality:shape": "node scripts/check-source-shape.mjs && node scripts/check-source-budgets.mjs && node scripts/check-test-boot-cost.mjs && node scripts/check-lint-baseline.mjs",
     "lint": "oxlint app.tsx server.ts server components hooks lib tests",
