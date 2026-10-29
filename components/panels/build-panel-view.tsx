@@ -10,16 +10,15 @@ import { BuildControlStrip } from "./build-control-strip";
 import { BoardScrollHint, PanelHeader } from "./panel-header";
 import { BuildList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
+import { BuildHeaderActions } from "./build-header-actions";
 import { archivedDeleteProps } from "../board/archived-delete-props";
 import { useDeleteArchivedCards } from "../board/use-delete-archived-cards";
 import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
-import { BucketGalleryButton } from "../board/card-gallery";
 import { BulkBarSlot } from "../board/build-bulk-bar";
 import { boardBottomPadding } from "../../lib/bulk-bar-placement.mjs";
 import { Button } from "../ui/button";
-import { Icon } from "../ui/icon";
 import type { BuildPanelState } from "./build-panel-types";
 
 
@@ -55,44 +54,6 @@ const BUILD_BLURB =
   "An AI agent carries each card through a structured workflow—from triage to "
   + "scope-by-scope execution—pausing for your decisions wherever your review "
   + "mode requires it.";
-
-function BuildHeaderActions(props: BuildHeaderProps) {
-  return (
-    <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-      <Button
-        className="min-h-11 w-full sm:w-auto sm:flex-none"
-        onClick={props.onNewIssue}
-      >
-        <Icon name="Plus" className="h-4 w-4" aria-hidden />
-        New issue
-      </Button>
-      <BucketGalleryButton
-        cards={props.groupedInbox ?? []}
-        onOpenCard={(card) => props.onOpenCard(card, card.id)}
-      />
-      <Button
-        className="min-h-11 w-full sm:w-auto sm:flex-none"
-        variant="outline"
-        onClick={props.onOpenPresets}
-        title="Manage agent presets and per-phase routing"
-      >
-        <Icon name="Settings" className="h-4 w-4" aria-hidden />
-        Agent Presets
-      </Button>
-      {props.githubAutomationEnabled ? (
-        <Button
-          className="min-h-11 w-full sm:w-auto sm:flex-none"
-          variant="outline"
-          onClick={props.onOpenGithub}
-          title="Import GitHub issues now or watch labels automatically"
-        >
-          <Icon name="Github" className="h-4 w-4" aria-hidden />
-          GitHub issues
-        </Button>
-      ) : null}
-    </div>
-  );
-}
 
 function BuildHeader(props: BuildHeaderProps) {
   return (

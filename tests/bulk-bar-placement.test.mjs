@@ -147,6 +147,7 @@ const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "
   "../board/board-view-toggle": { ViewToggle: marker("ViewToggle") },
   "../board/select-mode-toggle": { SelectModeToggle: marker("SelectModeToggle") },
   "./build-control-strip": { BuildControlStrip: marker("BuildControlStrip") },
+  "./build-header-actions": { BuildHeaderActions: marker("BuildHeaderActions") },
   "../board/track-lists": { BuildList: marker("BuildList") },
   "../board/board-column": { BoardColumn: marker("BoardColumn") },
   "./panel-header": panelHeaderStub(),

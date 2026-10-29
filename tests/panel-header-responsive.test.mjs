@@ -120,6 +120,36 @@ test("actions are a thumb grid that wraps instead of crushing the title", () => 
   );
 });
 
+// --- 3b. The track actions are children of the ONE layout. --------------
+test("the Build actions are direct children of the shared header layout, not a second grid", () => {
+  const marker = (type) => (props) => ({ type, props: props ?? {}, children: props?.children ?? [] });
+  const BuildHeaderActions = loadComponent(
+    "components/panels/build-header-actions.tsx",
+    "BuildHeaderActions",
+    {
+      "../board/card-gallery": { BucketGalleryButton: marker("bucket") },
+      "../ui/button": { Button: marker("button") },
+      "../ui/icon": { Icon: marker("icon") },
+    },
+  );
+  const tree = renderTree(BuildHeaderActions({
+    groupedInbox: [],
+    githubAutomationEnabled: true,
+    onNewIssue: () => {},
+    onOpenCard: () => {},
+    onOpenPresets: () => {},
+    onOpenGithub: () => {},
+  }));
+  const children = tree.children ?? [];
+  assert.deepEqual(
+    children.map((child) => child.type),
+    ["button", "bucket", "button", "button"],
+    "the four actions are siblings, direct children of the shared layout",
+  );
+  assert.equal(findElementByClass(tree, "grid-cols-2"), null,
+    "no second grid nests the buttons and defeats the shared wrap");
+});
+
 // --- 4. The attention line still works, and only when there is one. ------
 test("the attention count renders as one reachable control", () => {
   const withAttention = renderHeader();
