@@ -41,6 +41,16 @@ test("the budget is spent along the chain, then the card parks", () => {
   );
 });
 
+test("a provider catalog timeout before any agent call is retried once", () => {
+  const timeout = "Task produced no result: tests — agent call failed: Could not load models for provider acp-opencode: timeout";
+  assert.equal(shouldAutoRetryRun({ errorCode: timeout, autoRetryCount: 0 }), true,
+    "the run names the catalog as the point of failure, so no agent call was made");
+  assert.equal(shouldAutoRetryRun({ errorCode: timeout, autoRetryCount: 1 }), false,
+    "a second consecutive timeout is systemic and parks for a person");
+  assert.equal(shouldAutoRetryRun({ errorCode: "the recipe produced no task outputs", autoRetryCount: 0 }), true,
+    "the original no-op proof still qualifies");
+});
+
 test("a first attempt with no recorded count still qualifies", () => {
   assert.equal(
     shouldAutoRetryRun({ errorCode: EMPTY_OUTPUT_ERROR, autoRetryCount: null }),

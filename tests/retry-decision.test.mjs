@@ -33,6 +33,15 @@ assert.equal(go.retry, true, "a proved no-op on the same stage retries");
 assert.equal(go.reason, null, "and carries no refusal");
 assert.equal(go.exit, null, "and needs no exit, because it is not refusing");
 
+// --- 1b. The provider-catalog timeout is the other precondition failure. ---
+const PROVIDER_TIMEOUT = "Task produced no result: tests — agent call failed: Could not load models for provider acp-opencode: timeout";
+assert.equal(decide({ errorCode: PROVIDER_TIMEOUT }).retry, true,
+  "a timeout before the model catalog loads cannot have produced work, so it retries");
+assert.equal(decide({ errorCode: PROVIDER_TIMEOUT, autoRetryCount: 1 }).retry, false,
+  "the budget still applies: a second timeout parks for a person");
+assert.equal(decide({ errorCode: PROVIDER_TIMEOUT, cardStage: "audit" }).retry, false,
+  "and the stage guard still wins: the card moved past the failed stage");
+
 // --- 2. The case that silently refused five real runs. ---------------------
 const movedOn = decide({ cardStage: "audit" });
 assert.equal(movedOn.retry, false, "a card that advanced past the failed stage is not retried");

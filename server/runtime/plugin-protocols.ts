@@ -90,10 +90,10 @@ block, or CHANGELOG.md plus v* tags). If the repo releases from commits, write `
 // continue nudge: one const so a wording fix lands everywhere (the
 // prompt-contracts test pins single definition + all references).
 export const INTERFACE_PICK =
-  "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it when absent). For a selected \
-gate, put its document in `bb stelow ask` with --artifact and stop; use another review tool only if the host registers it. Attach \
+  "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it). For a selected \
+gate, put its document in `bb stelow ask` with --artifact and stop; use another review tool only if registered. Attach \
 `alternatives.md`, not `interfaces.md`. Unselected \
-gates never park: the LLM decides, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Never \
+gates never park: the LLM decides, writes the receipt (assumptions_resolved, selected_by: llm), and advances. Ask the first reaction before synthesis. Never \
 approve a selected gate silently.";
 
 // Explicit completion: done-ness was inferred from `audit` + idle, so a
