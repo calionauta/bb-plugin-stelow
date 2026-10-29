@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.2...v0.102.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* --apply actually applied, and the removal list names the card ([#495](https://github.com/calionauta/bb-plugin-stelow/issues/495)) ([47215ce](https://github.com/calionauta/bb-plugin-stelow/commit/47215ced3e6d7c456a61074e133e596ee288fd7f))
+
 ## [0.102.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.1...v0.102.2) (2026-10-29)
 
 
