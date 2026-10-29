@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { writeMergedFile } from "../../../lib/workflow-lineage.mjs";
-import { orphanWorkflows, visibleWorkflows, withoutOrphans } from "../../../lib/workflow-inventory.mjs";
+import { cardIdOfWorkflow, orphanWorkflows, visibleWorkflows, withoutOrphans } from "../../../lib/workflow-inventory.mjs";
 import { scanFlags, type CliCommandFn, type CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 
@@ -58,8 +58,11 @@ export function createPruneCommand(deps: CliDeps): CliCommandFn {
         stderr: "Select a bb project first: prune rewrites that project's stelow.json.",
       };
     }
-    const apply = Boolean(scan.flags["--apply"]);
-    const json = Boolean(scan.flags.json);
+    // `scanFlags` stores the flag name WITHOUT its dashes and sets "true".
+    // Reading `scan.flags["--apply"]` was always undefined, so --apply silently
+    // behaved like the dry run: the verb looked green and changed nothing.
+    const apply = scan.flags.apply === "true";
+    const json = scan.flags.json === "true";
     const plan = await planPrune(deps, root);
     if (!plan) return { exitCode: 1, stderr: "No readable stelow.json in this project root." };
     return apply ? applyPrune(deps, root, plan, json) : listPrune(plan, json);
@@ -92,17 +95,24 @@ async function planPrune(deps: CliDeps, root: string): Promise<Plan | null> {
 function removalNames(orphans: unknown[]) {
   return orphans.map((entry) => {
     const row = entry as Entry;
+    // The RAW entry names its checkout as `dirHash`; the board projection renames
+    // it to `id`. Reading only `id` printed "no id" beside every removal.
     return {
-      id: typeof row.id === "string" ? row.id : null,
+      id: cardIdOfWorkflow(row),
       name: typeof row.name === "string" ? row.name : "",
     };
   });
 }
 
+/** Entries with no card row by design: research/explore work. */
+function cardlessCount(workflows: unknown[]): number {
+  return workflows.filter((entry) => cardIdOfWorkflow(entry) === null).length;
+}
+
 /** The default: a list, because the question a person asks is "what would go". */
 function listPrune(plan: Plan, json: boolean): CliResult {
   const names = removalNames(plan.orphans);
-  const cardless = plan.visible.length - (plan.workflows.length - plan.orphans.length);
+  const cardless = cardlessCount(plan.workflows);
   const tally = { workflows: plan.workflows.length, orphans: plan.orphans.length, cardless, applied: false };
   if (plan.orphans.length === 0) {
     return {
@@ -146,7 +156,7 @@ async function applyPrune(deps: CliDeps, root: string, plan: Plan, json: boolean
   if (!written.written) {
     return { exitCode: 1, stderr: "Could not rewrite stelow.json (it changed while reading it). Re-run prune." };
   }
-  const cardless = plan.visible.length - (plan.workflows.length - plan.orphans.length);
+  const cardless = cardlessCount(plan.workflows);
   return {
     exitCode: 0,
     stdout: json
