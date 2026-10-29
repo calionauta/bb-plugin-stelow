@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.1...v0.102.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* the prune maps a directory hash to the card id it names ([#493](https://github.com/calionauta/bb-plugin-stelow/issues/493)) ([0afe9f9](https://github.com/calionauta/bb-plugin-stelow/commit/0afe9f9887c8d920164833d83ae42dbf913fa871))
+
 ## [0.102.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.0...v0.102.1) (2026-10-29)
 
 
