@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
-import { DetailsDisclosure } from "../disclosure";
+import { MermaidDiagram } from "../detail/mermaid-diagram";
 import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
 import { artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
-import { splitProseSummary } from "../../lib/question-prose.mjs";
+import { previewShape } from "../../lib/question-preview.mjs";
 import { splitOptionDescription } from "../../lib/question-presentation.mjs";
 import type {
   AskArtifact,
@@ -16,22 +16,21 @@ import type {
 // row's.
 
 // Per-option evidence: the document opens from inside the option row
-// (right side), the inline glance expands at the END of the same option. The
-// artifact opens in the viewer where a file opener exists (card), and degrades
-// to a plain filename where it doesn't (thread) — never a dead button pretending
-// to open, never one shared button after the options.
-// A preview exists so the reader can judge an option WITHOUT opening
-// anything. Hiding it behind a disclosure defeats that: on a real card the
-// previews were 27-104 characters, so clicking "Preview" revealed two lines
-// that said no more than the label beside it — two clicks for less
-// information. A preview short enough to read at a glance is shown; only a
-// genuinely long one earns a disclosure.
-const AUTO_REVEAL_PREVIEW_CHARS = 280;
+// (right side), the preview sits at the END of the same option. The artifact
+// opens in the viewer where a file opener exists (card), and degrades to a
+// plain filename where it doesn't (thread) — never a dead button pretending to
+// open, never one shared button after the options.
+//
+// The preview is shown inline. It is evidence the reader judges the option BY,
+// so hiding it behind a disclosure is asking for two clicks to see the thing
+// the row was written to show. A text wireframe keeps its whitespace in a
+// monospace block; a ```mermaid preview is a diagram, rendered by the same
+// viewer as the brief. Both are evidence, neither is a second decision.
 
-// The select control of a row: the label and its glance are the whole target,
-// so it carries the 44px minimum and the shared focus ring. It fills the row's
-// text line; the disclosures below it are siblings, never descendants — a
-// disclosure nested inside the pick control is invalid markup and expanding it
+// The select control of a row: the label and its full description are the whole
+// target, so it carries the 44px minimum and the shared focus ring. It fills
+// the row's text line; the preview below it is a sibling, never a descendant —
+// a preview nested inside the pick control is invalid markup and clicking it
 // would pick.
 const PICK_CONTROL_CLASS = [
   "flex min-h-11 w-full cursor-pointer items-start gap-3",
@@ -40,27 +39,34 @@ const PICK_CONTROL_CLASS = [
   "focus-visible:outline-primary",
 ].join(" ");
 
-// The disclosures sit at the END of the option, inside its own frame, indented
-// to the label (12px padding + 20px mark + 12px gap). They read as part of the
-// option they explain rather than as a control floating below it.
-const INSIDE_DISCLOSURE = "border-t border-border/50 pl-11 pr-2 pb-1";
+// The preview sits at the END of the option, inside its own frame, indented to
+// the label (12px padding + 20px mark + 12px gap). It reads as part of the
+// option it explains rather than as a control floating below it.
+const INSIDE_OPTION = "border-t border-border/50 pl-11 pr-2 pb-2";
 
 function OptionPreview({ preview }: { preview: string | null }) {
-  if (!preview) return null;
-  const text = preview.trim();
-  const body = <pre className="whitespace-pre-wrap break-words rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed">{text}</pre>;
-  if (text.length <= AUTO_REVEAL_PREVIEW_CHARS) {
-    return (
-      <div className={INSIDE_DISCLOSURE}>
-        <p className="mb-1 pt-2 text-[13px] font-semibold text-muted-foreground">What this looks like</p>
-        {body}
-      </div>
-    );
-  }
+  const shape = previewShape(preview);
+  if (!shape) return null;
   return (
-    <div className={INSIDE_DISCLOSURE}>
-      <DetailsDisclosure summary="Preview">{body}</DetailsDisclosure>
-    </div>
+    <figure className={INSIDE_OPTION}>
+      <figcaption className="mb-1 pt-2 text-[13px] font-semibold text-muted-foreground">
+        What this looks like
+      </figcaption>
+      {shape.kind === "mermaid" ? (
+        <div className="space-y-2">
+          {shape.prose ? (
+            <p className="whitespace-pre-line break-words text-sm leading-6 text-muted-foreground">{shape.prose}</p>
+          ) : null}
+          <MermaidDiagram source={shape.source} title="Option preview diagram" />
+        </div>
+      ) : (
+        <pre
+          className="max-h-[26rem] overflow-auto whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed"
+        >
+          {shape.text}
+        </pre>
+      )}
+    </figure>
   );
 }
 
@@ -175,9 +181,12 @@ function OptionPickControl({ label, description, active, multiple, isKeepOption,
 }
 
 // One option row: the select control, the per-option document, and the
-// option's own details — the long remainder and the preview — inside the same
-// frame, at the end. The detail disclosures are children of the ROW, not of the
-// pick button, so expanding one can never answer for the reader.
+// option's own preview — inside the same frame, at the end. The description is
+// rendered whole: the row is where the reader judges the trade-off, and a
+// truncated first sentence with a disclosure repeating it was two copies of one
+// description with the useful half hidden. Descriptions are bounded at
+// generation time (the ask contract asks for one to three sentences), so the
+// card does not need a second truncation rule.
 function BatchOptionRow({ option, active, multiple, isKeepOption, description, hideDocument, needsNote, onPick, onOpenArtifact }: {
   option: BatchItem["options"][number];
   active: boolean;
@@ -190,14 +199,10 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
   onOpenArtifact?: OpenArtifactHandler;
 }) {
   const artifact = option.artifact;
-  const preview = splitProseSummary(description);
-  // A head that ended at a sentence boundary already carries a period; adding
-  // the ellipsis to it rendered "....", which reads as a typo rather than a cut.
-  const glance = preview.tail ? `${preview.head.replace(/[.!?]+$/, "")}…` : preview.head;
   // The frame is a COLUMN: the pick line (control + document) first, then the
-  // option's own details at the end, across the row. A border that stopped at
-  // the text column made the disclosure look like a footnote to the option
-  // rather than its last part.
+  // option's own preview at the end, across the row. A border that stopped at
+  // the text column made the preview look like a footnote to the option rather
+  // than its last part.
   const rowFrame = `overflow-hidden rounded-md border ${
     active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"
   }`;
@@ -206,7 +211,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
       <div className="flex min-h-11 items-stretch">
         <OptionPickControl
           label={option.label}
-          description={glance}
+          description={description}
           active={active}
           multiple={multiple}
           isKeepOption={isKeepOption}
@@ -222,27 +227,7 @@ function BatchOptionRow({ option, active, multiple, isKeepOption, description, h
           />
         ) : null}
       </div>
-      {preview.tail ? <OptionFullDetail description={description} /> : null}
       <OptionPreview preview={option.preview} />
-    </div>
-  );
-}
-
-/**
- * The collapsed remainder of a long description, inside the option it belongs
- * to. It uses the shared `DetailsDisclosure` so the chevron is controlled by the
- * same open state as every other accordion on the card — the hand-rolled
- * `<details>` it replaced left the arrow to a CSS variant and did not rotate.
- */
-function OptionFullDetail({ description }: { description: string }) {
-  return (
-    <div className={INSIDE_DISCLOSURE}>
-      {/* The whole description, not just the tail: a fragment starting
-          mid-sentence forces the reader to reassemble head plus tail
-          across two regions. The in-button glance above stays truncated. */}
-      <DetailsDisclosure summary="Full detail">
-        <p className="whitespace-pre-line break-words text-sm leading-6">{description}</p>
-      </DetailsDisclosure>
     </div>
   );
 }
@@ -271,7 +256,7 @@ export function BatchOptionList({ cardId, current, isSplitProposal, splitKeepLab
       role={current.multiple ? "group" : "radiogroup"}
       aria-label={current.title || current.prompt}
     >
-      {brief && cardId ? <EmbeddedBrief cardId={cardId} file={brief.file} onExpand={brief.onExpand} /> : null}
+      {brief ? <EmbeddedBrief file={brief.file} onExpand={brief.onExpand} /> : null}
       {current.options.map((option) => {
         const active = (selected[current.id] ?? []).includes(option.label);
         const isKeepOption = isSplitProposal && option.label === splitKeepLabel;

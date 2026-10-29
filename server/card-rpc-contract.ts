@@ -133,6 +133,19 @@ export const cardRpcContract = {
     input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
     output: z.object({ content: z.string().nullable(), truncated: z.boolean(), error: z.string().nullable() }),
   },
+  listCardFiles: {
+    experimental_description: "List the viewable files beside a card file, so a brief can link to them",
+    input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
+    output: z.object({
+      directory: z.string().nullable(),
+      files: z.array(z.object({
+        name: z.string(),
+        path: z.string(),
+        absolutePath: z.string(),
+      })),
+      error: z.string().nullable(),
+    }),
+  },
   qualitySeal: {
     experimental_description: "Verification seal for an artifact path",
     input: z

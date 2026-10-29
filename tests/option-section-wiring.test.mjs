@@ -25,6 +25,7 @@ const detailBody = read("components/detail/build-detail-body.tsx");
 // card's presentation state, so the declaration is pinned where it now lives.
 const detailView = read("components/detail/build-detail-view.ts");
 const dialog = read("components/detail/artifact-viewer-dialog.tsx");
+const artifactContent = read("components/detail/artifact-content.tsx");
 const optionSection = read("components/detail/option-section.tsx");
 
 // The call site must pass the label it is rendering. A callback that drops it
@@ -73,11 +74,17 @@ assert.match(inventory, /\n    optionLabel,\n  \}\);/, "and stores it on the vie
 // as `undefined` and quietly disable the feature.
 assert.match(detailView, /optionLabel\?: string;/, "the card's viewer state carries the label");
 assert.match(detailBody, /optionLabel=\{view\.viewerFile\?\.optionLabel\}/, "and the dialog receives it");
-assert.match(
-  dialog,
-  /<OptionSection content=\{content\} optionLabel=\{optionLabel\} containerRef=\{scrollRef\} \/>/,
-  "the dialog renders the option's section",
-);
+// The tag is read as one element and each prop is asserted on it, so a
+// legitimate refactor (destructuring `viewer`, reordering props) is not a
+// failure while dropping a prop still is.
+const sectionTag = dialog.match(/<OptionSection\b[\s\S]*?\/>/)?.[0] ?? "";
+assert.ok(sectionTag, "the dialog renders the option's section");
+assert.match(sectionTag, /content=\{[^}]*\}/,
+  "the section receives the document, or the lookup has nothing to search");
+assert.match(sectionTag, /optionLabel=\{optionLabel\}/,
+  "the section receives the label the viewer was opened for");
+assert.match(sectionTag, /containerRef=\{[^}]*\}/,
+  "and the scroll container it must search, or there is nothing to scroll");
 
 // The option is scrolled to INSIDE the document, not quoted above it. Lifting
 // the section duplicates the reader's own text and makes the brief read as two
@@ -90,11 +97,11 @@ assert.match(
 );
 assert.match(
   dialog,
-  /scrollRef=\{scrollRef\}/,
+  /scrollRef=\{(?:viewer\.)?scrollRef\}/,
   "the document's scroll container is handed to the option lookup, or there is nothing to scroll",
 );
 assert.match(
-  dialog,
+  artifactContent,
   /<div ref=\{scrollRef\} className="max-h-\[46dvh\] overflow-auto/,
   "the container the headings live in is the one that scrolls",
 );

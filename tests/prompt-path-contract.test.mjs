@@ -101,11 +101,11 @@ for (const name of pathNames) {
 // this session's loop exists for is not blocked. Changing what a rule SAYS means
 // updating the pin — the moment a person reads the rule and confirms it still
 // means what it meant, which is the review the original drift skipped.
-// Seven sentences, not nine: the critical header, the ask synopsis, and the batch
-// rule share one terminal ":" before the batching sentence, so the extractor sees
-// them as one rule sentence. The pin records what the extractor actually sees,
-// because an equality pin is only honest if it is copied from the text rather
-// than composed by hand.
+// Ten sentences: the critical header, the ask synopsis, and the
+// batch rule share one terminal ":" before the batching sentence, so the
+// extractor sees them as one rule sentence. The pin records what the extractor
+// actually sees, because an equality pin is only honest if it is copied from the
+// text rather than composed by hand.
 const PINNED_ASK_RULES = [
   'CRITICAL — User input contract: ANY time you need user input, you MUST call the structured form, '
     + 'NEVER just write text like "waiting for your choice": bb stelow ask --thread "$BB_THREAD_ID" '
@@ -113,11 +113,11 @@ const PINNED_ASK_RULES = [
     + '[--option "<label 3>" ...] [--multiple] Batch independent questions into ONE ask call by repeating '
     + "--question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one.",
   "Ask dependent questions (where Q2 needs Q1's answer) one at a time.",
-  "When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: "
-    + "--desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.",
-  "Write every question for the decider: short, plain words, no stage slugs, "
-    + "recon counts, file handles, or methodology brand names — name a document only to open or approve it, and put details in "
-    + "--preview/--artifact, never inline.",
+  "When comparing artifacts (interface, plan), attach each option's evidence: "
+    + "--desc for the trade-off (under 500 characters), --preview for the glance "
+    + "(a ```mermaid diagram when the choice is about flow, else a wireframe — never a copy of the description), --artifact for the file.",
+  "Write every question for the decider: short, plain words, no stage slugs, counts, file handles, "
+    + "or methodology brand names — name a document only to open or approve it.",
   "Mark an option that needs the human's which or what with --needs-note right after "
     + "its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.",
   "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context "

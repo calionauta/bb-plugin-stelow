@@ -1,18 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Markdown,
-  UrlLink,
-  experimental_SourceCode as SourceCode,
-  experimental_FileLink as FileLink,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { experimental_FileLink as FileLink, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { ArtifactViewerMode } from "../conversation/batch-types";
 import { OptionSection } from "./option-section";
-import { MOCKUP_SANDBOX, artifactRenderKind } from "../../lib/artifact-render.mjs";
-import { PELE_PLAYGROUND } from "../../lib/diagram-strategy.mjs";
-import { derivedDiagram } from "../../lib/artifact-diagram.mjs";
-import { MermaidDiagram } from "./mermaid-diagram";
+import { ArtifactFileList } from "./artifact-file-list";
+import { useArtifactNavigation, type ViewerDocument } from "./use-artifact-navigation";
+import { artifactLinkTarget } from "../../lib/artifact-nav.mjs";
+import { ArtifactContent, useArtifactContent, type ArtifactFile } from "./artifact-content";
 import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { rpcContract } from "../../server";
 import { Button } from "@/components/ui/button";
@@ -27,39 +21,13 @@ import {
 
 // Read-only artifact viewer with discuss-to-agent. Markdown and source render
 // for inspection; card comments route selected excerpts to the worker.
-type ArtifactFile = { display: string; path: string } | null;
+//
+// The renderer lives in artifact-content.tsx so the navigation state and the
+// rendering stay separate; this module owns which file and the comment flow.
+
 type EditorTarget = WorkspaceFileTarget | HostFileTarget | null;
 type Draft = { id: number; quote: string; comment: string };
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
-
-export function useArtifactContent(open: boolean, cardId: string, file: ArtifactFile) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [content, setContent] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !file) return;
-    setContent(null);
-    setTruncated(false);
-    setLoadError(null);
-    setLoading(true);
-    let cancelled = false;
-    void rpc.call("readCardFile", { cardId, path: file.path }).then((result) => {
-      if (cancelled) return;
-      if (result.error) setLoadError(result.error);
-      else { setContent(result.content); setTruncated(result.truncated); }
-    }).catch((error) => {
-      if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load the file.");
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [open, file, cardId, rpc]);
-
-  return { rpc, content, truncated, loadError, loading };
-}
 
 function commentBody(file: NonNullable<ArtifactFile>, drafts: Draft[]) {
   return [`Re ${file.display}:`, ...drafts.map((draft, index) => {
@@ -116,96 +84,6 @@ function useCommentDrafts(rpc: Rpc, open: boolean, cardId: string, file: Artifac
   return { drafts, sending, quoteSelection, sendAll, setDrafts };
 }
 
-type ArtifactContentProps = {
-  file: ArtifactFile;
-  content: string | null;
-  truncated: boolean;
-  loadError: string | null;
-  loading: boolean;
-  // The scroll container the option lookup needs, so the clicked option can be
-  // brought into view inside the document rather than quoted above it.
-  scrollRef?: React.Ref<HTMLDivElement>;
-};
-
-// A generated interface mockup, shown as the page it is.
-//
-// Rendering its source shows the reader the recipe instead of the dish, and the
-// option under decision is a layout — the one thing source text cannot answer.
-// `srcdoc` rather than a URL because the file has no address of its own: it is
-// a workspace file, and the point is to read it without starting a server.
-//
-// The sandbox is the load-bearing part. A mockup is worker-authored, so
-// `allow-scripts` stays (an interactive mockup IS the evidence) and
-// `allow-same-origin` is withheld: together they would let the framed document
-// reach this app's origin, where the reader's session lives.
-//
-// ponytail: a mockup that references a sibling file by relative path (a CSS or
-// image next to it) will not resolve — srcdoc has no base URL. Self-contained
-// pages are what `interface-alternatives` produces, so this is the ceiling. If
-// mockups start shipping asset folders, serve the directory instead of the
-// file and point `src` at that address.
-function MockupFrame({ html, title }: { html: string; title: string }) {
-  return (
-    <iframe
-      srcDoc={html}
-      title={title}
-      sandbox={MOCKUP_SANDBOX}
-      referrerPolicy="no-referrer"
-      className="h-[46dvh] w-full rounded-md border border-border bg-background"
-    />
-  );
-}
-
-export function ArtifactContent({ file, content, truncated, loadError, loading, scrollRef }: ArtifactContentProps) {
-  // `display` is the manifest's human label ("spec tech v1"), never a file
-  // name. Every fixture in the suite spelled the two the same, so the kind was
-  // read from the label for months: a title has no extension, so a document
-  // rendered as source and `derivedDiagram` never saw a Markdown fence either.
-  // Anything that inspects the name asks `path`; the label only labels.
-  const label = file?.display ?? "";
-  const path = file?.path ?? "";
-  const kind = artifactRenderKind(path);
-  // A truncated page is not the artifact: a mockup cut off mid-document
-  // renders as a broken layout presented as evidence, which is worse than the
-  // source it would otherwise have shown. Only a complete file is a page.
-  const asMockup = kind === "html" && !truncated;
-  // A truncated file never derives a diagram: a partial map, a cut fence, or
-  // a half-written projection would render a hole as a decision. Only a
-  // complete file is a picture; the truncation note below says so.
-  const derived = derivedDiagram(path, content, { truncated });
-  return (
-    <div ref={scrollRef} className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
-      {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
-      {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
-      {!loading && !loadError && content !== null ? (
-        derived ? (
-          <div className="space-y-2">
-            <MermaidDiagram source={derived.mermaid} title={`${label || path} — derived diagram`} />
-            {kind === "markdown"
-              ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
-              : <SourceCode content={content} path={path || "file.txt"} />}
-            <p className="text-xs text-muted-foreground">
-              {derived.caption}{" "}
-              <UrlLink href={PELE_PLAYGROUND} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground">
-                Open in pele.run playground ↗
-              </UrlLink>
-            </p>
-          </div>
-        ) : kind === "markdown" ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div>
-          : asMockup ? <MockupFrame html={content} title={`${label || path} — interface mockup`} />
-            : <SourceCode content={content} path={path || "file.txt"} />
-      ) : null}
-      {truncated ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          {kind === "html"
-            ? "Truncated — shown as source, because a partial page is not the mockup."
-            : "Truncated preview — open in the editor for the full file."}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function DraftRow({ draft, index, sendAll, setDrafts }: { draft: Draft; index: number; sendAll: () => Promise<void>; setDrafts: React.Dispatch<React.SetStateAction<Draft[]>> }) {
   function remove() {
     setDrafts((current) => current.filter((entry) => entry.id !== draft.id));
@@ -248,30 +126,161 @@ export function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorT
   // of the one they asked about.
   optionLabel?: string;
 }) {
-  const { rpc, content, truncated, loadError, loading } = useArtifactContent(open, cardId, file);
-  const drafts = useCommentDrafts(rpc, open, cardId, file, onCommented);
-  const canComment = mode === "comment";
-  // The document's own scroll container, so the clicked option can be brought
-  // into view inside the document instead of quoted above it.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const viewer = useArtifactViewer({ open, cardId, file, editorTarget, mode, onCommented });
+  const { nav, current, drafts, canComment } = viewer;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-4xl flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="truncate">{file?.display ?? "Artifact"}</DialogTitle>
-          <DialogDescription>{canComment ? "Read-only preview. Discuss below — notes go to the agent." : "Read the document before deciding. This review does not modify it."}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-          <OptionSection content={content} optionLabel={optionLabel} containerRef={scrollRef} />
-          <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} scrollRef={scrollRef} />
+        <ViewerDialogHeader display={current?.display ?? null} canComment={canComment} />
+        <ArtifactFileList
+          files={nav.files}
+          currentPath={current?.path ?? ""}
+          canGoBack={nav.canGoBack}
+          onOpen={nav.openFile}
+          onBack={nav.back}
+        />
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" onClick={viewer.followLink}>
+          <OptionSection content={viewer.content} optionLabel={optionLabel} containerRef={viewer.scrollRef} />
+          <ArtifactContent
+            file={current}
+            content={viewer.content}
+            truncated={viewer.truncated}
+            loadError={viewer.loadError}
+            loading={viewer.loading}
+            scrollRef={viewer.scrollRef}
+          />
           {canComment ? <CommentDrafts {...drafts} /> : null}
         </div>
-        <DialogFooter>
-          {canComment && editorTarget ? <FileLink target={editorTarget} location={null} className="mr-auto inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 text-xs font-medium text-primary hover:underline">Open in bb editor ↗</FileLink> : null}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-          {canComment ? <Button disabled={drafts.drafts.length === 0 || drafts.sending} onClick={() => void drafts.sendAll()}>{drafts.sending ? "Sending…" : drafts.drafts.length > 1 ? `Send ${drafts.drafts.length} to agent` : "Send to agent"}</Button> : null}
-        </DialogFooter>
+        <ArtifactViewerFooter
+          canComment={canComment}
+          target={current?.target ?? null}
+          drafts={drafts}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ViewerDialogHeader({ display, canComment }: { display: string | null; canComment: boolean }) {
+  return (
+    <DialogHeader>
+      <DialogTitle className="truncate">{display ?? "Artifact"}</DialogTitle>
+      <DialogDescription>
+        {canComment
+          ? "Read-only preview. Follow the links or the file row to compare the stage's documents. Notes go to the agent."
+          : "Read the document before deciding. This review does not modify it."}
+      </DialogDescription>
+    </DialogHeader>
+  );
+}
+
+/**
+ * The dialog's state, kept out of its markup: the navigator, the current
+ * document load, the comment drafts, and the one link rule. The component
+ * below then reads as the layout it is.
+ */
+function useArtifactViewer({ open, cardId, file, editorTarget, mode, onCommented }: {
+  open: boolean;
+  cardId: string;
+  file: ArtifactFile;
+  editorTarget: EditorTarget;
+  mode: ArtifactViewerMode;
+  onCommented: () => void;
+}) {
+  // One stable location for the navigator: the parent re-renders on every RPC
+  // reply, and an inline object would reset the reader back to the first file
+  // each time the content loaded.
+  const initial = useMemo<ViewerDocument | null>(
+    () => (file ? { display: file.display, path: file.path, target: editorTarget } : null),
+    [file?.display, file?.path, editorTarget],
+  );
+  const nav = useArtifactNavigation(open, initial, cardId);
+  const current = nav.current;
+  const { rpc, content, truncated, loadError, loading } = useArtifactContent(open, cardId, current);
+  const drafts = useCommentDrafts(rpc, open, cardId, current, onCommented);
+  // The document's own scroll container, so the clicked option can be brought
+  // into view inside the document instead of quoted above it.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * A relative link in the document opens the next document in the SAME
+   * viewer. Without this, `alternatives.md` in a brief is a filename the reader
+   * has to find on the card; with it, the summary and the proposals it
+   * summarizes are one reading session. Modified clicks are left alone on
+   * purpose: opening in a new tab is a browser contract, not a navigation bug.
+   */
+  const followLink = (event: React.MouseEvent<HTMLDivElement>) =>
+    followArtifactLink(event, current?.path ?? null, nav.openPath);
+
+  return {
+    nav,
+    current,
+    drafts,
+    canComment: mode === "comment",
+    content,
+    truncated,
+    loadError,
+    loading,
+    scrollRef,
+    followLink,
+  };
+}
+
+function followArtifactLink(
+  event: React.MouseEvent<HTMLDivElement>,
+  currentPath: string | null,
+  openPath: (path: string) => void,
+) {
+  const anchor = (event.target as HTMLElement).closest("a");
+  const path = artifactLinkTarget(
+    {
+      defaultPrevented: event.defaultPrevented,
+      button: event.button,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      href: anchor?.getAttribute("href") ?? null,
+    },
+    currentPath,
+  );
+  if (!path) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openPath(path);
+}
+
+function ArtifactViewerFooter({ canComment, target, drafts, onClose }: {
+  canComment: boolean;
+  target: EditorTarget;
+  drafts: ReturnType<typeof useCommentDrafts>;
+  onClose: () => void;
+}) {
+  return (
+    <DialogFooter>
+      {canComment && target ? (
+        <FileLink
+          target={target}
+          location={null}
+          className="mr-auto inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 text-xs font-medium text-primary hover:underline"
+        >
+          Open in bb editor ↗
+        </FileLink>
+      ) : null}
+      <Button variant="outline" onClick={onClose}>Close</Button>
+      {canComment ? (
+        <Button
+          disabled={drafts.drafts.length === 0 || drafts.sending}
+          onClick={() => void drafts.sendAll()}
+        >
+          {drafts.sending
+            ? "Sending…"
+            : drafts.drafts.length > 1
+              ? `Send ${drafts.drafts.length} to agent`
+              : "Send to agent"}
+        </Button>
+      ) : null}
+    </DialogFooter>
   );
 }

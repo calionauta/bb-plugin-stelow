@@ -330,6 +330,10 @@ export const detailViewer = readFileSync(
   join(root, "components", "detail", "artifact-viewer-dialog.tsx"),
   "utf8",
 );
+export const detailContent = readFileSync(
+  join(root, "components", "detail", "artifact-content.tsx"),
+  "utf8",
+);
 export const manageHeader = readFileSync(
   join(root, "components", "manage", "card-detail-header.tsx"),
   "utf8",

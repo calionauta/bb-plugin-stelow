@@ -7,9 +7,10 @@
  *  - R1 hero tone/count, R2 the hero's sentence, R5 the ask gate: the modules are
  *    exported and pure, so these run the real thing through `node`.
  *  - R3/R4/R6 are rendered. `BatchStepper` and `BatchOptionList` mount without a
- *    host, so the shortcut layer, the option disclosure and the submit-on-any-
- *    step rule are exercised through real DOM events and DOM topology instead of
- *    grepped strings. A green string pin proves only that a string exists.
+ *    host, so the shortcut layer, the full option description and the submit-on-
+ *    any-step rule are exercised through real DOM events and DOM topology
+ *    instead of grepped strings. A green string pin proves only that a string
+ *    exists.
  *  - The one section itself (`WaitingSection` in detail-question-sections) is
  *    NOT mountable here: it renders `QuestionBatch`, whose first hook is the
  *    host's `useRpc`, and the SDK export is not callable outside BB. So R1's
@@ -253,8 +254,12 @@ test("R3: a completed batch does not submit on Cmd/Ctrl+Enter", () => {
 
 /* ------------------------------------------------------------------ R4 --- */
 
-const LONG_DESCRIPTION = "This option's first sentence is long enough that the shared prose rule cuts it. "
-  + "The remainder only becomes reachable through the option's own disclosure, which is the part under test here.";
+// The fixture is longer than the retired 140-character rule, so the old row
+// would have shown its first sentence and hidden the rest behind "Full detail".
+const LONG_DESCRIPTION = "This option's first sentence is long enough that the retired prose rule cut it. "
+  + "The remainder used to live behind a collapsed disclosure inside the row, which meant the reader "
+  + "judged the trade-off from half a sentence plus a control promising the half that mattered. "
+  + "The row now renders all of it: an option description is one to three sentences, not a document.";
 
 function renderOptionList(options) {
   render(h(BatchOptionList, {
@@ -266,48 +271,44 @@ function renderOptionList(options) {
   }));
 }
 
-test("R4: the long remainder is disclosed INSIDE the option's own frame", () => {
+test("R4: the full description renders in the pick control, with no disclosure", () => {
+  assert.ok(LONG_DESCRIPTION.length > 140,
+    "the fixture exceeds the retired limit, or the row would be short for the wrong reason");
   assert.ok(splitProseSummary(LONG_DESCRIPTION).tail,
-    "the fixture must actually exceed the shared summary limit, or the disclosure under test would not render");
+    "the retired rule cut exactly this fixture: the negative control the row must not reproduce");
   renderOptionList([option("Long option", LONG_DESCRIPTION), option("Short option", "Fits on one line.")]);
 
   const row = screen.getByText("Long option").closest("div.rounded-md");
   assert.ok(row?.classList.contains("border"),
-    "the option row is the bordered container whose inside the disclosure must live in");
-  const disclosure = row.querySelector("details");
-  assert.ok(disclosure, "a long description exposes a disclosure");
-  assert.match(disclosure.querySelector("summary")?.textContent ?? "", /Full detail/,
-    "the disclosure is named for what it reveals");
-  assert.equal(disclosure.open, false, "the glance stays collapsed until asked");
-  assert.equal(row.firstElementChild.contains(disclosure), false,
-    "the disclosure never nests inside the pick control: expanding it would answer the question");
-  assert.equal(row.firstElementChild.contains(screen.getByText("Long option")), true,
-    "the pick line holds the label, so the disclosure's sibling position is the row's end, not another row");
-
-  fireEvent.click(disclosure.querySelector("summary"));
-  assert.equal(disclosure.open, true, "clicking the summary reveals the remainder");
-  assert.ok(disclosure.textContent.includes(LONG_DESCRIPTION),
-    "the full remainder is reachable, not a second truncated glance");
-  const chevron = disclosure.querySelector("summary span");
-  assert.match(chevron?.className ?? "", /\brotate-90\b/,
-    "the shared DetailsDisclosure drives its chevron from its own open state");
-  assert.doesNotMatch(chevron?.className ?? "", /group-open:rotate-90/,
-    "and not from a CSS variant: the hand-rolled <details> this replaced left the arrow frozen, which is the "
-    + "reason the shared controlled chevron exists");
+    "the option row is the bordered container that must hold the whole description");
+  assert.equal(row.querySelector("details"), null,
+    "no disclosure inside the row: the reader judges the option from the row, not from a second click");
+  const description = screen.getByText(LONG_DESCRIPTION);
+  assert.equal(description.textContent, LONG_DESCRIPTION,
+    "the description is rendered verbatim — no head, no ellipsis, no recomposition");
+  assert.equal(row.contains(description), true, "and it lives inside the option row it describes");
+  // The row alone is not the claim in this test's name: the description has to
+  // be inside the PICK control, or it is a detached block the reader may not
+  // read as the thing they are choosing.
+  const pick = row.querySelector("button");
+  assert.ok(pick, "the row still has its pick control");
+  assert.equal(pick.contains(description), true,
+    "the whole description is part of the pick target, not a block beside it");
+  assert.equal(screen.queryByText(/Full detail/), null,
+    "the old disclosure label is gone, not merely collapsed");
 });
 
-test("R4: a short description has no disclosure, and the long one uses the shared module", () => {
-  renderOptionList([option("Long option", LONG_DESCRIPTION), option("Short option", "Fits on one line.")]);
-  const shortRow = screen.getByText("Short option").closest("div.rounded-md");
-  assert.equal(shortRow.querySelector("details"), null,
-    "a short description renders no disclosure — a control that hides nothing is a control that does nothing");
+test("R4: the row no longer reaches the prose-summary rule at all", () => {
+  renderOptionList([option("Short option", "Fits on one line.")]);
+  assert.equal(screen.getByText("Short option").closest("div.rounded-md").querySelector("details"), null,
+    "a short description still renders no disclosure — and not because a length rule said so");
 
   const source = codeOf(read("components/conversation/batch-options.tsx"));
-  assert.match(source, /<DetailsDisclosure summary="Full detail">/,
-    "the option's remainder uses the SHARED disclosure module, so an inline copy cannot drift from the "
-    + "card's other accordions");
-  assert.match(source, /preview\.tail \? <OptionFullDetail description=\{description\} \/> : null/,
-    "and the disclosure is guarded by the shared rule's tail rather than rendered unconditionally");
+  assert.doesNotMatch(source, /splitProseSummary/,
+    "re-importing the 140-char rule is the regression: the retired pin /splitProseSummary(description)/ "
+    + "would pass again, and the row would hide the half of the description the reader needs");
+  assert.doesNotMatch(source, /Full detail|AUTO_REVEAL_PREVIEW_CHARS|DetailsDisclosure/,
+    "the disclosure and the preview threshold are removed from the row, not merely unreachable");
 });
 
 /* ------------------------------------------------------------------ R5 --- */

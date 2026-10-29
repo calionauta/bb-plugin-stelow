@@ -65,6 +65,14 @@ export function loadComponent(relativePath, exportName, stubs) {
  * stays an opaque node and no claim about it can be asked.
  */
 export function walk(node, visit, depth = 0) {
+  // JSX children nest as arrays, so a list of rows sits one array deep. Walking
+  // the array as a node would visit it (it has no `type`) and then look for
+  // `children` on it, which arrays do not have — every row inside a mapped list
+  // was invisible to every lookup built on this.
+  if (Array.isArray(node)) {
+    for (const child of node) walk(child, visit, depth);
+    return;
+  }
   if (!node || typeof node !== "object" || depth > 20) return;
   if (typeof node.type === "function") {
     walk(node.type(node.props ?? {}, ...(node.children ?? [])), visit, depth + 1);

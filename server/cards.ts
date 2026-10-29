@@ -1,7 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
-import { resolveWithinRoot } from "../lib/path-jail.mjs";
-import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { effectiveActivity } from "../lib/card-activity.mjs";
 import { defaultProjectSource, resolveCardWorkspacePath } from "../lib/card-workspace.mjs";
@@ -10,6 +8,7 @@ import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
 import { integrationPending } from "../lib/integration-pending.mjs";
 import { loadCardScopes } from "./scopes.js";
+import { createCardFileHandlers } from "./card-files.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
@@ -91,6 +90,7 @@ type CardsDeps = {
 export function createCardsServer(deps: CardsDeps) {
   const { getCard, cardWorkspace } = deps.store;
   const createInternal = createCardInternal(deps.create);
+  const fileHandlers = createCardFileHandlers({ bb: deps.bb, errors: deps.errors, getCard, cardWorkspace });
   const listCards = async ({ projectId, kind }: { projectId?: string | null; kind?: string | null }) => {
     const rows = queryCards(deps.db, projectId ?? null, kind ?? null);
     const projects = await deps.bb.sdk.projects.list();
@@ -106,16 +106,6 @@ export function createCardsServer(deps: CardsDeps) {
     return { cards };
   };
 
-  const readCardFile = async ({ cardId, path }: { cardId: string; path: string }) => {
-    const card = getCard(cardId);
-    if (!card) return { content: null, truncated: false, error: deps.errors.cardNotFound };
-    const workspace = await cardWorkspace(card);
-    if (!workspace?.path) return { content: null, truncated: false, error: deps.errors.workspaceUnavailable };
-    const full = readableCardPath(workspace.path, path);
-    if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
-    return readTextFile(deps.bb, full);
-  };
-
   return {
     getCard,
     cardWorkspace,
@@ -127,7 +117,7 @@ export function createCardsServer(deps: CardsDeps) {
         githubAutomationEnabled: deps.githubAutomationEnabled(),
       }),
       listCards,
-      readCardFile,
+      ...fileHandlers,
       createCard: (input: CardCreateInput) => createInternal(input),
     },
   };
@@ -319,29 +309,4 @@ async function scopeSummary(
 function scopeTally(summary: ScopeSummary) {
   const { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs } = summary;
   return { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs };
-}
-
-function readableCardPath(rootPath: string, path: string, allowlist: string[] = []): string | null {
-  // The manifest fast path first (relative, no `..`, jailed to the root).
-  const resolved = resolveArtifactPath(rootPath, path);
-  if (resolved) return resolved;
-  // No absolute-path exit: an absolute outsider used to pass when it held no
-  // `..` segment, so any absolute path on the host was readable through this
-  // door. Everything now resolves through the same jail — inside the
-  // workspace, or inside a managed-worktree allowlist root — or it is null.
-  return resolveWithinRoot(rootPath, path, { allowlist });
-}
-
-async function readTextFile(bb: BbPluginApi, path: string) {
-  try {
-    const file = await bb.sdk.files.read({ path });
-    const content = typeof file.content === "string" ? file.content : null;
-    if (content === null || content.includes("\0")) {
-      return { content: null, truncated: false, error: "Not a readable text file." };
-    }
-    const limit = 200_000;
-    return { content: content.slice(0, limit), truncated: content.length > limit, error: null };
-  } catch {
-    return { content: null, truncated: false, error: "Could not read the file." };
-  }
 }

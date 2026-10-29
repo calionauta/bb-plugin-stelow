@@ -51,12 +51,12 @@ export const USER_INPUT_CONTRACT =
   '      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]\n' +
   "\n" +
   "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them " +
-  "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare " +
-  "artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, " +
-  "--artifact for the workspace-relative file they can open. Write every question for the decider: short, plain words, no stage slugs, " +
-  "recon counts, file handles, or methodology brand names — name a document only to open or approve it, and put details in " +
-  "--preview/--artifact, never inline. Mark an option that needs the human's which or what with --needs-note right after " +
-  "its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.\n" +
+  "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When comparing artifacts " +
+  "(interface, plan), attach each option's evidence: --desc for the trade-off (under 500 characters), --preview for the glance " +
+  "(a ```mermaid diagram when the choice is about flow, else a wireframe — never a copy of the description), --artifact for the file. " +
+  "Write every question for the decider: short, plain words, no stage slugs, counts, file handles, or " +
+  "methodology brand names — name a document only to open or approve it. Mark an option that needs the human's which or what with --needs-note " +
+  "right after its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.\n" +
   "\n" +
   "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file " +
   "list as the only content of a question.\n" +
@@ -90,9 +90,10 @@ block, or CHANGELOG.md plus v* tags). If the repo releases from commits, write `
 // continue nudge: one const so a wording fix lands everywhere (the
 // prompt-contracts test pins single definition + all references).
 export const INTERFACE_PICK =
-  "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it to gates when absent). For each \
-selected gate, put its document in a `bb stelow ask` with --artifact and stop; use another review tool only when the host registers one. Unselected \
-gates never park: the LLM decides itself, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Never \
+  "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it when absent). For a selected \
+gate, put its document in `bb stelow ask` with --artifact and stop; use another review tool only if the host registers it. Attach \
+`alternatives.md`, not `interfaces.md`. Unselected \
+gates never park: the LLM decides, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Never \
 approve a selected gate silently.";
 
 // Explicit completion: done-ness was inferred from `audit` + idle, so a

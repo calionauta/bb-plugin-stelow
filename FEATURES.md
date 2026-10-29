@@ -1121,8 +1121,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. **One prose rule covers the whole card.** An option's glimpse and the card's own description are cut by the same function (`splitProseSummary`, `PROSE_SUMMARY_LIMIT = 140` in `lib/question-prose.mjs`): the first sentence when one ends inside the limit, otherwise the last word boundary, and anything over the limit always leaves a disclosure. It replaced a 240-character rule that applied to option descriptions only — so the request itself rendered in full, and a 1,500-to-4,000 character description sat between the state line and the question it produced. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
-  glance, expandable) and `artifact` (workspace-relative path opening in
+  A preview renders INLINE, always: there is no length threshold and no
+  "Preview" disclosure, because the old 280-character rule hid a long preview
+  behind a click and the evidence a worker was asked to produce became the one
+  thing the reader had to click twice to see. A text wireframe keeps its
+  whitespace in a monospace block; a fenced ```mermaid preview renders as a
+  diagram through the same bundled pele renderer as the brief. **The option
+  description is rendered whole.** The card no longer cuts it at 140 characters
+  and repeats the remainder behind "Full detail": the worker is told at
+  generation time to keep it under 500 characters, and the row shows all of it.
+  `splitProseSummary` remains the rule for the surfaces that still summarize —
+  the inbox row and the card's own request description — and no longer applies
+  to an option. The staleness notice leads with what it MEANS ("a document this
+  relies on was revised — check it before answering") and collapses the touched
+  file paths behind a "N files touched" summary, so a seven-path list no longer
+  pushes the question off the screen. Options carry descriptions plus optional
+  detail: `preview` (inline evidence, never a second copy of the description)
+  and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
   to no affordance and never block answering. Within one question, an
@@ -1186,16 +1201,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
-- **One brief, read inline** (`EmbeddedBrief`, `sharedQuestionArtifact`).
+- **One brief, open in the viewer** (`EmbeddedBrief`, `sharedQuestionArtifact`).
   Gate approvals attach the same document to every option, so per-row Open
   buttons repeated one file N times — friction for zero information. When
   every option carries the same document (resolved path wins, so two
-  spellings still match), the question embeds one reader above the rows —
-  collapsed behind a "Show brief" disclosure, because a full reader above the
-  options pushed the first answer past the fold — with an "Open full viewer"
-  exit to quoting and commenting, and the rows hide their buttons; genuinely
-  different documents keep per-row buttons. One decision point renders both halves, so they can never
-  disagree. Threads (no viewer) keep the filename span.
+  spellings still match), the question shows one button above the rows —
+  "Read the brief · <file> · Open ↗" — and the rows hide their buttons;
+  genuinely different documents keep per-row buttons. It is a button, not a
+  disclosure: the old accordion rendered the same document inside the
+  conversation, with its own scroll box, no diagrams, no links between the
+  stage's files, and an underlined "Show brief" summary that read as
+  decoration. The shared viewer is the only surface that can render a diagram,
+  follow a relative link to `alternatives.md`, and quote a passage back to the
+  agent, so the row names what the click does. One decision point renders both
+  halves, so they can never disagree. Threads (no viewer) keep the filename
+  span.
 - **Human titles on question copy** (`applyScopeLabels`,
   `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
   to address them at humans ("A5 — checkout", "Serves A5"). Templates now
@@ -1428,9 +1448,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   request spells out that actually exist in the workspace (never a basename
   guess, which used to surface an unrelated file): six at most (`server/runtime/mentioned-files.ts`), and nothing
   at all when the request names none.
-- **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
+- **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`, `listCardFiles`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline. A generated interface
+  to the agent, gate question answerable inline. **The viewer reads the
+  stage, not only one file.** It lists the viewable documents in the current
+  file's directory as chips (the current one marked `aria-current="page"`),
+  and a relative Markdown link opens that file in the same dialog; Back
+  returns to the document the reader came from. This is what makes a gate
+  brief usable: `interfaces.md` is the receipt of the contrast, and
+  `alternatives.md` is where every wireframe lives. Reads and listings share
+  one workspace jail (`server/card-files.ts`), so a link cannot reach outside
+  the checkout, and dotfiles and images never appear in the picker. A generated interface
   mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
   under decision is a layout, and source text is the one thing that cannot
   answer it. The decision is the path alone (`artifactRenderKind` in
@@ -2818,9 +2846,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   document in a `bb stelow ask`), and unselected gates keep the LLM receipt.
   Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
-  beside the decision section); a long description and the inline glance expand
-  at the END of the same option, through the shared `DetailsDisclosure` so the
-  chevron rotates like every other accordion. **The decision itself owns the
+  beside the decision section); the full description sits in the pick control
+  and the preview renders at the END of the same option as inline evidence —
+  text in a monospace block, a fenced ```mermaid preview through the brief's
+  own renderer, and never a second disclosure. **The decision itself owns the
   amber.** The hero names the card's state and stays neutral ("At Critique — your
   answer is pending"); below it one "Waiting for you" section holds the live and recovered
   questions, opens itself, carries the count as its subtitle ("Needs your

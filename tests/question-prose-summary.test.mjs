@@ -229,13 +229,13 @@ test("R1: a non-string degrades to an empty head instead of throwing", () => {
   }
 });
 
-test("R1: one exported rule at 140, and both prose surfaces read it", () => {
+test("R1: one exported rule at 140, read by the surfaces that still summarize", () => {
   // The rule moved to its own module (2026-10-27) when the question surface
   // pushed `question-presentation.mjs` over its file budget. The pin follows
   // the rule, not the filename: a second truncation rule anywhere on the module
   // that owns it is still the drift this consolidation removed.
   const prose = read("lib/question-prose.mjs");
-  assert.equal(PROSE_SUMMARY_LIMIT, 140, "the limit is the single named number both surfaces cut at");
+  assert.equal(PROSE_SUMMARY_LIMIT, 140, "the limit is the single named number the remaining surfaces cut at");
   const secondRule = prose.match(/export (?:const|function) (?!PROSE_SUMMARY_LIMIT)\w*(?:PREVIEW|TRUNC|SUMMARY_LIMIT)\w*/g) ?? [];
   assert.deepEqual(
     secondRule,
@@ -253,9 +253,18 @@ test("R1: one exported rule at 140, and both prose surfaces read it", () => {
     /export declare const PROSE_SUMMARY_LIMIT: number;/,
     "the type declaration names the rule, so a consumer cannot import a stale name and still compile",
   );
-  // The wiring that makes it ONE rule rather than two equal limits: the option
-  // glance reaches the same function, and so does the card's own description,
-  // which used to render 1,500-4,000 characters in full.
-  assert.match(optionCode, /splitProseSummary\(description\)/, "the option glance truncates through the shared rule");
-  assert.match(promptRead, /splitProseSummary\(prompt\)/, "and so does the card's description");
+  // The option row is NO LONGER a summarizing surface: it renders the whole
+  // description, and the generation boundary bounds it. Re-importing the rule
+  // here would bring back the head-plus-hidden-tail the card audit rejected.
+  assert.doesNotMatch(
+    optionCode,
+    /splitProseSummary/,
+    "the option row must not truncate its description: the reader judges the trade-off from the full text",
+  );
+  assert.match(
+    read("components/panels/inbox-row.tsx"),
+    /splitProseSummary\(question\)/,
+    "the inbox row still summarizes the question it previews",
+  );
+  assert.match(promptRead, /splitProseSummary\(prompt\)/, "and the card's own description still collapses");
 });

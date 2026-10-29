@@ -7,6 +7,7 @@ import {
   creationModule,
   strategyPickerModule,
   detailViewer,
+  detailContent,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
 // The viewer is shared by every detail track. It owns both live file reads and
@@ -28,10 +29,20 @@ assert.doesNotMatch(
   "no local viewer copy survives in the detail slice",
 );
 assert.match(
-  detailViewer,
+  detailContent,
   /rpc\.call\("readCardFile", \{ cardId, path: file\.path \}\)/,
   "the viewer reads the selected card file through the host",
 );
+// The claim is that both halves come from the extracted module, not that the
+// import list never grows: pinning the literal braces made adding a type to it
+// a failure for no behavioral reason.
+const contentImport = detailViewer.match(/import \{([^}]*)\} from "\.\/artifact-content";/);
+assert.ok(contentImport,
+  "the dialog takes its renderer from artifact-content, so navigation and rendering cannot fork");
+assert.match(contentImport[1], /\bArtifactContent\b/,
+  "the rendered document is artifact-content's, not a local copy");
+assert.match(contentImport[1], /\buseArtifactContent\b/,
+  "and so is the loader, so two documents cannot disagree about what was read");
 assert.match(
   detailViewer,
   /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body: commentBody\(file, drafts\) \}\)/,

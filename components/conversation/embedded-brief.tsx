@@ -1,47 +1,39 @@
-import { ArtifactContent, useArtifactContent } from "../detail/artifact-viewer-dialog";
-import { DetailsDisclosure } from "../disclosure";
 import { Button } from "@/components/ui/button";
 import { artifactViewerModeForOption, sharedQuestionArtifact } from "../../lib/question-presentation.mjs";
 import type { AskArtifact, BatchItem, OpenArtifactHandler } from "./batch-types";
 
-// The one brief behind the current question, read inline.
+// The one brief behind the current question, as a door into the viewer.
 //
 // Gate approvals attach the same document to every option, so per-row Open
 // buttons repeat one file N times. When every option carries the same
-// document this renders one reader above the rows instead; genuinely
-// different documents keep their per-row buttons (see sharedQuestionArtifact
-// for the rule). The full viewer stays one click away for quoting passages
-// and commenting — this is the read path, not the discuss path.
-export function EmbeddedBrief({ cardId, file, onExpand }: {
-  cardId: string;
+// document this renders one brief above the rows instead; genuinely different
+// documents keep their per-row buttons (see sharedQuestionArtifact for the
+// rule).
+//
+// It is one button, not a disclosure. The brief is Markdown with diagrams and
+// section anchors, and the reader's job is to OPEN it — an accordion rendered
+// the same document inside the conversation, with its own scroll box, its own
+// truncated excerpt, and an underlined summary that read as decoration. The
+// viewer is the only place that can render diagrams, follow links between the
+// stage's files, and quote a passage back to the agent, so the row says what
+// the click does: read the brief.
+export function EmbeddedBrief({ file, onExpand }: {
   file: AskArtifact;
   onExpand: () => void;
 }) {
-  const { content, truncated, loadError, loading } = useArtifactContent(true, cardId, file);
   return (
-    <div className="rounded-md border bg-muted/20">
-      <div className="flex min-h-11 items-center gap-2 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-          Brief for this question: {file.display}
-        </span>
-        <Button
-          type="button"
-          variant="link"
-          onClick={onExpand}
-          className="shrink-0 text-xs font-medium"
-        >
-          Open full viewer ↗
-        </Button>
-      </div>
-      {/* Evidence, not the decision: collapsed by default so the options are
-          visible on arrival. The full viewer stays one click away above, and
-          this is the read path for a reader who wants the brief in place. */}
-      <div className="px-3 pb-3">
-        <DetailsDisclosure summary="Show brief">
-          <ArtifactContent file={file} content={content} truncated={truncated} loadError={loadError} loading={loading} />
-        </DetailsDisclosure>
-      </div>
-    </div>
+    <Button
+      type="button"
+      variant="outline"
+      onClick={onExpand}
+      aria-label={`Open the brief ${file.display} in the viewer`}
+      className="mb-1 flex min-h-11 w-full cursor-pointer items-center justify-start gap-2 px-3 py-2 text-left"
+    >
+      <span aria-hidden className="text-sm text-muted-foreground">▤</span>
+      <span className="text-sm font-medium text-foreground">Read the brief</span>
+      <span className="min-w-0 truncate text-xs text-muted-foreground">{file.display}</span>
+      <span className="ml-auto shrink-0 text-xs font-medium text-foreground">Open ↗</span>
+    </Button>
   );
 }
 
