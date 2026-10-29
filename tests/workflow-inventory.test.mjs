@@ -28,6 +28,17 @@ test("a card-owned entry maps to its card id", () => {
   assert.equal(cardIdOfWorkflow(card("sw-card_card_qimjr9z4")), "card_qimjr9z4");
 });
 
+test("the RAW tracking shape counts too: it carries dirHash, not id", () => {
+  // `stelow.json` stores the directory hash; the board projection renames it to
+  // `id`. Reading only `id` made every raw entry look cardless — the prune saw
+  // 0 orphans against 77 entries on the real file.
+  assert.equal(
+    cardIdOfWorkflow({ dirHash: "sw-card_card_gone", name: "ghost" }),
+    "card_gone",
+  );
+  assert.equal(cardIdOfWorkflow({ dirHash: "sw_jtbd-lifecycle", name: "cardless" }), null);
+});
+
 test("a cardless entry has no card id", () => {
   for (const id of ["sw_jtbd-lifecycle-real", "sw_e2e-needsinput-resu", "workflow-1"]) {
     assert.equal(cardIdOfWorkflow(cardless(id)), null, `"${id}" is cardless`);
