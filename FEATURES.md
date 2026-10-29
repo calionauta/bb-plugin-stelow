@@ -340,6 +340,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   dead, and declaring a `primaryArtifact` was exactly what killed it. The prompt
   now asks the same resolver the checks ask, so a technique cannot switch its own
   verification off by naming its own file.
+- **The first reaction comes before the interface synthesis**
+  (`INTERFACE_PICK`). On card_g89gtmwt the alternatives were generated in one
+  pass and the gate question — the pick among A/B/C/H — was the first human
+  contact with them. `contrast.json` records that honestly (`firstReaction:
+  null`, with the note that the method asks for it before synthesis), but the
+  card had already spent the synthesis. The worker prompt now says "Ask the
+  first reaction before synthesis": the gate pick is a decision after the
+  comparison, never a substitute for the reaction the comparison was supposed
+  to answer. The native `interface-contrast` recipe still owns the full
+  sequence; this clause is the guard for the coordinator fallback.
 - **An option's letter never routes it to a different option's section.** The
   letter fallback exists for a brief that names its options by letter alone
   (`## Proposal A`), and it must not fire on a heading that *describes* an
@@ -1831,9 +1841,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   0.3s with no agent calls) is retried **automatically, once**, by the
   reconciler through that same launch rule, with the spent budget stamped on
   the new row (`auto_retry_count`) and a trail comment saying the host retried
-  it. Only a failure the run actually performed — or a second consecutive
-  no-op, which means dispatch itself is sick — parks the card and asks a
-  person. Unreachable runs, launch failures, and start timeouts are excluded on
+  it. A **provider catalog timeout before the first agent call** is the other
+  proof: the run names the provider's model list as the precondition that
+  failed (card_rbkbfyqy's `Could not load models for provider acp-opencode:
+  timeout`, zero calls), so no work ran and the same one automatic retry is
+  safe (`PROVIDER_CATALOG_TIMEOUT` in `lib/transient-run-retry.mjs`). Only a
+  failure the run actually performed — or a second consecutive no-op/timeout,
+  which means dispatch itself is sick — parks the card and asks a person.
+  Unreachable runs, launch failures, and start timeouts are excluded on
   purpose: there the host has no proof nothing ran, and a blind retry could
   fork two workers on one stage.
   The card is **told** which run blocks (`detail.card.blockingRun`) rather than
