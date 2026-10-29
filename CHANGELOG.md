@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.0...v0.102.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* the prune reads the RAW tracking shape, not only the board projection ([#491](https://github.com/calionauta/bb-plugin-stelow/issues/491)) ([d1de9fd](https://github.com/calionauta/bb-plugin-stelow/commit/d1de9fdc732d2723defa1efbd86c7b5fa3d34a8a))
+
 ## [0.102.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.101.0...v0.102.0) (2026-10-29)
 
 
