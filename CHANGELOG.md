@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.101.0...v0.102.0) (2026-10-29)
+
+
+### Features
+
+* prune workflow entries whose card is gone ([#489](https://github.com/calionauta/bb-plugin-stelow/issues/489)) ([3d04b5b](https://github.com/calionauta/bb-plugin-stelow/commit/3d04b5b906e3365379a57682f29b797ffc9f0691))
+
 ## [0.101.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.100.1...v0.101.0) (2026-10-28)
 
 
