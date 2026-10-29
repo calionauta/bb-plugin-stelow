@@ -66,25 +66,30 @@ function headerNode(tree) {
   return header;
 }
 
-// --- 1. The header is a column until lg. ----------------------------------
-test("the header stacks until lg, where prose and a button row genuinely fit", () => {
+// --- 1. The header is a column below lg and a two-row grid above it. -----
+test("the explanation never shares a row with the actions", () => {
   const header = headerNode(renderHeader());
   assert.ok(header, "the header renders a <header> element");
   const classes = classesOf(header);
   assert.ok(classes.includes("flex-col"), "the header is a column by default");
   assert.ok(
-    classes.includes("lg:flex-row"),
-    "and becomes a row only at lg, where the explanation has room beside the actions",
+    classes.includes("lg:grid"),
+    "at lg it becomes a two-row grid: title and actions on top, explanation beneath",
   );
   assert.ok(
-    !classes.includes("sm:flex-row"),
-    "no breakpoint below lg turns the header into a row: at sm the explanation lost the row",
+    classes.includes("lg:grid-cols-[minmax(0,1fr)_auto]"),
+    "the title owns the flexible track and the actions a capped one",
+  );
+  assert.ok(
+    !classes.includes("lg:flex-row"),
+    "no breakpoint puts the explanation back in the same row as the buttons",
   );
 });
 
-// --- 2. The explanation keeps a readable measure. -------------------------
-test("the explanation wraps at a readable measure and balances its last line", () => {
+// --- 2. The explanation keeps a readable measure, in its own row. --------
+test("the explanation spans the whole header width under the title row", () => {
   const tree = renderHeader();
+  const header = headerNode(tree);
   let paragraph = null;
   walk(tree, (node) => {
     if (!paragraph && node.type === "p") paragraph = node;
@@ -93,20 +98,22 @@ test("the explanation wraps at a readable measure and balances its last line", (
   const classes = classesOf(paragraph);
   assert.ok(classes.includes("max-w-prose"), "the paragraph is bounded at a readable measure");
   assert.ok(classes.includes("text-pretty"), "and its last line is balanced rather than orphaned");
+  assert.ok(classes.includes("lg:col-span-2"), "it spans both columns");
+  assert.ok(classes.includes("lg:row-start-2"), "and sits in the second row, never beside a button");
+  assert.ok(header.children.includes(paragraph), "it is a direct child of the header, not nested inside the title column");
 });
 
-// --- 3. The actions are a thumb grid that never squeezes the title. ------
-test("actions are a two-column phone grid and a wrapping row above it", () => {
+// --- 3. The actions are a thumb grid and a capped row. -------------------
+test("actions are a thumb grid that wraps instead of crushing the title", () => {
   const tree = renderHeader();
   const container = findElementByClass(tree, "grid-cols-2");
   assert.ok(container, "the actions are a two-column grid on a phone");
   const classes = classesOf(container);
   assert.ok(classes.includes("sm:flex"), "and a row from sm up");
   assert.ok(classes.includes("sm:flex-wrap"), "which wraps instead of shrinking a button");
-  assert.ok(
-    classes.includes("lg:flex-nowrap"),
-    "and only stops wrapping where the header itself becomes a row",
-  );
+  assert.ok(classes.includes("lg:max-w-[38rem]"), "the action row is capped so the title keeps a measure");
+  assert.ok(classes.includes("lg:col-start-2") && classes.includes("lg:row-start-1"),
+    "it shares the first row with the title, on the right");
   assert.ok(
     !classes.includes("sm:flex-col"),
     "the actions never stack beside the explanation again",
@@ -132,14 +139,17 @@ test("the attention count renders as one reachable control", () => {
   );
 });
 
-// --- 5. Nothing in the header runs past a phone's width. ------------------
-test("the blurb is the only flexible member, so no control can crush it", () => {
+// --- 5. On a phone the order is title, explanation, actions. -------------
+test("the title column is the flexible member and the phone order reads title, explanation, actions", () => {
   const tree = renderHeader();
-  let intro = null;
-  walk(tree, (node) => {
-    if (!intro && node.props?.className === "min-w-0") intro = node;
-  });
-  assert.ok(intro, "the explanation's column is the flexible one (min-w-0)");
+  const titleColumn = findElementByClass(tree, "order-1");
+  assert.ok(titleColumn, "the title column comes first on a phone");
+  assert.ok(classesOf(titleColumn).includes("min-w-0"),
+    "it is the flexible track, so a long title truncates instead of pushing a control");
+  const paragraph = findElementByClass(tree, "order-2");
+  assert.ok(paragraph, "the explanation comes second on a phone, before the buttons");
+  const actions = findElementByClass(tree, "order-3");
+  assert.ok(actions, "the action grid comes last, where the thumb already is");
 });
 
 // --- 6. The scroll hint follows the input device, not the width. ---------

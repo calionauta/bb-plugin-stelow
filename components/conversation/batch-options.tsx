@@ -1,5 +1,7 @@
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MermaidDiagram } from "../detail/mermaid-diagram";
+import { DisclosureChevron } from "../disclosure";
 import { EmbeddedBrief, embeddedBriefFor } from "./embedded-brief";
 import { artifactViewerModeForOption } from "../../lib/question-presentation.mjs";
 import { previewShape } from "../../lib/question-preview.mjs";
@@ -21,11 +23,14 @@ import type {
 // plain filename where it doesn't (thread) — never a dead button pretending to
 // open, never one shared button after the options.
 //
-// The preview is shown inline. It is evidence the reader judges the option BY,
-// so hiding it behind a disclosure is asking for two clicks to see the thing
-// the row was written to show. A text wireframe keeps its whitespace in a
-// monospace block; a ```mermaid preview is a diagram, rendered by the same
-// viewer as the brief. Both are evidence, neither is a second decision.
+// The preview is evidence the reader judges the option BY, but a long one is
+// not the row: four wireframes open at once made the question taller than the
+// screen and pushed the options apart. The pattern is a peek plus an explicit
+// control — the first lines stay visible with a fade, and one labelled button
+// (shared chevron, aria-expanded) reveals the rest. A diagram has no useful
+// partial state, so it starts behind "Show diagram" and draws whole. Short
+// text (under five lines) is already a glance and renders with no control at
+// all; a control that reveals nothing is a control that does nothing.
 
 // The select control of a row: the label and its full description are the whole
 // target, so it carries the 44px minimum and the shared focus ring. It fills
@@ -44,6 +49,101 @@ const PICK_CONTROL_CLASS = [
 // option it explains rather than as a control floating below it.
 const INSIDE_OPTION = "border-t border-border/50 pl-11 pr-2 pb-2";
 
+// A preview deeper than this is a document, not a glance. Five lines is about
+// the height of the option's own description; 360 characters catches a wide
+// wireframe whose line count is small but whose box would still dominate.
+const TEXT_PEEK_LINES = 5;
+const TEXT_PEEK_CHARS = 360;
+const PREVIEW_BUTTON_CLASS = [
+  "mt-1 flex min-h-11 w-full cursor-pointer items-center justify-start gap-1.5",
+  "rounded-md px-1 text-xs font-medium text-foreground hover:bg-muted/60",
+].join(" ");
+
+function PreviewToggle({ open, panelId, label, onToggle }: {
+  open: boolean;
+  panelId: string;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-expanded={open}
+      aria-controls={panelId}
+      onClick={onToggle}
+      className={PREVIEW_BUTTON_CLASS}
+    >
+      <DisclosureChevron open={open} />
+      {open ? `Hide ${label}` : `Show ${label}`}
+    </Button>
+  );
+}
+
+function TextPreview({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const needsDisclosure = text.split("\n").length > TEXT_PEEK_LINES || text.length > TEXT_PEEK_CHARS;
+  if (!needsDisclosure) {
+    return (
+      <pre className="whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed">
+        {text}
+      </pre>
+    );
+  }
+  return (
+    <div>
+      <div className="relative">
+        <pre
+          id={panelId}
+          className={`whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed ${
+            open ? "" : "max-h-[8.5rem] overflow-hidden"
+          }`}
+        >
+          {text}
+        </pre>
+        {open ? null : (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background via-background/85 to-transparent"
+          />
+        )}
+      </div>
+      <PreviewToggle
+        open={open}
+        panelId={panelId}
+        label="preview"
+        onToggle={() => setOpen((value) => !value)}
+      />
+    </div>
+  );
+}
+
+function DiagramPreview({ source, prose }: { source: string; prose: string }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  if (!open) {
+    return (
+      <div id={panelId}>
+        <p className="mb-1 text-xs text-muted-foreground">
+          A diagram is the clearest preview here; it opens whole rather than cut off.
+        </p>
+        <PreviewToggle open={false} panelId={panelId} label="diagram" onToggle={() => setOpen(true)} />
+      </div>
+    );
+  }
+  return (
+    <div id={panelId} className="space-y-2">
+      {prose ? (
+        <p className="whitespace-pre-line break-words text-sm leading-6 text-muted-foreground">{prose}</p>
+      ) : null}
+      <MermaidDiagram source={source} title="Option preview diagram" />
+      <PreviewToggle open panelId={panelId} label="diagram" onToggle={() => setOpen(false)} />
+    </div>
+  );
+}
+
 function OptionPreview({ preview }: { preview: string | null }) {
   const shape = previewShape(preview);
   if (!shape) return null;
@@ -52,20 +152,9 @@ function OptionPreview({ preview }: { preview: string | null }) {
       <figcaption className="mb-1 pt-2 text-[13px] font-semibold text-muted-foreground">
         What this looks like
       </figcaption>
-      {shape.kind === "mermaid" ? (
-        <div className="space-y-2">
-          {shape.prose ? (
-            <p className="whitespace-pre-line break-words text-sm leading-6 text-muted-foreground">{shape.prose}</p>
-          ) : null}
-          <MermaidDiagram source={shape.source} title="Option preview diagram" />
-        </div>
-      ) : (
-        <pre
-          className="max-h-[26rem] overflow-auto whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed"
-        >
-          {shape.text}
-        </pre>
-      )}
+      {shape.kind === "mermaid"
+        ? <DiagramPreview source={shape.source} prose={shape.prose} />
+        : <TextPreview text={shape.text} />}
     </figure>
   );
 }

@@ -72,7 +72,7 @@ export function createCardFileHandlers({ bb, errors, getCard, cardWorkspace }: C
     const entries = Array.isArray(listed?.paths) ? listed.paths : [];
     return {
       directory: relDirectory.split(sep).join("/"),
-      files: siblingFiles(entries, workspace.path),
+      files: siblingFiles(entries, directory, workspace.path),
       error: null,
     };
   };
@@ -98,13 +98,20 @@ async function readTextFile(bb: BbPluginApi, path: string) {
  * The viewable documents among a directory listing, as paths the viewer can
  * open. Anything unreadable, outside the workspace, hidden, or not a document
  * kind is dropped: the picker is navigation, not a filesystem browser.
+ *
+ * `listPaths` answers with names relative to the directory it was asked for
+ * (`alternatives.md`), not with absolute paths. Resolving those against the
+ * workspace root produced `/repo/alternatives.md` — a different, usually
+ * missing file — and made the next list read the root instead of the folder.
+ * The listing's own directory is the base; the workspace root only computes
+ * the relative path the card RPC speaks.
  */
-function siblingFiles(entries: unknown[], rootPath: string): SiblingFile[] {
+function siblingFiles(entries: unknown[], directory: string, rootPath: string): SiblingFile[] {
   return entries
     .map((entry) => (typeof entry === "string" ? entry : (entry as { path?: unknown } | null)?.path))
     .map((absolute) => {
       if (typeof absolute !== "string") return null;
-      const resolved = readableCardPath(rootPath, absolute);
+      const resolved = readableCardPath(directory, absolute);
       if (!resolved) return null;
       const name = basename(resolved);
       if (name.startsWith(".")) return null;

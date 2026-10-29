@@ -220,4 +220,41 @@ assert.equal(
 const unlabeled = await asks.fallbackGateAskArtifact({ id: "card_1", dir_hash: "hash1" }, []);
 assert.equal(unlabeled?.path, "interfaces/interfaces.md", "an unwritten-from ask keeps the first registered document");
 
+// The live card_g89gtmwt shape: the worker attached the RECEIPT
+// (`interfaces.md`), which names none of the four options, while the proposals
+// file names all four. The attachment is replaced, not inherited onto every
+// row, so the brief button opens the document the options were written from.
+const card = { id: "card_1", dir_hash: "hash1" };
+const attachedReceipt = await asks.resolveAskOptions(
+  card,
+  questionLabels.map((label) => ({
+    label,
+    description: "",
+    preview: null,
+    artifact: { path: "interfaces/interfaces.md" },
+  })),
+);
+assert.equal(
+  attachedReceipt[0]?.artifact?.path,
+  "interfaces/interfaces_v1.md",
+  "an attachment that names none of the options yields to the proposals file that names them",
+);
+assert.ok(
+  attachedReceipt.every((option) => option.artifactInherited === true),
+  "the recovered document is marked inherited, because no option attached it",
+);
+
+// The exception that makes the rule safe: an approval gate attaches a plan
+// whose options are Approve/Request changes. The plan names neither, and no
+// sibling names them either, so the deliberate attachment must survive.
+const approval = await asks.resolveAskOptions(card, [
+  { label: "Approve", description: "", preview: null, artifact: { path: "interfaces/interfaces.md" } },
+  { label: "Request changes", description: "", preview: null, artifact: null },
+]);
+assert.equal(
+  approval[0]?.artifact?.path,
+  "interfaces/interfaces.md",
+  "with no positive candidate, the worker's attachment is kept instead of replaced by manifest order",
+);
+
 console.log("option-section-mismatch test ok: a different decision's document yields no section, and the right one yields the hybrid");

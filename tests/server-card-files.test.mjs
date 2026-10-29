@@ -18,23 +18,16 @@ import { cardRpcContract } from "../server/card-rpc-contract.ts";
 
 const CARD = { id: "card_1" };
 const WORKSPACE = { path: "/workspace", hostId: "host_1" };
-const PATHS = [
-  "/workspace/notes.md",
-  { path: "/workspace/plan.json" },
-  "/workspace/.hidden.md",
-  "/workspace/image.png",
-  "/workspace/nested/child.md",
-  "/workspace/raw.txt",
-];
+// `listPaths` answers with names relative to the directory it was asked for.
+// The fixture says what the SDK says: `plan.json`, not `/workspace/plan.json`.
+const FOLDERS = {
+  "/workspace": ["notes.md", { path: "plan.json" }, ".hidden.md", "image.png", "raw.txt"],
+  "/workspace/nested": ["child.md"],
+};
 
 /** A directory listing over the fixture: only entries in the requested folder. */
 function folder(path) {
-  return {
-    paths: PATHS.filter((entry) => {
-      const full = typeof entry === "string" ? entry : entry.path;
-      return full.slice(0, full.lastIndexOf("/")) === path;
-    }),
-  };
+  return { paths: FOLDERS[path] ?? [] };
 }
 
 function handlers({ listPaths, read, workspace = WORKSPACE } = {}) {

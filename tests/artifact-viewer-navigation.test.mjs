@@ -98,7 +98,7 @@ function renderFiles(overrides = {}) {
 }
 
 const row = renderFiles();
-const nav = screen.getByRole("navigation", { name: "Files in this folder" });
+const nav = screen.getByRole("navigation", { name: "Related files in this folder" });
 assert.equal(nav.querySelectorAll("button").length, 2, "one chip per sibling, and no Back before the first navigation");
 const current = screen.getByRole("button", { name: "interfaces.md" });
 assert.equal(current.getAttribute("aria-current"), "page", "the document on screen is the marked one");
@@ -136,7 +136,7 @@ render(h(ArtifactFileList, {
   onOpen: () => {},
   onBack: () => {},
 }));
-assert.equal(screen.queryByRole("navigation", { name: "Files in this folder" }), null,
+assert.equal(screen.queryByRole("navigation", { name: "Related files in this folder" }), null,
   "a directory with one file and no history has nothing to navigate, so it renders no row");
 cleanup();
 
