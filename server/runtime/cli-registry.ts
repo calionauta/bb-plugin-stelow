@@ -111,6 +111,11 @@ export const stelowCliCommands: CliCommand[] = [
   ),
   command("storage", "Worktree disk usage attributed to cards, heaviest first (read-only)", "bb stelow storage [--json] [--card <card_id>]"),
   command(
+    "prune",
+    "Remove workflow tracking entries whose card no longer exists (dry run unless --apply)",
+    "bb stelow prune [--json] [--apply]",
+  ),
+  command(
     "log",
     "What the plugin recorded doing: RPCs, CLI verbs, decisions and effects (read-only)",
     "bb stelow log [--json] [--card <card_id>] [--kind <kind>] [--cause <code>]",

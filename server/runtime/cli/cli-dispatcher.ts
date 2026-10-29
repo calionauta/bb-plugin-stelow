@@ -10,9 +10,11 @@ import { createExportCommand } from "./cli-export.js";
 import { createFanOutCommand } from "./cli-fan-out.js";
 import { createGapScopesCommand } from "./cli-gap-scopes.js";
 import { createGapTriageCommand } from "./cli-gap-triage.js";
+import { createGapsCommand } from "./cli-gaps.js";
 import { createGcCommand } from "./cli-gc.js";
 import { createHelperPassthroughCommands } from "./cli-helper-passthrough.js";
 import { createLockCommand } from "./cli-lock.js";
+import { createLogCommand } from "./cli-log.js";
 import { createManifestCommand } from "./cli-manifest.js";
 import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
@@ -21,6 +23,7 @@ import { createReviewCommand } from "./cli-review.js";
 import { createRetryRunCommand } from "./cli-retry-run.js";
 import { createSeedCommand } from "./cli-seed.js";
 import { createScopeApproveCommand } from "./cli-scope-approve.js";
+import { createScanCommand } from "./cli-scan.js";
 import { createSplitCommand } from "./cli-split.js";
 import { createStorageCommand } from "./cli-storage.js";
 import { createVerifyCommand } from "./cli-verify.js";
@@ -42,8 +45,10 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createSeedCommand(deps),
     createAdvanceCommand(deps),
     createGapScopesCommand(deps),
+    createGapsCommand(deps),
     createMetricsCommand(deps),
     createStorageCommand(deps),
+    createLogCommand(deps),
     createGcCommand(deps),
     createPruneCommand(deps),
     createManifestCommand(deps),
@@ -59,6 +64,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createRetryRunCommand(deps),
     createCriteriaCommand(deps),
     createVerifyTasksCommand(deps),
+    createScanCommand(deps),
     createVerifyDelegationCommand(deps),
     createGapTriageCommand(deps),
     createScopeApproveCommand(deps),
