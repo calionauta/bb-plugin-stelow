@@ -136,45 +136,54 @@ function renderListFrom(component, preview) {
 const renderList = (preview) => renderListFrom(BatchOptionList, preview);
 
 const textTree = renderList(WIREFRAME);
-const pre = findElementByType(textTree, "pre");
-assert.ok(pre, "a wireframe preview renders in a <pre>, where its columns stay aligned");
-assert.equal(treeText(pre), WIREFRAME, "the <pre> carries the wireframe character for character");
+assert.equal(findElementByType(textTree, "pre"), null,
+  "a closed preview renders NO text: the evidence is inside the disclosure, not beside it");
+assert.equal(findElementByType(textTree, "figcaption"), null,
+  "and its label is inside the disclosure too, never a teaser above it");
+assert.doesNotMatch(treeText(textTree), /What this looks like/,
+  "the label does not name evidence the reader cannot see");
+assert.match(treeText(textTree), /Show preview/, "the only thing the row shows is the control");
 assert.equal(findElementByType(textTree, "mermaid-diagram"), null, "the text branch never renders a diagram");
 assert.equal(mermaidSources.length, 0, "and never touches the mermaid component — the negative control for the branch below");
-assert.equal(treeText(findElementByType(textTree, "figcaption")), "What this looks like", "the preview names itself in place of a collapsed summary");
-assert.doesNotMatch(treeText(textTree), /Show preview/,
-  "a five-line wireframe is already a glance: no control that reveals nothing");
 const pick = findElementByType(textTree, "button");
 assert.ok(pick, "the row still renders its pick control");
-assert.doesNotMatch(treeText(pick), /left panel/,
-  "the preview is a sibling of the pick control, never inside it: a click on a wireframe must not answer the question");
+assert.doesNotMatch(treeText(pick), /Show preview/,
+  "the preview control is a sibling of the pick control, never inside it: a click on it cannot answer the question");
+
+const openTextTree = renderListFrom(BatchOptionListOpen, WIREFRAME);
+const openedPre = findElementByType(openTextTree, "pre");
+assert.ok(openedPre, "opening the disclosure reveals the wireframe in a <pre>");
+assert.equal(treeText(openedPre), WIREFRAME, "the <pre> carries the wireframe character for character");
+assert.equal(treeText(findElementByType(openTextTree, "figcaption")), "What this looks like",
+  "the label appears only now, inside the panel");
+assert.match(treeText(openTextTree), /Hide preview/, "and the control says what it will do");
 
 mermaidSources.length = 0;
 const diagramTree = renderList(MERMAID);
 assert.equal(findElementByType(diagramTree, "mermaid-diagram"), null,
-  "a diagram starts collapsed: partial diagrams are not a useful glance");
+  "a diagram starts collapsed");
 assert.match(treeText(diagramTree), /Show diagram/, "and names the one control that draws it");
 assert.doesNotMatch(treeText(diagramTree), /```/, "the fence itself is never visible as preview text");
+assert.equal(findElementByType(diagramTree, "figcaption"), null, "the label is inside the panel here too");
 assert.equal(mermaidSources.length, 0, "nothing is drawn until the reader asks");
 
 const openDiagramTree = renderListFrom(BatchOptionListOpen, MERMAID);
 const diagram = findElementByType(openDiagramTree, "mermaid-diagram");
-assert.ok(diagram, "opening the preview renders through the MermaidDiagram component");
+assert.ok(diagram, "opening the disclosure renders through the MermaidDiagram component");
 assert.equal(diagram.props.source, "flowchart LR\n  A-->B", "the component receives the fence's body, without the fence");
 assert.deepEqual(mermaidSources, ["flowchart LR\n  A-->B"], "the diagram component is the one that draws it, exactly once");
+assert.equal(treeText(findElementByType(openDiagramTree, "figcaption")), "What this looks like",
+  "the label is inside the opened panel");
 assert.match(treeText(openDiagramTree), /Choose A while the flow stays linear\./, "the sentence around the fence stays beside the diagram");
 assert.match(treeText(openDiagramTree), /Hide diagram/, "and the same control closes it");
 
 const longTree = renderList(LONG_WIREFRAME);
-const longPre = findElementByType(longTree, "pre");
-assert.ok(longPre, "a long wireframe keeps a text peek");
-assert.match(longPre.props.className, /max-h-\[8\.5rem\].*overflow-hidden/,
-  "the peek is clipped, not the whole document opened in the row");
-assert.match(treeText(longTree), /Show preview/, "a labelled button, not an underlined summary, reveals the rest");
+assert.equal(findElementByType(longTree, "pre"), null, "a long preview is collapsed just like a short one: no peek");
+assert.match(treeText(longTree), /Show preview/, "the label is the control, not a faded fragment");
 assert.equal(findElementByType(longTree, "details"), null, "the retired disclosure is gone");
 const openLongTree = renderListFrom(BatchOptionListOpen, LONG_WIREFRAME);
-assert.doesNotMatch(findElementByType(openLongTree, "pre").props.className, /max-h-\[8\.5rem\]/,
-  "opening removes the clip");
+assert.equal(treeText(findElementByType(openLongTree, "pre")), LONG_WIREFRAME,
+  "opening shows the whole wireframe, character for character");
 assert.match(treeText(openLongTree), /Hide preview/, "and the control says what it will do");
 
-console.log("question preview ok: short wireframes stay open, long ones peek behind a labelled toggle, and diagrams draw only on request");
+console.log("question preview ok: every preview is closed until its control opens it, and diagrams draw only on request");

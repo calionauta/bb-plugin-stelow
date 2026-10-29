@@ -49,11 +49,6 @@ const PICK_CONTROL_CLASS = [
 // option it explains rather than as a control floating below it.
 const INSIDE_OPTION = "border-t border-border/50 pl-11 pr-2 pb-2";
 
-// A preview deeper than this is a document, not a glance. Five lines is about
-// the height of the option's own description; 360 characters catches a wide
-// wireframe whose line count is small but whose box would still dominate.
-const TEXT_PEEK_LINES = 5;
-const TEXT_PEEK_CHARS = 360;
 const PREVIEW_BUTTON_CLASS = [
   "mt-1 flex min-h-11 w-full cursor-pointer items-center justify-start gap-1.5",
   "rounded-md px-1 text-xs font-medium text-foreground hover:bg-muted/60",
@@ -81,40 +76,44 @@ function PreviewToggle({ open, panelId, label, onToggle }: {
   );
 }
 
+/**
+ * A preview is closed until the reader opens it. The toggle is the only thing
+ * an option shows: no peek, no faded fragment, no "What this looks like" label
+ * outside the panel. That label and the evidence live INSIDE the disclosure,
+ * because a label that names evidence the reader cannot see is a teaser, and a
+ * clipped preview still costs the vertical space the collapsed row was meant
+ * to save.
+ */
+function PreviewPanel({ open, panelId, render }: {
+  open: boolean;
+  panelId: string;
+  render: () => React.ReactNode;
+}) {
+  // A render function, not an element: a closed option must not even mount the
+  // Mermaid renderer behind its panel. The id stays in the document either way,
+  // so `aria-controls` always points at a real region.
+  return <div id={panelId}>{open ? render() : null}</div>;
+}
+
 function TextPreview({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  const needsDisclosure = text.split("\n").length > TEXT_PEEK_LINES || text.length > TEXT_PEEK_CHARS;
-  if (!needsDisclosure) {
-    return (
-      <pre className="whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed">
-        {text}
-      </pre>
-    );
-  }
   return (
     <div>
-      <div className="relative">
-        <pre
-          id={panelId}
-          className={`whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed ${
-            open ? "" : "max-h-[8.5rem] overflow-hidden"
-          }`}
-        >
-          {text}
-        </pre>
-        {open ? null : (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background via-background/85 to-transparent"
-          />
-        )}
-      </div>
-      <PreviewToggle
+      <PreviewToggle open={open} panelId={panelId} label="preview" onToggle={() => setOpen((value) => !value)} />
+      <PreviewPanel
         open={open}
         panelId={panelId}
-        label="preview"
-        onToggle={() => setOpen((value) => !value)}
+        render={() => (
+          <figure className="mt-1 space-y-1">
+            <figcaption className="text-[13px] font-semibold text-muted-foreground">
+              What this looks like
+            </figcaption>
+            <pre className="whitespace-pre rounded-md border bg-background/60 p-2 font-mono text-[13px] leading-relaxed">
+              {text}
+            </pre>
+          </figure>
+        )}
       />
     </div>
   );
@@ -123,23 +122,24 @@ function TextPreview({ text }: { text: string }) {
 function DiagramPreview({ source, prose }: { source: string; prose: string }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  if (!open) {
-    return (
-      <div id={panelId}>
-        <p className="mb-1 text-xs text-muted-foreground">
-          A diagram is the clearest preview here; it opens whole rather than cut off.
-        </p>
-        <PreviewToggle open={false} panelId={panelId} label="diagram" onToggle={() => setOpen(true)} />
-      </div>
-    );
-  }
   return (
-    <div id={panelId} className="space-y-2">
-      {prose ? (
-        <p className="whitespace-pre-line break-words text-sm leading-6 text-muted-foreground">{prose}</p>
-      ) : null}
-      <MermaidDiagram source={source} title="Option preview diagram" />
-      <PreviewToggle open panelId={panelId} label="diagram" onToggle={() => setOpen(false)} />
+    <div>
+      <PreviewToggle open={open} panelId={panelId} label="diagram" onToggle={() => setOpen((value) => !value)} />
+      <PreviewPanel
+        open={open}
+        panelId={panelId}
+        render={() => (
+          <figure className="mt-1 space-y-2">
+            <figcaption className="text-[13px] font-semibold text-muted-foreground">
+              What this looks like
+            </figcaption>
+            {prose ? (
+              <p className="whitespace-pre-line break-words text-sm leading-6 text-muted-foreground">{prose}</p>
+            ) : null}
+            <MermaidDiagram source={source} title="Option preview diagram" />
+          </figure>
+        )}
+      />
     </div>
   );
 }
@@ -148,14 +148,11 @@ function OptionPreview({ preview }: { preview: string | null }) {
   const shape = previewShape(preview);
   if (!shape) return null;
   return (
-    <figure className={INSIDE_OPTION}>
-      <figcaption className="mb-1 pt-2 text-[13px] font-semibold text-muted-foreground">
-        What this looks like
-      </figcaption>
+    <div className={INSIDE_OPTION}>
       {shape.kind === "mermaid"
         ? <DiagramPreview source={shape.source} prose={shape.prose} />
         : <TextPreview text={shape.text} />}
-    </figure>
+    </div>
   );
 }
 

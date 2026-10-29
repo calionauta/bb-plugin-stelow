@@ -1,15 +1,15 @@
 /**
  * The preview's progressive disclosure, RENDERED.
  *
- * `tests/question-preview.test.mjs` owns the shape decision and the wiring
- * (short wireframe vs peek vs diagram). This file owns the interaction a
- * reader performs: a long wireframe shows a clipped peek, one labelled button
- * expands it, and the label flips to the closing action.
+ * `tests/question-preview.test.mjs` owns the shape decision and the wiring.
+ * This file owns the interaction: nothing about a preview is visible until the
+ * reader opens it. The label "What this looks like" is inside the panel, not a
+ * teaser above it, and no clipped fragment is shown while closed.
  *
- * Reported from card_g89gtmwt: four ASCII previews opened whole made the
- * question taller than the screen and pushed the options apart. The old fix
- * was a `<details>` with an underlined summary; the new rule is a peek plus a
- * button, so the evidence stays visible without the row becoming a document.
+ * Reported from card_g89gtmwt: every option carried a preview block open; the
+ * first fix added a peek, which still spent the row's height on evidence the
+ * reader had not asked for. The rule now is the simplest one: closed means the
+ * control, and only the control.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -41,37 +41,43 @@ function renderPreview(preview) {
 
 test.afterEach(() => cleanup());
 
-test("a long preview keeps a peek and expands from one labelled control", () => {
+test("a preview is closed: no label, no content, only the control", () => {
   renderPreview(LONG_PREVIEW);
-  const figure = screen.getByText("What this looks like").closest("figure");
-  assert.ok(figure, "the preview names itself");
-  const peek = figure.querySelector("pre");
-  assert.ok(peek, "the wireframe is still a text block");
-  assert.match(peek.className, /max-h-\[8\.5rem\].*overflow-hidden/,
-    "the peek is clipped, so four options do not push the question off the screen");
+  assert.equal(screen.queryByText("What this looks like"), null,
+    "the label is inside the panel, never a teaser above it");
+  assert.equal(screen.queryByText(/row 0 of the wireframe/), null,
+    "no fragment of the evidence is visible while the panel is closed");
   const toggle = screen.getByRole("button", { name: "Show preview" });
-  assert.equal(toggle.getAttribute("aria-expanded"), "false", "the control says the preview is closed");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false", "the control says the panel is closed");
   fireEvent.click(toggle);
   const close = screen.getByRole("button", { name: "Hide preview" });
   assert.equal(close.getAttribute("aria-expanded"), "true", "and updates its state after the click");
-  assert.doesNotMatch(figure.querySelector("pre").className, /max-h-\[8\.5rem\]/,
-    "expanding removes the clip instead of leaving the document permanently cropped");
-  assert.equal(figure.querySelector("pre").textContent, LONG_PREVIEW,
+  assert.equal(screen.getByText("What this looks like").tagName, "FIGCAPTION",
+    "the label appears only inside the opened panel");
+  const pre = document.querySelector("pre");
+  assert.equal(pre.textContent, LONG_PREVIEW,
     "the full wireframe, character for character, once opened");
+  fireEvent.click(close);
+  assert.equal(screen.queryByText("What this looks like"), null, "closing hides the label again");
+  assert.equal(document.querySelector("pre"), null, "and unmounts the content, not merely clips it");
 });
 
-test("a short preview is already a glance, so it has no toggle", () => {
+test("a short preview is collapsed too: the same rule, no exception", () => {
   renderPreview("one line\nsecond line");
-  assert.ok(screen.getByText(/one line/), "the short preview renders");
-  assert.equal(screen.queryByRole("button", { name: "Show preview" }), null,
-    "a control that reveals nothing is a control that does nothing");
+  assert.equal(screen.queryByText(/one line/), null, "a short preview is not a reason to show it unasked");
+  const toggle = screen.getByRole("button", { name: "Show preview" });
+  fireEvent.click(toggle);
+  assert.ok(screen.getByText(/one line/), "opening reveals it");
 });
 
 test("a diagram starts behind a labelled control, not a raw fence", () => {
   renderPreview("Choose A while the flow stays linear.\n\n```mermaid\nflowchart LR\n  A-->B\n```");
   assert.equal(screen.queryByText(/```/), null, "the fence is never the visible preview");
-  assert.ok(screen.getByRole("button", { name: "Show diagram" }), "the diagram is one explicit click away");
-  assert.equal(screen.queryByRole("img"), null, "nothing is drawn before the reader asks");
+  assert.equal(screen.queryByText("What this looks like"), null, "and no label is shown while closed");
+  const toggle = screen.getByRole("button", { name: "Show diagram" });
+  fireEvent.click(toggle);
+  assert.ok(screen.getByText("What this looks like"), "the label appears inside the panel");
+  assert.ok(screen.getByRole("button", { name: "Hide diagram" }), "the same control closes it");
 });
 
-console.log("question preview ui ok: short previews render, long ones peek, and diagrams wait for the control");
+console.log("question preview ui ok: every preview is closed until its control opens it");
