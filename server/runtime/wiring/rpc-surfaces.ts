@@ -173,7 +173,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     cardByWorkerThread: createCardByWorkerThread(
       core.ledger.getCardByWorkerThread,
     ),
-    readCardFile: cards.cards.handlers.readCardFile,
+    readCardFile: cards.cards.handlers.readCardFile, listCardFiles: cards.cards.handlers.listCardFiles,
     createCard: cards.cards.handlers.createCard,
     gapSummary: gates.gapSummary,
     qualitySeal: gates.qualitySeal,

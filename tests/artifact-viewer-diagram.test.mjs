@@ -35,7 +35,7 @@ const diagramCalls = [];
 const marker = (name) => (props, ...children) => ({ type: name, props, children });
 
 const DiagramArtifactContent = loadComponent(
-  "components/detail/artifact-viewer-dialog.tsx",
+  "components/detail/artifact-content.tsx",
   "ArtifactContent",
   {
     react: {

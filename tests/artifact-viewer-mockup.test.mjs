@@ -31,7 +31,7 @@ const kindCalls = [];
 const marker = (name) => (props, ...children) => ({ type: name, props, children });
 
 const ArtifactContent = loadComponent(
-  "components/detail/artifact-viewer-dialog.tsx",
+  "components/detail/artifact-content.tsx",
   "ArtifactContent",
   {
     react: {
@@ -176,7 +176,7 @@ assert.match(PELE_PLAYGROUND_SENTINEL, /^https:\/\//, "the sentinel stays a plau
 
 const mmdKindCalls = [];
 const MmdArtifactContent = loadComponent(
-  "components/detail/artifact-viewer-dialog.tsx",
+  "components/detail/artifact-content.tsx",
   "ArtifactContent",
   {
     react: {

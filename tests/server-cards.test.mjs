@@ -52,13 +52,33 @@ const card = {
   environment_label: null,
 };
 
+const WORKSPACE_PATHS = [
+  "/workspace/notes.md",
+  { path: "/workspace/plan.json" },
+  "/workspace/.hidden.md",
+  "/workspace/image.png",
+  "/workspace/raw.txt",
+];
+
+/** A directory listing over the fixture: only entries in the requested folder. */
+async function listWorkspacePaths({ path }) {
+  return {
+    paths: WORKSPACE_PATHS.filter((entry) => {
+      const full = typeof entry === "string" ? entry : entry.path;
+      return full.slice(0, full.lastIndexOf("/")) === path;
+    }),
+  };
+}
+
 function harness(overrides = {}) {
   const rows = [{ ...card, ...overrides }];
   const db = {
     prepare(sql) {
       return {
         all: (..._values) => sql.includes("ORDER BY updated_at") ? rows : [],
-        get: () => rows[0],
+        get: (...values) => (
+          sql.includes("FROM cards WHERE id = ?") && values[0] !== rows[0].id ? undefined : rows[0]
+        ),
       };
     },
   };
@@ -68,7 +88,10 @@ function harness(overrides = {}) {
         list: async () => [{ id: "proj_1", name: "Project" }],
         get: async () => ({ id: "proj_1", sources: [{ path: "/workspace", hostId: "host_1", isDefault: true }] }),
       },
-      files: { read: async () => ({ content: "artifact" }) },
+      files: {
+        read: async () => ({ content: "artifact" }),
+        listPaths: listWorkspacePaths,
+      },
     },
   };
   const store = createCardStore(bb, db);
@@ -178,10 +201,23 @@ test("an archived card lands in the archived column, not a phase", async () => {
   assert.equal(buildBoardColumnFor(result.cards[0]), "archived");
 });
 
-test("read card files rejects workspace escapes and reads text", async () => {
+// The file doors live in server/card-files.ts and are asked directly in
+// tests/server-card-files.test.mjs. This is the wiring half: the card server
+// must expose both handlers, or the RPC surface maps a door that is not there.
+test("the card server exposes the file doors the viewer calls", async () => {
   const { cards } = harness();
-  assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "../secret" })).error, "Path escapes the workspace.");
+  assert.equal(
+    (await cards.handlers.readCardFile({ cardId: card.id, path: "../secret" })).error,
+    "Path escapes the workspace.",
+  );
   assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "notes.md" })).content, "artifact");
+  const listed = await cards.handlers.listCardFiles({ cardId: card.id, path: "notes.md" });
+  assert.equal(listed.error, null);
+  assert.deepEqual(
+    listed.files.map((file) => file.name),
+    ["notes.md", "plan.json", "raw.txt"],
+    "the card server's listing is the filtered one, not a raw host answer",
+  );
 });
 
 // One creation harness for both spawn decisions: the stub keeps the args the
