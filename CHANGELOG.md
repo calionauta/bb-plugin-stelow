@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.9](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.8...v0.102.9) (2026-10-29)
+
+
+### Bug Fixes
+
+* a provider catalog timeout gets one automatic retry ([#508](https://github.com/calionauta/bb-plugin-stelow/issues/508)) ([0ca68b1](https://github.com/calionauta/bb-plugin-stelow/commit/0ca68b1e4f705bfced8c873dd66de315ce78c4d7))
+
 ## [0.102.8](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.7...v0.102.8) (2026-10-29)
 
 
