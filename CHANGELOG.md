@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.4...v0.102.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* the decision card reads its evidence instead of hiding it twice ([#499](https://github.com/calionauta/bb-plugin-stelow/issues/499)) ([4c8a36d](https://github.com/calionauta/bb-plugin-stelow/commit/4c8a36dfb30130eb4dbeb352f662c4faaa3340e8))
+
 ## [0.102.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.3...v0.102.4) (2026-10-29)
 
 
