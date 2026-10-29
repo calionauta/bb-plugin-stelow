@@ -1124,14 +1124,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A preview keeps a glance, not a wall. A five-line wireframe renders whole; a
-  longer one shows a clipped peek with a fade and one labelled "Show preview"
-  button (the shared chevron, `aria-expanded`), never the old underlined
-  "Preview" summary. A fenced ```mermaid preview starts behind "Show diagram"
-  and draws whole when opened — a partial diagram is not a useful glance, and
-  four diagrams open at once made the question taller than the screen. A text
-  wireframe keeps its whitespace in a monospace block; the mermaid block uses
-  the same bundled pele renderer as the brief. **The option
+  A preview is CLOSED by default, and closed means the control and nothing
+  else: no peek, no faded fragment, no "What this looks like" label above it.
+  One labelled "Show preview" button (the shared chevron, `aria-expanded`)
+  opens the panel; the label and the full evidence appear inside it, and the
+  same control becomes "Hide preview". A fenced ```mermaid preview uses "Show
+  diagram" and draws whole when opened — a partial diagram is not a useful
+  glance, and four diagrams open at once made the question taller than the
+  screen. A text wireframe keeps its whitespace in a monospace block; the
+  mermaid block uses the same bundled pele renderer as the brief. **The option
   description is rendered whole.** The card no longer cuts it at 140 characters
   and repeats the remainder behind "Full detail": the worker is told at
   generation time to keep it under 500 characters, and the row shows all of it.
