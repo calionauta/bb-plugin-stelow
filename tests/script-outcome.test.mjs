@@ -25,6 +25,29 @@ const errored = scriptOutcome(run({ state: "error" }));
 assert.equal(errored.status, "failed", "an errored script is a failed run");
 assert.match(errored.scriptError, /reported a failure/, "an errored script with no reason still names something honest");
 
+// A workflow that failed before its script returned carries the reason on the
+// RUN. card_rbkbfyqy's verification run had `result: null` and
+// `error: "Task produced no result: tests — agent call failed: Could not load
+// models for provider acp-opencode: timeout"`; the reconciler wrote "the host
+// reported a failure without a reason" because this branch was missing.
+const hostFailed = scriptOutcome({
+  runId: "wfr-host-failed",
+  status: "failed",
+  result: null,
+  error: "Task produced no result: tests — agent call failed: Could not load models for provider acp-opencode: timeout",
+});
+assert.equal(hostFailed.status, "failed", "a host-level failure is a failed run");
+assert.match(hostFailed.scriptError, /Could not load models/, "the host's reason reaches the card instead of a generic gap");
+
+// A script-level reason is more specific and wins over the run-level one.
+const scriptWins = scriptOutcome({
+  runId: "wfr-script-failed",
+  status: "failed",
+  result: { state: "failed", error: "missing execution identity" },
+  error: "Task produced no result",
+});
+assert.equal(scriptWins.scriptError, "missing execution identity", "the script's own reason is not overwritten by the run envelope");
+
 // A recipe that did its work passes through untouched.
 const worked = scriptOutcome(run({ state: "succeeded", recipe: "plan-critique", outputs: { "critique-review": { findings: [] } } }));
 assert.equal(worked.status, "succeeded", "a recipe with outputs is untouched");

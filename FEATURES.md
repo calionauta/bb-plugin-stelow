@@ -1665,7 +1665,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   into one chronological story. The card's Activity section loads the same rows
   on request (closed by default). A failed run records the host's raw payload,
   so "the host reported a failure without a reason" is now countable as
-  `run.no-reason` instead of lost. Browser-side failures are recorded too:
+  `run.no-reason` instead of lost — and a workflow that failed **before its script returned** (an agent call that
+  could not load the provider catalog) carries the run-level `error` into `scriptError` instead of being recorded as
+  `run.no-reason`: on card_rbkbfyqy the verification run's `result` was null and its `error` named the
+  `acp-opencode` model-catalog timeout, which the card previously discarded. Browser-side failures are recorded too:
   an error boundary around the panel, the card drawer and the message
   directives reports uncaught render errors, and window/promise errors while a
   Stelow surface is mounted are reported through `reportClientError` — each
