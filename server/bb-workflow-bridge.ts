@@ -142,6 +142,18 @@ export function scriptOutcome(run: unknown): unknown {
   if (run === null || typeof run !== "object" || Array.isArray(run)) return run;
   const record = run as Record<string, unknown>;
   const result = record.result;
+  const runError = typeof record.error === "string" ? record.error.trim() : "";
+  // A workflow that failed before its script returned (an agent call that
+  // could not load the provider catalog, a host timeout) has `result: null`
+  // and the reason on the RUN. Dropping it left the reconciler with "the host
+  // reported a failure without a reason" at the exact moment the host had
+  // said why. The run-level reason is used only when the script did not carry
+  // a more specific one.
+  if (String(record.status ?? "").toLowerCase() === "failed" && runError
+    && (result === null || typeof result !== "object" || Array.isArray(result)
+      || typeof (result as Record<string, unknown>).state !== "string")) {
+    return { ...record, status: "failed", scriptState: "failed", scriptError: runError };
+  }
   if (result === null || typeof result !== "object" || Array.isArray(result)) return run;
   const script = result as Record<string, unknown>;
   const state = typeof script.state === "string" ? script.state : "";
