@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.7](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.6...v0.102.7) (2026-10-29)
+
+
+### Bug Fixes
+
+* the build header actions wrap inside the one layout ([#503](https://github.com/calionauta/bb-plugin-stelow/issues/503)) ([77d2b4f](https://github.com/calionauta/bb-plugin-stelow/commit/77d2b4fd887cd81e4cdefb0f8135f31ae8b3a59c))
+
 ## [0.102.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.5...v0.102.6) (2026-10-29)
 
 
