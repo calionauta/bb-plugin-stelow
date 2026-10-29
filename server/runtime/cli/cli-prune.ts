@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { writeMergedFile } from "../../../lib/workflow-lineage.mjs";
 import { cardIdOfWorkflow, orphanWorkflows, visibleWorkflows, withoutOrphans } from "../../../lib/workflow-inventory.mjs";
 import { scanFlags, type CliCommandFn, type CliResult } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
@@ -32,7 +31,11 @@ const USAGE = [
   "  --apply   remove the tracking entries listed (default: list only)",
 ].join("\n");
 
-type Entry = { id?: unknown; name?: unknown };
+type Entry = { id?: unknown; dirHash?: unknown; name?: unknown };
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 type Plan = {
   tracking: Record<string, unknown>;
@@ -140,21 +143,29 @@ function listPrune(plan: Plan, json: boolean): CliResult {
 async function applyPrune(deps: CliDeps, root: string, plan: Plan, json: boolean): Promise<CliResult> {
   if (plan.orphans.length === 0) return { exitCode: 0, stdout: "Nothing to prune." };
   const exists = (cardId: string) => deps.getCard(cardId) !== undefined;
-  const written = await writeMergedFile(
-    deps.bb.sdk.files,
-    join(root, "stelow.json"),
-    root,
-    // The merge runs on whatever is on disk NOW, not on the copy read a moment
-    // ago: between the two reads another writer may have added a workflow, and
-    // dropping an entry that no longer exists would be a silent overwrite.
-    (existing: string | null) => {
-      const parsed: unknown = existing ? JSON.parse(existing) : null;
-      const pruned = withoutOrphans(parsed, exists);
-      return pruned ? JSON.stringify(pruned, null, 2) + "\n" : null;
-    },
-  );
-  if (!written.written) {
-    return { exitCode: 1, stderr: "Could not rewrite stelow.json (it changed while reading it). Re-run prune." };
+  // Read-modify-write with the host as the only writer. `writeMergedFile`
+  // retries on a conflict, which is the right behaviour for a lineage append but
+  // wrong here: a prune is a single known edit, and its failure has to NAME what
+  // went wrong instead of blaming a conflict that never happened (the first
+  // version reported "it changed while reading it" on a file nobody touched).
+  const path = join(root, "stelow.json");
+  let content: string;
+  try {
+    const file = await deps.bb.sdk.files.read({ path });
+    const parsed: unknown = JSON.parse(file.content);
+    const pruned = withoutOrphans(parsed, exists);
+    if (!pruned) return { exitCode: 0, stdout: "Nothing to prune." };
+    content = JSON.stringify(pruned, null, 2) + "\n";
+  } catch (error) {
+    return { exitCode: 1, stderr: `Could not read stelow.json: ${message(error)}` };
+  }
+  try {
+    // `rootPath` is omitted on purpose: the host resolves the write against it,
+    // and a prune run from a shell has no thread workspace to resolve against —
+    // passing one made the write a silent no-op while the verb reported success.
+    await deps.bb.sdk.files.write({ path, content });
+  } catch (error) {
+    return { exitCode: 1, stderr: `Could not write stelow.json: ${message(error)}` };
   }
   const cardless = cardlessCount(plan.workflows);
   return {
