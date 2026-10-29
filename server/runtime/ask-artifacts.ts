@@ -84,21 +84,65 @@ async function resolveAskArtifact(
   }
   return { ...normalized, absolutePath: full, hostId: workspace.hostId };
 }
+
+/**
+ * How many of an ask's options a document names, read through the same
+ * resolver the viewer opens it with.
+ *
+ * An attachment that names NONE of the options is usually the wrong document,
+ * not a smaller brief: on card_g89gtmwt the worker attached `interfaces.md`
+ * (the contrast receipt) while `alternatives.md` held every wireframe the
+ * question offered. The receipt is still the right document at a gate whose
+ * options are "Approve"/"Request changes", so this only REPLACES an attachment
+ * when a registered stage document scores positive and the attachment scores
+ * zero. No positive candidate, no replacement.
+ */
+async function artifactCoverage(
+  deps: AskArtifactsDeps,
+  card: WorkerCard,
+  path: string,
+  labels: string[],
+): Promise<number> {
+  const resolved = await resolveAskArtifact(deps, card, path).catch(() => null);
+  const absolute = resolved?.absolutePath;
+  if (!absolute || labels.length === 0) return 0;
+  const content = await deps.bb.sdk.files
+    .read({ path: absolute })
+    .then((file) => file.content)
+    .catch(() => null);
+  return optionCoverage(content, labels);
+}
+
 async function resolveAskOptions(
   deps: AskArtifactsDeps,
   card: WorkerCard | null,
   options: AskOption[],
 ): Promise<Array<AskOption & { artifact: AskArtifact | null; artifactInherited: boolean }>> {
   const inherited = inheritAskArtifact(options);
+  const labels = options
+    .map((option) => option.label)
+    .filter((label): label is string => typeof label === "string" && label.length > 0);
   const noOptionCarriesDocument = inherited.every((artifact) => !artifact);
+  const attached = inherited.find((artifact) => artifact !== null) ?? null;
+  const attachedCoverage = card && attached && labels.length > 0
+    ? await artifactCoverage(deps, card, attached.path, labels)
+    : -1;
   const manifestArtifact =
-    card && noOptionCarriesDocument
-      ? await fallbackGateAskArtifact(deps, card, options.map((option) => option.label)).catch(() => null)
+    card && (noOptionCarriesDocument || attachedCoverage === 0)
+      ? await fallbackGateAskArtifact(deps, card, labels).catch(() => null)
       : null;
+  // The manifest only overrides an attachment when it actually names an
+  // option. `fallbackGateAskArtifact` keeps manifest order on a tie, which is
+  // right when nothing was attached and wrong when a deliberate document was.
+  const recovered = manifestArtifact && card && !noOptionCarriesDocument
+    ? (await artifactCoverage(deps, card, manifestArtifact.path, labels)) > 0
+      ? manifestArtifact
+      : null
+    : manifestArtifact;
   const resolved = new Map<string, AskArtifact | null>();
   const out: Array<AskOption & { artifact: AskArtifact | null; artifactInherited: boolean }> = [];
   for (const [index, option] of options.entries()) {
-    const source = inherited[index];
+    const source = recovered ? null : inherited[index];
     // Provenance: was this document attached to THIS option, borrowed from a
     // sibling, or recovered from the stage manifest because the ask carried
     // none? Only the first is this option's own evidence, and the card has
@@ -106,7 +150,7 @@ async function resolveAskOptions(
     // of evidence about four different options.
     const own = options[index]?.artifact ?? null;
     if (!source || !card) {
-      out.push({ ...option, artifact: manifestArtifact, artifactInherited: manifestArtifact !== null });
+      out.push({ ...option, artifact: recovered, artifactInherited: recovered !== null });
       continue;
     }
     if (!resolved.has(source.path)) {

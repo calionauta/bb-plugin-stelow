@@ -1,25 +1,26 @@
 /**
  * An option's preview: what shape it is, and which branch the row renders.
  *
- * An option's `--preview` is the evidence the reader judges the option BY, so it
- * renders inline under the row. Two shapes are possible, and the worker chooses
- * by what it writes:
+ * An option's `--preview` is evidence the reader judges the option BY. Two
+ * shapes are possible, and the worker chooses by what it writes:
  *
  *   - a fenced ```mermaid block is a diagram, drawn by the same viewer the brief
  *     uses;
  *   - anything else is a wireframe, kept verbatim in a monospace block.
  *
- * The old row had a 280-character auto-reveal threshold: a longer preview hid
- * behind a "Preview" disclosure, so the evidence a worker was asked to produce
- * was the one thing the reader had to click twice to see. The threshold and its
- * disclosure are gone, and the last block below is the regression that would
- * bring them back.
+ * Progressive disclosure, not the old "Preview" disclosure. A five-line
+ * wireframe is a glance and renders whole. A longer one keeps a clipped peek
+ * with a fade and one labelled button ("Show preview"), so the row stays
+ * scannable without hiding the evidence behind an underlined summary. A
+ * diagram starts behind "Show diagram": a partial diagram is not a useful
+ * glance, and drawing four of them at once is what made the question taller
+ * than the screen.
  *
  * The rendered half stubs `mermaid-diagram`: `MermaidDiagram` itself is covered
  * in tests/mermaid-diagram-zoom.test.mjs and tests/artifact-viewer-diagram.test.mjs,
  * including what it does when the renderer refuses a source. What is asserted
- * here is that the row CHOOSES the component for a mermaid preview and never
- * dumps the raw fence as the visible text.
+ * here is that the row CHOOSES the component for a mermaid preview, never
+ * dumps the raw fence, and applies the peek/expand rule.
  */
 import assert from "node:assert/strict";
 import { loadComponent, renderTree, findElementByType, treeText } from "./helpers/render-component.mjs";
@@ -88,9 +89,14 @@ assert.deepEqual(
 /* ------------------------------------------------------------ wiring --- */
 
 const mermaidSources = [];
-const marker = (name) => (props) => ({ type: name, props: props ?? {}, children: [] });
-const BatchOptionList = loadComponent("components/conversation/batch-options.tsx", "BatchOptionList", {
+const marker = (name) => (props) => ({ type: name, props: props ?? {}, children: props?.children ?? [] });
+const reactState = (initial) => [initial, () => {}];
+const componentStubs = (useState) => ({
+  react: { useId: () => "preview-panel", useState },
   "@/components/ui/button": { Button: marker("button") },
+  "../disclosure": {
+    DisclosureChevron: (props) => ({ type: "chevron", props: props ?? {}, children: [] }),
+  },
   "./embedded-brief": { EmbeddedBrief: () => null, embeddedBriefFor: () => null },
   "../detail/mermaid-diagram": {
     MermaidDiagram: (props) => {
@@ -101,9 +107,19 @@ const BatchOptionList = loadComponent("components/conversation/batch-options.tsx
   "../../lib/question-presentation.mjs": questionPresentation,
   "../../lib/question-preview.mjs": questionPreview,
 });
+const BatchOptionList = loadComponent(
+  "components/conversation/batch-options.tsx",
+  "BatchOptionList",
+  componentStubs(reactState),
+);
+const BatchOptionListOpen = loadComponent(
+  "components/conversation/batch-options.tsx",
+  "BatchOptionList",
+  componentStubs(() => [true, () => {}]),
+);
 
-function renderList(preview) {
-  return renderTree(BatchOptionList({
+function renderListFrom(component, preview) {
+  return renderTree(component({
     current: {
       id: "q1",
       title: "Pick one",
@@ -117,6 +133,7 @@ function renderList(preview) {
     onPick: () => {},
   }));
 }
+const renderList = (preview) => renderListFrom(BatchOptionList, preview);
 
 const textTree = renderList(WIREFRAME);
 const pre = findElementByType(textTree, "pre");
@@ -124,8 +141,9 @@ assert.ok(pre, "a wireframe preview renders in a <pre>, where its columns stay a
 assert.equal(treeText(pre), WIREFRAME, "the <pre> carries the wireframe character for character");
 assert.equal(findElementByType(textTree, "mermaid-diagram"), null, "the text branch never renders a diagram");
 assert.equal(mermaidSources.length, 0, "and never touches the mermaid component — the negative control for the branch below");
-assert.equal(findElementByType(textTree, "details"), null, "no disclosure hides the preview");
 assert.equal(treeText(findElementByType(textTree, "figcaption")), "What this looks like", "the preview names itself in place of a collapsed summary");
+assert.doesNotMatch(treeText(textTree), /Show preview/,
+  "a five-line wireframe is already a glance: no control that reveals nothing");
 const pick = findElementByType(textTree, "button");
 assert.ok(pick, "the row still renders its pick control");
 assert.doesNotMatch(treeText(pick), /left panel/,
@@ -133,20 +151,30 @@ assert.doesNotMatch(treeText(pick), /left panel/,
 
 mermaidSources.length = 0;
 const diagramTree = renderList(MERMAID);
-const diagram = findElementByType(diagramTree, "mermaid-diagram");
-assert.ok(diagram, "a mermaid preview renders through the MermaidDiagram component");
+assert.equal(findElementByType(diagramTree, "mermaid-diagram"), null,
+  "a diagram starts collapsed: partial diagrams are not a useful glance");
+assert.match(treeText(diagramTree), /Show diagram/, "and names the one control that draws it");
+assert.doesNotMatch(treeText(diagramTree), /```/, "the fence itself is never visible as preview text");
+assert.equal(mermaidSources.length, 0, "nothing is drawn until the reader asks");
+
+const openDiagramTree = renderListFrom(BatchOptionListOpen, MERMAID);
+const diagram = findElementByType(openDiagramTree, "mermaid-diagram");
+assert.ok(diagram, "opening the preview renders through the MermaidDiagram component");
 assert.equal(diagram.props.source, "flowchart LR\n  A-->B", "the component receives the fence's body, without the fence");
 assert.deepEqual(mermaidSources, ["flowchart LR\n  A-->B"], "the diagram component is the one that draws it, exactly once");
-assert.equal(findElementByType(diagramTree, "pre"), null, "and the raw fence is never dropped into a <pre> instead");
-assert.doesNotMatch(treeText(diagramTree), /```/, "the fence itself is never visible as preview text");
-assert.match(treeText(diagramTree), /Choose A while the flow stays linear\./, "the sentence around the fence stays beside the diagram");
+assert.match(treeText(openDiagramTree), /Choose A while the flow stays linear\./, "the sentence around the fence stays beside the diagram");
+assert.match(treeText(openDiagramTree), /Hide diagram/, "and the same control closes it");
 
 const longTree = renderList(LONG_WIREFRAME);
-assert.equal(
-  treeText(findElementByType(longTree, "pre")),
-  LONG_WIREFRAME,
-  "a preview longer than 280 characters renders inline and whole — the old threshold would have collapsed it",
-);
-assert.equal(findElementByType(longTree, "details"), null, "a long preview earns no disclosure, because it is evidence rather than a document");
+const longPre = findElementByType(longTree, "pre");
+assert.ok(longPre, "a long wireframe keeps a text peek");
+assert.match(longPre.props.className, /max-h-\[8\.5rem\].*overflow-hidden/,
+  "the peek is clipped, not the whole document opened in the row");
+assert.match(treeText(longTree), /Show preview/, "a labelled button, not an underlined summary, reveals the rest");
+assert.equal(findElementByType(longTree, "details"), null, "the retired disclosure is gone");
+const openLongTree = renderListFrom(BatchOptionListOpen, LONG_WIREFRAME);
+assert.doesNotMatch(findElementByType(openLongTree, "pre").props.className, /max-h-\[8\.5rem\]/,
+  "opening removes the clip");
+assert.match(treeText(openLongTree), /Hide preview/, "and the control says what it will do");
 
-console.log("question preview ok: wireframes stay text, fenced mermaid becomes a diagram, no length threshold remains");
+console.log("question preview ok: short wireframes stay open, long ones peek behind a labelled toggle, and diagrams draw only on request");

@@ -57,7 +57,7 @@ afterEach(() => cleanup());
 
 /* --------------------------------------------------------------- shared --- */
 
-const option = (label, description = "") => ({ label, description, preview: null, artifact: null });
+const option = (label, description = "", preview = null) => ({ label, description, preview, artifact: null });
 const question = (id, prompt, labels) => ({
   id,
   title: "",

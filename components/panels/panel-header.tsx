@@ -14,11 +14,16 @@ import { cn } from "../../lib/utils";
  * into a tall, narrow column of text. Reported as "o texto de explicação do
  * board fica espremido e longo e tudo quebra" on tablet and mobile.
  *
- * The header is a column until `lg`, which is the first width where prose plus
- * a row of buttons genuinely fits side by side; below it the explanation owns
- * the full width and the actions sit under it. This is a layout decision, not a
- * cosmetic one: a header that collapses its own explanation is a header that
- * taught the reader to skip it.
+ * The second report was the same defect on a WIDE screen: the actions are four
+ * buttons, and a `flex-row` gave them enough width to squeeze the explanation
+ * into a three-line funnel between the title and the buttons. So the header is
+ * a two-row grid from `lg`: the title and the actions share row 1 (the title
+ * gets the flexible track, the actions a capped one that wraps rather than
+ * shrinking), and the explanation spans both columns in row 2 with the full
+ * width of the panel. The sentence never shares a row with a button, at any
+ * width. Below `lg` the grid is off and the order is title, explanation,
+ * actions — the explanation still owns the full width, and the thumb grid is
+ * where the thumb already is.
  *
  * The actions grid is two columns of full-width buttons on a phone (a thumb
  * reaches both without aiming), and a wrapping row from `sm` up — a wrapping
@@ -39,12 +44,9 @@ export function PanelHeader({
 }) {
   const showAttention = Boolean(attentionCount && attentionCount > 0);
   return (
-    <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-      <div className="min-w-0">
+    <header className="flex flex-col gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-x-6 lg:gap-y-2">
+      <div className="order-1 min-w-0 lg:col-start-1 lg:row-start-1">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 max-w-prose text-pretty text-sm leading-5 text-muted-foreground">
-          {blurb}
-        </p>
         {showAttention && onAttention ? (
           <button
             type="button"
@@ -63,7 +65,14 @@ export function PanelHeader({
           </button>
         ) : null}
       </div>
-      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 lg:mt-0.5 lg:w-auto lg:flex-nowrap lg:justify-end">
+      <p className="order-2 max-w-prose text-pretty text-sm leading-5 text-muted-foreground lg:col-span-2 lg:row-start-2">
+        {blurb}
+      </p>
+      <div className={[
+        "order-3 grid w-full grid-cols-2 gap-2",
+        "sm:flex sm:flex-wrap sm:items-center sm:gap-2",
+        "lg:col-start-2 lg:row-start-1 lg:w-auto lg:max-w-[38rem] lg:justify-end",
+      ].join(" ")}>
         {actions}
       </div>
     </header>

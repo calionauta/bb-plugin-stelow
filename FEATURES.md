@@ -469,17 +469,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the explanation and the action grid stopped fitting beside each other rather
   than started. The explanation is the member that gives up its width, so on a
   tablet the sentence that teaches the track wrapped into a tall narrow column
-  of text, and reported as "o texto de explicação do board fica espremido e
-  longo e tudo quebra" the layout was doing exactly what it was told. The three
-  copies became one component: a column until `lg`, where prose plus a row of
-  buttons genuinely fits; the explanation at `max-w-prose` with balanced
-  wrapping; the actions a two-column thumb grid on a phone and a wrapping row
-  above it. The scroll hint stopped switching at `sm` too — a 768px tablet was
-  told "Use Shift + scroll", an instruction only a keyboard can follow, so the
-  touch hint now runs to `lg`. The loading skeleton reserves the same shape, so
-  content landing does not move the page. Pinned by
-  `tests/panel-header-responsive.test.mjs`; the header is shared, never
-  re-spelled per track.
+  of text. The same defect reached a WIDE screen: the four action buttons
+  squeezed the explanation into a three-line funnel between the title and the
+  buttons ("o texto fica espremido e disputando espaço com os botões"). The
+  three copies became one component with one rule: **the explanation never
+  shares a row with a button, at any width.** Below `lg` it is a column in the
+  order title, explanation, actions; from `lg` it is a two-row grid — title and
+  a capped, wrapping action row on top, the explanation spanning both columns
+  in row 2 at `max-w-prose` with balanced wrapping. The actions are a
+  two-column thumb grid on a phone and a wrapping row above it. The scroll hint
+  stopped switching at `sm` too — a 768px tablet was told "Use Shift + scroll",
+  an instruction only a keyboard can follow, so the touch hint now runs to
+  `lg`. The loading skeleton reserves the same shape, so content landing does
+  not move the page. Pinned by `tests/panel-header-responsive.test.mjs`; the
+  header is shared, never re-spelled per track.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). Board filters are multi-select facets shared by
@@ -1121,12 +1124,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A preview renders INLINE, always: there is no length threshold and no
-  "Preview" disclosure, because the old 280-character rule hid a long preview
-  behind a click and the evidence a worker was asked to produce became the one
-  thing the reader had to click twice to see. A text wireframe keeps its
-  whitespace in a monospace block; a fenced ```mermaid preview renders as a
-  diagram through the same bundled pele renderer as the brief. **The option
+  A preview keeps a glance, not a wall. A five-line wireframe renders whole; a
+  longer one shows a clipped peek with a fade and one labelled "Show preview"
+  button (the shared chevron, `aria-expanded`), never the old underlined
+  "Preview" summary. A fenced ```mermaid preview starts behind "Show diagram"
+  and draws whole when opened — a partial diagram is not a useful glance, and
+  four diagrams open at once made the question taller than the screen. A text
+  wireframe keeps its whitespace in a monospace block; the mermaid block uses
+  the same bundled pele renderer as the brief. **The option
   description is rendered whole.** The card no longer cuts it at 140 characters
   and repeats the remainder behind "Full detail": the worker is told at
   generation time to keep it under 500 characters, and the row shows all of it.
@@ -1213,9 +1218,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   stage's files, and an underlined "Show brief" summary that read as
   decoration. The shared viewer is the only surface that can render a diagram,
   follow a relative link to `alternatives.md`, and quote a passage back to the
-  agent, so the row names what the click does. One decision point renders both
-  halves, so they can never disagree. Threads (no viewer) keep the filename
-  span.
+  agent, so the row names what the click does. **When the attached document
+  names none of the options and a stage document names some, the host opens the
+  latter** (`artifactCoverage` in `server/runtime/ask-artifacts.ts`): on
+  card_g89gtmwt the worker attached `interfaces.md`, the contrast receipt,
+  while `alternatives.md` held every wireframe the question offered. A
+  documented approval ("Approve"/"Request changes") names neither, and no
+  sibling names it either, so that attachment survives unchanged. One decision
+  point renders both halves, so they can never disagree. Threads (no viewer)
+  keep the filename span.
 - **Human titles on question copy** (`applyScopeLabels`,
   `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
   to address them at humans ("A5 — checkout", "Serves A5"). Templates now
