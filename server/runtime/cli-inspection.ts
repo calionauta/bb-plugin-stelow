@@ -6,6 +6,7 @@ import { recipeOutputs } from "../../lib/recipe-catalog.mjs";
 import { stageRecipeId } from "../../lib/workflow-vocabulary.mjs";
 import { renderStatusLine, type QuestionCount, type StatusBoardLine } from "../../lib/question-store.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { visibleWorkflows } from "../../lib/workflow-inventory.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers.js";
 import type { CliResult, CliRunContext } from "./cli-dispatch.js";
@@ -112,6 +113,22 @@ function rejectCardArgs(argv: string[], usage: string): CliResult | null {
   return null;
 }
 
+/**
+ * The board as status may show it.
+ *
+ * `stelow.json` keeps an entry after its card is deleted, and this column is
+ * what a worker reads to answer "is anything waiting on me?" — it listed 44
+ * ghosts at `triage` forever. A cardless workflow (research/explore) has no
+ * card row BY DESIGN, so only card-owned entries are filtered.
+ */
+function visibleBoard(board: Board, deps: InspectionDeps): Board {
+  if (board.error) return board;
+  return {
+    ...board,
+    workflows: visibleWorkflows(board.workflows, (cardId) => deps.getCard(cardId) !== undefined),
+  };
+}
+
 function renderBoard(board: Board, json: boolean): CliResult {
   if (json) return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
   if (board.error) return { exitCode: 1, stderr: board.error };
@@ -132,7 +149,7 @@ async function statusCommand(
     ? deps.getCardForThread(context.threadId)
     : undefined;
   if (!card) return deps.loadBoard(projectId ?? null).then((board) => (
-    renderBoard(board, argv.includes("--json"))
+    renderBoard(visibleBoard(board, deps), argv.includes("--json"))
   ));
   const workspace = await deps.cardWorkspace(card);
   if (!workspace?.path) {
@@ -142,7 +159,7 @@ async function statusCommand(
   const board = await deps
     .boardFromRoot(workspace.path, card.dir_hash)
     .then((value) => withQuestionCounts(value, card, deps));
-  const rendered = renderBoard(board, json);
+  const rendered = renderBoard(visibleBoard(board, deps), json);
   if (!json) return rendered;
   // In a card context, `status --json` must also answer what the skills parse
   // from the upstream helper: `current_stage`, `intent`, `config`. The board
