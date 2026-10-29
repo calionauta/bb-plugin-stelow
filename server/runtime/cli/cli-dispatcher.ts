@@ -18,6 +18,7 @@ import { createLogCommand } from "./cli-log.js";
 import { createManifestCommand } from "./cli-manifest.js";
 import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
+import { createPruneCommand } from "./cli-prune.js";
 import { createReviewCommand } from "./cli-review.js";
 import { createRetryRunCommand } from "./cli-retry-run.js";
 import { createSeedCommand } from "./cli-seed.js";
@@ -49,6 +50,7 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createStorageCommand(deps),
     createLogCommand(deps),
     createGcCommand(deps),
+    createPruneCommand(deps),
     createManifestCommand(deps),
     createExportCommand(deps, exportRunBundle),
     createDoneCommand(deps, exportRunBundle),
