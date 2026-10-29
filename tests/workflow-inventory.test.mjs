@@ -25,7 +25,12 @@ const card = (id) => ({ id });
 const cardless = (id) => ({ id });
 
 test("a card-owned entry maps to its card id", () => {
-  assert.equal(cardIdOfWorkflow(card("sw-card_card_qimjr9z4")), "card_qimjr9z4");
+  // The directory hash is `sw-` + the card id with its `card_` prefix dropped:
+  // `sw-card_g89gtmwt` IS card `card_g89gtmwt`. Returning the bare suffix looked
+  // up a card that never existed, so the first real run offered to prune all 74
+  // card-owned entries.
+  assert.equal(cardIdOfWorkflow(card("sw-card_g89gtmwt")), "card_g89gtmwt");
+  assert.equal(cardIdOfWorkflow(card("sw-card_qimjr9z4")), "card_qimjr9z4");
 });
 
 test("the RAW tracking shape counts too: it carries dirHash, not id", () => {
@@ -33,7 +38,7 @@ test("the RAW tracking shape counts too: it carries dirHash, not id", () => {
   // `id`. Reading only `id` made every raw entry look cardless — the prune saw
   // 0 orphans against 77 entries on the real file.
   assert.equal(
-    cardIdOfWorkflow({ dirHash: "sw-card_card_gone", name: "ghost" }),
+    cardIdOfWorkflow({ dirHash: "sw-card_gone", name: "ghost" }),
     "card_gone",
   );
   assert.equal(cardIdOfWorkflow({ dirHash: "sw_jtbd-lifecycle", name: "cardless" }), null);
@@ -46,8 +51,8 @@ test("a cardless entry has no card id", () => {
 });
 
 test("a card-owned entry hides when its card row is gone", () => {
-  const live = card("sw-card_card_live");
-  const ghost = card("sw-card_card_gone");
+  const live = card("sw-card_live");
+  const ghost = card("sw-card_gone");
   const exists = (id) => id === "card_live";
   assert.deepEqual(visibleWorkflows([live, ghost], exists), [live]);
   assert.deepEqual(orphanWorkflows([live, ghost], exists), [ghost]);
@@ -68,18 +73,18 @@ test("the prune touches workflows and nothing else", () => {
   const tracking = {
     version: 2,
     updated: "2026-09-24",
-    workflows: [card("sw-card_card_live"), card("sw-card_card_gone")],
+    workflows: [card("sw-card_live"), card("sw-card_gone")],
   };
   const pruned = withoutOrphans(tracking, (id) => id === "card_live");
   assert.deepEqual(pruned, {
     version: 2,
     updated: "2026-09-24",
-    workflows: [card("sw-card_card_live")],
+    workflows: [card("sw-card_live")],
   });
 });
 
 test("nothing to prune answers null, not an empty write", () => {
-  const allLive = { workflows: [card("sw-card_card_live")] };
+  const allLive = { workflows: [card("sw-card_live")] };
   assert.equal(withoutOrphans(allLive, () => true), null, "a clean file is not rewritten");
   assert.equal(withoutOrphans({ workflows: [] }, () => false), null, "an empty file is not rewritten");
   assert.equal(withoutOrphans(null, () => true), null, "off-shape input is not rewritten");
