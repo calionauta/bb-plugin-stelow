@@ -67,7 +67,13 @@ export async function prepareAdvance(
   // to the work that was lost, not to the work that is next.
   const failed = blockingFailedRun(deps.db, input.card.id, input.card.stage);
   if (failed) return { error: failedRunRefusal(failed) };
-  if (input.dryRun) return { route: null, note: "", evidence: "" };
+  if (input.dryRun) {
+    if (input.stage === "execution") {
+      const preview = await deps.runHelper(["sync-scopes", "--dry-run", "--json"], input.rootPath, input.stateDir ?? undefined);
+      if (preview.code !== 0) return { error: preview.stderr || "Scope sync preflight refused without changing tracking" };
+    }
+    return { route: null, note: "", evidence: "" };
+  }
   if (input.stage !== "execution") return routePreflight(deps, input, "", null);
   const loopNote = input.includeRework ? await deps.reworkNote(input.card) : "";
   const scopes = await syncExecutionScopes(deps, input.card, input.rootPath, input.stateDir);
@@ -95,7 +101,7 @@ async function routePreflight(
 }
 
 /**
- * The scope gate, read after the best-effort sync. A card that is not a build
+ * The scope gate, read only after successful sync. A card that is not a build
  * has no scopes to gate, so the sync count is the only thing it learns; a build
  * that cannot start its next scope, or whose scope graph cycles, is refused
  * before the state moves.
@@ -106,7 +112,9 @@ async function syncExecutionScopes(
   rootPath: string,
   stateDir: string | null,
 ): Promise<SyncedScopes> {
-  const syncedCount = await bestEffortSync(deps, rootPath, stateDir);
+  const sync = await syncScopes(deps, rootPath, stateDir);
+  if (sync.refusal) return sync;
+  const { syncedCount } = sync;
   if (card.kind !== "build") return { syncedCount, refusal: null, note: "" };
   const scopes = loadCardScopes(rootPath, card.id);
   const spec = latestSpecTech(rootPath, card.id)?.content ?? null;
@@ -127,18 +135,21 @@ async function syncExecutionScopes(
   return { syncedCount, refusal: gate.refusal, note: gateNote(syncedCount, gate.note) };
 }
 
-async function bestEffortSync(
+async function syncScopes(
   deps: PreflightDeps,
   rootPath: string,
   stateDir: string | null,
-): Promise<number | null> {
+): Promise<SyncedScopes> {
   try {
     const sync = await deps.runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
+    if (sync.code !== 0) {
+      return { syncedCount: null, refusal: sync.stderr || "Scope synchronization refused; reconcile scopes before advancing", note: "" };
+    }
     const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
-    return typeof parsed.synced === "number" ? parsed.synced : null;
-  } catch {
-    /* best-effort: the gate below remains authoritative */
-    return null;
+    return { syncedCount: typeof parsed.synced === "number" ? parsed.synced : null, refusal: null, note: "" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { syncedCount: null, refusal: `Scope synchronization failed: ${message}. Reconcile scopes before advancing.`, note: "" };
   }
 }
 

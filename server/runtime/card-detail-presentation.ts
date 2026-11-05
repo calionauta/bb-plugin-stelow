@@ -2,7 +2,6 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { acceptanceLine, isAccepted } from "../../lib/card-acceptance.mjs";
 import { hasPendingReview } from "../../lib/inbox-events.mjs";
 import { integrationPending } from "../../lib/integration-pending.mjs";
-import { diagnoseScopeSync } from "../../lib/spec-scope-reader.mjs";
 import { errorNeedsAttention, isClaimTerminal } from "../../lib/card-terminal.mjs";
 import { doingNowNames } from "../../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../../lib/scope-elapsed.mjs";
@@ -21,7 +20,8 @@ import { cardFileOccupancy } from "../../lib/file-occupancy.mjs";
 import { isManagedWorktree } from "../../lib/shared-checkout-exposure.mjs";
 import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
-import { latestSpecTech, loadCardScopes } from "../scopes.js";
+import { loadCardScopes } from "../scopes.js";
+import { detailScopeSync } from "./card-scope-sync.js";
 import { readCardStatus } from "../../lib/card-status.mjs";
 import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
@@ -206,25 +206,6 @@ function withStaleness(
   }));
 }
 
-function detailScopeSync(
-  card: WorkerCard,
-  sourcePath: string | null,
-  syncedScopes: number,
-) {
-  if (card.kind !== "build" || !sourcePath) return null;
-  const spec = latestSpecTech(sourcePath, card.id);
-  const diagnosis = diagnoseScopeSync({
-    specContent: spec?.content ?? null,
-    syncedCount: syncedScopes,
-  });
-  return {
-    state: diagnosis.state,
-    syncedScopes,
-    machineBlocks: diagnosis.machine,
-    humanBlocks: diagnosis.human,
-    specFile: spec?.file ?? null,
-  };
-}
 
 function detailCard(
   deps: CardDetailDeps,

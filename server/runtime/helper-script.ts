@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import { join as nodeJoin } from "node:path";
 import { HELPER_SCRIPT, TRANSITIONS_REF } from "../plugin-paths.js";
 import { isDeclaredVerb, undeclaredVerbRefusal } from "../../lib/helper-verbs.mjs";
+import { runScopeHistorySync, SCOPE_SYNC_HOST_SCHEMA, type ScopeSyncFiles } from "./scope-history-sync.js";
 
 export type HelperResult = {
   code: number | null;
@@ -31,7 +32,7 @@ export type HelperResult = {
  * vendored copy is the synced, current one; the workspace copy is refreshed
  * on every seed for the workers that read it.
  */
-export function runHelper(
+function runRawHelper(
   args: string[],
   cwd: string,
   stateDir?: string,
@@ -79,4 +80,26 @@ export function runHelper(
     );
     child.on("close", (code) => resolveRun({ code, stdout, stderr }));
   });
+}
+
+const projectWrites = new Map<string, Promise<unknown>>();
+
+/** Serialize host helper writers per project; history migration also reserves its files and uses SDK CAS. */
+export function runHelper(
+  args: string[], cwd: string, stateDir?: string, files?: ScopeSyncFiles,
+): Promise<HelperResult> {
+  if (args[0] === "schema" && args[1] === "sync-scopes") {
+    return Promise.resolve({ code: 0, stdout: JSON.stringify(SCOPE_SYNC_HOST_SCHEMA, null, 2), stderr: "" });
+  }
+  const invoke = () => args[0] === "sync-scopes"
+    ? runScopeHistorySync(args, cwd, stateDir, runRawHelper, files)
+    : runRawHelper(args, cwd, stateDir);
+  if (["status", "next", "schema", "check", "doctor"].includes(args[0]) || args.includes("--dry-run")) return invoke();
+  const preceding = projectWrites.get(cwd) ?? Promise.resolve();
+  const current = preceding.catch(() => {}).then(invoke);
+  projectWrites.set(cwd, current);
+  void current.finally(() => {
+    if (projectWrites.get(cwd) === current) projectWrites.delete(cwd);
+  }).catch(() => {});
+  return current;
 }

@@ -24,6 +24,10 @@ None pending — all operator guides migrated (see above).
 
 ## Stays here (maintainer-only, never public)
 
+- `scope-history-reconciliation.md` — maintainer recovery procedure for a
+  versioned technical-plan migration: writer coordination, backup/CAS guarantees,
+  retained historical evidence and recovery from a committed-but-stale result.
+
 - `dependencies-and-diagrams.md` — what this plugin needs installed (with the
   command that verifies each), the two install symptoms that masquerade as code
   bugs, and how a Mermaid fence or `.mmd` artifact renders on read with the

@@ -5,7 +5,7 @@ import { workspaceUnavailable } from "../../../lib/workspace-refusal.mjs";
 import { flagValue } from "../../../lib/cli-argv.mjs";
 
 const SYNC_SCOPES_USAGE =
-  "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]";
+  "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--preserve-history] [--move-task source:task:target] [--dry-run] [--json]";
 const CONFIG_USAGE =
   "Usage: bb stelow config get <field> [default] [--project <proj_id>]";
 const NEXT_USAGE = "Usage: bb stelow next [--json] [--project <proj_id>]";
@@ -188,7 +188,7 @@ function createSyncScopesCommand(deps: CliDeps): CliCommandFn {
     // discovered tasks or flipping task status, and this publish makes the
     // card reload (ScopeProgress, list, counts) instead of waiting for the
     // next lifecycle event.
-    if (context.card) {
+    if (context.card && !passthrough.includes("--dry-run")) {
       deps.bb.realtime.publish("card-state", { cardId: context.card.id });
       deps.bb.realtime.publish("board-changed", { cardId: context.card.id });
     }
@@ -196,18 +196,19 @@ function createSyncScopesCommand(deps: CliDeps): CliCommandFn {
   };
 }
 
-/** Only `--name <workflow>` and `--json` reach the helper (plus `--project`,
- * consumed by the host). Null when anything else is present. */
+/** Preserve the declared sync options; project selection is consumed by the host. */
 function syncScopesPassthrough(args: string[]): string[] | null {
   const passthrough: string[] = [];
   for (let index = 0; index < args.length; index++) {
     if (args[index] === "--project") {
+      if (!args[index + 1] || args[index + 1]!.startsWith("--")) return null;
       index++;
       continue;
     }
-    if (args[index] === "--name" || args[index] === "--json") {
+    if (["--name", "--json", "--preserve-history", "--dry-run", "--move-task"].includes(args[index]!)) {
       passthrough.push(args[index]!);
-      if (args[index] === "--name") {
+      if (args[index] === "--name" || args[index] === "--move-task") {
+        if (!args[index + 1] || args[index + 1]!.startsWith("--")) return null;
         passthrough.push(args[index + 1] ?? "");
         index++;
       }

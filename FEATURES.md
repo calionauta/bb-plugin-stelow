@@ -2391,6 +2391,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   list, and counts reload instead of waiting for the next lifecycle event.
   Re-syncs preserve host/worker overlay (audit-gap scopes, discovered
   tasks) instead of replacing it.
+  New versioned plans cannot replace nonempty tracking implicitly. Explicit
+  `--preserve-history --dry-run` previews reconciliation without live writes;
+  `--move-task source:task:target` assigns unfinished retired tasks. Application
+  preserves operational records and clocks, archives the original scopes,
+  backs up tracking, and uses owned reservations plus SDK compare-and-swap.
+  Execution advance propagates sync refusals, including in dry-run. Card detail
+  checks the persisted plan version/hash before describing scopes as synced.
+  See the [history reconciliation guide](docs/scope-history-reconciliation.md).
 - **Commit trailer manifest** (`bb stelow manifest [--json] [--card]`, `lib/artifact-manifest.mjs`).
   Commits cannot carry file attachments, so the durable audit link is a
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered

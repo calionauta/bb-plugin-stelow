@@ -16,6 +16,7 @@
  * Fail-closed everywhere a human meets it: no card, no workspace, no map, an
  * off-contract map, or an already-approved one. Every refusal names the way out.
  */
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { approveScopeMap } from "../lib/scope-map-approval.mjs";
@@ -98,7 +99,7 @@ async function readDraftMap(
   deps: ScopeMapApprovalDeps,
   rootPath: string,
   stateDir: string,
-): Promise<{ map: ScopeMap } | { error: string }> {
+): Promise<{ map: ScopeMap; expectedSha256: string } | { error: string }> {
   const content = await deps.bb.sdk.files
     .read({ path: join(stateDir, SCOPE_MAP_FILE) })
     .then((file) => file.content)
@@ -127,7 +128,7 @@ async function readDraftMap(
       error: "This scope map is already approved — approving it again would rewrite who signed it.",
     };
   }
-  return { map };
+  return { map, expectedSha256: createHash("sha256").update(content).digest("hex") };
 }
 
 /** Stamp the approved map back to disk, refusing a concurrent edit. */
@@ -136,11 +137,12 @@ async function writeApprovedMap(
   rootPath: string,
   stateDir: string,
   map: ScopeMap,
+  expectedSha256: string,
 ): Promise<{ error?: string }> {
   const write = await deps.bb.sdk.files.write({
     path: join(stateDir, SCOPE_MAP_FILE),
     rootPath,
-    expectedSha256: null,
+    expectedSha256,
     content: `${JSON.stringify(map, null, 2)}\n`,
   });
   if (write.outcome === "conflict") {
@@ -173,7 +175,7 @@ async function mirrorShapeVersion(
     await deps.bb.sdk.files.write({
       path: statePath,
       rootPath,
-      expectedSha256: null,
+      expectedSha256: current === null ? null : createHash("sha256").update(current).digest("hex"),
       content: recorded.text,
     });
   }
@@ -204,7 +206,9 @@ export async function approveScopeMapOnCard(
   }
   const stamped = approved.map as ScopeMap;
 
-  const write = await writeApprovedMap(deps, state.rootPath, state.stateDir, stamped);
+  const write = await writeApprovedMap(
+    deps, state.rootPath, state.stateDir, stamped, draft.expectedSha256,
+  );
   if (write.error) return { ok: false, error: write.error };
   await mirrorShapeVersion(deps, state.rootPath, state.stateDir, stamped.shapeVersion);
 

@@ -66,7 +66,7 @@ export const stelowCliCommands: CliCommand[] = [
   command(
     "sync-scopes",
     "Parse spec-tech scopes into tracking (idempotent)",
-    "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]",
+    "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--preserve-history] [--move-task source:task:target] [--dry-run] [--json]",
   ),
   command(
     "scope",

@@ -99,14 +99,14 @@ export function createRuntimeCore(bb: BbPluginApi) {
       workerEnvironmentOf: workers.workers.workerEnvironmentOf,
     }),
     ...createDecisionAndTrackCore(bb, db, now, services),
-    ...staticSeams(),
+    ...staticSeams(bb),
   };
 }
 
 /** The seams with no state of their own: pure reads and paths a surface needs
  * without a factory. Collected here so the core's construction stays a list of
  * *things that are built*, in the order they must be built. */
-function staticSeams() {
+function staticSeams(bb: BbPluginApi) {
   return {
     roundRelPath,
     strategyList,
@@ -118,7 +118,7 @@ function staticSeams() {
     workflowStateDir,
     resolveWorkflowStateDir,
     ensureProjectArtifacts,
-    runHelper,
+    runHelper: (args: string[], cwd: string, stateDir?: string) => runHelper(args, cwd, stateDir, bb.sdk.files),
     projectRoot,
   };
 }

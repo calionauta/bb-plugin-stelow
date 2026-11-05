@@ -27,8 +27,13 @@ export declare function parseScopeTasks(blockBody: unknown, scopeId: string): Pl
 export declare function diagnoseScopeSync(options?: {
   specContent?: unknown;
   syncedCount?: number;
+  specFile?: string | null;
+  syncedSpecFile?: string | null;
+  specSha256?: string;
+  syncedSpecSha256?: string;
 }): ScopeSyncDiagnosis;
 export declare function mergePlannedTasks<T extends { id?: unknown; tasks?: unknown }>(
   trackedScopes: T[] | null | undefined,
   specContent: unknown,
 ): T[];
+export function canonicalTaskId(raw: unknown): string;
