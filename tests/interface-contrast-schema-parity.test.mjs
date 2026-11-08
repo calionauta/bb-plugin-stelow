@@ -28,8 +28,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   itemRequired("options"),
-  ["id", "primaryValue", "compatibility"],
-  "options carry the same required trio the validator checks",
+  ["id", "primaryValue", "compatibility", "wireframe"],
+  "options carry the same required quartet the validator checks",
 );
 assert.deepEqual(
   schema.properties.evidence.items.properties.source.enum,
@@ -69,6 +69,10 @@ assert.ok(
   issues.some((issue) => issue.includes("evidence[0] requires a supported source")),
   "an evidence entry without a supported source is still rejected",
 );
+assert.ok(
+  issues.some((issue) => issue.includes("options[0]")),
+  "an option without its wireframe is rejected by the runtime validator, like the schema",
+);
 
 // And the well-formed receipt passes both, so tightening the schema did not
 // make the contract unreachable.
@@ -78,6 +82,7 @@ const good = {
   primaryDimension: "placement",
   fixedConstraints: [{ name: "read-only", value: "no mutations", source: "human" }],
   evidence: [{ source: "measured", reference: "git diff", claim: "no writes" }],
+  options: [{ id: "A", primaryValue: "keep", compatibility: "valid", wireframe: "+-- keep --+" }],
 };
 assert.deepEqual(validateInterfaceContrastReceipt(good), [], "a receipt satisfying the schema also satisfies the validator");
 

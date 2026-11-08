@@ -26,7 +26,11 @@ assert.deepEqual(
 // Bugfix route excludes interface/planning machinery (off route, not skipped).
 {
   const { offRoute, skipped } = skippedStages({ kind: "build", intent: "bugfix", reviewMode: "Auto", sequence: STAGE_SEQUENCE });
-  assert.deepEqual(offRoute.sort(), ["diff-gate", "int-gate", "interface", "plan-gate", "planning", "scope", "selection"], "bugfix off-route set");
+  assert.deepEqual(
+    offRoute.sort(),
+    ["architecture", "diff-gate", "int-gate", "interface", "plan-gate", "planning", "scope", "selection"],
+    "bugfix off-route set",
+  );
   assert.ok(!skipped.some((s) => s.stage === "diff-gate"), "off-route stages are never also skipped");
 }
 

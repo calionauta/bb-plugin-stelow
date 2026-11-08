@@ -22,6 +22,7 @@ import {
   isPublishableArtifactContent,
 } from "../../lib/artifact-manifest.mjs";
 import { normalizeReviewGates } from "../../lib/review-gates.mjs";
+import { DEFAULT_APPETITE, DEFAULT_REVIEW_MODE } from "../../lib/workflow-config.mjs";
 import { workflowSchema } from "../contracts.js";
 import { normalizeStatus, workflowScopes } from "../scopes.js";
 import { gateReceiptFor } from "./gate-vocabulary.js";
@@ -267,8 +268,8 @@ async function boardWorkflow(
         phases.find((phase) => phase.status === "in-progress")?.name ??
           "Not started",
       ),
-    appetite: text(config.appetite, "Core"),
-    reviewMode: text(config.review_mode, "Auto"),
+    appetite: text(config.appetite, DEFAULT_APPETITE),
+    reviewMode: text(config.review_mode, DEFAULT_REVIEW_MODE),
     reviewGates: normalizeReviewGates(
       Array.isArray(reviewGates)
         ? reviewGates.filter((entry): entry is string => typeof entry === "string")

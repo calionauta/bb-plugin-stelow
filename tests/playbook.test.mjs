@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { knownStages, playbookEntries, renderPlaybook, stagePlaybookRelPath } from "../lib/playbook.mjs";
+import { STAGE_SEQUENCE } from "../lib/workflow-vocabulary.mjs";
 
 // Regression: workers discovered stage playbooks via `bb skill list | awk`
 // pipelines over content-hashed ids — flaky and wasteful. The host serves
@@ -10,11 +11,12 @@ import { knownStages, playbookEntries, renderPlaybook, stagePlaybookRelPath } fr
 
 // Explicit coverage first: every machine stage resolves somewhere, and the
 // table agrees with the files actually vendored.
-const STAGES = ["triage", "select", "setup", "context", "shape", "critique", "gate", "scope", "interface", "int-gate", "selection", "planning", "plan-gate", "execution", "verification", "diff-gate", "audit"];
+const STAGES = STAGE_SEQUENCE;
 assert.deepEqual(knownStages().sort(), STAGES.slice().sort(), "every machine stage has a playbook row");
 assert.equal(stagePlaybookRelPath("shape"), "SKILL.md", "skill-owned stages point at the skill's entry file");
 assert.equal(stagePlaybookRelPath("context"), "stages/context.md", "file-owned stages point at the file");
-assert.equal(stagePlaybookRelPath("select"), null, "stages without a dedicated file fall back to the orchestrator");
+assert.equal(stagePlaybookRelPath("select"), "stages/selection.md", "upstream 0.85 gave select its own playbook file");
+assert.equal(stagePlaybookRelPath("selection"), "stages/interface-selection.md", "upstream 0.85 renamed the selection playbook");
 assert.equal(stagePlaybookRelPath("nope"), null, "unknown stages fall back instead of inventing a path");
 
 // Real I/O: entries resolve against a real directory tree, never a mock.
@@ -33,8 +35,11 @@ const build = playbookEntries({ kind: "build", stage: "shape", statePath: join(r
 assert.deepEqual(build.map((entry) => entry.label), ["state", "transitions", "entry", "router", "orchestrator", "stage(shape)"], "build order is fixed: state, transitions, core skills, stage");
 assert.ok(build.every((entry) => entry.missing === false || entry.label === "state" || entry.label === "transitions"), "vendored skill files resolve; workspace files report honestly");
 
-const fallback = playbookEntries({ kind: "build", stage: "int-gate", statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills }, existsSync);
-assert.ok(fallback.every((entry) => entry.label !== "stage(int-gate)"), "a stage without a file lists no stage row");
+const fallback = playbookEntries(
+  { kind: "build", stage: "nope", statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills },
+  existsSync,
+);
+assert.ok(fallback.every((entry) => entry.label !== "stage(nope)"), "an unknown stage lists no stage row; every machine stage now ships a file");
 
 const research = playbookEntries({ kind: "research", stage: null, statePath: join(root, "state.md"), transitionsPath: join(root, "transitions.md"), skillsDir: skills, strategySkill: "stelow-product-discovery", researchIndexPath: join(root, "research-index.md") }, existsSync);
 assert.deepEqual(research.map((entry) => entry.label), ["state", "transitions", "entry", "router", "orchestrator", "index", "strategy"], "research lists index + strategy, never a stage");
