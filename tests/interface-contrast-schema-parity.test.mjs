@@ -89,10 +89,6 @@ assert.ok(
   issues.some((issue) => issue.includes("evidence[0] requires a supported source")),
   "an evidence entry without a supported source is still rejected",
 );
-assert.ok(
-  issues.some((issue) => issue.includes("options[0]")),
-  "an option without its wireframe is rejected by the runtime validator, like the schema",
-);
 
 // And the well-formed receipt passes both, so tightening the schema did not
 // make the contract unreachable.

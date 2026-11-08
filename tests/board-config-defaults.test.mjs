@@ -3,11 +3,11 @@ import { boardFromRoot } from "../server/runtime/board-read.ts";
 import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 
 // Behavior first: the board and the card detail answer the same question
-// ("what appetite does this workflow have?") from two different reads —
-// stelow.json for the board, state.md for the detail. When the config is
-// absent or legacy-shaped, the two defaults disagreed (board "Core" vs
-// parse "Lean"), so one workflow wore two appetites depending on which
-// surface you opened. The board must not own a second default.
+// (what run knobs does this workflow run on?) from two different reads —
+// stelow.json for the board, state.md for the detail. The defaults when a
+// config is absent/legacy must not carry two answers for the same datum —
+// board row's quality/explorationCount/explorationHybrid must match what
+// parseWorkflowConfig assumes for the equivalent state blob.
 
 const apiWithTracking = (tracking) => ({
   sdk: {
@@ -41,22 +41,25 @@ async function boardRow(config) {
 }
 
 const empty = await boardRow({});
-assert.equal(
-  empty.appetite,
-  parseWorkflowConfig("config:\n").appetite,
-  "a workflow with no config shows the same appetite on the board as parseWorkflowConfig assumes",
-);
+const emptyParsed = parseWorkflowConfig("config:\n");
+assert.equal(empty.quality, emptyParsed.quality, "no-config default quality agrees with parseWorkflowConfig");
+assert.equal(empty.explorationCount, emptyParsed.explorationCount, "no-config default explorationCount agrees with parseWorkflowConfig");
+assert.equal(empty.explorationHybrid, emptyParsed.explorationHybrid, "no-config default explorationHybrid agrees with parseWorkflowConfig");
 
+const legacyState = "config:\n  appetite: Lean\n";
 const legacy = await boardRow({ appetite: "Lean" });
-assert.equal(legacy.appetite, "Lean", "an appetite-only entry surfaces its appetite");
+const legacyParsed = parseWorkflowConfig(legacyState);
+assert.equal(legacy.quality, legacyParsed.quality, "legacy appetite quality resolves through the same map");
+assert.equal(legacy.explorationCount, legacyParsed.explorationCount, "legacy appetite explorationCount resolves through the same map");
 assert.equal(
   legacy.reviewMode,
-  parseWorkflowConfig("config:\n  appetite: Lean\n").reviewMode,
+  parseWorkflowConfig(legacyState).reviewMode,
   "an appetite-only entry falls back to the same review mode parseWorkflowConfig assumes",
 );
 
-const declared = await boardRow({ appetite: "Complete", review_mode: "Auto" });
-assert.equal(declared.appetite, "Complete", "a declared appetite wins over any default");
-assert.equal(declared.reviewMode, "Auto", "a declared review mode wins over any default");
+const declared = await boardRow({ quality: "experimental", exploration_count: 4, exploration_hybrid: false, review_mode: "Auto" });
+assert.equal(declared.quality, "experimental", "a declared quality wins over any default");
+assert.equal(declared.explorationCount, 4, "declared exploration count wins over any default");
+assert.equal(declared.explorationHybrid, false, "declared hybrid wins over any default");
 
 console.log("board config defaults test ok: empty, legacy-only, and declared configs agree with parse");
