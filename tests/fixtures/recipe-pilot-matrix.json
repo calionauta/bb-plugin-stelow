@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
-  "validated_at": "2026-09-26T17:11:05Z",
+  "validated_at": "2026-11-08T21:39:28Z",
   "host": {
     "name": "bb",
-    "version": "0.43.3",
+    "version": "0.46.1",
     "command": "bb workflows validate --script <rendered-recipe-source> --json"
   },
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
+      "sha256": "5951946653ad9539f2963f1fc3e720f3de2650e010a604f35743bf49b5f317a4"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "af0176c8fe5918220f421a2a14a0103b35bafba789904eac71d496b49c64851d"
+      "sha256": "5951946653ad9539f2963f1fc3e720f3de2650e010a604f35743bf49b5f317a4"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
@@ -33,6 +33,46 @@
     }
   ],
   "recipes": [
+    {
+      "id": "architecture-alternatives",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "37c25d77745b20a46c740f4f8c1282669a1de260eb5e55c1dc4785e73ec640e9",
+      "permission_profile": "inherit",
+      "failure_policies": [
+        "fail"
+      ],
+      "human_boundaries": [],
+      "outputs": [
+        "architecture/alternatives.json",
+        "architecture/alternatives-verification.json",
+        "architecture/alternatives.md"
+      ]
+    },
+    {
+      "id": "architecture-contrast",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "0e47b32fa119fcf1a142cbf4c7de34340f2f17b6d502792279ee80ae60b9dbc3",
+      "permission_profile": "inherit",
+      "failure_policies": [
+        "fail"
+      ],
+      "human_boundaries": [
+        "contrast"
+      ],
+      "outputs": [
+        "architecture/alternatives.json",
+        "architecture/alternatives-verification.json",
+        "architecture/alternatives.md",
+        "architecture/contrast.json",
+        "architecture/architecture.md"
+      ]
+    },
     {
       "id": "codebase-critique",
       "classification": "low-risk-artifact",
@@ -75,7 +115,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "600b06da2df8fbbbec27fda3b4a90432c4a65e4f336efe348ccd019fbb93a43b",
+      "source_sha256": "029c0071840fe9780cf4a4ddf256c466fd271e0b4dfd4dcad3ead951e1452a5e",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -84,7 +124,7 @@
       "outputs": [
         "interfaces/alternatives.json",
         "interfaces/alternatives-verification.json",
-        "interfaces/interfaces.md"
+        "interfaces/alternatives.md"
       ]
     },
     {
@@ -93,7 +133,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "0ad8747350aba3437fccdad7f8042eae5504c144947f25d57795fea63b65ed8c",
+      "source_sha256": "3bdc375abafc571b2c20c5589fd2d5aa76917c1e74d6a89c0a180b991e2d0e7e",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail"
@@ -102,6 +142,9 @@
         "contrast"
       ],
       "outputs": [
+        "interfaces/alternatives.json",
+        "interfaces/alternatives-verification.json",
+        "interfaces/alternatives.md",
         "interfaces/contrast.json",
         "interfaces/interfaces.md"
       ]
@@ -269,7 +312,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "42e2bca352bbd656da0caabde9c54d8cd424e28ffa79e0a5b71530266cc223f2",
+      "source_sha256": "fe3e5bee68c993f1ba29c5fd0f5104b224d7678cb689fbc0c09ca67e43e4d889",
       "permission_profile": "inherit",
       "failure_policies": [
         "fail",

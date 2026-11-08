@@ -80,13 +80,17 @@ function assertTaskGraph(recipe) {
 
 function sample(schema) {
   if (schema.enum) return schema.enum[0];
-  if (schema.type === "object") {
+  if (schema.const !== undefined) return schema.const;
+  // Union types (e.g. ["string", "null"]) pick the first non-null member:
+  // the sample just needs to satisfy the schema validator.
+  const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== "null") ?? null : schema.type;
+  if (type === "object") {
     return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, sample(child)]));
   }
-  if (schema.type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
-  if (schema.type === "number") return schema.const ?? 0;
-  if (schema.type === "string") return "pilot evidence";
-  if (schema.type === "boolean") return true;
+  if (type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
+  if (type === "number") return schema.const ?? 0;
+  if (type === "string") return "pilot evidence";
+  if (type === "boolean") return true;
   assert.fail(`matrix cannot synthesize unsupported schema type: ${schema.type}`);
 }
 
@@ -124,7 +128,7 @@ function validContents(recipe) {
     fixedConstraints: [{ name: "safety", value: "preserve warning", source: "simulation" }],
     criteria: ["scan cost", "accessibility"],
     evidence: [{ source: "simulation", reference: "pilot", claim: "split view is testable" }],
-    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid", wireframe: "+-- split --+" }],
     nextAction: "Record the pilot selection.",
   };
   return Object.fromEntries(recipe.tasks.map((task) => [
@@ -198,7 +202,7 @@ assert.equal(manifest.schema_version, 1, "matrix schema version is pinned");
 assert.match(manifest.validated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "validation time is explicit");
 assert.deepEqual(
   manifest.host,
-  { name: "bb", version: "0.43.3", command: "bb workflows validate --script <rendered-recipe-source> --json" },
+  { name: "bb", version: "0.46.1", command: "bb workflows validate --script <rendered-recipe-source> --json" },
   "real host probe is explicit",
 );
 for (const identity of manifest.evidence) {
