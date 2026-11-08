@@ -55,8 +55,9 @@ None pending — all operator guides migrated (see above).
 - `skills-sync-notes.md` — sync triggers, pin provenance, upstream-first
   repair (failure modes and exact commands).
 - `recipe-pilot-matrix.md`, `phase6-independent-review-plan.md`,
-  `width1-sequential-pilot.md`, `research-architecture-implementation-plan.md`
-  — plans and pilot records, kept for their measurements, not as behaviour.
+  `width1-sequential-pilot.md`, `research-architecture-implementation-plan.md`,
+  `migration-appetite-to-run-knobs.md` — plans and pilot records, kept for
+  their measurements, not as behaviour.
 - `model-tier-economics.md` — measured answer to "should Stelow adopt
   Prewalk?", plus the model-hint routing gap and the path-archaeology tail.
   Referenced from `FEATURES.md` (presets) and `rfc-worker-robustness.md`

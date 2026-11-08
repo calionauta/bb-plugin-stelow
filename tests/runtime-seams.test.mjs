@@ -9,6 +9,7 @@ import { boardFromRoot, findArtifacts } from "../server/runtime/board-read.ts";
 import { seedWorkflow } from "../server/runtime/workflow-seeding.ts";
 import { createCardLedger } from "../server/runtime/card-ledger.ts";
 import { createQuestionInbox } from "../server/runtime/question-inbox.ts";
+import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 import { lockBlockEvent } from "../lib/lock-blocked.mjs";
 import { recoveryNudge } from "../server/runtime/card-copy.ts";
 import { trackableStatusLabel } from "../lib/trackables.mjs";
@@ -273,6 +274,13 @@ assert.match(state, /quality: production/, "the configured quality is written");
 assert.doesNotMatch(state, /supervisor:/, "the retired supervision knob is never written");
 assert.match(state, /exploration_count: 3/, "the configured exploration count is written");
 assert.match(state, /review_gates: \[spec\]/, "the gate set is the canonical storage");
+// Round-trip: the same seeded state must read back through the shared parser
+// — this is the single source both the detail and any future consumer read.
+assert.deepEqual(
+  parseWorkflowConfig(state),
+  { quality: "production", explorationCount: 3, explorationHybrid: true, appetite: "Lean", reviewMode: "Product Spec Gate", reviewGates: ["spec"] },
+  "the seeded state parses back to the config that was seeded",
+);
 const tracking = JSON.parse(fs.readFileSync(path.join(workspace, "stelow.json"), "utf8"));
 assert.equal(tracking.workflows[0].stage.current_stage, "triage", "a seeded workflow starts at triage");
 // The owner advanced before anyone re-seeds it.

@@ -64,4 +64,16 @@ assert.equal(checkAdvanceContracts({
   stage: "shape", enteredAt: shapeEnteredAt, contracts: requiredForStage({ stage: "shape", appetite: "Core", reviewMode: "Unknown" }), receipts: [], answered: false,
 }), null, "an unknown mode fails open");
 
+assert.match(checkAdvanceContracts({
+  stage: "selection", enteredAt: shapeEnteredAt, answered: false,
+  contracts: [{ id: "interface-pick-auto", kind: "agent-reciept", receipt: "interfaces/selected-interface.md" }],
+  receipts: [{ path: "interfaces/selected-interface.md", content: "picked: A", modifiedAtMs: shapeEnteredAt }],
+}), /interface-pick-auto/, "an unknown contract kind is never a silent no-op: a typo in the catalog would otherwise disable the gate it gates");
+
+assert.match(checkAdvanceContracts({
+  stage: "selection", enteredAt: shapeEnteredAt, answered: false,
+  contracts: requiredForStage({ stage: "selection", appetite: "Core", reviewMode: "Auto" }),
+  receipts: [{ path: "interfaces/selected-interface.md", content: "   ", modifiedAtMs: shapeEnteredAt }],
+}), /complete `interface-pick-auto`/, "a fresh but empty selection receipt does not satisfy the automatic interface pick");
+
 console.log("advance contracts test ok: fixtures, freshness, markers, asks, and fail-open");

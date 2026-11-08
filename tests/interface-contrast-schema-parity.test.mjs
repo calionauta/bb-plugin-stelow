@@ -98,6 +98,7 @@ const good = {
   primaryDimension: "placement",
   fixedConstraints: [{ name: "read-only", value: "no mutations", source: "human" }],
   evidence: [{ source: "measured", reference: "git diff", claim: "no writes" }],
+  options: [{ id: "A", primaryValue: "keep", compatibility: "valid", wireframe: "+-- keep --+" }],
 };
 assert.deepEqual(validateInterfaceContrastReceipt(good), [], "a receipt satisfying the schema also satisfies the validator");
 

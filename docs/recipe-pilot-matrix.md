@@ -1,7 +1,13 @@
 # Recipe pilot and validation matrix
 
-Compiled on 2026-09-23 and live-probed on 2026-09-24 against BB 0.43.3 in
-the active plugin worktree.
+Compiled on 2026-09-23, live-probed on 2026-09-24 against BB 0.43.3, and
+revalidated on 2026-10-22 against BB 0.45.0 in the active plugin worktree
+(as recorded in the fixture below) — that host evidence is the pin of record.
+Revalidation is the deterministic procedure in
+`scripts/revalidate-recipe-matrix.mjs`, which refuses to write unless every
+recipe passes `bb workflows validate` against the host it declares (the
+`host.version` pin in the fixture and in the test move together with a real
+revalidation, never by hand).
 The machine-readable record is
 [`tests/fixtures/recipe-pilot-matrix.json`](../tests/fixtures/recipe-pilot-matrix.json),
 and `tests/recipe-pilot-matrix.test.mjs` re-checks it against the generated
