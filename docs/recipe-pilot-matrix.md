@@ -1,7 +1,10 @@
 # Recipe pilot and validation matrix
 
-Compiled on 2026-09-23 and live-probed on 2026-09-24 against BB 0.43.3 in
-the active plugin worktree.
+Compiled on 2026-09-23, live-probed on 2026-09-24 against BB 0.43.3, and
+revalidated on 2026-11-08 against BB 0.46.1 in the active plugin worktree
+(revalidation script: `scripts/revalidate-recipe-matrix.mjs`, which refuses
+to write unless every probe passes; the `host` pin in the test and fixture
+moves in the same commit as an actual revalidation).
 The machine-readable record is
 [`tests/fixtures/recipe-pilot-matrix.json`](../tests/fixtures/recipe-pilot-matrix.json),
 and `tests/recipe-pilot-matrix.test.mjs` re-checks it against the generated

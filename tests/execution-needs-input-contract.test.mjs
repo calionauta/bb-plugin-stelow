@@ -37,7 +37,12 @@ assert.match(source, /contractId/, "rendered workflow propagates the contract ID
 assert.match(source, /boundaryId/, "rendered workflow propagates the boundary ID");
 assert.match(source, /answerSchema/, "rendered workflow propagates the answer schema");
 const realRecipe = recipeById("interface-contrast");
-assert.equal(realRecipe.tasks[0].human_boundary, "coordinator", "real Interface Contrast recipe owns a coordinator boundary");
+// The recipe gained upstream tasks since the original pin (index 0 is now
+// `alternatives`); the coordinator boundary lives on the `contrast` task.
+// Pin by id, not index — the intent is "the recipe owns a coordinator
+// boundary", not "it is first".
+const contrastTask = realRecipe.tasks.find((task) => task.id === "contrast");
+assert.equal(contrastTask?.human_boundary, "coordinator", "real Interface Contrast recipe owns a coordinator boundary");
 const realSource = renderInlineWorkflowScript(realRecipe, { localRunId: "exec-real" });
 assert.match(realSource, /contractId/, "real Interface Contrast renderer propagates the contract ID");
 assert.match(realSource, /boundaryId/, "real Interface Contrast renderer propagates the boundary ID");
