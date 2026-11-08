@@ -278,7 +278,7 @@ assert.match(state, /review_gates: \[spec\]/, "the gate set is the canonical sto
 // — this is the single source both the detail and any future consumer read.
 assert.deepEqual(
   parseWorkflowConfig(state),
-  { quality: "production", explorationCount: 3, explorationHybrid: true, reviewMode: "Product Spec Gate", reviewGates: ["spec"] },
+  { quality: "production", explorationCount: 3, explorationHybrid: true, appetite: "Lean", reviewMode: "Product Spec Gate", reviewGates: ["spec"] },
   "the seeded state parses back to the config that was seeded",
 );
 const tracking = JSON.parse(fs.readFileSync(path.join(workspace, "stelow.json"), "utf8"));
