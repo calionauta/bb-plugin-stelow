@@ -9,6 +9,8 @@ import { createPresetServer } from "../presets.js";
 import { createScopeProgressSync } from "../scope-progress-sync.js";
 import { createCliDispatch, type CliRunContext, type CliResult } from "./cli-dispatch.js";
 import { stelowCliCommands } from "./cli-registry.js";
+import { withActionRecorder } from "./action-log-rpc.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 import { startReconciler, type Scheduler } from "./reconciler.js";
 import {
   reconcileLiveCardsOnStartup,
@@ -25,8 +27,8 @@ type RpcHandlers = {
 };
 
 export const CARD_ERRORS = {
-  cardNotFound: "Card not found.",
-  presetNotFound: "Preset not found.",
+  cardNotFound: "Card not found — check the id, or run from the card's worker thread.",
+  presetNotFound: "Preset not found — list them with `bb stelow preset list`.",
 } as const;
 
 type CoreDependencyOptions = {
@@ -34,6 +36,8 @@ type CoreDependencyOptions = {
   db: Db;
   now: () => number;
   randomId: (prefix: string) => string;
+  /** The flight recorder shared with the rest of the runtime. */
+  actions?: ActionRecorder;
 };
 
 export function createCoreDependencies(options: CoreDependencyOptions) {
@@ -51,6 +55,7 @@ export function createCoreDependencies(options: CoreDependencyOptions) {
     randomId: options.randomId,
     publish: (event, payload) => options.bb.realtime.publish(event, payload),
     listProjects: () => options.bb.sdk.projects.list(),
+    actions: options.actions,
   });
   return { cardStore, presetServer, inbox };
 }
@@ -69,6 +74,8 @@ type LifecycleDependencies = {
   notifyClaimWaiters: (workspacePath: string, files: string[]) => Promise<void>;
   disposeWorkers: () => void;
   scheduler?: Scheduler;
+  /** The flight recorder; passed through to the 45s card tick. */
+  actions?: ActionRecorder;
 };
 
 export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
@@ -76,14 +83,16 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
   registerThreadLifecycle(deps.bb, deps);
   reconcileLiveCardsOnStartup(deps.db, deps.syncThreadState);
   void deps.executionReconcile.reconcile();
-  const executionTimer = scheduler.setInterval(() => {
-    if ((deps.db as unknown as { open?: boolean }).open) {
-      void deps.executionReconcile.reconcile();
-    }
-  }, 45_000);
+  // One timer, not two. The execution pass and the card tick both read the same
+  // SQLite handle at the same 45s cadence, so they are one tick: the timer lives
+  // in startReconciler and calls this with the card pass. The execution
+  // reconciler carries its own in-flight guard, so overlapping is already
+  // impossible, and the `db.open` guard on the tick covers the closed-handle
+  // case the execution timer used to check for separately.
   const reconciler = startReconciler({
     db: deps.db,
     bb: deps.bb,
+    actions: deps.actions,
     syncThreadState: deps.syncThreadState,
     scopeProgress: createScopeProgressSync({
       getCard: deps.getCard,
@@ -97,9 +106,8 @@ export function registerRuntimeLifecycle(deps: LifecycleDependencies): void {
       `Stelow reconciliation ${phase} failed: ${error instanceof Error ? error.message : String(error)}`,
     ),
     scheduler,
-  });
+  }, () => deps.executionReconcile.reconcile());
   deps.bb.onDispose(() => {
-    scheduler.clearInterval(executionTimer);
     reconciler.dispose();
     deps.disposeWorkers();
   });
@@ -125,19 +133,38 @@ export function registerAutomationSchedule(
   );
 }
 
+/** The recorder is optional so a narrow test can register the table without
+ * inventing a database; production always passes the core's instance. */
+export type ActionRecordOptions = {
+  actions?: ActionRecorder;
+  now?: () => number;
+  /** Thread-only inputs (a lookup by thread) still get their card attributed. */
+  resolveCardId?: (threadId: string) => string | null;
+};
+
 export function registerRpcHandlers(
   bb: BbPluginApi,
   contract: typeof rpcContract,
   handlers: RpcHandlers,
+  options: ActionRecordOptions = {},
 ): void {
-  bb.rpc.register(contract, handlers, { experimental_discoverable: true });
+  const recorded = options.actions
+    ? withActionRecorder(
+      handlers as unknown as Record<string, (...args: unknown[]) => unknown>,
+      options.actions,
+      options.now,
+      options.resolveCardId,
+    )
+    : handlers;
+  bb.rpc.register(contract, recorded as RpcHandlers, { experimental_discoverable: true });
 }
 
 export function registerStelowCli(
   bb: BbPluginApi,
   run: (argv: string[], context: CliRunContext) => Promise<CliResult>,
+  options: ActionRecordOptions = {},
 ): void {
-  const dispatch = createCliDispatch({ run });
+  const dispatch = createCliDispatch({ run, actions: options.actions, now: options.now });
   bb.cli.register({
     name: "stelow",
     summary: "Inspect and interact with Stelow workflows",

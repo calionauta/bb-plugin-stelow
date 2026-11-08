@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   parseAskGroups,
+  cleanOptions,
+  preselectedAnswers,
   normalizeAskArtifactPath,
   inheritAskArtifact,
   isBatchPayload,
@@ -153,6 +155,49 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   ]);
 }
 
+// Preselected options: --selected marks the most recent --option; the flag
+// survives parsing only on multi-select groups and reads as unchecked
+// everywhere else, so a stray flag can never silently confirm work.
+{
+  const picked = parseAskGroups(["--question", "Keep?", "--multiple", "--option", "A", "--selected", "--option", "B", "--selected", "--option", "C"]);
+  assert.equal(picked.error, undefined);
+  assert.deepEqual(picked.groups[0].options.map((o) => o.selected === true), [true, true, false]);
+}
+{
+  const single = parseAskGroups(["--question", "Pick?", "--option", "A", "--selected", "--option", "B"]);
+  assert.match(single.error, /--multiple/);
+}
+{
+  const stray = parseAskGroups(["--question", "Q?", "--multiple", "--selected", "--option", "A", "--option", "B"]);
+  assert.match(stray.error, /must follow a --option/);
+}
+
+// cleanOptions keeps an explicit true and flattens everything else to
+// unchecked: a malformed flag degrades to unchecked, never to confirmed.
+{
+  const cleaned = cleanOptions([
+    { label: "A", selected: true },
+    { label: "B", selected: "yes" },
+    { label: "C" },
+  ]);
+  assert.deepEqual(
+    cleaned.map((o) => o.selected === true),
+    [true, false, false],
+    "only explicit true survives cleaning",
+  );
+  assert.ok(!("selected" in cleaned[1]), "unchecked options travel sparse");
+  assert.deepEqual(
+    preselectedAnswers([
+      { id: "q1", multiple: true, options: [{ label: "A", selected: true }, { label: "B" }] },
+      { id: "q2", multiple: true, options: [{ label: "C" }] },
+      { id: "q3", multiple: false, options: [{ label: "D", selected: true }] },
+    ]),
+    { q1: ["A"] },
+    "preselected answers resolve per multiple-choice question only",
+  );
+  assert.deepEqual(preselectedAnswers([]), {}, "empty batch resolves empty");
+}
+
 // Artifact path normalization: one shared verdict on validity.
 {
   assert.deepEqual(normalizeAskArtifactPath("rounds/a-r1.md"), { path: "rounds/a-r1.md", display: "a-r1.md" }, "basename display");
@@ -191,6 +236,31 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.deepEqual(inheritAskArtifact([]), [], "no options, no artifacts");
   assert.deepEqual(inheritAskArtifact(undefined), [], "malformed input never throws");
   assert.deepEqual(inheritAskArtifact([{ label: "A", artifact: { path: "x".repeat(501) } }, { label: "B", artifact: null }]), [null, null], "over-cap paths are never inherited");
+}
+
+// Selection seeding contract (behavioral): the batch hook seeds its
+// selection state from preselectedAnswers(questions), so opt-out confirms
+// start checked on first paint. Prove the seam end to end: cleaned options
+// keep the explicit flag through expansion, and the resolver returns the
+// checked map the hook uses as its initial state.
+{
+  const expanded = expandInteractionQuestions({
+    id: "i7",
+    title: "T",
+    payload: {
+      questions: [
+        { question: "Keep?", multiple: true, options: [{ label: "A", selected: true }, { label: "B" }] },
+        { question: "Pick?", multiple: false, options: [{ label: "C", selected: true }, { label: "D" }] },
+      ],
+    },
+  });
+  const hookQuestions = expanded.map((entry, index) => ({
+    id: `q${index}`,
+    multiple: entry.multiple,
+    options: entry.options,
+  }));
+  assert.deepEqual(preselectedAnswers(hookQuestions), { q0: ["A"] }, "only the multiple-choice checked option seeds initial selection");
+  assert.deepEqual(preselectedAnswers([]), {}, "an empty batch seeds empty selection");
 }
 
 console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation, per-option evidence inheritance");

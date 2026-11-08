@@ -6,6 +6,7 @@ import {
   parseArtifactManifest,
   renderBundleManifest,
   resolveArtifactPath,
+  trailerArtifactCount,
   unregisteredArtifactPaths,
 } from "../lib/artifact-manifest.mjs";
 
@@ -66,6 +67,12 @@ for (const [path, deliverable] of [
   ["context/state.md", false],
   ["drafts/draft-1.md", false],
   ["plans/nested/drafts/draft-2.md", false],
+  // A run's own output is evidence, not a card document. Its report carries a
+  // deliverable title, which is exactly why the inventory has to exclude the
+  // directory rather than trust the name.
+  ["runs/exec_8r8mkbkq/audit/evidence.md", false],
+  ["runs/exec_8r8mkbkq/audit/requirements.md", false],
+  [".stelow/2026-10-01/sw-card_x/runs/exec_1/verification/ui-review.md", false],
   ["plans\\spec-tech_v1.md", true],
   ["context/recon-receipt.json", false],
   ["session.log", false],
@@ -88,11 +95,20 @@ assert.deepEqual(
 );
 assert.deepEqual(
   buildArtifactTrailer("card-2", [], null),
-  ["Stelow-Card: card-2", "Stelow-Artifacts: 0"],
-  "empty run still names the card with a zero count",
+  ["Stelow-Card: card-2", "Stelow-Artifacts: 0", "Stelow-Gaps: no execution critique registered"],
+  "empty run names the card with a zero count, and says the gap record was never read instead of printing a zero for it",
+);
+assert.deepEqual(
+  buildArtifactTrailer("card-3", [], { fixed: 0, documented: 3, escalated: 1 }),
+  ["Stelow-Card: card-3", "Stelow-Artifacts: 0", "Stelow-Gaps: 0 fixed / 3 documented / 1 escalated"],
+  "one gap key, one shape: the line is present whether or not the card produced artifacts",
 );
 
 // Run bundle manifest: stable names, SHA pins, missing listed, trailer embedded.
+// The trailer counts the REGISTRATION (two artifacts), not the copy (one row):
+// an artifact that could not be read was still produced, and the commit is the
+// surface that has to keep saying so. Deriving it from `files` printed
+// `Stelow-Artifacts: 0` above a `## Missing` list of seventeen.
 const bundle = renderBundleManifest({
   cardId: "card-1",
   cardName: "Login",
@@ -100,28 +116,67 @@ const bundle = renderBundleManifest({
   generatedAt: "2026-09-19T00:00:00.000Z",
   files: [{ name: "audit.md", stage: "audit", sha8: "abc12345", sourcePath: ".stelow/x/audit.md" }],
   missing: [".stelow/x/gone.md"],
+  registered: [
+    { stage: "audit", path: ".stelow/x/audit.md" },
+    { stage: "audit", path: ".stelow/x/gone.md" },
+  ],
   gapTotals: { fixed: 1, documented: 0, escalated: 2 },
 });
 assert.ok(bundle.includes("| audit.md | audit | `abc12345` | .stelow/x/audit.md |"), "file row pins name, stage, SHA, source");
 assert.ok(bundle.includes("- .stelow/x/gone.md"), "missing entries listed, never hidden");
 assert.ok(bundle.includes("1 fixed / 0 documented / 2 escalated"), "gap counts rendered");
 assert.ok(bundle.includes("Stelow-Card: card-1"), "trailer embedded for pasting");
+assert.ok(bundle.includes("Stelow-Artifacts: 2"), "the trailer counts the registration, not the copied rows");
+assert.ok(bundle.includes("Stelow-Artifact: [audit] .stelow/x/gone.md"), "an unreadable artifact is still named in the trailer");
+assert.equal(trailerArtifactCount(bundle.split("\n")), 2, "the trailer's own count is readable back without re-deriving it");
 
 // Token evidence is optional and honest: omitted entirely reads unknown,
 // never zero; reported legs render exact locale numbers for the audit.
 const withTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
   tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000 },
 });
 assert.ok(withTokens.includes("## Tokens"), "token evidence gets its own section");
 assert.ok(withTokens.includes("105,000 total"), "totals render exact, never compacted");
 assert.ok(withTokens.includes("input 80,000"), "reported legs render");
 assert.ok(!withTokens.includes("cached"), "unreported legs never render as zero");
+assert.ok(
+  withTokens.includes("provenance not recorded"),
+  "a total with no recorded provenance says so rather than claiming one",
+);
+
+// The attribution follows the figure's source, because most cards now carry estimates:
+// only one of four providers reports a token total and the rest report a context-window
+// reading. A line that said "provider-reported" over a sum of estimates is the same
+// class of error as printing 0 for an unknown total.
+const measuredTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], registered: [], gapTotals: null,
+  tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000, source: "provider" },
+});
+assert.ok(measuredTokens.includes("Provider-reported totals"), "a provider total is attributed to the provider");
+assert.ok(!measuredTokens.includes("estimated"), "and is not hedged with a word it does not need");
+
+const estimatedTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], registered: [], gapTotals: null,
+  tokens: { input: null, output: null, cached: null, reasoning: null, total: 232021, source: "context-estimate" },
+});
+assert.ok(
+  estimatedTokens.includes("estimated from the providers"),
+  "an estimate read from a context window is labelled as one",
+);
+assert.ok(
+  !estimatedTokens.includes("Provider-reported"),
+  "and never presented as a measurement — the two are different claims about the same number",
+);
+assert.ok(estimatedTokens.includes("232,021 total"), "while the number itself still renders");
+
 const withoutTokens = renderBundleManifest({
   cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
-  files: [], missing: [], gapTotals: null,
+  files: [], missing: [], registered: [], gapTotals: null,
 });
-assert.ok(withoutTokens.includes("Unknown — no provider token reports at export time."), "missing evidence reads unknown");
+assert.ok(withoutTokens.includes("Unknown — no token reports at export time."), "missing evidence reads unknown");
 
 console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");

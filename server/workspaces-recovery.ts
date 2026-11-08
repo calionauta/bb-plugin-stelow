@@ -1,5 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
+import { z } from "zod";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
+import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import {
   hasWorkspaceSource,
   recoveryDisposition,
@@ -67,10 +69,21 @@ async function findCandidates(
 ): Promise<RecoveryCandidate[]> {
   const projects = await deps.listProjects().catch(() => []);
   const candidates: RecoveryCandidate[] = [];
+  // The allowlist IS the registered sources: a worker-reported path becomes
+  // a candidate only when it names, exactly, a source BB already manages.
+  // Anything else is loose evidence, never an attach target.
+  const allowlist = projects.flatMap((project) =>
+    (project.sources ?? []).map((source) => source.path).filter((path): path is string => typeof path === "string"),
+  );
   for (const project of projects) {
     for (const source of project.sources ?? []) {
       if (!source.path || !paths.includes(source.path)) continue;
       if (card.workspace_host_id && source.hostId !== card.workspace_host_id) continue;
+      // Registered does not mean well-formed: the path still resolves
+      // through the jail (NUL, separator tricks, and `..` all refuse), with
+      // the registered set as its own allowlist.
+      const jailed = resolveWithinRoot(source.path, ".", { allowlist });
+      if (!jailed) continue;
       const evidence = await deps.gitEvidence(source.path);
       if (!evidence.isGit || evidence.changedFiles === 0) continue;
       candidates.push({
@@ -120,8 +133,14 @@ async function createRecoverySnapshot(deps: WorkspaceRecoveryDeps, card: Recover
     ? await deps.getThreadOutput(card.worker_thread_id).catch(() => "")
     : "";
   const paths = reportedCheckoutPaths(card.last_assistant_text ?? "", threadOutput);
+  // Loose evidence is worker-quoted text, not authority: each path resolves
+  // through the jail (refusing NUL and separator tricks) and must exist
+  // before the UI shows it. Reported checkouts that are also registered
+  // candidates are excluded here — they have their own affordance.
   const looseEvidence = reportedRecoveryEvidence(card.last_assistant_text ?? "", threadOutput)
-    .filter((entry) => existsSync(entry.path) && !paths.includes(entry.path));
+    .map((entry) => ({ ...entry, path: resolveWithinRoot("/", entry.path) }))
+    .filter((entry): entry is { path: string; kind: "folder" | "patch" } =>
+      entry.path !== null && existsSync(entry.path) && !paths.includes(entry.path));
   const candidates = await findCandidates(deps, card, paths);
   const hasSource = exploratoryHasSource(workspacePath);
   const kind = recoveryDisposition({
@@ -241,11 +260,15 @@ async function attachedProjectSource(
 
 type RecoverySnapshot = Awaited<ReturnType<typeof createRecoverySnapshot>>;
 
+const cardIdInput = z.object({ cardId: z.string().min(1) }).strict();
+const attachInput = z.object({ cardId: z.string().min(1), projectId: z.string().min(1) }).strict();
+
 function workspaceRecoveryHandler(
   deps: WorkspaceRecoveryDeps,
   snapshot: (card: RecoveryCard) => Promise<RecoverySnapshot>,
 ) {
-  return async ({ cardId }: { cardId: string }) => {
+  return async (input: { cardId: string }) => {
+    const { cardId } = cardIdInput.parse(input);
     const card = deps.cards.get(cardId);
     if (!card) return emptyRecovery("documents-only", "Card not found.", deps.cardNotFound);
     if (card.workspace_kind !== "exploratory") {
@@ -259,7 +282,8 @@ function attachRecoveryHandler(
   deps: WorkspaceRecoveryDeps,
   snapshot: (card: RecoveryCard) => Promise<RecoverySnapshot>,
 ) {
-  return async ({ cardId, projectId }: { cardId: string; projectId: string }) => {
+  return async (input: { cardId: string; projectId: string }) => {
+    const { cardId, projectId } = attachInput.parse(input);
     const card = deps.cards.get(cardId);
     if (!card) return { ok: false, error: deps.cardNotFound };
     if (card.workspace_kind !== "exploratory") {
@@ -279,7 +303,8 @@ function attachRecoveryHandler(
 }
 
 function recoveryAuditHandler(deps: WorkspaceRecoveryDeps) {
-  return async ({ cardId }: { cardId: string }) => {
+  return async (input: { cardId: string }) => {
+    const { cardId } = cardIdInput.parse(input);
     const sourceCard = deps.cards.get(cardId);
     if (!sourceCard) {
       return { ok: false, auditCardId: null, auditCardName: null, error: deps.cardNotFound };
@@ -337,7 +362,16 @@ export async function recoveredCheckoutIntegrity(
   const recorded = deps.db.prepare("SELECT git_root FROM workspace_recoveries WHERE card_id = ?")
     .get(card.id) as { git_root: string | null } | undefined;
   if (!recorded?.git_root) return null;
-  const live = await deps.gitEvidence(path);
+  // Canonicalize before asking git: a relative, NUL-carrying, or otherwise
+  // malformed path never reaches the evidence read. Authorization stays
+  // where it was — the live git root versus the recorded one below — which
+  // a string-prefix jail cannot replace (linked worktrees and submodules do
+  // not live under their recorded root as strings, but git still binds them).
+  const jailed = resolveWithinRoot(path, ".");
+  if (!jailed) {
+    return "The attached recovery checkout no longer resolves to the Git root you reviewed. Re-check recovery evidence before viewing or acting on this diff.";
+  }
+  const live = await deps.gitEvidence(jailed);
   return !live.isGit || live.gitRoot !== recorded.git_root
     ? "The attached recovery checkout no longer resolves to the Git root you reviewed. Re-check recovery evidence before viewing or acting on this diff."
     : null;

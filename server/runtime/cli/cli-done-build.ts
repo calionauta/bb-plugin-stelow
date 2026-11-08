@@ -1,12 +1,13 @@
 import { join } from "node:path";
 import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "../../../lib/audit-receipt.mjs";
 import { expiredDebts } from "../../../lib/gap-debt.mjs";
-import { sameGitEvidence, verificationReadiness } from "../../../lib/audit-verification.mjs";
+import { FROZEN_ACCEPTANCE_FILE, parseFrozenAcceptance, sameGitEvidence } from "../../../lib/audit-verification.mjs";
 import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
-import { doneBuildGates } from "../../../lib/build-gates.mjs";
+import { doneBuildGates, frozenAcceptanceGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
+import { frozenGatesEnabled } from "../../scope-batch-gates.js";
 import { OWNERSHIP_UNVERIFIED } from "../../../lib/ownership-refusal.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
@@ -14,10 +15,12 @@ import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
 import type { CliDeps, GitEvidence } from "./cli-deps.js";
 import type { ExportRunBundle } from "./cli-bundle-writer.js";
 import { completeCard, doneStdout } from "./cli-done-track.js";
+import { testAndScanEvidence } from "./cli-scan-gate.js";
 import { text } from "../values.js";
 import type { WorkerCard } from "../../workers-types.js";
 import { auditTrailRefusal } from "../card-audit-trail.js";
 import { stateRootOf } from "../workflow-state.js";
+import { parseCurrentStage } from "../../../lib/current-stage.mjs";
 
 const GIT_EVIDENCE_LOST =
   "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended \
@@ -32,13 +35,6 @@ export type BuildGates = {
   stateBlob: string | null;
   trackedScopes: ReturnType<typeof loadCardScopes>;
 };
-
-type VerificationRun = {
-  command: string;
-  git_root: string;
-  head_sha: string;
-  exit_code: number;
-} | undefined;
 
 /** Build completion is the longest gate chain of the three tracks: owned
  * state, eligibility, spec tracking, checkout evidence, document depth, the
@@ -105,9 +101,11 @@ async function runDoneBuild(
   if (shallow) return { exitCode: 1, stderr: shallow };
   const rework = await reworkLoopRefusal(deps, card);
   if (rework) return { exitCode: 1, stderr: rework };
-  const verificationRun = latestVerificationRun(deps, card.id);
-  const verification = verificationReadiness(verificationRun, evidence.git);
-  if (!verification.ready) return { exitCode: 1, stderr: verification.error };
+  const frozen = await frozenAcceptanceRefusal(deps, stateDir, evidence.git?.headSha ?? null);
+  if (frozen) return { exitCode: 1, stderr: frozen };
+  const proof = testAndScanEvidence(deps, card, evidence.git);
+  if ("refusal" in proof) return proof.refusal;
+  const verificationRun = proof.run;
   const receipt = auditReceiptReadiness(
     await receiptContent(deps, stateDir),
     stateBlob ? parseArtifactManifest(stateBlob) : [],
@@ -208,7 +206,7 @@ in the intended BB project; this card's state artifacts remain readable for refe
       : null;
     if (!stateBlob)
       return refuse({ exitCode: 1, stderr: OWNERSHIP_UNVERIFIED });
-    currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+    currentStage = text(parseCurrentStage(stateBlob) ?? undefined) || card.stage;
   }
   // Gates read tracked truth (mergePlanned: false): the read-time planned-task
   // merge is display-only, so pre-merge cards keep completing while tracked
@@ -314,6 +312,28 @@ scope(s) still open — finish them, then run done again:\n${
   }`;
 }
 
+/** Frozen technical acceptance: a present snapshot opts the card into the
+ * lock (baseline, test_map, red_proof, freeze_sha at this HEAD). Absent
+ * means no snapshot was ever taken — old cards fail open. Behind the
+ * STELOW_FROZEN_GATES kill-switch with the batch gates. Runs after the
+ * rework loop (known rework first) and before the live test-run check (the
+ * freeze must name the HEAD the run just verified). */
+async function frozenAcceptanceRefusal(
+  deps: CliDeps,
+  stateDir: string | null,
+  headSha: string | null,
+): Promise<string | null> {
+  if (!frozenGatesEnabled()) return null;
+  if (!stateDir) return null;
+  const raw = await deps.bb.sdk.files
+    .read({ path: join(stateDir, FROZEN_ACCEPTANCE_FILE) })
+    .then((file) => file.content)
+    .catch(() => null);
+  if (raw === null) return null;
+  const snapshot = parseFrozenAcceptance(raw) ?? { baseline: null, testMap: null, redProof: null, freezeSha: null };
+  return frozenAcceptanceGates({ ...snapshot, headSha });
+}
+
 /** Invisible-scopes companion: audit with zero synced scopes but scope
  * blocks in spec-tech means execution ran untracked — done must not certify
  * it. Missing/unreadable specs fail open here; thin specs are owned by the
@@ -335,14 +355,6 @@ function specTechRefusal(
     specHuman: specCounts.human,
     specContent: specTech?.content ?? null,
   });
-}
-
-function latestVerificationRun(deps: CliDeps, cardId: string): VerificationRun {
-  return deps.db
-    .prepare(
-      "SELECT command, git_root, head_sha, exit_code FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1",
-    )
-    .get(cardId) as VerificationRun;
 }
 
 /** The done trail event: a completed card without it is invisible to flow

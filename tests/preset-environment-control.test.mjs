@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   environmentKindExplanation,
   isBuiltInPresetEdit,
@@ -15,7 +13,7 @@ import {
   classesOf,
   findElementByType,
   loadComponent,
-  root,
+  walk,
 } from "./helpers/render-component.mjs";
 
 /**
@@ -23,23 +21,21 @@ import {
  * whether the control may be touched at all.
  *
  * Every guard here is asked of the RENDERED component or of an EXECUTED
- * function. That is the whole point of this file: an earlier version of these
- * checks read the source with regexes, and each of them was defeated by an edit
- * that kept the pinned words and changed the behaviour. A pill moved inside a
- * truncating span, a form that dropped the stored kind, a disabled condition
- * that stopped disabling — all six left the full suite green. They are
- * mutations a person can make in ten seconds, on the four things they would
- * notice first in the UI.
+ * function. An earlier version read the source with regexes, and each check was
+ * defeated by an edit that kept the pinned words and changed the behaviour: a
+ * pill moved into a truncating span, a form that dropped the stored kind, a
+ * disabled condition that stopped disabling — all six left the suite green.
+ *
+ * The three that were still source reads are now sentinel renders: the label
+ * source, the benefit/detail sources, and the editor's use of the tested
+ * predicate are all observed on the tree the component produces.
  */
 
-const fieldSource = readFileSync(
-  join(root, "components/settings/preset-environment-kind-field.tsx"),
-  "utf8",
-);
-const editorSource = readFileSync(
-  join(root, "components/settings/preset-manager-editor.tsx"),
-  "utf8",
-);
+// Sentinels, so a source that is IMPORTED renders its sentinel and a string
+// that was RETYPED here renders the literal instead.
+const LABEL_SENTINEL = "SENTINEL-isolated-worktree-label";
+const BENEFIT_SENTINEL = "SENTINEL-isolated-worktree-benefit";
+const DETAILS_SENTINEL = "SENTINEL-isolated-worktree-details";
 
 const PRESET = {
   id: "p1",
@@ -58,7 +54,11 @@ function loadEnvironmentKindField() {
     "components/settings/preset-environment-kind-field.tsx",
     "PresetEnvironmentKindField",
     {
-      "../isolated-worktree-check": { ISOLATED_WORKTREE_LABEL: "Isolated worktree" },
+      "../isolated-worktree-check": {
+        ISOLATED_WORKTREE_LABEL: LABEL_SENTINEL,
+        ISOLATED_WORKTREE_BENEFIT: BENEFIT_SENTINEL,
+        ISOLATED_WORKTREE_DETAILS: DETAILS_SENTINEL,
+      },
       "./preset-environment-kind.mjs": {
         DEFAULT_ENVIRONMENT_KIND: "project-default",
         WORKTREE_ENVIRONMENT_KIND: "new-worktree",
@@ -81,25 +81,36 @@ const renderField = (overrides = {}) =>
     ...overrides,
   });
 
+/** Every string rendered anywhere in the tree. */
+function renderedText(node) {
+  const out = [];
+  walk(node, (current) => {
+    for (const child of current.children ?? []) {
+      if (typeof child === "string") out.push(child);
+    }
+  });
+  return out.join(" ");
+}
+
 // The control is a checkbox, not a pair of named options. A "Project checkout"
 // option cannot keep its promise — the stored word means the shared checkout
 // here and a managed worktree to bb — so the shape that survives is the one
-// that makes only a statement it can honour.
+// that makes only a statement it can honour. Asked of the rendered tree: a
+// radio the JSX dropped is absent, whatever a comment says.
 {
   const tree = renderField();
-  assert.doesNotMatch(
-    fieldSource,
-    /type="radio"/,
+  let radio = null;
+  walk(tree, (node) => {
+    if (node.props?.type === "radio") radio = node;
+  });
+  assert.equal(
+    radio,
+    null,
     "no radio option exists, so no stored value is presented as a checkout the card will not get",
-  );
-  assert.doesNotMatch(
-    fieldSource,
-    /type="checkbox"[\s\S]{0,400}type="radio"/,
-    "the control never mixes a checkbox with a named option pair",
   );
 
   // What a click PRODUCES, driven through the rendered control.
-  let changed = null;
+  const changed = null;
   const input = findElementByType(tree, "input");
   assert.equal(input.props.type, "checkbox", "the environment kind is authored through a checkbox");
   assert.equal(input.props.checked, false, "a checkout preset renders unchecked");
@@ -117,27 +128,21 @@ const renderField = (overrides = {}) =>
 }
 
 // The label has one home. The import dialog declares this file's concept a
-// single source; re-declaring the words here is how two surfaces drift.
+// single source; re-declaring the words here is how two surfaces drift. The
+// mocked label is a sentinel, so a retyped literal keeps the sentinel out of
+// the tree.
 {
-  assert.match(
-    fieldSource,
-    /import \{ ISOLATED_WORKTREE_LABEL \} from "\.\.\/isolated-worktree-check"/,
+  const text = renderedText(renderField());
+  assert.ok(
+    text.includes(LABEL_SENTINEL),
     "the concept's name is imported from its declared single source, not retyped",
   );
-  // The import dialog's benefit sentence describes an agent and a card. On a
-  // preset there is no agent yet, and the person may change the setting, so
-  // reusing it would state something untrue in this location.
-  assert.doesNotMatch(
-    fieldSource,
-    /ISOLATED_WORKTREE_BENEFIT/,
+  assert.ok(
+    !text.includes(BENEFIT_SENTINEL),
     "the import dialog's benefit sentence is not reused, because it describes a card rather than a preset",
   );
-  // Its detail list told the reader to create the very preset this dialog
-  // authors — a sentence that was true before this control existed and false
-  // after it.
-  assert.doesNotMatch(
-    fieldSource,
-    /ISOLATED_WORKTREE_DETAILS/,
+  assert.ok(
+    !text.includes(DETAILS_SENTINEL),
     "the import dialog's detail list is not reused: one of its lines tells the reader to create this preset",
   );
 }
@@ -186,17 +191,58 @@ const renderField = (overrides = {}) =>
     "a brand-new preset is not a built-in edit, so the feature stays authorable",
   );
 
-  // The shipped components must CONSUME those rules rather than restate them:
-  // two rules for one behaviour is how the text pin and the code drifted apart.
-  assert.match(
-    editorSource,
-    /isBuiltInPresetEdit\(props\.presets, props\.form\.id\)/,
-    "the editor asks the tested predicate which edit is protected",
+  // The shipped components must CONSUME those rules rather than restate them.
+  // Rendered, not read: a field that stopped asking the rule cannot show the
+  // disabled state, and an editor that restated the protection cannot answer
+  // the tested predicate differently for the two presets.
+  assert.equal(
+    findElementByType(renderField({ busy: true }), "input").props.disabled,
+    true,
+    "the field asks the tested rule whether the control accepts input",
   );
-  assert.match(
-    fieldSource,
-    /isEnvironmentKindEditable\(\{ busy, builtIn \}\)/,
-    "and the field asks the tested rule whether the control accepts input",
+
+  const seen = [];
+  const Editor = loadComponent(
+    "components/settings/preset-manager-editor.tsx",
+    "PresetManagerEditor",
+    {
+      "@/components/ui/dialog": {
+        DialogHeader: () => null,
+        DialogTitle: () => null,
+        DialogDescription: () => null,
+      },
+      "./preset-manager-form": {
+        PresetManagerFormView: (props) => {
+          seen.push(props.builtIn);
+          return null;
+        },
+      },
+      "./preset-manager-list": { PresetManagerList: () => null },
+      "./preset-environment-kind.mjs": { isBuiltInPresetEdit },
+      "./preset-manager-types": {},
+    },
+  );
+  const editorProps = {
+    presets: [...PRESETS],
+    busy: false,
+    form: { ...EMPTY_PRESET_FORM, id: "p2" },
+    formOpen: true,
+    message: null,
+    formRef: { current: null },
+    onNew: () => {},
+    onEdit: () => {},
+    onSetDefault: () => {},
+    onDelete: () => {},
+    onToggleForm: () => {},
+    onChange: () => {},
+    onSave: () => {},
+    onClose: () => {},
+  };
+  walk(Editor(editorProps), () => {});
+  assert.deepEqual(
+    seen,
+    [true],
+    "the editor asks the tested predicate which edit is protected",
   );
 }
 

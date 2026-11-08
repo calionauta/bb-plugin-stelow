@@ -19,8 +19,6 @@ export interface ScopeMergeResult {
   parentUnchanged: boolean;
   reason?: string;
 }
-export declare const FAILED_SCOPE_STATUSES: Set<string>;
-export declare const SUCCESS_SCOPE_STATUSES: Set<string>;
 export declare function acquireScopeMergeLock(batchId: string): { batchId: string; release(): void } | null;
 export declare function releaseScopeMergeLock(batchId: string): void;
 export declare function isScopeMergeLocked(batchId: string): boolean;

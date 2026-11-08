@@ -7,7 +7,9 @@ import { setPluginUpdateAvailable } from "../../lib/plugin-update-signal.mjs";
 import {
   beginToolInstall,
   finishToolInstall,
+  installAllTools,
   mergeToolStatuses,
+  missingToolIds,
   type HostToolId,
   type HostToolStatus,
 } from "../../lib/host-tools.mjs";
@@ -22,12 +24,30 @@ import {
 } from "../ui/dialog";
 import { Icon } from "../ui/icon";
 import { HostToolsSection } from "./host-tools-section";
+import { DiagramRendererCard } from "./diagram-renderer-card";
 import { UiDesignMcpSection } from "./ui-design-mcp-section";
 import { usePluginUpdateActions } from "./plugin-update-actions";
 import { PluginUpdateStatus } from "./plugin-update-status";
 import { UpdateBadge } from "./update-badge";
 import { CapabilityPanel } from "./capability-panel";
 import { WorkflowDependencyCard } from "./workflow-dependency-card";
+
+function refreshToolStatuses(
+  rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
+  setTools: React.Dispatch<React.SetStateAction<HostToolStatus[] | null>>,
+) {
+  void rpc.call("toolStatus", {}).then((result) => {
+    setTools((previous) => mergeToolStatuses(previous, result.tools));
+  }).catch(() => undefined);
+}
+
+async function runMissingInstalls(
+  call: (id: HostToolId) => Promise<{ ok: boolean; log?: string } | null | undefined>,
+  ids: HostToolId[],
+) {
+  const { failed } = await installAllTools(call, ids);
+  return failed;
+}
 
 function useHostToolState() {
   const rpc = useRpc<typeof rpcContract>();
@@ -43,12 +63,23 @@ function useHostToolState() {
         setErrors((previous) => finishToolInstall(previous, id, result.log || "Install failed."));
         return;
       }
-      void rpc.call("toolStatus", {}).then((result) => {
-        setTools((previous) => mergeToolStatuses(previous, result.tools));
-      }).catch(() => undefined);
+      refreshToolStatuses(rpc, setTools);
     }).catch((error) => {
       setErrors((previous) => finishToolInstall(previous, id, error));
     }).finally(() => setInstallingId(null));
+  }
+
+  function installAll() {
+    const ids = missingToolIds(tools);
+    if (ids.length === 0) return;
+    void runMissingInstalls(async (id) => {
+      setInstallingId(id);
+      setErrors((previous) => beginToolInstall(previous, id));
+      return rpc.call("installTool", { id });
+    }, ids).then((failed) => {
+      setErrors((previous) => ({ ...previous, ...failed }));
+      refreshToolStatuses(rpc, setTools);
+    }).catch(() => undefined).finally(() => setInstallingId(null));
   }
 
   useEffect(() => {
@@ -59,7 +90,7 @@ function useHostToolState() {
     return () => { cancelled = true; };
   }, [rpc]);
 
-  return { tools, installingId, errors, install };
+  return { tools, installingId, errors, install, installAll };
 }
 
 function useAboutData() {
@@ -319,9 +350,11 @@ export function AboutPanel() {
                 <HostToolsSection
                   tools={hostTools.tools}
                   onInstall={hostTools.install}
+                  onInstallAll={hostTools.installAll}
                   installingId={hostTools.installingId}
                   errors={hostTools.errors}
                 />
+                <DiagramRendererCard />
                 <UiDesignMcpSection />
               </section>
             </div>

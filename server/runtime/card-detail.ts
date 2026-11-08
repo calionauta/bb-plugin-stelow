@@ -1,6 +1,9 @@
 import { basename, isAbsolute, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { cleanOptions } from "../../lib/question-batch.mjs";
+import { reviewState } from "../../lib/artifact-review.mjs";
+import { readOpenExpiredQuestions } from "../../lib/question-store.mjs";
+import { labelDetailQuestions } from "../../lib/scope-labels.mjs";
+import { readFrozenAcceptance } from "./card-detail-frozen.js";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
 import {
@@ -8,12 +11,15 @@ import {
 } from "../scopes.js";
 import { workflowStateRelativeDir } from "../../lib/workflow-state-identity.mjs";
 import { blockedFileWait } from "../../lib/lock-blocked.mjs";
+import { effectiveActivity as projectedActivity } from "../../lib/card-activity.mjs";
 import { holdSentence } from "../../lib/host-hold.mjs";
 import { liveRun, runSentence } from "../../lib/native-run.mjs";
 import { blockingFailedRun } from "../../lib/failed-run-gate.mjs";
-import type { ScopeXray } from "../scope-map-reader.js";
+import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import { readDetailArtifacts } from "./card-detail-artifacts.js";
+import { reviewMarks } from "./artifact-reviews.js";
+import { recordContrastQuestions } from "./card-detail-contrast.js";
 import { enrichScopes } from "./card-detail-scopes.js";
 import { assembleDetail } from "./card-detail-presentation.js";
 import { cardLiveRuns } from "./card-live-runs.js";
@@ -21,69 +27,23 @@ import { readHostHold } from "./worker-hold.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];
-export type Attachment = { path: string; type: "localFile" | "localImage" };
-type AskOption = {
-  label: string;
-  description: string;
-  preview: string | null;
-  artifact: { path: string } | null;
-};
-type OptionArtifact = { artifact: { absolutePath: string | null } | null };
-export type Workspace = { path: string; hostId: string | null };
-export type Staleness = {
-  docRevised: boolean;
-  docRemoved: boolean;
-  checkoutMoved: boolean;
-  commitCount: number;
-  touchedPaths: string[];
-};
-export type Question = { id: string; options: OptionArtifact[] } & Record<string, unknown>;
-export type Preset = {
-  id: string;
-  name: string;
-  provider_id: string | null;
-  model_id: string | null;
-};
+import { runFailure } from "../../lib/run-failure.mjs";
+import type {
+  Attachment,
+  CardDetailDeps,
+  Preset,
+  Question,
+  Staleness,
+  Workspace,
+} from "./card-detail-types.js";
 
-export type CardDetailDeps = {
-  db: Db;
-  bb: BbPluginApi;
-  now: () => number;
-  idleAttentionMs: number;
-  getCard: (cardId: string) => WorkerCard | undefined;
-  cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
-  syncThreadState: (cardId: string) => Promise<unknown>;
-  fetchPendingQuestions: (threadId: string | null) => Promise<Question[]>;
-  resolveAskOptions: (card: WorkerCard, options: AskOption[]) => Promise<AskOption[]>;
-  cardAttachments: (raw: string | null) => Attachment[];
-  detectMentionedFiles: (
-    bb: BbPluginApi,
-    sourcePath: string | null,
-    prompt: string,
-  ) => Promise<Array<{ path: string; display: string; absolutePath: string }>>;
-  workspaceRelative: (rootPath: string, path: string) => string | null;
-  parseNextStages: (sourcePath: string | null, stage: string) => string[];
-  getReliablePreset: (band: string, cardId: string) => Preset;
-  strategyList: (card: WorkerCard) => string[];
-  flowTimes: (card: WorkerCard) => { leadMs: number | null; cycleMs: number | null };
-  verifiedHeadSha: (cardId: string) => string | null;
-  workers: { history: (cardId: string) => Promise<unknown[]> };
-  executionLifecycle: { detailList: (cardId: string) => unknown[] };
-  stalenessForQuestions: (
-    cardId: string,
-    questions: Question[],
-  ) => Promise<Map<string, Staleness>>;
-  stateDir: (
-    sourcePath: string,
-    card: WorkerCard,
-  ) => Promise<string | null>;
-  scopeXray: (stateDir: string | null) => Promise<ScopeXray | null>;
-  fileTimestamp: (
-    file: { modifiedAtMs?: unknown } | null,
-    fallback: string,
-  ) => string;
-  auditReceiptNote: (path: string) => string | null;
-  cardNotFound: string;
+export type {
+  Attachment,
+  CardDetailDeps,
+  Preset,
+  Question,
+  Staleness,
+  Workspace,
 };
 
 export function createCardDetailHandler(deps: CardDetailDeps) {
@@ -102,23 +62,48 @@ async function readCardDetail(
     const card = deps.getCard(cardId);
     if (!card) throw new Error(deps.cardNotFound);
     const inputs = await loadDetailInputs(deps, card, cardId);
-    return assembleDetail(deps, inputs);
+    const detail = await assembleDetail(deps, inputs);
+    // The board's run-failure signal, so the detail card TYPE matches the board
+    // card type. The detail renders `blockingRun` (stage-scoped) instead; this is
+    // not a second place the reason is shown.
+    return { ...detail, card: { ...detail.card, runFailure: runFailure(deps.db, card) } };
 }
 
-async function loadDetailInputs(
+/**
+ * The card's open questions: what the detail renders, and what the activity
+ * projection counts.
+ *
+ * The two answers are deliberately separate. A failed live read is UNKNOWN, so
+ * it renders as nothing to show — there is no form to offer — while the count
+ * comes back null rather than zero, because a zero would read as "the wait
+ * ended, go ahead". Collapsing both into one number is how a poll hiccup used
+ * to look like an answered question.
+ */
+async function readOpenQuestions(deps: CardDetailDeps, card: WorkerCard) {
+  const live = await deps.fetchPendingQuestions(card.worker_thread_id);
+  const pending = live ?? [];
+  const expired = await readOpenExpiredQuestions(deps, card) as Question[];
+  return {
+    pending,
+    expired,
+    openCount: live === null ? null : pending.length + expired.length,
+  };
+}
+
+/**
+ * The card's artifacts, with the reviewed marks joined.
+ *
+ * One query per card open, and the rows `reviewState` returns are 1:1 with the
+ * artifacts in the order they were read. The state is derived ONCE so the rows
+ * and the summary line cannot disagree about how much has been read
+ * (`lib/artifact-review.mjs`).
+ */
+async function readReviewedArtifacts(
   deps: CardDetailDeps,
   card: WorkerCard,
+  workspace: { path: string | null; hostId: string | null },
   cardId: string,
 ) {
-  const comments = readComments(deps.db, cardId);
-  const pending = await deps.fetchPendingQuestions(card.worker_thread_id);
-  const expiredQuestions = await readExpiredQuestions(deps, card);
-  const workspace = await readWorkspace(deps, card);
-  const mentionedFiles = await readMentionedFiles(deps, card, workspace);
-  const attachments = readAttachments(deps, card, workspace);
-  const fileEnvironmentId = await readFileEnvironment(deps, card, cardId);
-  const scopes = loadCardScopes(workspace.path, card.id);
-  const enrichedScopes = await enrichScopes(deps, card, workspace, scopes);
   const artifacts = await readDetailArtifacts(
     {
       bb: deps.bb,
@@ -131,7 +116,35 @@ async function loadDetailInputs(
     workspace.path,
     workspace.hostId,
   );
-  const activity = effectiveActivity(card, pending.length + expiredQuestions.length);
+  const review = reviewState(artifacts, reviewMarks(deps.db, cardId));
+  const rowByPath = new Map(review.rows.map((row) => [row.path, row]));
+  return {
+    artifacts: artifacts.map((artifact) => ({
+      ...artifact,
+      reviewed: rowByPath.get(artifact.path)?.reviewed === true,
+      stale: rowByPath.get(artifact.path)?.stale === true,
+    })),
+    reviewLine: review.line,
+  };
+}
+
+async function loadDetailInputs(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  cardId: string,
+) {
+  const comments = readComments(deps.db, cardId);
+  const openQuestions = await readOpenQuestions(deps, card);
+  const { pending, expired: expiredQuestions } = openQuestions;
+  const workspace = await readWorkspace(deps, card);
+  const mentionedFiles = await readMentionedFiles(deps, card, workspace);
+  const attachments = readAttachments(deps, card, workspace);
+  const fileEnvironmentId = await readFileEnvironment(deps, card, cardId);
+  const scopes = loadCardScopes(workspace.path, card.id);
+  const enrichedScopes = await enrichScopes(deps, card, workspace, scopes);
+  const reviewed = await readReviewedArtifacts(deps, card, workspace, cardId);
+  await recordContrastQuestions(deps, card, workspace.path);
+  const activity = effectiveActivity(card, openQuestions.openCount);
   const preset = deps.getReliablePreset(presetBand(card), card.id);
   const [workerHistory, questionStaleness, hold] = await Promise.all([
     deps.workers.history(cardId),
@@ -140,10 +153,14 @@ async function loadDetailInputs(
   ]);
   const stageSkips = await readStageSkips(deps, card, workspace.path);
   const scopeXray = await readScopeXray(deps, card, workspace.path);
+  const scopeDraft = await readScopeDraft(deps, card, workspace.path);
+  const questions = labelDetailQuestions(pending, expiredQuestions, scopeXray, scopeDraft, scopes);
   return {
-    card, workspace, comments, pending, expired: expiredQuestions, mentionedFiles, attachments,
-    fileEnvironmentId, scopes: enrichedScopes, artifacts, activity, preset,
-    workerHistory, questionStaleness, stageSkips, scopeXray, hold,
+    card, workspace, comments, ...questions, mentionedFiles, attachments,
+    fileEnvironmentId, scopes: enrichedScopes, artifacts: reviewed.artifacts,
+    reviewLine: reviewed.reviewLine, activity, preset,
+    workerHistory, questionStaleness, stageSkips, scopeXray, scopeDraft,
+    frozen: await readFrozenAcceptance(deps, card, workspace.path), hold,
     nativeRun: readNativeRun(deps.db, cardId),
     blockingRun: readBlockingRun(deps.db, card),
     // Derived from the SAME enriched scopes the card renders, so the hero's
@@ -276,36 +293,6 @@ async function readFileEnvironment(
   return fileEnvironmentId;
 }
 
-async function readExpiredQuestions(
-  deps: CardDetailDeps,
-  card: WorkerCard,
-): Promise<Question[]> {
-  const rows = deps.db
-    .prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC")
-    .all(card.id) as Array<Record<string, unknown>>;
-  const questions: Question[] = [];
-  for (const row of rows) {
-    let parsed: unknown = null;
-    try {
-      parsed = JSON.parse(String(row.options));
-    } catch {
-      parsed = null;
-    }
-    questions.push({
-      id: String(row.id),
-      question: String(row.question),
-      multiple: Boolean(row.multiple),
-      kind: row.kind === "split" ? "split" : "standard",
-      options: await deps.resolveAskOptions(
-        card,
-        cleanOptions(parsed),
-      ) as Question["options"],
-      expiredAt: Number(row.expired_at),
-    });
-  }
-  return questions;
-}
-
 /** What the card's lock surfaces need from an enriched scope. Narrow on
  * purpose: the enriched row is a record the card renders, and this is the one
  * part the server itself reads back. */
@@ -322,10 +309,13 @@ function readComments(db: Db, cardId: string) {
   }));
 }
 
-function effectiveActivity(card: WorkerCard, openQuestions: number) {
-  if (card.activity === "error") return "error";
-  if (openQuestions > 0) return "awaiting-answer";
-  return card.activity as "idle" | "running" | "awaiting-answer" | "error";
+function effectiveActivity(card: WorkerCard, openQuestions: number | null) {
+  // The rule lives in `lib/card-activity.mjs` so the board projection and this
+  // detail projection cannot answer the same question differently.
+  return projectedActivity(
+    card.activity as "idle" | "running" | "awaiting-answer" | "error" | "held",
+    openQuestions,
+  );
 }
 
 function presetBand(card: WorkerCard): string {
@@ -339,7 +329,7 @@ async function readStageSkips(
   card: WorkerCard,
   sourcePath: string | null,
 ) {
-  const fallback = { appetite: "Lean", reviewMode: "Auto", reviewGates: [] as string[] };
+  const fallback = { quality: "production", explorationCount: 3, explorationHybrid: true, reviewMode: "Auto", reviewGates: [] as string[] };
   try {
     if (!sourcePath || !card.dir_hash) return fallback;
     const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
@@ -359,16 +349,47 @@ async function readStageSkips(
  * read one from, projects null — the panel says there is no map instead of
  * rendering an empty graph that looks like an empty plan.
  */
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeXray",
+): Promise<ScopeXray | null>;
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeDraft",
+): Promise<ScopeDraft | null>;
+async function readScopeMap(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+  reader: "scopeXray" | "scopeDraft",
+): Promise<ScopeXray | ScopeDraft | null> {
+  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
+  try {
+    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
+    return await deps[reader](stateDir);
+  } catch {
+    return null;
+  }
+}
+
 async function readScopeXray(
   deps: CardDetailDeps,
   card: WorkerCard,
   sourcePath: string | null,
 ) {
-  if (card.kind !== "build" || !sourcePath || !card.dir_hash) return null;
-  try {
-    const stateDir = await deps.stateDir(sourcePath, card).catch(() => null);
-    return await deps.scopeXray(stateDir);
-  } catch {
-    return null;
-  }
+  return readScopeMap(deps, card, sourcePath, "scopeXray");
+}
+
+/** The gate-review preview: the draft map drawn only while no approved map
+ * exists (the reader enforces that), so it can never shadow the real map. */
+async function readScopeDraft(
+  deps: CardDetailDeps,
+  card: WorkerCard,
+  sourcePath: string | null,
+) {
+  return readScopeMap(deps, card, sourcePath, "scopeDraft");
 }

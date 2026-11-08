@@ -1,19 +1,22 @@
 import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
-import { researchColumnForStatus } from "../../lib/card-question-state.mjs";
+import { researchColumnForStatus } from "../../lib/question-store.mjs";
 import { groupResearchArtifacts } from "../../lib/artifact-groups.mjs";
+import { reviewLine, reviewMarksByPath } from "../../lib/artifact-review.mjs";
 import { joinStrategyLabels, statusTone } from "../../lib/detail-presentation.mjs";
 import { parseResearchIndexSections } from "../../lib/research-index-sections.mjs";
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { researchOpportunityHint } from "../../lib/research-opportunity-summary.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
 import { ArtifactInventory, type ArtifactInventoryGroup } from "../artifacts/artifact-inventory";
+import { useArtifactReview } from "../artifacts/use-artifact-review";
 import { AcceptanceRow } from "./acceptance-row";
 import { CardConversation } from "../conversation/card-conversation";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
 import { DisclosureSection, SECTION_SURFACE } from "../disclosure";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 import { InboxEventBanner, shouldShowInboxEventBanner, type InboxEventItem } from "./inbox-event-banner";
 import { InputFiles } from "./input-files";
@@ -63,7 +66,7 @@ function ResearchStatus({ card, detail, index, strategies, actions, onOpenRestar
           <div className="min-w-0 flex-1 space-y-1">
             <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-            <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+            <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={onQuestionsChanged} />
             {index?.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p> : null}
             <ResearchIdentity card={card} strategyLabel={strategyLabel} />
             <ResearchHeroActions
@@ -105,24 +108,18 @@ type ResearchQuestionsProps = Pick<
 >;
 
 /**
- * What a reader has to look at before this research is finished: its open
- * questions, and the receipt for the human disposition of a completed one.
- *
- * Grouped because they answer the same question — "is there anything left for
- * me here?" — and because the hero was carrying both inline, which put the
- * status block over its function budget.
+ * The receipt for the human disposition of a completed result. It stays inside
+ * the hero's status section; the open questions it used to sit beside are now
+ * their own sibling section (see the placement note at the call site).
  */
 function ResearchReview(props: ResearchQuestionsProps) {
   return (
-    <>
-      <ResearchQuestions {...props} />
-      <AcceptanceRow
-        cardId={props.card.id}
-        status={props.card.status}
-        acceptanceLine={props.detail?.card.acceptanceLine}
-        onChanged={props.onQuestionsChanged}
-      />
-    </>
+    <AcceptanceRow
+      cardId={props.card.id}
+      status={props.card.status}
+      acceptanceLine={props.detail?.card.acceptanceLine}
+      onChanged={props.onQuestionsChanged}
+    />
   );
 }
 
@@ -219,11 +216,49 @@ function ResearchSummary({ index, groups, body, onOpenFanOut, onOpenStrategyRun 
   );
 }
 
-function ResearchArtifacts({ card, detail, groups, setViewerFile }: { card: ResearchCard; detail: ResearchDetail | null; groups: ArtifactInventoryGroup[]; setViewerFile: Dispatch<SetStateAction<ViewerFile | null>> }) {
+function ResearchArtifacts({ card, detail, groups, setViewerFile, onReviewedChanged }: {
+  card: ResearchCard;
+  detail: ResearchDetail | null;
+  groups: ArtifactInventoryGroup[];
+  setViewerFile: Dispatch<SetStateAction<ViewerFile | null>>;
+  onReviewedChanged: () => void;
+}) {
   const count = groups.reduce((total, group) => total + group.items.length, 0);
+  // Round files come from the research index, which can outlive the artifact
+  // list they were indexed from. Only a path the detail still reports gets a
+  // toggle; the rest stay openable but unmarked, so the control never offers an
+  // action the server would refuse.
+  const review = useArtifactReview(card.id, onReviewedChanged);
+  const marks = useMemo(() => reviewMarksByPath(detail?.artifacts ?? []), [detail?.artifacts]);
+  const rows = useMemo(() => groups.flatMap((group) => group.items), [groups]);
+  // The server's reviewLine counts every artifact on the card, including ones
+  // the research index never gave a round row. A fraction over rows nobody can
+  // see could never reach its total, so this section derives its own from the
+  // rows it renders — through the same sentence owner as the server
+  // (lib/artifact-review.mjs). Rows the server did not report (no mark entry)
+  // are excluded from the denominator too: they carry no control, so counting
+  // them would cap the fraction again.
+  const known = rows.filter((row) => marks.has(row.path));
+  const line = reviewLine(
+    known.filter((row) => marks.get(row.path)?.reviewed).length,
+    known.length,
+    known.filter((row) => marks.get(row.path)?.stale).length,
+  );
+  const hint = count > 0
+    ? `${count} ${count === 1 ? "file" : "files"} · newest round first${line ? ` · ${line}` : ""}`
+    : "being prepared";
   return (
-    <DisclosureSection title="Artifacts" hint={count > 0 ? `${count} ${count === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
-      <ArtifactInventory groups={groups} workspaceKind={card.workspaceKind} fileEnvironmentId={detail?.fileEnvironmentId ?? null} onView={setViewerFile} />
+    <DisclosureSection title="Artifacts" hint={hint} defaultOpen>
+      {review.error ? <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
+      <ArtifactInventory
+        groups={groups}
+        workspaceKind={card.workspaceKind}
+        fileEnvironmentId={detail?.fileEnvironmentId ?? null}
+        onView={setViewerFile}
+        review={card.status === "archived"
+          ? null
+          : { marks, pendingPath: review.pendingPath, onToggle: review.toggle }}
+      />
     </DisclosureSection>
   );
 }
@@ -237,11 +272,26 @@ export function ResearchDetailContent(props: ResearchContentProps) {
     <>
       <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
       <ResearchStatus {...props} />
+      {/* The question section is a SIBLING of the status hero, never a child,
+          and the parent composes it because `ResearchStatus` is already at its
+          function budget. The same placement the Build and Explore cards use: a
+          box inside the hero's own box never read as a boundary.
+          `ResearchQuestions` was already the right component — it had been
+          welded to `AcceptanceRow` inside `ResearchReview`, which is what kept
+          it inside the hero. */}
+      <section className="space-y-3">
+        <ResearchQuestions
+          card={card}
+          detail={detail}
+          setViewerFile={setViewerFile}
+          onQuestionsChanged={props.onQuestionsChanged}
+        />
+      </section>
       <InputFiles card={card} detail={detail} onView={setViewerFile} />
       <ResearchSummary index={index} groups={groups} body={body} onOpenFanOut={props.onOpenFanOut} onOpenStrategyRun={props.onOpenStrategyRun} />
       <PreviewSection cardId={card.id} />
       <ResearchQualitySection rounds={index?.rounds ?? []} repairing={actions.repairing} onRepair={(lines) => void actions.doQualityRepair(lines)} />
-      <ResearchArtifacts card={card} detail={detail} groups={groups} setViewerFile={setViewerFile} />
+      <ResearchArtifacts card={card} detail={detail} groups={groups} setViewerFile={setViewerFile} onReviewedChanged={props.onQuestionsChanged} />
       <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero.kind === "decision"} threadId={card.workerThreadId ?? null} />
     </>
   );

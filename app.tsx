@@ -15,7 +15,9 @@ import { StelowArtifactDirective } from "./components/messages/stelow-artifact-d
 import { StelowQualityDirective } from "./components/messages/stelow-quality-directive";
 import { OpenStelowAction } from "./components/thread/open-stelow-action";
 import { PresetAssignDialog } from "./components/settings/preset-assign-dialog";
+import { ClientErrorBoundary } from "./components/app-support/client-error-reporting";
 import type { PresetDialogRendererProps } from "./components/app-support/panel-rendering";
+import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 
 function StelowCardDrawer(props: PluginThreadPanelProps) {
   const navigate = useBbNavigate();
@@ -31,16 +33,42 @@ function StelowCardDrawer(props: PluginThreadPanelProps) {
     />
   );
   return (
-    <CardDrawerAdapter
-      {...props}
-      intentLabels={INTENT_LABEL}
-      onOpenRecoveryAudit={(cardId) => goToCard(
-        navigate,
-        { kind: "build" },
-        cardId,
-      )}
-      renderPresetDialog={renderPresetDialog}
-    />
+    <ClientErrorBoundary surface="card">
+      <CardDrawerAdapter
+        {...props}
+        intentLabels={INTENT_LABEL}
+        onOpenRecoveryAudit={(cardId) => goToCard(
+          navigate,
+          { kind: "build" },
+          cardId,
+        )}
+        renderPresetDialog={renderPresetDialog}
+      />
+    </ClientErrorBoundary>
+  );
+}
+
+function PanelSurface(props: { subPath: string }) {
+  return (
+    <ClientErrorBoundary surface="panel">
+      <StelowPanelRoute subPath={props.subPath} />
+    </ClientErrorBoundary>
+  );
+}
+
+function ArtifactDirectiveSurface(props: PluginMessageDirectiveProps) {
+  return (
+    <ClientErrorBoundary surface="artifact-directive">
+      <StelowArtifactDirective {...props} />
+    </ClientErrorBoundary>
+  );
+}
+
+function QualityDirectiveSurface(props: PluginMessageDirectiveProps) {
+  return (
+    <ClientErrorBoundary surface="quality-directive">
+      <StelowQualityDirective {...props} />
+    </ClientErrorBoundary>
   );
 }
 
@@ -52,7 +80,7 @@ export default definePluginApp((app) => {
     title: "Stelow • Product Hub",
     icon: "Star",
     path: STELOW_PANEL_PATH,
-    component: (props) => <StelowPanelRoute subPath={props.subPath} />,
+    component: PanelSurface,
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   registerPendingInteraction(app);
@@ -93,10 +121,10 @@ export default definePluginApp((app) => {
 
   app.slots.messageDirective({
     id: "stelow-artifact",
-    component: StelowArtifactDirective,
+    component: ArtifactDirectiveSurface,
   });
   app.slots.messageDirective({
     id: "stelow-quality",
-    component: StelowQualityDirective,
+    component: QualityDirectiveSurface,
   });
 });

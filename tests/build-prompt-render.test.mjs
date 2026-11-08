@@ -12,7 +12,7 @@ const context = {
   stateDir: "/repo/.stelow/2026-09-26/sw-card_probe",
   intent: "feature",
   managedWorktree: true,
-  appetite: "Core",
+  knobs: { quality: "production", explorationCount: 3, explorationHybrid: true },
   reviewGates: "Product Spec, Interface, Scopes",
   reviewRung: "Product Spec + Interface + Scopes",
   instructions: "Preset instructions:\nstay narrow\n",
@@ -30,6 +30,14 @@ const rules = {
   interfacePick: "INTERFACE_PICK_SENTINEL",
   doneProtocol: "DONE_PROTOCOL_SENTINEL",
   splitProtocol: "SPLIT_PROTOCOL_SENTINEL",
+
+  workflowIntro: "WORKFLOW_INTRO_SENTINEL",
+
+  workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+
+  commandFailureRule: "command failure rule",
+  userInputContract: "USER_INPUT_CONTRACT_SENTINEL",
 };
 
 const prompt = buildBuildPrompt(context, rules);
@@ -44,7 +52,27 @@ assert.ok(
 // Card identity and gates are stated, not implied.
 assert.ok(prompt.includes(context.stateDir), "the owned state dir is named");
 assert.ok(prompt.includes("intent=`feature`"), "the seeded intent is stated");
-assert.ok(prompt.includes("Appetite=`Core`"), "the recorded appetite is stated");
+assert.ok(prompt.includes("quality=`production`"), "the recorded quality is stated");
+const experimental = buildBuildPrompt(
+  { ...context, knobs: { ...context.knobs, quality: "experimental" } },
+  rules,
+);
+assert.ok(
+  experimental.includes("quality=`experimental`"),
+  "an experimental quality reaches the worker instead of a hardcoded production",
+);
+assert.equal(experimental.match(/%[A-Z_]+%/g), null, "the quality value leaves no template token");
+assert.ok(!prompt.includes("red_first="), "no red-first clause when the knob is absent");
+const advisory = buildBuildPrompt(
+  { ...context, knobs: { ...context.knobs, redFirst: "advisory" } },
+  rules,
+);
+assert.ok(
+  advisory.includes("red_first=`advisory`"),
+  "an explicit red-first mode reaches the worker instead of staying in state.md only",
+);
+assert.ok(!prompt.includes("supervisor="), "the retired supervision knob is not stated");
+assert.ok(prompt.includes("exploration=`count=3 hybrid=true`"), "the recorded exploration is stated");
 assert.ok(prompt.includes("Product Spec, Interface, Scopes"), "the recorded review gates are stated");
 assert.ok(prompt.includes("stay narrow"), "preset instructions are forwarded");
 assert.ok(
@@ -67,4 +95,4 @@ const plain = buildBuildPrompt({ ...context, managedWorktree: false }, rules);
 assert.ok(plain.includes(context.prompt), "the request survives without a managed worktree");
 assert.ok(!plain.includes("BB provisioned the managed worktree"), "no worktree, no worktree note");
 
-console.log("build prompt render test ok: request, state dir, intent, appetite, gates, instructions and every protocol clause reach the worker");
+console.log("build prompt render test ok: request, state dir, intent, knobs, gates, instructions and every protocol clause reach the worker");

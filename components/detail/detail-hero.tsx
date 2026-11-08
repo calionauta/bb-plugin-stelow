@@ -2,6 +2,7 @@ import { archivedCardDetailPresentation } from "../../lib/card-detail-presentati
 import { lockWaitHero } from "../../lib/lock-blocked.mjs";
 import { readMissHero } from "../../lib/host-read-streak.mjs";
 import { isOwnershipRefusal } from "../../lib/ownership-refusal.mjs";
+import { quotaAdvice, rateLimitAdvice } from "../../lib/rate-limit-refusal.mjs";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 // Detail hero: one status reading per card — decision, error, paused,
@@ -53,15 +54,32 @@ export function heroFor(card: HeroCardState, detail: HeroDetailState): { kind: H
 
 // Needs-a-human states first: archived history, then open questions. An
 // open question always wins — answering resumes the worker on its own.
+//
+// The COUNT is deliberately absent here. It belongs to the question section
+// below (detail-question-sections), which is the component that owns the
+// decision, its options and its answer. The hero names the card's state; a
+// second count in the state line made the summary look like the place to act.
+// The amber tone moved with the count: the hero says "waiting for you", the
+// section is the thing that needs you.
 function attentionHero(card: HeroCardState, detail: HeroDetailState): { kind: HeroKind; title: string; sub: string } | null {
   const archived = archivedCardDetailPresentation(card, stageLabel);
   if (archived) return archived.hero;
-  const pending = (detail?.pendingQuestions?.length ?? 0) + (detail?.expiredQuestions?.length ?? 0);
+  const live = detail?.pendingQuestions?.length ?? 0;
+  const pending = live + (detail?.expiredQuestions?.length ?? 0);
   if (pending === 0) return null;
+  // A live question resumes the worker; a timed-out one does not. Saying
+  // "the agent resumes" over recovered questions is the same lie the expired
+  // section used to carry, one screen higher.
   return {
     kind: "decision",
-    title: pending === 1 ? "Needs your decision to continue" : `Needs your decision — ${pending} questions`,
-    sub: "Answer below and the agent resumes on its own.",
+    // "At <stage> — ..." is the calm hero's grammar, so a waiting card reads as
+    // the same kind of sentence in a different state. The words "Waiting for
+    // you" belong to the question section's title, one component below: saying
+    // it here too put the same phrase on screen twice in three lines.
+    title: `At ${stageLabel(card.stage)} — your answer is pending`,
+    sub: live > 0
+      ? "The agent is paused until you answer."
+      : "The questions timed out; your answers still close the card's open decisions.",
   };
 }
 
@@ -201,7 +219,12 @@ function unreadableHero(card: HeroCardState): { kind: HeroKind; title: string; s
 }
 
 export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }> = {
-  decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
+  // Neutral on purpose (2026-10-27): the hero names the state, the question
+  // section below wears the amber and holds the count. Two amber boxes two
+  // lines apart made the gold read as decoration on a summary; one gold box
+  // around the answerable decision is a place the reader can act. `alert`
+  // stays — a screen reader must still hear that the card started waiting.
+  decision: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: true },
   error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
   paused: { wrap: "border-amber-500/40 bg-amber-500/5", dot: "bg-amber-500", alert: false },
   // Held reads between paused and calm on purpose: it is a real wait, so it
@@ -224,13 +247,21 @@ export const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: bo
 // question. Shared by all three track detail bodies.
 export function HeroErrorNote({ card }: { card: { activity: string; lastError: string | null } }) {
   if (card.activity !== "error" || !card.lastError) return null;
-  // "Answering below resumes the worker" is a claim about a conversation that
-  // exists. On an unowned card it does not: the conversation is refused until
-  // the records agree, so the sentence points a reader at an answer box whose
-  // answer is discarded.
-  const trailing = isOwnershipRefusal(card.lastError)
-    ? "Restart fresh… in the card actions menu is what clears this; nothing on the card is waiting for an answer."
-    : "Answering below resumes the worker.";
+  // The trailing sentence has to name an action that CLEARS this cause. Two causes do
+  // not answer to "answer below": an unowned card (the conversation is refused until
+  // the records agree) and a provider rate limit (nothing is pending, and the provider
+  // is refusing for hours). Both shipped with the generic advice, and both sent a reader
+  // to a box whose answer goes nowhere.
+  // Quota is checked before rate limit: the provider wraps "Insufficient account funds"
+  // in a message that also says "Rate limit exceeded", so the rate-limit branch matched
+  // first and told the reader to wait out a window that would never clear.
+  const quota = quotaAdvice(card.lastError);
+  const rateLimit = rateLimitAdvice(card.lastError);
+  const trailing = quota
+    ?? rateLimit
+    ?? (isOwnershipRefusal(card.lastError)
+      ? "Restart fresh… in the card actions menu is what clears this; nothing on the card is waiting for an answer."
+      : "Answering below resumes the worker.");
   return (
     <p className="w-full rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs leading-5 text-destructive" title={card.lastError}>
       <span className="font-semibold">Last worker error:</span> {card.lastError} {trailing}

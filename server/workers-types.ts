@@ -19,7 +19,16 @@ export type WorkerCard = {
   spawn_retry_count: number | null;
   spawn_retry_thread: string | null;
   attachments: string;
-  workspace_kind: "project" | "exploratory";
+  /**
+   * Which checkout the card works in.
+   *
+   * `worktree` is a recorded linked checkout (an operator points a card at the
+   * tree that holds its work). The resolver has always honoured it; the type did
+   * not, and the RPC contracts below enumerate the same three, because a value
+   * the DB can hold but a contract refuses is a 500 on every board read — which
+   * is exactly what happened on 2026-10-28.
+   */
+  workspace_kind: "project" | "exploratory" | "worktree";
   workspace_path: string | null;
   workspace_host_id: string | null;
   kind: "build" | "research" | "explore";
@@ -28,6 +37,11 @@ export type WorkerCard = {
   explore_stage: string | null;
   last_error: string | null;
   last_assistant_text: string | null;
+  /** The running turn's text at the last idle edge. The resume rule's baseline:
+   * written only when the card parks or resumes, never by a running sync, so a
+   * card-detail read cannot consume the "this turn produced something new"
+   * signal. See lib/auto-continue.mjs. */
+  last_idle_text: string | null;
   last_idle_at: number | null;
   /** When the host stopped answering this card's state read, or null. The
    * measurement itself lives in the streak table; this is the latch the reader

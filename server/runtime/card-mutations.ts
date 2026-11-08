@@ -2,8 +2,13 @@ import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { acceptanceRefusal, acceptedDate } from "../../lib/card-acceptance.mjs";
 import { heuristicDisplayName } from "../../lib/draft-burst.mjs";
+import { needsNaming } from "../../lib/card-naming.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
+import { commentDeliveryLine, answerFeedbackHolds } from "../../lib/answer-feedback.mjs";
+import { holdUpdates } from "../../lib/host-hold.mjs";
+import { openExpiredCount } from "./answer-feedback.js";
+import { sendWorkerInput } from "./thread-send.js";
 import { canEditWorkflowIntent } from "../../lib/workflow-intent-policy.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import type { WorkerCard } from "../workers-types.js";
@@ -77,6 +82,10 @@ export function createCardMutationHandlers(deps: CardMutationDeps) {
       updateCardIntent(deps, input),
     renameCard: (input: { cardId: string; name: string }) =>
       renameCard(deps, input),
+    updateCardPrompt: (input: { cardId: string; prompt: string }) =>
+      updateCardPrompt(deps, input),
+    updateCardWorkspace: (input: { cardId: string; projectId: string }) =>
+      updateCardWorkspace(deps, input),
     addCardComment: (input: {
       cardId: string;
       target: "card" | "scope" | "task";
@@ -166,6 +175,88 @@ async function renameCard(
   return { ok: true, error: null };
 }
 
+export const ERR_PROMPT_EMPTY = "The description is empty.";
+export const ERR_PROMPT_TOO_LONG = "The description is over 20,000 characters.";
+const ERR_CARD_STARTED = "This card already started — its description is locked.";
+const ERR_CARD_COMPLETED = "This card is completed — its description is locked.";
+
+const PARKED_STATUSES = new Set(["draft", "pending"]);
+
+/**
+ * Which refusal a prompt edit earns, if any. Parked means worker-less AND
+ * in a pre-start status: a completed row with a cleaned-up worker is still
+ * refused, and a row the worker already consumed is refused even when the
+ * thread handle is momentarily absent.
+ */
+function promptEditRefusal(card: WorkerCard): string | null {
+  if (isArchivedCard(card)) return ERR_CARD_ARCHIVED;
+  if (card.status === "completed") return ERR_CARD_COMPLETED;
+  if (card.worker_thread_id) return ERR_CARD_STARTED;
+  if (!PARKED_STATUSES.has(card.status)) return ERR_CARD_STARTED;
+  return null;
+}
+
+/**
+ * Edit a parked card's description. Allowed only before Start: the worker
+ * prompt is built from `cards.prompt` at spawn, so a parked edit is what
+ * the worker receives, while a post-start edit would fork live work.
+ *
+ * The gate is re-checked immediately before the write: a Start landing
+ * mid-edit is refused, never half-applied, and the draft stays with the
+ * caller (refusals carry no write). Synchronous DB write — no timeout,
+ * no retry, no trail comment.
+ */
+async function updateCardPrompt(
+  deps: CardMutationDeps,
+  { cardId, prompt }: { cardId: string; prompt: string },
+) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound };
+  const gate = promptEditRefusal(card);
+  if (gate) return { ok: false, error: gate };
+  const next = typeof prompt === "string" ? prompt.trim() : "";
+  if (next.length === 0) return { ok: false, error: ERR_PROMPT_EMPTY };
+  if (next.length > 20_000) return { ok: false, error: ERR_PROMPT_TOO_LONG };
+  // Re-read before writing: a Start may have landed between the gate check
+  // and this line, and only the live row decides.
+  const live = deps.getCard(cardId);
+  if (!live) return { ok: false, error: deps.errors.cardNotFound };
+  const raced = promptEditRefusal(live);
+  if (raced) return { ok: false, error: raced };
+  // Single-burst-site rule: a prompt save never spawns the title burst.
+  // When the title is still the heuristic of the prompt being replaced it
+  // is recomputed from the new prompt in the same write; a human-set title
+  // is left untouched.
+  const title = needsNaming({ displayName: live.display_name ?? live.name, name: live.name, prompt: live.prompt })
+    ? heuristicDisplayName(next, live.name)
+    : live.display_name;
+  deps.db.prepare("UPDATE cards SET prompt = ?, display_name = ?, updated_at = ? WHERE id = ?")
+    .run(next, title, deps.now(), cardId);
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
+}
+
+async function updateCardWorkspace(
+  deps: CardMutationDeps,
+  { cardId, projectId }: { cardId: string; projectId: string },
+) {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, error: deps.errors.cardNotFound };
+  if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
+  if (card.status === "completed") return { ok: false, error: ERR_CARD_COMPLETED };
+  if (card.worker_thread_id) return { ok: false, error: ERR_CARD_STARTED };
+  if (!PARKED_STATUSES.has(card.status)) return { ok: false, error: ERR_CARD_STARTED };
+  const live = deps.getCard(cardId);
+  if (!live) return { ok: false, error: deps.errors.cardNotFound };
+  const raced = promptEditRefusal(live);
+  if (raced) return { ok: false, error: raced };
+  deps.db.prepare("UPDATE cards SET project_id = ?, updated_at = ? WHERE id = ?").run(projectId, deps.now(), cardId);
+  deps.bb.realtime.publish("card-state", { cardId });
+  return { ok: true, error: null };
+}
+
+type CommentDelivery = "sent" | "queued" | "rides-answer" | "saved";
+
 async function addCardComment(
   deps: CardMutationDeps,
   input: {
@@ -177,50 +268,77 @@ async function addCardComment(
 ) {
   const { cardId, target, targetId, body } = input;
   const card = deps.getCard(cardId);
-  if (!card) return { commentId: "", error: deps.errors.cardNotFound };
-  if (isArchivedCard(card)) return { commentId: "", error: ERR_CARD_ARCHIVED };
+  if (!card) {
+    return { commentId: "", error: deps.errors.cardNotFound, delivery: null, deliveryLine: null };
+  }
+  if (isArchivedCard(card)) {
+    return { commentId: "", error: ERR_CARD_ARCHIVED, delivery: null, deliveryLine: null };
+  }
   const commentId = deps.logCardComment(cardId, target, targetId, "user", body);
-  const workerError = await routeCommentToWorker(deps, card, target, body);
-  if (workerError) return { commentId, error: workerError };
+  const routed = await routeCommentToWorker(deps, card, target, body, commentId);
+  if (routed.error) {
+    return { commentId, error: routed.error, delivery: routed.delivery, deliveryLine: routed.line };
+  }
   deps.bb.realtime.publish("card-state", { cardId });
-  return { commentId, error: null };
+  return { commentId, error: null, delivery: routed.delivery, deliveryLine: routed.line };
 }
 
+/**
+ * Whether to wake the worker with this comment now, and what to say about it.
+ *
+ * A comment written while the card waits on an answer rides that answer: sending
+ * it now wakes the worker mid-read, so the person's picks arrive as a second
+ * turn and the first turn acts on half a thought. The row is already written and
+ * stays unstamped, so the answer carries it later
+ * (`server/runtime/answer-feedback.ts`). Nothing is lost if the answer never
+ * comes — the comment is on the card either way.
+ */
 async function routeCommentToWorker(
   deps: CardMutationDeps,
   card: WorkerCard,
   target: "card" | "scope" | "task",
   body: string,
-): Promise<string | null> {
-  if (target === "card" && targetIsLiveWorker(card)) {
-    try {
-      await deps.bb.sdk.threads.send({
-        threadId: card.worker_thread_id!,
-        mode: "auto",
-        input: [
-          {
-            type: "text",
-            text: `User comment on card "${card.name}":\n\n${body}`,
-            mentions: [],
-          },
-        ],
-      });
-      const resume = statusForNewCardWork({
-        kind: card.kind,
-        status: card.status,
-        stage: card.stage,
-      });
-      deps.updateCard(card.id, {
-        activity: "running",
-        status: resume.status,
-      });
-    } catch (error) {
-      return error instanceof Error
-        ? error.message
-        : "Failed to route comment to worker thread.";
-    }
+  commentId: string,
+): Promise<{ error: string | null; delivery: CommentDelivery | null; line: string | null }> {
+  if (target !== "card" || !targetIsLiveWorker(card)) {
+    // Nothing was woken: a scope/task comment is the card's record, and a card
+    // with no live worker has nobody to wake. Returning a null line here made
+    // the composer fall back to "Comment sent to the agent" — the exact claim
+    // this module exists to stop making.
+    return { error: null, delivery: "saved", line: commentDeliveryLine("saved", null) };
   }
-  return null;
+  if (answerFeedbackHolds({ activity: card.activity, openExpired: openExpiredCount(deps.db, card.id) })) {
+    // `sent` is not the verdict here: the comment is carried by an answer the
+    // person has not given yet.
+    return { error: null, delivery: "rides-answer", line: commentDeliveryLine("rides-answer", null) };
+  }
+  return await deliverComment(deps, card, body, commentId);
+}
+
+/** Send it now, and stamp it carried only when the host actually dispatched it. */
+async function deliverComment(
+  deps: CardMutationDeps,
+  card: WorkerCard & { worker_thread_id: string },
+  body: string,
+  commentId: string,
+): Promise<{ error: string | null; delivery: CommentDelivery | null; line: string | null }> {
+  const dispatch = await sendWorkerInput(deps.bb, card.worker_thread_id, [
+    { type: "text", text: `User comment on card "${card.name}":\n\n${body}`, mentions: [] },
+  ]);
+  if (dispatch.delivery === "refused") return { error: dispatch.error, delivery: null, line: null };
+  if (dispatch.delivery === "queued") {
+    // The host took it and dispatches it on its own. Stamping it carried now
+    // would claim a delivery that has not happened and keep it from ever riding
+    // an answer that could have carried it.
+    deps.updateCard(card.id, holdUpdates(card.last_assistant_text));
+    return { error: null, delivery: "queued", line: commentDeliveryLine("queued", dispatch.hold) };
+  }
+  deps.db
+    .prepare("UPDATE comments SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL")
+    .run(deps.now(), commentId);
+  const resume = statusForNewCardWork({ kind: card.kind, status: card.status, stage: card.stage });
+  deps.updateCard(card.id, { activity: "running", status: resume.status });
+  return { error: null, delivery: "sent", line: null };
 }
 
 function targetIsLiveWorker(card: WorkerCard): card is WorkerCard & {

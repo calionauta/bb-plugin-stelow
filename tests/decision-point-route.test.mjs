@@ -49,7 +49,7 @@ assert.ok(!modesForPoint(DECISION_POINT_AUTO_CONTINUE).includes("preset"), "auto
 // A-Z without a sort control, so a new point slotted elsewhere fails here.
 assert.deepEqual(
   DECISION_POINTS.map((point) => point.label),
-  ["Artifact criteria", "Auto-continue", "Inbox severity", "Triage intent"],
+  ["Artifact criteria", "Auto-continue", "Inbox severity", "Preset tier", "Retry transient", "Triage intent"],
   "routers list alphabetically",
 );
 

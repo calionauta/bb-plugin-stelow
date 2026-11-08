@@ -6,15 +6,17 @@ import {
   renderBundleManifest,
   resolveArtifactPath,
 } from "../../../lib/artifact-manifest.mjs";
+import { parseStageTrail } from "../../../lib/stage-trail.mjs";
 import {
   assignBundleNames,
   parseBundleManifest,
   staleBundleEntries,
   unbundledSources,
 } from "../../../lib/run-bundle.mjs";
-import { sumTokenBreakdowns, tokenBreakdownFromEvents } from "../../../lib/token-usage.mjs";
+import { tallyGaps } from "../../../lib/gap-registry.mjs";
 import { readCardStateBlob } from "./cli-card-state.js";
 import { resolveBundleSource } from "../../../lib/bundle-source-path.mjs";
+import { bundleTokenEvidence } from "./cli-bundle-tokens.js";
 import type { CliDeps } from "./cli-deps.js";
 import type { WorkerCard } from "../../workers-types.js";
 
@@ -69,6 +71,8 @@ type BundleSources = {
   targetRel: string;
   targetAbs: string;
   workspacePath: string;
+  /** Entry and exit for every stage the card entered, from `state.md` history. */
+  trail: Array<{ stage: string; enteredAt: string | null; leftAt: string | null }>;
 };
 
 /** Shared run-bundle writer: `export` calls it on demand, `done` calls it on
@@ -119,6 +123,7 @@ async function readBundleSources(
     targetRel,
     targetAbs,
     workspacePath: workspace.path,
+    trail: parseStageTrail(stateBlob ?? ""),
   };
 }
 
@@ -244,13 +249,17 @@ function readBundleManifest(
 }
 
 /** Nothing readable and no bundle yet: writing a manifest of only missing
- * entries would be noise — skip, and say so. */
+ * entries would be noise — skip the write, and say so. The trailer still
+ * comes from the registration, not from the copies: "nothing to bundle" is
+ * a fact about this export, never about what the card produced. */
 async function writeBundle(
   deps: CliDeps,
   card: WorkerCard,
   sources: BundleSources,
 ): Promise<BundleWrite | BundleFailure> {
   const { readable, unreadable, targetRel, targetAbs, workspacePath } = sources;
+  const gapTotals = await bundleGapTotals(deps, card);
+  const trailer = buildArtifactTrailer(card.id, sources.registered, gapTotals);
   if (readable.length === 0) {
     const priorManifest = await readBundleManifest(deps, targetAbs);
     if (priorManifest === null)
@@ -260,7 +269,7 @@ async function writeBundle(
         dir: targetRel,
         files: [],
         missing: [...unreadable],
-        trailer: [],
+        trailer,
         wrote: false,
       };
   }
@@ -274,14 +283,14 @@ async function writeBundle(
     return { ok: false, error: `Could not create ${targetRel} — retry export.` };
   }
   const { files, missing } = await writeBundleFiles(deps, sources, workspacePath);
-  const gapTotals = await bundleGapTotals(deps, card);
   const manifest = renderBundleManifest({
     cardId: card.id,
     cardName: card.name,
     stage: card.stage,
     generatedAt: new Date().toISOString(),
-    files,
-    missing,
+    files, missing,
+    registered: sources.registered,
+    trail: sources.trail,
     gapTotals,
     tokens: await bundleTokenEvidence(deps, card),
   });
@@ -298,11 +307,6 @@ async function writeBundle(
       error: `Exported ${files.length} file(s) but could not write manifest.md — retry export.`,
     };
   }
-  const trailer = buildArtifactTrailer(
-    card.id,
-    files.map((file) => ({ stage: file.stage, path: file.sourcePath })),
-    gapTotals,
-  );
   return {
     ok: true,
     check: false,
@@ -322,7 +326,13 @@ async function writeBundleFiles(
   const { readable, unreadable, targetAbs } = sources;
   const files: BundleEntry[] = [];
   const missing = [...unreadable];
-  for (const plan of assignBundleNames(readable)) {
+  // `assignBundleNames` speaks the registration's shape (`path`); the readable
+  // source carries the same fact as `sourcePath`. Naming the translation here
+  // is what the writer was missing — it handed over `sourcePath`, every entry
+  // read as junk, and every bundle copied zero files while still claiming a
+  // trailer. A silent zero is how `Stelow-Artifacts: 0` reached real commits.
+  const planned = readable.map((entry) => ({ stage: entry.stage, path: entry.sourcePath }));
+  for (const plan of assignBundleNames(planned)) {
     const source = readable.find((entry) => entry.sourcePath === plan.sourcePath);
     if (!source) continue;
     try {
@@ -352,32 +362,7 @@ async function bundleGapTotals(
 ) {
   const gapState =
     card.kind === "build" ? await deps.gapState(card).catch(() => null) : null;
-  return gapState?.matched ? gapState.totals : null;
-}
-
-/** Token evidence joins the bundle: provider-reported splits across the card's
- * threads, summed once, committed with the run. Bounded (20 latest threads)
- * and fail-open — export never blocks on it. */
-async function bundleTokenEvidence(deps: CliDeps, card: WorkerCard) {
-  try {
-    const threadIds = deps.workers.ledgerThreadIds(card.id, 20);
-    const reports = await Promise.all(
-      threadIds.map(async (threadId) => {
-        try {
-          const events = await deps.bb.sdk.threads.events.list({
-            threadId,
-            types: ["thread/tokenUsage/updated"],
-            order: "desc",
-            limit: "1",
-          });
-          return tokenBreakdownFromEvents(events);
-        } catch {
-          return null;
-        }
-      }),
-    );
-    return sumTokenBreakdowns(reports);
-  } catch {
-    return null;
-  }
+  // The same finding tally `bb stelow gaps` prints, so the bundle's `## Gaps`
+  // line cannot count registry rows while the command counts findings.
+  return gapState?.matched ? tallyGaps(gapState.gaps) : null;
 }

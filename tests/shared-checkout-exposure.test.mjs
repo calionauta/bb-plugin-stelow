@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   EXPOSURE_REASONS,
   dirtyPathsFromPorcelain,
@@ -7,6 +6,7 @@ import {
   sharedCheckoutVerdict,
   threadsSharingCheckout,
 } from "../lib/shared-checkout-exposure.mjs";
+import { loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 const CHECKOUT = "/home/dev/repos/app";
 
@@ -237,23 +237,35 @@ for (const [label, extra] of [
 // One home for this copy. The reader used to carry its own two-branch fallback,
 // which handed every reason it did not recognise — a card with no readable
 // checkout, and everything measured-unknown — the same clean sentence. The
-// function above is the only place a verdict sentence may be written down.
+// claim is asked of the RENDERED reader: replace the shared verdict with a
+// sentinel, and every reason has to reach the sentinel. A component that chose
+// its own sentence for any reason would render something else and fail here.
 {
-  const component = readFileSync(
-    new URL("../components/detail/file-occupancy.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    component,
-    /sharedCheckoutVerdict/,
-    "the reader delegates to the shared verdict rather than choosing a sentence",
-  );
-  for (const reason of EXPOSURE_REASONS) {
-    const text = sharedCheckoutVerdict({ isolated: false, threads: 1, files: [], lines: [], reason });
-    if (!text) continue;
+  let hookCall = 0;
+  const read = (report) => loadComponent("components/detail/file-occupancy.tsx", "FileOccupancy", {
+    react: {
+      useState: (initial) => {
+        hookCall += 1;
+        return hookCall === 1 ? [report, () => {}] : [initial, () => {}];
+      },
+      useEffect: () => {},
+      useMemo: (fn) => fn(),
+      useCallback: (fn) => fn,
+    },
+    "@get-bb/plugin-sdk/app": { useRpc: () => ({ call: async () => null }) },
+    "../disclosure": { DisclosureSection: (props) => props.children },
+    "../../lib/shared-checkout-exposure.mjs": {
+      sharedCheckoutVerdict: (report) => `SHARED:${report.reason}`,
+    },
+  });
+  const occupancy = { isolated: false, lines: ["src/a.ts"], shared: 1 };
+  for (const reason of [...EXPOSURE_REASONS, "invented-later"]) {
+    hookCall = 0;
+    const tree = read({ isolated: false, threads: 1, files: [], lines: [], reason });
+    const text = treeText(renderTree(tree({ occupancy, cardId: "card_1" })));
     assert.ok(
-      !component.includes(text),
-      `the reader must not hold a second copy of the ${reason} sentence: "${text}"`,
+      text.includes(`SHARED:${reason}`),
+      `the reader renders the shared verdict for ${reason} rather than choosing a sentence of its own`,
     );
   }
 }

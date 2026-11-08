@@ -14,9 +14,11 @@ import {
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
 import { nativeNeedsInput } from "./bb-workflow-bridge.js";
+import { attemptAutoRetry } from "./execution-auto-retry.js";
 import type { ReconcileBoundary, ReconcileResult } from "./execution-reconcile-deps.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -53,6 +55,12 @@ export type RunDeps = {
   publishCard: (cardId: string) => void;
   native: ExecutionNative;
   dispatch: RunDispatch;
+  /** Optional: the runtime wiring supplies it so a refusal that leaves a person a
+   * decision can reach the inbox. Absent in narrow tests, which is why the retry
+   * handler treats it as optional and never depends on it to record. */
+  noteInboxEvent?: (cardId: string, body: string) => void;
+  /** The flight recorder; absent means "no log", never "no reconcile". */
+  actions?: ActionRecorder;
 };
 
 const SIMPLE_STATES = ["queued", "running", "failed", "cancelled"] as const;
@@ -114,6 +122,7 @@ export async function reconcileOne(deps: RunDeps, runId: string): Promise<Reconc
   if (!run.runId) {
     if (deps.now() - run.createdAt > 60_000) {
       run = transitionExecutionRun(deps.db, run.id, "failed", { errorCode: "native-start-timeout" });
+      recordRunFinished(deps, run, "error", "run.start-timeout", { state: "start-timeout" });
     }
     return { run, error: null };
   }
@@ -157,6 +166,7 @@ function unreachable(deps: RunDeps, run: ExecutionRun, error: unknown): Reconcil
       `Native ${failed.recipeId} stopped answering after ${Math.round(NATIVE_UNREACHABLE_MS / 1000)}s `
       + "and the run was marked failed. Retry run to try it again.",
     );
+    recordRunFinished(deps, failed, "error", "run.unreachable", { state: "unreachable" });
     deps.publishCard(failed.cardId);
   }
   return {
@@ -212,28 +222,40 @@ async function applyNativeState(
         settled = transitionExecutionRun(deps.db, run.id, "running", { nativeStatus: "running" });
       }
       settled = transitionExecutionRun(deps.db, run.id, "succeeded", { nativeStatus: "succeeded" });
+      // Only a pass that MOVED the row records the finish. The old code
+      // recorded it on every entry, so one run could log two finishes 24
+      // minutes apart (observed on exec_hqk4quzd).
+      recordRunFinished(deps, settled, "ok", null, native);
     }
     await deps.dispatch.reconcileArtifacts(card, settled);
     return;
   }
   if (SIMPLE_STATES.includes(native.state as SimpleState)) {
-    reconcileSimpleState(deps, card, run, native, native.state as SimpleState);
+    await reconcileSimpleState(deps, card, run, native, native.state as SimpleState);
   }
 }
 
-function reconcileSimpleState(
+/**
+ * A failure the host proved needs no human is retried before anyone is told
+ * to wait: an empty recipe output means nothing ran, so a fresh run cannot
+ * duplicate work. Anything else parks on the failed row, where the stage gate
+ * holds and Retry run is the door. The attempt is fail-soft — a retry that
+ * cannot start leaves the card exactly where the failure left it.
+ */
+async function reconcileSimpleState(
   deps: RunDeps,
   card: WorkerCard,
   run: ExecutionRun,
   native: NativeStatus,
   state: SimpleState,
-): void {
+): Promise<void> {
   if (state === run.normalizedStatus) return;
   const reason = failureReason(native, state);
   const next = transitionExecutionRun(deps.db, run.id, state, {
     nativeStatus: state,
     errorCode: reason || null,
   });
+  recordStateTransition(deps, { next, state, native });
   if (state !== "failed") return;
   // Quote what was just WRITTEN, never the value this replaced. The old line
   // interpolated `run.nativeStatus` — the status BEFORE the transition — into a
@@ -246,6 +268,70 @@ function reconcileSimpleState(
     `Native ${run.recipeId} failed: ${next.errorCode ?? reason}. `
     + "The card remains available for retry.",
   );
+  await attemptAutoRetry(deps, next);
+}
+
+
+/**
+ * The terminal fact, once per transition.
+ *
+ * A start is recorded by the launcher, not here: an observation of `running`
+ * may never happen (a fast run goes queued→succeeded inside one pass), and
+ * recording it here produced a second start row when it did. The failure cause
+ * is decided from what the HOST sent, not from the rendered sentence:
+ * `failureReason` substitutes "the host reported a failure without a reason",
+ * which is truthy, and made `run.no-reason` unreachable.
+ */
+function recordStateTransition(
+  deps: RunDeps,
+  args: { next: ExecutionRun; state: SimpleState; native: NativeStatus },
+): void {
+  // A start is recorded at the launch, the one moment every run passes
+  // through. An observation of `running` here would be a second row for the
+  // same run, and it misses runs whose first observed state is terminal.
+  if (args.state === "running") return;
+  const hostGaveReason =
+    typeof args.native.scriptError === "string" && args.native.scriptError.trim().length > 0;
+  recordRunFinished(
+    deps,
+    args.next,
+    args.state === "cancelled" ? "skipped" : "error",
+    args.state === "failed" ? (hostGaveReason ? "run.failed" : "run.no-reason") : null,
+    args.native,
+  );
+}
+
+/**
+ * The run's terminal fact, with the host's raw payload attached when it failed.
+ *
+ * The one case where the reason mattered most — "the host reported a failure
+ * without a reason" — was also the case where the payload was thrown away, so
+ * the code could state the gap and could not investigate it. `native` is the
+ * snapshot of what the host actually said, capped by the recorder's detail
+ * limit; the row itself stays small. `run.no-reason` is a countable cause, so
+ * the next ten of these read as ten, not as ten prose comments.
+ */
+function recordRunFinished(
+  deps: RunDeps,
+  run: ExecutionRun,
+  outcome: "ok" | "error" | "skipped",
+  cause: string | null,
+  native: NativeStatus,
+): void {
+  deps.actions?.record({
+    kind: "run.finished",
+    outcome,
+    cause,
+    cardId: run.cardId,
+    runId: run.id,
+    stage: run.stage,
+    detail: {
+      recipe: run.recipeId,
+      state: native.state,
+      errorCode: run.errorCode ?? null,
+      ...(outcome === "error" ? { native } : {}),
+    },
+  });
 }
 
 /** What the row looks like before and after: the tell for "this really moved". */

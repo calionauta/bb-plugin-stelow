@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 import { groupCardChecks, groupState, isExecutionUntracked } from "../lib/card-checks.mjs";
 
 const scopes = [
@@ -80,29 +79,121 @@ assert.equal(groupState({ open: ["x"], doneCount: 1, total: 2 }), "pending", "an
 assert.equal(groupState(null), "empty", "junk reads empty");
 assert.equal(groupState({}), "empty", "shapeless reads empty");
 
-// The extracted detail section keeps one gap request and one checks rollup:
-// same live sources (pending + expired questions, scope states, the shared gap
-// summary, review flag), with pending-only on by default. These wiring pins
-// constrain topology only; grouping and guard behavior are asserted above.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const buildProgressView = readFileSync(join(root, "components/detail/build-detail-progress.tsx"), "utf8");
-const progress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
+// The extracted detail section and the progress rollup are driven, not read:
+// one render of the extracted section exercises the wrapper's own props AND
+// every rollup rule below, while the host answers `gapSummary` through a stub
+// so the request COUNT is observable rather than grepped. A text pin could not
+// tell a live call from a comment about one, and could not see a dead branch at
+// all.
+const rpcCalls = [];
+globalThis.__bbPluginRuntime = {
+  pluginSdkApp: {
+    useRpc: () => ({
+      call: async (name, payload) => {
+        rpcCalls.push([name, payload]);
+        // The header and the rollup must account for the same gaps: one
+        // escalation with no rework scope reads open, one documented finding
+        // reads closed, and the total is both of them.
+        return name === "gapSummary"
+          ? {
+              matched: true,
+              items: [{ description: "Missing test", resolution: "escalate", scopeStatus: null }],
+              fixed: 0,
+              documented: 1,
+              total: 2,
+            }
+          : {};
+      },
+    }),
+  },
+};
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
+const { createElement: h } = await import("react");
+const { render, screen, cleanup, waitFor } = await import("@testing-library/react");
+const { BuildProgressSection } = await import("../components/detail/build-detail-progress.tsx");
+
+const buildCard = (overrides = {}) => ({
+  id: "card_1",
+  status: "in-progress",
+  activity: "running",
+  stage: "execution",
+  workspaceKind: "project",
+  hasPendingReview: false,
+  displayName: "Checkout",
+  ...overrides,
+});
+const buildDetail = (overrides = {}) => ({
+  scopes: [{ id: "s1", name: "Checkout", status: "in-progress", tasks: [{ id: "t1", name: "task one", status: "pending" }] }],
+  pendingQuestions: [{ id: "q1", title: "Ship it?" }],
+  expiredQuestions: [{ id: "q2", title: "Old ask?" }],
+  mentionedFiles: [],
+  fileOccupancy: null,
+  scopeXray: null,
+  scopeDraft: null,
+  scopeSync: null,
+  fileEnvironmentId: null,
+  artifacts: [],
+  card: { leadMs: null, cycleMs: null, scopeSummary: { scopesDone: 0, scopesTotal: 1, tasksDone: 0, tasksTotal: 1 } },
+  ...overrides,
+});
+
+async function renderProgress(card = buildCard(), detail = buildDetail()) {
+  rpcCalls.length = 0;
+  const view = { card, detail, showArtifacts: () => {}, setViewerFile: () => {} };
+  const tree = render(h(BuildProgressSection, { view }));
+  await waitFor(() => assert.ok(rpcCalls.length > 0, "the rollup asks the host for the gap summary"));
+  return tree;
+}
+
+const section = await renderProgress();
 assert.match(
-  buildProgressView,
-  /<BuildProgress[\s\S]*card=\{card\}[\s\S]*detail=\{detail\}/,
-  "build detail renders the extracted progress section with card and detail in scope",
+  section.container.textContent ?? "",
+  /Workflow progress/,
+  "the extracted detail section renders the progress rollup with the card and detail it was handed",
 );
-assert.equal((progress.match(/rpc\.call\("gapSummary", \{ cardId \}\)/g) ?? []).length, 1, "checks and gaps share one gapSummary request");
-assert.match(progress, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detail\.expiredQuestions\]/, "questions cover live and expired asks");
-assert.match(progress, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
-assert.match(progress, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
-assert.match(progress, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
-// The missing-tracking signal is gone from the rollup, and that is the fix: it
-// alarmed on any empty scope list at a late stage, including cards that never
-// planned. Scope sync has one voice now (lib/scope-sync-notice.mjs), which
-// reads the server's classification instead of re-deriving from the stage.
-assert.doesNotMatch(progress, /isScopeTrackingMissing/, "no stage-derived scope-tracking alarm survives in the rollup");
-assert.doesNotMatch(progress, /No synced scopes on this card/, "the copy that named a nonexistent spec is gone");
+assert.equal(
+  rpcCalls.filter(([name]) => name === "gapSummary").length,
+  1,
+  "checks and gaps share one gapSummary request",
+);
+assert.ok(screen.getByText(/Ship it\? · Old ask\?/), "questions cover live and expired asks");
+assert.equal(screen.getByRole("checkbox").checked, true, "the pending filter defaults on");
+cleanup();
+
+// Review is a fact about the card, never inferred: a completed card with a
+// pending review shows the group, a live one does not.
+await renderProgress(buildCard({ status: "completed", hasPendingReview: true }));
+assert.ok(screen.getByText("Review"), "a completed card with a pending review shows the Review group");
+cleanup();
+await renderProgress();
+assert.equal(screen.queryByText("Review"), null, "a card that is going nowhere shows no review group");
+cleanup();
+
+// Untracked execution is read from live card state (activity + the scopes it
+// was handed), so a running card whose scopes were never marked warns.
+await renderProgress(
+  buildCard(),
+  buildDetail({ scopes: [{ id: "s1", name: "Checkout", status: "pending", tasks: [] }] }),
+);
+assert.ok(
+  screen.getByText(/no scope marked started/),
+  "the rollup names untracked execution from live card state",
+);
+cleanup();
+
+// The removed signal stays removed: a late-stage card with no tracker no
+// longer prints the copy that named a spec it never had.
+const lateStage = await renderProgress(
+  buildCard({ stage: "execution" }),
+  buildDetail({ scopes: [], pendingQuestions: [], expiredQuestions: [] }),
+);
+assert.doesNotMatch(
+  lateStage.container.textContent ?? "",
+  /No synced scopes on this card/,
+  "the copy that named a nonexistent spec is gone",
+);
+cleanup();
 
 // Untracked execution: running with synced scopes but nothing ever marked
 // (neither in-progress nor done) names the silence bands — the exact shape

@@ -1,102 +1,16 @@
 # GitHub issues: import now, watch automatically
 
-One Build entry point ("GitHub issues") with two triggers that share
-everything underneath: **Import now** (manual pull while you watch) and
-**Auto-import** (per-project label watchers on BB's scheduler). Both funnel
-through one matcher, one intent heuristic, and one card-creation path, so
-manual and automatic can never draft the same `repo#number` twice.
+User documentation (canonical):
+https://calionauta.github.io/stelow/docs/plugin/github-issues/
 
-## Guarantees
+Operator summary: one Build entry point with Import now (manual) and
+Auto-import (per-project label watchers) sharing one matcher, one intent
+heuristic, one creation path, and one `github_imports` dedupe. Parked
+drafts by default; auto-start only into isolated worktrees (fail-closed);
+10 drafts per rule per tick; explicit human-gated write-back. Full
+semantics: https://calionauta.github.io/stelow/docs/plugin/automation-rules/
 
-- **Single dedupe.** `github_imports(issue_key → card_id)` is the one
-  source of truth, claimed with an owner token *before* any work starts.
-  A concurrent manual click and scheduler tick cannot both pass the
-  check — the loser reads `already-imported` or `in-flight`. Liveness
-  is verified by existence, never by a bare non-null: a deleted card's
-  issue reads as not-imported and can come back.
-- **Parked by default.** Both flows ship with Start unchecked. Creation
-  dialogs default to started; GitHub flows default to parked Bucket
-  drafts. Presence decides the default.
-- **Isolated auto-start.** A rule starts workers only into an isolated
-  worktree, verified against the *effective* spawn environment (band
-  routing wins over any passed preset — checking preset existence is not
-  enough). Without one it fails closed: save refuses, ticks park with
-  the fix named in a trail comment.
-- **Backlog guard.** Enabling a rule records currently-matching issues as
-  seen without drafting. If GitHub is unreachable, the rule is saved
-  *disabled* instead of firing blind on the backlog next tick.
-- **Verified write-back.** Completion summaries carry a hidden card
-  marker that is matched back on the issue before counting as posted.
-  Retries never double-post; a send with no visible comment reports
-  itself. Posting is explicit and confirmed — never automatic.
-- **Bounded blast radius.** 10 drafts per rule per tick; rules never
-  move cards, merge code, or clear labels behind the user's back
-  (the import clears its own trigger labels so the loop is pull-once).
-- **Named checkout.** Every card records its spawn environment in one
-  stored word (isolated worktree, shared checkout, BB-managed,
-  exploratory) and the open card shows it plus the live branch —
-  decided once at spawn from the resolved environment, read back
-  afterwards, never guessed from paths.
-
-## Configuration
-
-Per rule, per project: labels (comma-separated, **all** required, exact
-case-sensitive match), optional author allowlist (empty means anyone),
-optional worker-instructions template appended to the issue prompt, and
-the start policy. A dry-run preview names what would match now and
-exactly why the rest would not (`missing-labels`, `untrusted-author`,
-`other-project`, `already-fired`, `already-imported`); each rule lists
-its recent runs with the per-run outcome (`Started`, `Parked`,
-`Already imported`).
-
-Issue intent (bugfix/feature/…) is derived server-side from labels and
-title (`lib/github-intent.mjs`) and stays correctable afterwards via
-Reclassify. Candidates show author, card status, posted state, and
-possibly-related open issues by title overlap (advisory only).
-
-## Trust model
-
-Issue text is **untrusted input**: it lands verbatim in a worker prompt
-on your machine, and no BB permission mode is read-only. The allowlist
-is the gate (the official `github` plugin exposes author logins but no
-role associations, so role-based trust is impossible — this is explicit
-logins or nothing). Prefer parked drafts for public repos; reserve
-auto-start for member-only traffic into worktrees.
-
-Defense in depth, cheapest first: exact-label matching → author
-allowlist → parked default → worktree isolation → file-claim
-coordination on shared checkouts → 10/tick cap.
-
-## Operations
-
-- Scheduler: every 5 minutes (`stelow-automation-rules` for watchers,
-  `stelow-github-discussion-mirror` for linked-issue comment mirrors).
-  Persistent config states (repo with no BB project yet) warn once per
-  daemon lifetime and self-heal.
-- Card-birth issue creation (`createLinkedGithubIssue`): opt-in checkbox in
-  the Build creation dialog, off by default. The card is always created
-  first; `gh` then posts title plus prompt with a hidden card marker, and
-  the link lands in `github_imports`. Title and body only; a failed creation
-  keeps the card, and an unconfirmed write reports uncertain instead of
-  inviting a double-creating retry.
-- Linked discussion mirror (`getLinkedDiscussion`, `postIssueComment`):
-  read-only, append-only snapshot of the linked issue's comments (identity
-  is a content fingerprint; edits/deletes upstream are not tracked).
-  Fetched live on card open plus the mirror schedule for linked,
-  non-terminal cards; terminal cards serve their frozen snapshot. Mirrored
-  text renders badged and never routes to workers. A composer posts back
-  through `postIssueComment` behind an inline confirm naming the
-  destination — human gesture only, payload validated server-side.
-- Done-note draft (`draftDoneComment`, main contract): cheap generation
-  preset drafts a completion note on dialog open; artifacts ride as a
-  detachable checklist; Post reuses the human-gated comment RPC.
-- Kill switch: `STELOW_GITHUB_ISSUES=0` on the host disables the
-  scheduler, every RPC (each refusal names the variable), and the panel
-  button. No migration, no UI change.
-- Troubleshooting: "saved disabled" means GitHub was unreachable at
-  save — re-enable to prime and go live. "Parked, no worktree preset"
-  means create a New-worktree preset in Agent Presets. "In-flight" on
-  manual import means another flow is creating that card — refresh.
+Maintainer notes below (module map, removal contract, background).
 
 ## Module map (for maintainers and agents)
 

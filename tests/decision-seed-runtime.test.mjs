@@ -92,8 +92,8 @@ try {
     "unknown",
   );
   assert.ok(
-    warnedAbout(logs, "no fenced verdict block"),
-    "an unparsable judge answer names why the seed fell back",
+    warnedAbout(logs, "preset judge disabled"),
+    "a preset point refuses to the deterministic fallback without opening a judge thread",
   );
 
   const judge = seedWith(neverApi, async () => ({
@@ -103,10 +103,12 @@ try {
   }));
   assert.equal(
     await judge.seedBuildIntent("add dark mode", "project"),
-    "feature",
+    "unknown",
+    "preset mode never seeds from a judge thread: it degrades to built-in rules",
   );
   assert.ok(
-    logs.some(([, line]) => line.includes("seeded from preset judge (judge)")),
+    warnedAbout(logs, "preset judge disabled"),
+    "the disabled preset path warns with the fallback it took",
   );
 
   const refused = seedWith(neverApi, async () => ({
@@ -119,12 +121,12 @@ try {
     "unknown",
   );
   assert.ok(
-    warnedAbout(logs, "judge thread timed out"),
-    "a failed judge names its own error in the fallback line",
+    warnedAbout(logs, "preset judge disabled"),
+    "a disabled preset path names the fallback it took",
   );
 
   // The point's routeAt is the only thing standing between a weak answer and
-  // a seeded intent, and BOTH judges answer into the same resolver. Every
+  // a seeded intent on the deterministic api route. Every
   // test above lands well above the default 0.6, so none of them can tell a
   // threshold that is enforced from one that is merely passed along: drop or
   // zero it on either path and the verdict seeds anyway.
@@ -159,7 +161,7 @@ try {
   assert.equal(
     await timid.seedBuildIntent("add dark mode", "project"),
     "unknown",
-    "a preset verdict under the point's routeAt fails soft instead of seeding",
+    "a preset point degrades to built-in rules without consulting a judge thread",
   );
   assert.equal(
     seedTrail(),
@@ -167,9 +169,8 @@ try {
     "a verdict the threshold rejected is never announced as seeded",
   );
 
-  // Same gate on the api route, so the shared resolver cannot be enforced for
-  // one judge and skipped for the other. It takes its own baseline so the case
-  // stands on its own rather than borrowing the preset case's count.
+  // Same gate enforced on the api route. It takes its own baseline so the case
+  // stands on its own.
   store.savePoint(
     "triage-intent",
     pointWrite({ route: keylessRoute, thresholds: { routeAt: 0.99 } }),
@@ -207,14 +208,12 @@ try {
   }));
   assert.equal(
     await bugfixByPreset.seedBuildIntent("fix the crash", "project"),
-    "bugfix",
-    "the preset judge seeds the choice it named, not a fixed intent",
+    "unknown",
+    "preset mode never seeds: the deterministic Decision API is the only judge",
   );
   assert.ok(
-    seedTrails().some(([, line]) =>
-      line.includes("seeded from preset judge (judge): bugfix"),
-    ),
-    "the preset trail names the seeded intent at info, so the record shows the outcome",
+    warnedAbout(logs, "preset judge disabled"),
+    "the disabled preset path warns instead of seeding",
   );
 
   store.savePoint("triage-intent", pointWrite({ route: keylessRoute }), () => 1);

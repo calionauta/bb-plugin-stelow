@@ -6,6 +6,577 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.102.9](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.8...v0.102.9) (2026-10-29)
+
+
+### Bug Fixes
+
+* a provider catalog timeout gets one automatic retry ([#508](https://github.com/calionauta/bb-plugin-stelow/issues/508)) ([0ca68b1](https://github.com/calionauta/bb-plugin-stelow/commit/0ca68b1e4f705bfced8c873dd66de315ce78c4d7))
+
+## [0.102.8](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.7...v0.102.8) (2026-10-29)
+
+
+### Bug Fixes
+
+* a failed workflow keeps the reason the host sent ([#505](https://github.com/calionauta/bb-plugin-stelow/issues/505)) ([4be88c6](https://github.com/calionauta/bb-plugin-stelow/commit/4be88c6b2d16e14ce709003e0ac1c8351519ac64))
+* a preview shows nothing until its control opens it ([#507](https://github.com/calionauta/bb-plugin-stelow/issues/507)) ([c71910f](https://github.com/calionauta/bb-plugin-stelow/commit/c71910ff6b074afc9e5c5cdfcc8d0bdd32f14697))
+
+## [0.102.7](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.6...v0.102.7) (2026-10-29)
+
+
+### Bug Fixes
+
+* the build header actions wrap inside the one layout ([#503](https://github.com/calionauta/bb-plugin-stelow/issues/503)) ([77d2b4f](https://github.com/calionauta/bb-plugin-stelow/commit/77d2b4fd887cd81e4cdefb0f8135f31ae8b3a59c))
+
+## [0.102.6](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.5...v0.102.6) (2026-10-29)
+
+
+### Bug Fixes
+
+* a preview peeks, the brief opens the proposals, and the board header stops squeezing ([#501](https://github.com/calionauta/bb-plugin-stelow/issues/501)) ([1afad08](https://github.com/calionauta/bb-plugin-stelow/commit/1afad0831e69ae84a8f8ba10b23b1dcde915d5d5))
+
+## [0.102.5](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.4...v0.102.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* the decision card reads its evidence instead of hiding it twice ([#499](https://github.com/calionauta/bb-plugin-stelow/issues/499)) ([4c8a36d](https://github.com/calionauta/bb-plugin-stelow/commit/4c8a36dfb30130eb4dbeb352f662c4faaa3340e8))
+
+## [0.102.4](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.3...v0.102.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* the prune's write reaches the file, and its failure names the cause ([#497](https://github.com/calionauta/bb-plugin-stelow/issues/497)) ([de4e644](https://github.com/calionauta/bb-plugin-stelow/commit/de4e6445dcc68a2d12a22bd134c29ec462cbf0f9))
+
+## [0.102.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.2...v0.102.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* --apply actually applied, and the removal list names the card ([#495](https://github.com/calionauta/bb-plugin-stelow/issues/495)) ([47215ce](https://github.com/calionauta/bb-plugin-stelow/commit/47215ced3e6d7c456a61074e133e596ee288fd7f))
+
+## [0.102.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.1...v0.102.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* the prune maps a directory hash to the card id it names ([#493](https://github.com/calionauta/bb-plugin-stelow/issues/493)) ([0afe9f9](https://github.com/calionauta/bb-plugin-stelow/commit/0afe9f9887c8d920164833d83ae42dbf913fa871))
+
+## [0.102.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.0...v0.102.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* the prune reads the RAW tracking shape, not only the board projection ([#491](https://github.com/calionauta/bb-plugin-stelow/issues/491)) ([d1de9fd](https://github.com/calionauta/bb-plugin-stelow/commit/d1de9fdc732d2723defa1efbd86c7b5fa3d34a8a))
+
+## [0.102.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.101.0...v0.102.0) (2026-10-29)
+
+
+### Features
+
+* prune workflow entries whose card is gone ([#489](https://github.com/calionauta/bb-plugin-stelow/issues/489)) ([3d04b5b](https://github.com/calionauta/bb-plugin-stelow/commit/3d04b5b906e3365379a57682f29b797ffc9f0691))
+
+## [0.101.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.100.1...v0.101.0) (2026-10-28)
+
+
+### Features
+
+* record the checkout a spawned worker actually got ([#487](https://github.com/calionauta/bb-plugin-stelow/issues/487)) ([06088f8](https://github.com/calionauta/bb-plugin-stelow/commit/06088f89ccbf0adabdc6ef1a0fe0e5aeec4045aa))
+
+## [0.100.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.100.0...v0.100.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* the contracts accept the checkout kind the resolver reads ([#484](https://github.com/calionauta/bb-plugin-stelow/issues/484)) ([7e6560b](https://github.com/calionauta/bb-plugin-stelow/commit/7e6560bb7dad74ef2b786ec35edb231f73aa7766))
+
+## [0.100.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.99.0...v0.100.0) (2026-10-28)
+
+
+### Features
+
+* the board shows a failed run, and a tap opens the reason ([#481](https://github.com/calionauta/bb-plugin-stelow/issues/481)) ([ce96f2e](https://github.com/calionauta/bb-plugin-stelow/commit/ce96f2eca31c0b40e851c911bf5623df27d7816e))
+
+
+### Bug Fixes
+
+* a card stops wearing a state its worker is not in ([#477](https://github.com/calionauta/bb-plugin-stelow/issues/477)) ([152764f](https://github.com/calionauta/bb-plugin-stelow/commit/152764f35922973521dc40a8eae56371f50d310e))
+* a card that recorded a worktree works in it ([#474](https://github.com/calionauta/bb-plugin-stelow/issues/474)) ([bb4bb4c](https://github.com/calionauta/bb-plugin-stelow/commit/bb4bb4cca3862ecce9f0c6a15561ccc7ded7e7a3))
+* a quota refusal is not a rate limit, and the advice says so ([#478](https://github.com/calionauta/bb-plugin-stelow/issues/478)) ([e874c62](https://github.com/calionauta/bb-plugin-stelow/commit/e874c62716606aa45a2d81d5fec47d09cc58ff53))
+* a resolved question ends the wait it described ([#469](https://github.com/calionauta/bb-plugin-stelow/issues/469)) ([ad4abc2](https://github.com/calionauta/bb-plugin-stelow/commit/ad4abc2c07c87e42a6d50d8de519a73bf90c7864))
+* a run's own output is not part of the card's document inventory ([#482](https://github.com/calionauta/bb-plugin-stelow/issues/482)) ([8184d3f](https://github.com/calionauta/bb-plugin-stelow/commit/8184d3f1b620b0416697b4304b494b9781fdc38a))
+* no auto-continue into a provider that just refused, and no lease past its TTL ([#480](https://github.com/calionauta/bb-plugin-stelow/issues/480)) ([290e580](https://github.com/calionauta/bb-plugin-stelow/commit/290e58006d564a93cf3e78721fd466790e54d232))
+* one panel load at a time, one queued behind it ([#472](https://github.com/calionauta/bb-plugin-stelow/issues/472)) ([f7810f8](https://github.com/calionauta/bb-plugin-stelow/commit/f7810f86fa6dc9215ab516f5ce9220820ed904f1))
+* raise happy-dom past CVE-2026-33943 ([#473](https://github.com/calionauta/bb-plugin-stelow/issues/473)) ([72f977d](https://github.com/calionauta/bb-plugin-stelow/commit/72f977d44a5a6b93642a94acc1deb3e05faadad6))
+* the depth bar skips a run's own output, while the gaps view still reads it ([#479](https://github.com/calionauta/bb-plugin-stelow/issues/479)) ([9159a26](https://github.com/calionauta/bb-plugin-stelow/commit/9159a26e5436a4f6a02b6e534d4eca0362e83082))
+* the inbox row stops feeding its text to its buttons ([#471](https://github.com/calionauta/bb-plugin-stelow/issues/471)) ([56648bd](https://github.com/calionauta/bb-plugin-stelow/commit/56648bdcd91862d76118c284c47fc0b56104ac3e))
+* the panel header keeps its explanation readable below lg ([#470](https://github.com/calionauta/bb-plugin-stelow/issues/470)) ([1abf8fc](https://github.com/calionauta/bb-plugin-stelow/commit/1abf8fc379a17e863eb85a8195e39fd615d60388))
+
+## [0.99.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.2...v0.99.0) (2026-10-28)
+
+
+### Features
+
+* one open, readable decision section on the card ([#462](https://github.com/calionauta/bb-plugin-stelow/issues/462)) ([94a8aa8](https://github.com/calionauta/bb-plugin-stelow/commit/94a8aa8fb21b5778e165c4a4d25bbce5b937ab20))
+
+
+### Bug Fixes
+
+* move the board's select mark to a line above the title ([#451](https://github.com/calionauta/bb-plugin-stelow/issues/451)) ([f7155b1](https://github.com/calionauta/bb-plugin-stelow/commit/f7155b10df84be3ec1973da25a6b80b4810e5d8f))
+
+## [0.98.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.1...v0.98.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* bound the publication reconcile probe ([#466](https://github.com/calionauta/bb-plugin-stelow/issues/466)) ([d2dc355](https://github.com/calionauta/bb-plugin-stelow/commit/d2dc3552eb3e13877296ae58a2b57a2a313132b9))
+
+## [0.98.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.98.0...v0.98.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* --help answers help and a refusal names its verb ([#464](https://github.com/calionauta/bb-plugin-stelow/issues/464)) ([1c75eb2](https://github.com/calionauta/bb-plugin-stelow/commit/1c75eb2d62552a5ab194eb9b8b2657a23a5e7932))
+
+## [0.98.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.97.0...v0.98.0) (2026-10-27)
+
+
+### Features
+
+* **jtbd:** contracts for verdict tables, depth bands, and depth-floor counts ([#460](https://github.com/calionauta/bb-plugin-stelow/issues/460)) ([7ddd4f7](https://github.com/calionauta/bb-plugin-stelow/commit/7ddd4f79352d8907b51b42c6fda85557c4f5fbe2))
+
+## [0.97.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.96.0...v0.97.0) (2026-10-27)
+
+
+### Features
+
+* one table maps every upstream workflow verb to the host ([#459](https://github.com/calionauta/bb-plugin-stelow/issues/459)) ([5666a38](https://github.com/calionauta/bb-plugin-stelow/commit/5666a380d54846e04c13d5bf099163bb91ed3a7c))
+
+## [0.96.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.95.1...v0.96.0) (2026-10-27)
+
+
+### Features
+
+* bb stelow next, the host verb the skills already name ([#457](https://github.com/calionauta/bb-plugin-stelow/issues/457)) ([96d863a](https://github.com/calionauta/bb-plugin-stelow/commit/96d863a8697651c636ed7346456e9e7db60e1d26))
+
+## [0.95.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.95.0...v0.95.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* name the step that makes the execution reconcile slow ([#455](https://github.com/calionauta/bb-plugin-stelow/issues/455)) ([131ed5d](https://github.com/calionauta/bb-plugin-stelow/commit/131ed5de3968ecd97713ae45eb1ada58ab324487))
+
+## [0.95.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.3...v0.95.0) (2026-10-27)
+
+
+### Features
+
+* name every refusal, stage regression and slow tick in the log ([#454](https://github.com/calionauta/bb-plugin-stelow/issues/454)) ([b0ccad2](https://github.com/calionauta/bb-plugin-stelow/commit/b0ccad28138beb4b44807fe94fda6ea924be82d7))
+
+
+### Bug Fixes
+
+* every launched run logs its start, once, and a failed launch logs why ([#452](https://github.com/calionauta/bb-plugin-stelow/issues/452)) ([e325005](https://github.com/calionauta/bb-plugin-stelow/commit/e3250059d82dfd622bc6d3301ffacfff06b2b3e2))
+
+## [0.94.3](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.2...v0.94.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* a run start is not a finished run, and run.no-reason is reachable ([#446](https://github.com/calionauta/bb-plugin-stelow/issues/446)) ([133e25f](https://github.com/calionauta/bb-plugin-stelow/commit/133e25f97bbc1b9a8bf3b5f2ce164e036e19cc34))
+
+## [0.94.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.1...v0.94.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* keep stage advances and drop prose-only card rows from the log ([#448](https://github.com/calionauta/bb-plugin-stelow/issues/448)) ([155f74d](https://github.com/calionauta/bb-plugin-stelow/commit/155f74d547331939f65bf8d248ef614c685efb6c))
+
+## [0.94.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.94.0...v0.94.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* a refused RPC is not a successful one, and Retry names the door ([#445](https://github.com/calionauta/bb-plugin-stelow/issues/445)) ([9021fd0](https://github.com/calionauta/bb-plugin-stelow/commit/9021fd0fc3e1454ab978151251b85712ba15c709))
+
+## [0.94.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.1...v0.94.0) (2026-10-27)
+
+
+### Features
+
+* record the card answer door, failed tick phases and thread lookups ([#443](https://github.com/calionauta/bb-plugin-stelow/issues/443)) ([e2efebd](https://github.com/calionauta/bb-plugin-stelow/commit/e2efebd67f60daa82d6d02f5e65fcf6e03e1919e))
+
+## [0.93.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.93.0...v0.93.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* make the action log readable for liveness, not just for history ([#442](https://github.com/calionauta/bb-plugin-stelow/issues/442)) ([2b0924f](https://github.com/calionauta/bb-plugin-stelow/commit/2b0924f4bb39df08420ecd50f1b8048022e8f1ed))
+* stop the update check when the plugin is disposed ([#439](https://github.com/calionauta/bb-plugin-stelow/issues/439)) ([3b19568](https://github.com/calionauta/bb-plugin-stelow/commit/3b195682f4b6744a9f972ef42c0381e3bc8ee59a))
+
+## [0.93.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.92.0...v0.93.0) (2026-10-27)
+
+
+### Features
+
+* record what the plugin did, not only what the agent said ([#434](https://github.com/calionauta/bb-plugin-stelow/issues/434)) ([15a807c](https://github.com/calionauta/bb-plugin-stelow/commit/15a807c8420138303c616eed1c3530e0a53a2852))
+
+
+### Bug Fixes
+
+* close the run-knobs migration gaps ([#435](https://github.com/calionauta/bb-plugin-stelow/issues/435)) ([f958b78](https://github.com/calionauta/bb-plugin-stelow/commit/f958b78c6e3bb9326d20b3554909e701a94cd0c0))
+
+## [0.92.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.91.0...v0.92.0) (2026-10-26)
+
+
+### Features
+
+* a reviewed artifact mark is bound to the version you read ([#431](https://github.com/calionauta/bb-plugin-stelow/issues/431)) ([0d15c53](https://github.com/calionauta/bb-plugin-stelow/commit/0d15c53f71085bbbb5f5feb266cbb2d62bc823f3))
+* harden card questions and gate review enforcement ([#432](https://github.com/calionauta/bb-plugin-stelow/issues/432)) ([a0e9872](https://github.com/calionauta/bb-plugin-stelow/commit/a0e9872342475537a1f25295bf71fb10eecf99cb))
+* the answer and its wake are two facts ([#428](https://github.com/calionauta/bb-plugin-stelow/issues/428)) ([60d9031](https://github.com/calionauta/bb-plugin-stelow/commit/60d90316d1c328dfbbffde79e16b3e5846f469fa))
+
+
+### Bug Fixes
+
+* bound spawn retries to one failure episode ([#433](https://github.com/calionauta/bb-plugin-stelow/issues/433)) ([0fda71e](https://github.com/calionauta/bb-plugin-stelow/commit/0fda71ef689bc391cb570218d08ea8d4b678b1c3))
+* keep every registered artifact in the run bundle ([#427](https://github.com/calionauta/bb-plugin-stelow/issues/427)) ([29a7d0f](https://github.com/calionauta/bb-plugin-stelow/commit/29a7d0f601ea1998c3ee69f97199724ee2dd11bd))
+
+## [0.91.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.90.0...v0.91.0) (2026-10-24)
+
+
+### Features
+
+* tri-state security scan gate (clean/failed/did-not-run) ([#425](https://github.com/calionauta/bb-plugin-stelow/issues/425)) ([afb83cc](https://github.com/calionauta/bb-plugin-stelow/commit/afb83cc3f057971bd89c80f40377f760a15f5edb))
+
+## [0.90.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.89.0...v0.90.0) (2026-10-24)
+
+
+### Features
+
+* a question records the cell it came from ([#419](https://github.com/calionauta/bb-plugin-stelow/issues/419)) ([4f21e4e](https://github.com/calionauta/bb-plugin-stelow/commit/4f21e4e4149a69fe217682550e7a08da87fefce9))
+* a read-only fleet view over the gap registry ([#424](https://github.com/calionauta/bb-plugin-stelow/issues/424)) ([7aa7128](https://github.com/calionauta/bb-plugin-stelow/commit/7aa712877c100b41f43867c3cbf69be6aa0c9685))
+* a script floor, a wired door, and the docs that stop repeating today ([#423](https://github.com/calionauta/bb-plugin-stelow/issues/423)) ([0f665fd](https://github.com/calionauta/bb-plugin-stelow/commit/0f665fd57bf4f0d330a643f6134f90667cae38da))
+
+
+### Bug Fixes
+
+* one owner for the gap schema and the artifact count ([#420](https://github.com/calionauta/bb-plugin-stelow/issues/420)) ([bbd6d49](https://github.com/calionauta/bb-plugin-stelow/commit/bbd6d497bec3f3daeff7d4a0199c6963c8127e56))
+
+## [0.89.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.88.0...v0.89.0) (2026-10-24)
+
+
+### Features
+
+* derive the contrast questions a matrix is missing ([#418](https://github.com/calionauta/bb-plugin-stelow/issues/418)) ([a26f733](https://github.com/calionauta/bb-plugin-stelow/commit/a26f733b4a47a7d8cb2fdfe71360da513854190a))
+* derive the workflow flow diagram from the transition table ([#414](https://github.com/calionauta/bb-plugin-stelow/issues/414)) ([54c7648](https://github.com/calionauta/bb-plugin-stelow/commit/54c764863d0b35f3ce840d4580735c59fe4ebe55))
+* emit the shaping board as Mermaid block source ([#415](https://github.com/calionauta/bb-plugin-stelow/issues/415)) ([a7585d5](https://github.com/calionauta/bb-plugin-stelow/commit/a7585d559b3a3d45555c12951f1cda7dc813f87b))
+* render derived interface diagrams with bundled pele ([#405](https://github.com/calionauta/bb-plugin-stelow/issues/405)) ([6da7229](https://github.com/calionauta/bb-plugin-stelow/commit/6da7229fa6e23559fe971d3a848bea7921eba237))
+* zoomable derived diagrams, cardless workflow naming ([#407](https://github.com/calionauta/bb-plugin-stelow/issues/407)) ([75851ae](https://github.com/calionauta/bb-plugin-stelow/commit/75851ae6d8e7cc525af01334be1be09ea510281f))
+
+
+### Bug Fixes
+
+* audit repair batch, nine scopes, verified as one tree ([#410](https://github.com/calionauta/bb-plugin-stelow/issues/410)) ([f544224](https://github.com/calionauta/bb-plugin-stelow/commit/f544224915d28681346a78a8eb6bade68cb5fb77))
+* bump zod past GHSA-mrhx-c7xc-m3w5 ([#412](https://github.com/calionauta/bb-plugin-stelow/issues/412)) ([a5a51d6](https://github.com/calionauta/bb-plugin-stelow/commit/a5a51d6e4b5b74e0f8a3d53adedfdae80b2dbe27))
+* confirm preset and automation-rule deletes, harden preset boundaries ([#404](https://github.com/calionauta/bb-plugin-stelow/issues/404)) ([3e0fb50](https://github.com/calionauta/bb-plugin-stelow/commit/3e0fb50812ecd4807983dfbf3d835fab7fc1c65c))
+* derive the artifact render kind from the path, not the manifest label ([#413](https://github.com/calionauta/bb-plugin-stelow/issues/413)) ([4097da6](https://github.com/calionauta/bb-plugin-stelow/commit/4097da69bc27871f78deb2485410f809cd2b3605))
+* the host-tests runner stops inheriting NODE_ENV too ([#417](https://github.com/calionauta/bb-plugin-stelow/issues/417)) ([358d68d](https://github.com/calionauta/bb-plugin-stelow/commit/358d68d554dfe323ce18c51c27ac635665c27d0e))
+* the verification command no longer inherits the host's NODE_ENV ([#411](https://github.com/calionauta/bb-plugin-stelow/issues/411)) ([e9cc99a](https://github.com/calionauta/bb-plugin-stelow/commit/e9cc99a1eb9915e6d13c64f751c77ac9e545e8e2))
+
+## [0.88.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.87.0...v0.88.0) (2026-10-22)
+
+
+### Features
+
+* budget each shared prompt clause, so a growth names the clause ([#397](https://github.com/calionauta/bb-plugin-stelow/issues/397)) ([ad426bb](https://github.com/calionauta/bb-plugin-stelow/commit/ad426bbf0c52c46b3727d5a84f26511f8c828b54))
+* land the two feature commits that never got a PR ([#395](https://github.com/calionauta/bb-plugin-stelow/issues/395)) ([88a69fe](https://github.com/calionauta/bb-plugin-stelow/commit/88a69fe5d05effba71371b0c4077ed71a2e5e4a0))
+
+
+### Bug Fixes
+
+* one evaluator for the recipe condition vocabulary ([#400](https://github.com/calionauta/bb-plugin-stelow/issues/400)) ([e667fa6](https://github.com/calionauta/bb-plugin-stelow/commit/e667fa6d572a9516e30388683e02ec578bd36f13))
+* read the phase entry stages from the routes, not a duplicated copy ([#396](https://github.com/calionauta/bb-plugin-stelow/issues/396)) ([dcb82c7](https://github.com/calionauta/bb-plugin-stelow/commit/dcb82c70fb35f09a3f4e95e21a46de3d762a6b24))
+* **stelow:** the panel and the helper answer the same question ([#401](https://github.com/calionauta/bb-plugin-stelow/issues/401)) ([2acb73b](https://github.com/calionauta/bb-plugin-stelow/commit/2acb73b8eacd1631a7d9387ac70800894540a908))
+* **stelow:** the panel reads the stage policy too ([#403](https://github.com/calionauta/bb-plugin-stelow/issues/403)) ([c8da6ec](https://github.com/calionauta/bb-plugin-stelow/commit/c8da6ec3e014d732888ebffaa807f99e4f5a559c))
+
+## [0.87.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.86.0...v0.87.0) (2026-10-20)
+
+
+### Features
+
+* selection is a mode, so a card reserves nothing for it ([#392](https://github.com/calionauta/bb-plugin-stelow/issues/392)) ([2954339](https://github.com/calionauta/bb-plugin-stelow/commit/29543397bac3bb1eabb6d5b06a924d72d087c835))
+
+
+### Bug Fixes
+
+* a paused card wears one chip, and its wait is a duration that fits ([#391](https://github.com/calionauta/bb-plugin-stelow/issues/391)) ([0f15a46](https://github.com/calionauta/bb-plugin-stelow/commit/0f15a46c990805dac1bb11d2199574f13f6b7f03))
+
+## [0.86.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.85.0...v0.86.0) (2026-10-20)
+
+
+### Features
+
+* give a scheduled visit its own cheap gate, and use it once per state ([#389](https://github.com/calionauta/bb-plugin-stelow/issues/389)) ([32e15c4](https://github.com/calionauta/bb-plugin-stelow/commit/32e15c4695a11c023d6866c256d4ed437af50d64))
+
+## [0.85.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.84.0...v0.85.0) (2026-10-19)
+
+
+### Features
+
+* remove the retired knob instead of carrying it, and make the recommendation data ([#387](https://github.com/calionauta/bb-plugin-stelow/issues/387)) ([c279cbd](https://github.com/calionauta/bb-plugin-stelow/commit/c279cbdcad37e1739c9918d9473acaf9c59b2b7f))
+
+## [0.84.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.83.0...v0.84.0) (2026-10-19)
+
+
+### Features
+
+* collapse the card description, and answer a question batch from the keyboard ([#381](https://github.com/calionauta/bb-plugin-stelow/issues/381)) ([69d8a1a](https://github.com/calionauta/bb-plugin-stelow/commit/69d8a1a9c759e49317d1eded4e648ad4644138c1))
+* make one choice mean one, and stop the ask surface drifting ([#386](https://github.com/calionauta/bb-plugin-stelow/issues/386)) ([312ce4c](https://github.com/calionauta/bb-plugin-stelow/commit/312ce4c628214fb254d4f2f54e261f49ca5be767))
+
+## [0.83.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.82.0...v0.83.0) (2026-10-18)
+
+
+### Features
+
+* retire the supervision knob ([a1d10f0](https://github.com/calionauta/bb-plugin-stelow/commit/a1d10f07569d66693d4918657a152c11e121d0ba))
+
+  The new-card composer no longer asks for a checkpoint cadence, because
+  nothing enforced one. `Supervision` was stored in `state.md` and
+  `stelow.json`, quoted in the worker prompt, and rendered on the board — but
+  no code branched on the value, and no artifact recorded that a checkpoint
+  had run. Its only consumer was methodology prose asking the worker to
+  re-check itself against the definition of done, priced at a full headless
+  harness spawn every three to ten tool calls: the most expensive operation
+  the reference describes, spent to re-read work the acceptance contract
+  already proves at scope close. Two of the three settings told the worker to
+  skip it entirely.
+
+  The rigor that does block is untouched: red-first acceptance with a frozen
+  contract (`test_map`, `freeze_sha`, `baseline`), the parent-controlled loop
+  that re-delegates on a failed verify with a fresh context per iteration, and
+  every review gate. Boards keep working — the stored key is absorbed on read,
+  so a saved default written before this release never resets your review
+  gates to Auto. `Quality`, `Exploration`, and your review gates are the knobs
+  that remain.
+
+
+### Bug Fixes
+
+* ask GitHub for the pin's provenance in the direction that describes it ([8b7c0c9](https://github.com/calionauta/bb-plugin-stelow/commit/8b7c0c9f0c3eca05de74327ae8950b67fb03f699))
+* move the fork ledger's pin with the synced tree ([23d949e](https://github.com/calionauta/bb-plugin-stelow/commit/23d949e0241aa54aa430771afcfbbf719b031f38))
+
+## [0.82.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.81.0...v0.82.0) (2026-10-17)
+
+
+### Features
+
+* xerj joins the optional tools, with its install path provenanced ([#373](https://github.com/calionauta/bb-plugin-stelow/issues/373)) ([95bf71f](https://github.com/calionauta/bb-plugin-stelow/commit/95bf71f7b164ce5bc2de73211cefefecb1d9dbbe))
+
+## [0.81.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.80.0...v0.81.0) (2026-10-17)
+
+
+### Features
+
+* one lean machine — single track panel, single spawn path, gated ledger repair ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the migration-ledger repair is gated behind `STELOW_HEAL_LEDGER` — setting it to `0` leaves the host's refusal on the card for the operator instead of rewriting state — and "preset judge" no longer spawns a hidden thread per decision point, so a decision resolves deterministically through the built-in rules or the Decision API ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+
+
+### Bug Fixes
+
+* give the gate receipt one writer ([#368](https://github.com/calionauta/bb-plugin-stelow/issues/368)) ([00c09ae](https://github.com/calionauta/bb-plugin-stelow/commit/00c09aeedf7882516b7a9fa7d093f49f5b1a95d6))
+* no-argument RPCs accept a caller that sends nothing, so `bb plugin list` stops reporting a failed `listNotifications` ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the reconcile sweep records a standing observation once, not once per tick ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the silent-stop sentence is written once per park, not once per trigger ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* the resume rule measures new output against the last idle edge, so reading a card no longer decides whether its worker resumes ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+* a card-detail read no longer consumes the resume signal, and the pin ratchet counts only tests that read source text ([#366](https://github.com/calionauta/bb-plugin-stelow/issues/366)) ([769ca07](https://github.com/calionauta/bb-plugin-stelow/commit/769ca075dafdf371f16478c9339af75a7a3b6411))
+
+## [0.80.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.79.1...v0.80.0) (2026-10-13)
+
+
+### Features
+
+* conditional question notes, split confirmations and dispatch retry ([#364](https://github.com/calionauta/bb-plugin-stelow/issues/364)) ([05f57b8](https://github.com/calionauta/bb-plugin-stelow/commit/05f57b8fa697a0a6ceb317888e083cdacddbe582))
+
+## [0.79.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.79.0...v0.79.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* discard contradictory review approvals in code ([#355](https://github.com/calionauta/bb-plugin-stelow/issues/355)) ([7263def](https://github.com/calionauta/bb-plugin-stelow/commit/7263defe806890f49de38fa558dfd2f3c571ac24))
+
+## [0.79.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.78.1...v0.79.0) (2026-10-08)
+
+
+### Features
+
+* decision receipts as permission (decide command, challenge gate, served reads) ([#353](https://github.com/calionauta/bb-plugin-stelow/issues/353)) ([78cf157](https://github.com/calionauta/bb-plugin-stelow/commit/78cf15730e0c93ac57fc66463588da739c0d119a))
+
+## [0.78.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.78.0...v0.78.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* the flow drawer says what it is, and a field grid stops holding a fixed column on a phone ([#348](https://github.com/calionauta/bb-plugin-stelow/issues/348)) ([e93ee87](https://github.com/calionauta/bb-plugin-stelow/commit/e93ee874a9d1623a32f39998ff8cace0db6a4fec))
+
+## [0.78.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.77.0...v0.78.0) (2026-10-07)
+
+
+### Features
+
+* floating bulk bar, flow detail in a side drawer, and a card that works at 375px ([#346](https://github.com/calionauta/bb-plugin-stelow/issues/346)) ([597528f](https://github.com/calionauta/bb-plugin-stelow/commit/597528ff1cccd970e84474daf014b82c15cd6270))
+
+## [0.77.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.76.0...v0.77.0) (2026-10-06)
+
+
+### Features
+
+* the bucket card is edited in the card, and the gallery fills its own width ([#344](https://github.com/calionauta/bb-plugin-stelow/issues/344)) ([1682e28](https://github.com/calionauta/bb-plugin-stelow/commit/1682e28c7d46594568603aecb61981fd474695ec))
+
+## [0.76.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.75.0...v0.76.0) (2026-10-06)
+
+
+### Features
+
+* a failed question-persist records itself on the card and in the inbox ([#341](https://github.com/calionauta/bb-plugin-stelow/issues/341)) ([14d751a](https://github.com/calionauta/bb-plugin-stelow/commit/14d751a47fc95e8885572f63bc5ce227f89a4b43))
+
+## [0.75.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.74.0...v0.75.0) (2026-10-06)
+
+
+### Features
+
+* the phone board is a second layout, not a narrower first one ([b6226fd](https://github.com/calionauta/bb-plugin-stelow/commit/b6226fd548c24327adcd76933a74dfd64b5bb72c))
+
+
+### Breaking Changes
+
+* **A card is no longer moved by hand.** Dragging a card between columns and clicking a stage chip to change stage are both gone — the workflow is the agent's to drive, and a person asks it in the conversation instead. The board reads as a status report rather than a manual tool.
+* **A card's delete-all moved into its column header.** It used to sit in the flow between the header and the cards, which pushed the Archived column's cards out of line with every other column.
+
+### Bug Fixes
+
+* a disclosure chevron rotates from state, not from a CSS variant that froze ([9adee91](https://github.com/calionauta/bb-plugin-stelow/commit/9adee9112086095ca38e819aa00707ba81d8af97))
+* gate the lint, and take the delete-all out of the column's flow ([fc9f931](https://github.com/calionauta/bb-plugin-stelow/commit/fc9f9310aef323df6d07780584de4a0150aa100c))
+
+## [0.74.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.1...v0.74.0) (2026-10-06)
+
+
+### Features
+
+* **A worker's orientation cost is measured and shown on the card.** A skill load is a `toolCall` naming a `SKILL.md`, so reads before the first `bb stelow advance` are orientation spent before work. Violations are reported, never blocked. Measured: one skill read across ten workers.
+* **A worker's token figure is shown for nearly every worker, and says what it is.** The plugin read one usage event family; `acp-opencode` — which 8 of 10 workers run on — emits none of it and reports a context-window reading instead. Both families are read now, and an estimate is labelled `(est.)` rather than presented as a measurement. 1 of 10 workers reporting a figure before, 10 of 10 after.
+* **A refused retry records why and names an exit.** Five real runs hit the auto-retry's stage guard with the card already advanced and every one parked silently, which is why `auto_retry_count` read 0 across the fleet.
+
+
+### Performance
+
+* **Two cards share 90.5% of a build prompt's prefix, up from 0.6%.** Provider caching is prefix matching, so the state dir at character ~106 left the whole 10 KB clause block uncacheable. All three build paths now open with the same intro, state the shared clauses in one canonical order, and put per-card values last. Verified on live workers: 99.3%, 99.1% and 89.3% of their first snapshot's input served from cache; fleet-wide 60,386,501 cached against 54,840,152 fresh.
+* **The prompt-duplication metric measures authored prose.** The previous figure counted shared clauses rendering into the paths that owe them, so it was largest where the architecture worked.
+
+
+### Bug Fixes
+
+* **Every prompt resolves its reading list from `bb stelow playbook`.** All six spawn paths told the worker to load the `stelow-workflow-*` glob — seventeen skills, 215,756 bytes of entry documents — while the `CLI_EQUIVALENTS` clause in the same prompt said to run the playbook and never discover skills that way.
+* **One ask contract, rendered by every spawn path.** The structured-ask block was pasted into five builders and had already drifted: two lacked the "never write waiting text" guard and the restart path lacked the timeout rule.
+* **A provider rate limit and an unowned card no longer advise "Answering below resumes the worker".** False for both — nothing is pending, and the reader was pointed at a box whose answer goes nowhere. A rate limit is matched on the status code, never the word "limit".
+* **No RPC result carries a key holding `undefined`.** The board failed outright with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board whose stored defaults predate red-first.
+* **The run bundle's token evidence reads both families and states its provenance**, and the history row shows a dash rather than nothing when a provider reports no usage at all.
+* **A clause that renders the literal word `undefined` now fails a test**, and the owed-clause list is derived from the clause bag so a new clause is covered at once.
+
+## [0.73.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.73.0...v0.73.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* board card checkbox no longer overlaps the title ([#334](https://github.com/calionauta/bb-plugin-stelow/issues/334)) ([c0cdfee](https://github.com/calionauta/bb-plugin-stelow/commit/c0cdfeebc99415a2c20fd02ac0ab8d6296a52990))
+
+## [0.73.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.72.1...v0.73.0) (2026-10-05)
+
+
+### Features
+
+* red-first frozen acceptance gates with upstream sync ([65e388b](https://github.com/calionauta/bb-plugin-stelow/commit/65e388bde6ea1fd3fc1b9d18ea39dd5666fb63d6))
+* red-first run knob in creation prefs with server seed wiring ([67f2844](https://github.com/calionauta/bb-plugin-stelow/commit/67f2844c3c87ec156565f7eb867161201409883e))
+
+
+### Bug Fixes
+
+* preserve explicit red_first across reseed and pin seed writes ([07934f3](https://github.com/calionauta/bb-plugin-stelow/commit/07934f3499edf6e6ff84ecd7ba08e98d6832e8a6))
+* red_first round-trips through parse, reseed, and seed ([42ff205](https://github.com/calionauta/bb-plugin-stelow/commit/42ff205e8ea56016fd3ce61d6b9903b1586ef1d4))
+
+## [0.72.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.72.0...v0.72.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* terminal cards serve no expired questions ([#330](https://github.com/calionauta/bb-plugin-stelow/issues/330)) ([e5b8d10](https://github.com/calionauta/bb-plugin-stelow/commit/e5b8d102f7a22b0f742b7a42be757dffc00d3442))
+
+## [0.72.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.71.0...v0.72.0) (2026-10-04)
+
+
+### Features
+
+* bucket editable parked cards plus bulk start/archive/delete ([#326](https://github.com/calionauta/bb-plugin-stelow/issues/326)) ([edc12ab](https://github.com/calionauta/bb-plugin-stelow/commit/edc12ab8094105b5f9b3a9f9f59cebe58691786f))
+* inbox set-aside filter, verify-blockage notice, and quieter git and question surfaces ([#327](https://github.com/calionauta/bb-plugin-stelow/issues/327)) ([a7c521e](https://github.com/calionauta/bb-plugin-stelow/commit/a7c521edc08965cf0bfa2244d016a4b818b08151))
+
+## [0.71.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.1...v0.71.0) (2026-10-04)
+
+
+### Features
+
+* bucket naming reuse on Start plus editable parked prompt ([#322](https://github.com/calionauta/bb-plugin-stelow/issues/322)) ([6195416](https://github.com/calionauta/bb-plugin-stelow/commit/6195416b1fc4ad7010ee1c54e805f69634ef64f7))
+* empty multiple-choice answers complete as none ([#323](https://github.com/calionauta/bb-plugin-stelow/issues/323)) ([54d7255](https://github.com/calionauta/bb-plugin-stelow/commit/54d72557992b3c08373a36f9a7bfd06f98db0366))
+
+
+### Bug Fixes
+
+* drop the duplicate live-graph button ([#325](https://github.com/calionauta/bb-plugin-stelow/issues/325)) ([b9a82af](https://github.com/calionauta/bb-plugin-stelow/commit/b9a82af59dab874565c0b93759b3bdb6c6e9f20d))
+
+## [0.70.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.70.0...v0.70.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* strip pattern from engine-bound recipe schemas ([#320](https://github.com/calionauta/bb-plugin-stelow/issues/320)) ([9fac20f](https://github.com/calionauta/bb-plugin-stelow/commit/9fac20ffe50e7de8c1467e5a3d61073404cf7b2d))
+
+## [0.70.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.69.0...v0.70.0) (2026-10-04)
+
+
+### Features
+
+* self-healing runs and deterministic scope asks ([#318](https://github.com/calionauta/bb-plugin-stelow/issues/318)) ([767a62a](https://github.com/calionauta/bb-plugin-stelow/commit/767a62a5dc88321313b26718b7b2e37a85d60b58))
+
+## [0.69.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.68.0...v0.69.0) (2026-10-04)
+
+
+### Features
+
+* provider-schema fit enforcement for decision points ([#316](https://github.com/calionauta/bb-plugin-stelow/issues/316)) ([fa61bc1](https://github.com/calionauta/bb-plugin-stelow/commit/fa61bc1d777bf0b984031038dfd9e6d65187ea52))
+
+## [0.68.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.67.0...v0.68.0) (2026-10-04)
+
+
+### Features
+
+* retry-transient and preset-tier decision points with evidence-gated criteria ([#314](https://github.com/calionauta/bb-plugin-stelow/issues/314)) ([a832f10](https://github.com/calionauta/bb-plugin-stelow/commit/a832f10b665556482c13ce1f8f2483f209f67a2f))
+
+## [0.67.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.1...v0.67.0) (2026-10-03)
+
+
+### Features
+
+* preselected opt-out asks and draft scope preview ([#311](https://github.com/calionauta/bb-plugin-stelow/issues/311)) ([7f16394](https://github.com/calionauta/bb-plugin-stelow/commit/7f163948199e6c3d8592a7408069dd2a09f2bc1c))
+* preselected opt-out asks and draft scope preview ([#312](https://github.com/calionauta/bb-plugin-stelow/issues/312)) ([c7a5216](https://github.com/calionauta/bb-plugin-stelow/commit/c7a521604c9f2e77def35f21479a098824ceae08))
+* validate interface contrast scope coverage end to end ([#309](https://github.com/calionauta/bb-plugin-stelow/issues/309)) ([72b00c1](https://github.com/calionauta/bb-plugin-stelow/commit/72b00c136ccf0fd7b33178b1553a759667165fca))
+* explicit run knobs replace appetite ladder, add architecture choice ([#307](https://github.com/calionauta/bb-plugin-stelow/issues/307)) — board defaults and card creation move from Lean/Core/Complete to quality/supervisor/exploration knobs; Explore gains architecture alternatives/contrast; board projects the architecture stage (shipped untagged in the squash subject, recorded here so the release notes the user-facing change)
+
+## [0.66.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.66.0...v0.66.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* frame appetite as scope budget in creation copy, name canonical terms ([#304](https://github.com/calionauta/bb-plugin-stelow/issues/304)) ([4b9dde2](https://github.com/calionauta/bb-plugin-stelow/commit/4b9dde2af53dcb8684daa235aa9c45ae1a17da36))
+
 ## [0.66.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.65.12...v0.66.0) (2026-10-03)
 
 

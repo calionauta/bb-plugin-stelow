@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "../lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "../lib/question-evidence.mjs";
 
 // Task evidence turns a completed status (a worker assertion) into a
 // checkable question: given the diff, does each completed task show

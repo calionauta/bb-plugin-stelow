@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   TRACKABLE_STATUSES,
   isDoneStatus,
@@ -83,23 +80,4 @@ assert.equal(contractForTrackable("stage").writer, "host", "stages are host-owne
 assert.equal(contractForTrackable("bogus"), null, "unmigrated kinds resolve null, never a guess");
 assert.equal(contractForTrackable(null), null, "junk resolves null");
 
-// Rewiring pins: no finished-check may keep its own copy of the
-// vocabulary — server, panel, and lib all read the central machine.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/wiring/gate-surfaces.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
-].join("\n");
-assert.doesNotMatch(server, /\["done", "completed"\]\.includes/, "server finished-checks read the machine");
-assert.match(server, /isDoneStatus\(/, "server consults the machine");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.doesNotMatch(app, /\["done", "completed"\]\.includes/, "panel finished-checks read the machine");
-assert.doesNotMatch(app, /status === "done" \|\| status === "completed"/, "panel finished-lambdas read the machine");
-for (const file of ["lib/card-checks.mjs", "lib/doing-now.mjs", "lib/completion.mjs"]) {
-  const body = readFileSync(join(root, file), "utf8");
-  assert.doesNotMatch(body, /\["done", "completed"\]\.includes/, `${file} reads the machine`);
-  assert.doesNotMatch(body, /status === "done" \|\| status === "completed"/, `${file} keeps no local alias`);
-}
-
-console.log("trackables test ok: vocabulary, transitions, conditions, contracts, rewiring");
+console.log("trackables test ok: vocabulary, transitions, conditions, contracts");

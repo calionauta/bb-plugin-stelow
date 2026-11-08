@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { questionOpenGuard } from "../lib/question-presence.mjs";
+import { questionOpenGuard } from "../lib/question-gate.mjs";
 
 assert.deepEqual(questionOpenGuard({ liveInteractions: 0, expiredQuestions: 0 }), { canOpen: true, reason: null }, "no visible form permits a fresh ask");
 assert.equal(questionOpenGuard({ liveInteractions: 1, expiredQuestions: 0 }).canOpen, false, "a live form prevents a duplicate ask");

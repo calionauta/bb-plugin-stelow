@@ -68,6 +68,24 @@ export function BranchContextLine({ publication }: { publication: NonNullable<Pu
 }
 
 /**
+ * A clean tree has nothing to save. Only the actionable half is stated here;
+ * the tree-state fact ("working tree clean") stays owned by BranchContextLine
+ * above, and "Completed at" names the worker-verified completion head —
+ * distinct from "Saved", which means a panel-made commit below.
+ */
+function CleanWorkspaceNote({ verifiedHeadSha }: { verifiedHeadSha: string | null }) {
+  return (
+    <div>
+      <p role="status" className="text-emerald-900/80 dark:text-emerald-100/80">
+        {verifiedHeadSha
+          ? `Completed at ${verifiedHeadSha.slice(0, 7)} — nothing to commit.`
+          : "Nothing to commit."}
+      </p>
+    </div>
+  );
+}
+
+/**
  * What is true about the saved commit, and the two ways to act on it.
  */
 export function SavedCommitSummary({ branch, savedSha, isCurrentHead, pushed, pushUnknown, openCommit }: {
@@ -170,14 +188,18 @@ export function UnsavedWorkspace({ publication, verifiedHeadSha, publishesToDefa
   const branch = publication.branch?.current ?? "this branch";
   const clean = !publication.workingTree?.hasUncommittedChanges;
   const savedSha = publication.events.find((event) => event.action === "commit" && event.commitSha)?.commitSha ?? null;
+  if (clean) {
+    // A clean tree has nothing to save, so no commit button is rendered at
+    // all — a permanently disabled button asks the reader to work out which
+    // policy refused them.
+    return <CleanWorkspaceNote verifiedHeadSha={verifiedHeadSha} />;
+  }
   return (
     <div>
       <p className="text-emerald-900/80 dark:text-emerald-100/80">
-        {!savedSha && clean
-          ? "Nothing saved yet."
-          : !savedSha
-            ? `${files} uncommitted changes on ${branch} — save them first.`
-            : `${files} new changes since ${savedSha.slice(0, 7)}.`}
+        {!savedSha
+          ? `${files} uncommitted changes on ${branch} — save them first.`
+          : `${files} new changes since ${savedSha.slice(0, 7)}.`}
       </p>
       {verifiedHeadSha ? (
         <p className="mt-1 text-muted-foreground">

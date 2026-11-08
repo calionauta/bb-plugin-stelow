@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { selectCardEnvironment, isManagedWorktreeEnvironment, environmentFallbackNotice } from "../lib/card-environment.mjs";
+import { finishCard } from "../server/cards-create-persist.ts";
+import { createCardCreator } from "../server/runtime/wiring/card-creator.ts";
 
 // Selection is total and explicit: accepted shapes pass through by
 // reference, everything else falls back — and a substituted explicit
@@ -67,19 +66,127 @@ assert.match(
   "an empty request says so rather than saying nothing",
 );
 
-// Wiring pin: creation surfaces the substitution (log plus card comment),
-// shared by build/research/explore through createCardInternal.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const cardCreator = readFileSync(
-  join(root, "server/runtime/wiring/card-creator.ts"),
-  "utf8",
+// Wiring: creation surfaces the substitution (log plus card comment),
+// shared by build/research/explore through createCardInternal. These were
+// source-text pins on card-creator.ts and cards-create-persist.ts; they are
+// behavioral now, because a regex passes on a creation path whose comment
+// writer was rewired to drop the page.
+
+// The persist path actually pages the card: drive `finishCard` with a
+// substituted environment and read what the card comment writer received.
+const comments = [];
+const warnings = [];
+const preset = {
+  id: "preset-1",
+  provider_id: "pi",
+  model_id: "model",
+  reasoning_level: "medium",
+  permission_mode: "full",
+  environment_kind: "project-default",
+  base_branch: null,
+  machine_id: null,
+  instructions: "",
+};
+const deps = {
+  db: {},
+  bb: {
+    log: { warn: (...args) => warnings.push(args) },
+    realtime: { publish: () => {} },
+    storage: { kv: { set: async () => {} } },
+  },
+  now: () => 1,
+  randomId: (prefix) => `${prefix}_1`,
+  roundTimestamp: () => "stamp",
+  seedBuildIntent: async () => "feature",
+  seedWorkflow: async () => ({ error: null, dirHash: null, stateDir: null }),
+  researchStrategy: () => null,
+  exploreStage: () => null,
+  researchIds: () => [],
+  exploreIds: () => [],
+  defaultPreset: () => preset,
+  getPreset: () => preset,
+  getBandPresetId: () => null,
+  getReliablePresetId: () => null,
+  createCardOverride: (_cardId, base) => base,
+  pinCardPreset: () => true,
+  removeCardPreset: () => {},
+  presetParams: () => ({
+    providerId: "pi",
+    modelId: "model",
+    reasoningLevel: "medium",
+    permissionMode: "full",
+    environmentKind: "project-default",
+    machineId: null,
+    instructions: "",
+  }),
+  spawnInitial: async () => ({ id: "thr_new" }),
+  recordThread: () => {},
+  lineage: async () => {},
+  roundPath: (stateDir) => stateDir,
+  roundFile: () => "round.md",
+  ensureParent: async () => {},
+  researchPrompt: () => "",
+  explorePrompt: () => "",
+  rules: {},
+  describeManagedWorktree: () => false,
+  recordStageEvent: () => {},
+  comment: (cardId, body) => comments.push([cardId, body]),
+  suggestCardName: async () => {},
+};
+const track = {
+  research: true,
+  explore: false,
+  researchStrategy: null,
+  exploreStage: null,
+  intent: "feature",
+  reviewGates: [],
+  reviewRung: "Auto",
+  seed: { error: null, dirHash: null, stateDir: null },
+};
+await finishCard(
+  deps,
+  { projectId: "p1", environment: worktree, prompt: "do the work", attachments: [], intent: "feature", reviewMode: [], kind: "research" },
+  "card_1",
+  { projectId: "p1", rootPath: "/repo", source: { path: "/repo", hostId: "host_a" }, exploratory: false },
+  { displayName: "Card", params: deps.presetParams(preset), environment: fallback, roundFile: "round.md", prompt: "do the work" },
+  track,
+  preset,
+  null,
+  null,
+  1,
 );
-const cardsCreate = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
-assert.match(cardsCreate, /environmentFallbackNotice\(input\.environment, prepared\.environment\)/, "creation checks the substitution");
-assert.match(
-  cardCreator,
-  /comment:\s*\(cardId, body\)\s*=>\s*\{\s*core\.ledger\.logCardComment\(cardId, "card", cardId, "agent", body\);\s*\}\s*,?/,
-  "substitutions page the card",
+assert.deepEqual(
+  comments,
+  [["card_1", environmentFallbackNotice(worktree, fallback)]],
+  "a substituted environment is paged as a card comment, not only logged",
+);
+assert.match(warnings[0]?.[0] ?? "", /card card_1: .*asked host with managed-worktree workspace/, "and logged with the card id");
+
+// The comment writer the card creators hand to `finishCard` is the ledger's,
+// so "substitutions page the card" cannot be true of one path and false of
+// the other: call the assembled creator's own writer and read the ledger.
+const ledgerCalls = [];
+const creator = createCardCreator({
+  bb: {},
+  db: {},
+  now: () => 1,
+  randomId: () => "id_1",
+  presetServer: {},
+  workers: {},
+  seams: {},
+  prompts: {},
+  trackCapabilities: {},
+  roundRelPath: (stateDir) => stateDir,
+  roundFileName: () => "round.md",
+  decision: { seedBuildIntent: () => {} },
+  ledger: { recordStageEvent: () => {}, logCardComment: (...args) => ledgerCalls.push(args) },
+  drafting: { suggestCardName: async () => {} },
+});
+creator.comment("card_9", "Substituted the environment.");
+assert.deepEqual(
+  ledgerCalls,
+  [["card_9", "card", "card_9", "agent", "Substituted the environment."]],
+  "the creator pages the card through the ledger's single comment writer",
 );
 
 console.log("card environment test ok: explicit pass-through, honest fallback, creation notice");

@@ -26,10 +26,14 @@ function define(name, value) {
   Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
 }
 
+// NodeFilter is what Radix's focus scope walks the portal with; without it any
+// component that opens a dialog throws on mount rather than rendering.
 for (const name of [
   "document", "navigator", "HTMLElement", "HTMLInputElement", "HTMLButtonElement",
+  "HTMLTextAreaElement", "HTMLSelectElement",
   "Node", "Element", "Event", "CustomEvent", "MutationObserver", "DOMParser",
   "getComputedStyle", "SVGElement", "CSSStyleDeclaration", "DocumentFragment",
+  "NodeFilter",
 ]) {
   if (window[name] !== undefined) define(name, window[name]);
 }

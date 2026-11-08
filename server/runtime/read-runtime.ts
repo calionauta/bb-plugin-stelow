@@ -183,8 +183,6 @@ function createResearchArtifacts(deps: ReadRuntimeDeps) {
   });
 }
 
-export type ReadRuntime = ReturnType<typeof createReadRuntime>;
-
 /** The ask seam reads the card's stage and digests through the git seam. */
 function askDeps(
   deps: ReadRuntimeDeps,

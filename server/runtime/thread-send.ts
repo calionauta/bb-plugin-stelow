@@ -37,14 +37,23 @@ export function sendError(error: unknown): string {
   return error instanceof Error ? error.message : "Could not reach the worker thread.";
 }
 
-export async function sendAgentInput(
+/**
+ * The same verdict for a caller that holds a thread id rather than a card.
+ *
+ * The answer doors are the reason this exists: they know the thread they must
+ * wake (the recovery door deliberately resolves it to the CURRENT worker, which
+ * is not the thread the question row names) and they need the verdict exactly
+ * as the card paths do. Splitting the id out of the call is what lets a caller
+ * with only an id stop reaching past this module for a raw `threads.send`.
+ */
+export async function sendWorkerInput(
   bb: BbPluginApi,
-  card: WorkerCard,
+  threadId: string,
   input: ThreadInput,
 ): Promise<AgentDispatch> {
   try {
     const result = await bb.sdk.threads.send({
-      threadId: card.worker_thread_id!,
+      threadId,
       mode: "auto",
       input,
     });
@@ -60,6 +69,14 @@ export async function sendAgentInput(
       error: sendError(error),
     };
   }
+}
+
+export async function sendAgentInput(
+  bb: BbPluginApi,
+  card: WorkerCard,
+  input: ThreadInput,
+): Promise<AgentDispatch> {
+  return sendWorkerInput(bb, card.worker_thread_id!, input);
 }
 
 export function agentText(text: string): ThreadInput[number] {

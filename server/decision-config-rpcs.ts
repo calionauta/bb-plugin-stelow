@@ -169,5 +169,3 @@ export function decisionConfigHandlers(ctx: DecisionConfigDeps) {
     },
   };
 }
-
-export type DecisionConfigHandlers = ReturnType<typeof decisionConfigHandlers>;

@@ -52,10 +52,8 @@ try {
     join(fixtureRoot, "lib", "copy-source.mjs"),
     `export const copied = "${"z".repeat(170)}";\n`,
   );
-  writeFileSync(
-    join(fixtureRoot, "lib", "budget-copy-source.mjs"),
-    "export const value = 1;\n".repeat(401),
-  );
+  const budgetCopySource = "export const value = 1;\n".repeat(401);
+  writeFileSync(join(fixtureRoot, "lib", "budget-copy-source.mjs"), budgetCopySource);
   git("add", "README.md", "lib/copy-source.mjs", "lib/budget-copy-source.mjs");
   git("commit", "-m", "base");
   const baseCommit = git("rev-parse", "HEAD");
@@ -168,10 +166,12 @@ try {
     { length: 50 },
     (_, index) => `  void fresh${index};\n`,
   ).join("");
+  // The copied file is this fixture's own artefact, written from the constant
+  // above — so it is appended from that constant rather than read back from a
+  // tmpdir path, which is neither a source read nor a pin.
   writeFileSync(
     join(fixtureRoot, "lib/copied-budget-debt.mjs"),
-    `${readFileSync(join(fixtureRoot, "lib/copied-budget-debt.mjs"), "utf8")}`
-      + `function relocatedFresh() {\n${freshFunctionBody}}\n`,
+    `${budgetCopySource}function relocatedFresh() {\n${freshFunctionBody}}\n`,
   );
   const oversizedFunctionInRelocatedFile = runBudgetChecker();
   assert.equal(oversizedFunctionInRelocatedFile.status, 1, oversizedFunctionInRelocatedFile.stdout);

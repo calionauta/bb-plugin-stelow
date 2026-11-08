@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
+import { reviewMarksByPath } from "../../lib/artifact-review.mjs";
 import { groupArtifactsByStage } from "../../lib/artifact-groups.mjs";
 import { splitArtifactsByRole } from "../../lib/artifact-roles.mjs";
 import { DisclosureSection } from "../disclosure";
+import { ReviewToggle, type ArtifactReviewControls } from "./artifact-review-toggle";
+import { useArtifactReview } from "./use-artifact-review";
 
 // Artifact surfaces: the file-target convention (workspace vs host links),
 // the shared inventory renderer (every track supplies its grouping axis),
@@ -47,7 +50,17 @@ export function openAskArtifact(
   });
 }
 
-type ArtifactInventoryFile = { kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
+type ArtifactInventoryFile = {
+  kind: string;
+  path: string;
+  display: string;
+  generatedAt: string;
+  absolutePath: string;
+  hostId: string;
+  note?: string | null;
+  reviewed?: boolean;
+  stale?: boolean;
+};
 export type ArtifactInventoryGroup = { id: string; title: string; items: ArtifactInventoryFile[] };
 
 // A document the workflow wrote but never registered still belongs on the
@@ -70,7 +83,16 @@ function formatArtifactDate(value: string): string | null {
 // One row, one meaning: an actual file that opens in the viewer. Extracted so
 // the deliverables inventory and the machine-receipts disclosure cannot drift
 // into two different rows for the same file.
-type InventoryRow = { path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
+type InventoryRow = {
+  path: string;
+  display: string;
+  generatedAt: string;
+  absolutePath: string;
+  hostId: string;
+  note?: string | null;
+  reviewed?: boolean;
+  stale?: boolean;
+};
 
 // A row is a full-width touch target: min-h-11, a pointer cursor, and a visible
 // focus ring. Named so the two places that render a row cannot drift.
@@ -81,41 +103,58 @@ const ROW_CLASS = [
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
 ].join(" ");
 
-function ArtifactRow({ file, workspaceKind, fileEnvironmentId, onView }: {
+function ArtifactRow({ file, workspaceKind, fileEnvironmentId, onView, review }: {
   file: InventoryRow;
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+  review?: ArtifactReviewControls | null;
 }) {
   const target = fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath);
   const meta = [formatArtifactDate(file.generatedAt), `File: ${artifactFilename(file.path)}`].filter(Boolean).join(" · ");
+  const mark = review?.marks.get(file.path);
   return (
-    <button
-      onClick={() => onView({ display: file.display, path: file.absolutePath, target })}
-      className={ROW_CLASS}
-      title={`Open ${file.display} (${file.path})`}
-    >
-      <span className="mt-0.5" aria-hidden>📄</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">{file.display}</span>
-        <span className="block truncate text-muted-foreground">{meta}</span>
-        {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
-      </span>
-      <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
-    </button>
+    <div className="flex items-stretch">
+      <button
+        onClick={() => onView({ display: file.display, path: file.absolutePath, target })}
+        className={ROW_CLASS}
+        title={`Open ${file.display} (${file.path})`}
+      >
+        <span className="mt-0.5" aria-hidden>📄</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-foreground">{file.display}</span>
+          <span className="block truncate text-muted-foreground">{meta}</span>
+          {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
+          {mark?.stale ? (
+            <span className="mt-0.5 block text-amber-700 dark:text-amber-300">Reviewed before the file changed</span>
+          ) : null}
+        </span>
+        <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
+      </button>
+      {mark && review ? (
+        <ReviewToggle
+          display={file.display}
+          path={file.path}
+          mark={mark}
+          pending={review.pendingPath === file.path}
+          onToggle={review.onToggle}
+        />
+      ) : null}
+    </div>
   );
 }
 
 // One visual inventory for every card type. Each track supplies its durable
 // grouping axis (Build stage, Research round, Explore technique); rows always mean
 // an actual file that opens in the viewer.
-export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView }: {
+export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView, review }: {
   groups: ArtifactInventoryGroup[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+  review?: ArtifactReviewControls | null;
 }) {
-  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as work completes.</p>;
+  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No deliverables yet — they appear here as work completes.</p>;
   return (
     <div className="space-y-3">
       {groups.map((group) => (
@@ -126,7 +165,7 @@ export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, on
           </div>
           <div className="divide-y divide-border rounded-md border">
             {group.items.map((file) => (
-              <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
+              <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} review={review} />
             ))}
           </div>
         </div>
@@ -138,11 +177,12 @@ export function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, on
 // Stelow's own receipts, kept out of the deliverable count. Closed by default:
 // a receipt is reference material, not a decision awaiting the reader, so it is
 // neither live nor blocking and earns no open-on-load.
-function EvidenceDisclosure({ artifacts, workspaceKind, fileEnvironmentId, onView }: {
+function EvidenceDisclosure({ artifacts, workspaceKind, fileEnvironmentId, onView, review }: {
   artifacts: InventoryRow[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+  review?: ArtifactReviewControls | null;
 }) {
   if (artifacts.length === 0) return null;
   return (
@@ -152,7 +192,7 @@ function EvidenceDisclosure({ artifacts, workspaceKind, fileEnvironmentId, onVie
     >
       <div className="divide-y divide-border rounded-md border">
         {artifacts.map((file) => (
-          <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
+          <ArtifactRow key={file.path} file={file} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} review={review} />
         ))}
       </div>
     </DisclosureSection>
@@ -183,16 +223,31 @@ type InventoryGroupItem = {
   generatedAt: string;
   absolutePath: string;
   hostId: string;
+  reviewed?: boolean;
+  stale?: boolean;
 };
 
-export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, groupTitleForStage }: {
+export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, groupTitleForStage, cardId, reviewable = true, onReviewedChanged }: {
   artifacts: InventoryGroupItem[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
   groupTitleForStage?: (stage: string) => string;
+  cardId: string;
+  /** Archived cards render the marks as facts but offer no control: every
+   * click would be refused, and a visible control that always refuses is a
+   * trap, not a protection. */
+  reviewable?: boolean;
+  /** The row cannot refresh itself: a mark that is written but not loaded back
+   * would leave the control claiming the old state. Required for that reason. */
+  onReviewedChanged: () => void;
 }) {
   const { deliverables, evidence } = useMemo(() => splitArtifactsByRole(artifacts), [artifacts]);
+  const review = useArtifactReview(cardId, onReviewedChanged);
+  const marks = useMemo(() => reviewMarksByPath(artifacts), [artifacts]);
+  const controls = reviewable
+    ? { marks, pendingPath: review.pendingPath, onToggle: review.toggle }
+    : null;
   const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(deliverables).map((group) => ({
     id: group.stage,
     title: groupTitleForStage?.(group.stage) ?? stageLabel(group.stage),
@@ -200,12 +255,14 @@ export function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, on
   })), [deliverables, groupTitleForStage]);
   return (
     <>
-      <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />
+      {review.error ? <p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{review.error}</p> : null}
+      <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} review={controls} />
       <EvidenceDisclosure
         artifacts={evidence}
         workspaceKind={workspaceKind}
         fileEnvironmentId={fileEnvironmentId}
         onView={onView}
+        review={controls}
       />
     </>
   );

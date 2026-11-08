@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { NO_INPUT } from "./rpc-input.js";
+import { HOST_TOOL_IDS } from "../lib/host-tools.mjs";
 import { PRESET_REASONING_LEVELS } from "../lib/preset-reasoning-level.mjs";
 import { PREVIEW_STATES } from "../lib/preview-session.mjs";
 import { githubReleaseSchema, pluginUpdateSchema } from "./contracts.js";
@@ -87,7 +89,7 @@ const uiDesignMcpStatusSchema = z.object({
 export const platformRpcContract = {
   listPresets: {
     experimental_description: "Agent presets: provider, model, reasoning, permission, environment",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       presets: z.array(
         z.object({
@@ -141,7 +143,7 @@ export const platformRpcContract = {
   },
   listBandPresets: {
     experimental_description: "Per-phase worker preset routing with stage lists",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       bands: z.array(z.object({ band: z.string(), presetId: z.string().nullable(), stages: z.array(z.string()) })),
     }),
@@ -153,7 +155,7 @@ export const platformRpcContract = {
   },
   getReviewPreset: {
     experimental_description: "Designated independent reviewer preset, if any",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       preset: z
         .object({
@@ -174,7 +176,7 @@ export const platformRpcContract = {
   },
   getGenerationPreset: {
     experimental_description: "Designated draft-generation preset, if any",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       preset: z
         .object({
@@ -195,7 +197,7 @@ export const platformRpcContract = {
   },
   getReliablePreset: {
     experimental_description: "Board-level reliable-tier preset override, if any",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       preset: z
         .object({
@@ -226,7 +228,7 @@ export const platformRpcContract = {
   },
   listProviderModels: {
     experimental_description: "BB provider catalog with model availability for preset pickers",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       providers: z.array(z.object({ id: z.string(), displayName: z.string(), modelsAvailable: z.boolean() })),
       models: z.array(z.object({ providerId: z.string(), model: z.string(), displayName: z.string() })),
@@ -234,7 +236,7 @@ export const platformRpcContract = {
   },
   buildInfo: {
     experimental_description: "Plugin and upstream versions, skills, and update verdicts",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       version: z.string(),
       builtAt: z.string().nullable(),
@@ -246,7 +248,7 @@ export const platformRpcContract = {
   },
   applyPluginUpdate: {
     experimental_description: "Apply a BB-offered plugin update behind explicit confirmation",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({
       applied: z.boolean(),
       outcome: z.enum(["rolled-back", "current", "updated", "unavailable"]),
@@ -257,50 +259,59 @@ export const platformRpcContract = {
   },
   checkPluginUpdate: {
     experimental_description: "Force a fresh plugin update check: BB plus GitHub release",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ pluginUpdate: pluginUpdateSchema, githubRelease: githubReleaseSchema.nullable() }),
   },
   aboutLogo: {
     experimental_description: "Product identity mark as a data URI; BB serves no static files",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ dataUri: z.string().nullable() }),
   },
   toolStatus: {
-    experimental_description: "Host binaries the workflow can use: sem, cymbal, ripwire, ast-grep",
-    input: z.object({}).strict(),
+    experimental_description: "Host binaries the workflow can use: the optional tools the About panel lists",
+    input: NO_INPUT,
     output: z.object({
       tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })),
     }),
   },
+  diagramRendererStatus: {
+    experimental_description: "Bundled pele renderer: whether diagrams render inline in this install",
+    input: NO_INPUT,
+    output: z.object({
+      present: z.boolean(),
+      version: z.string().nullable(),
+      detail: z.string(),
+    }),
+  },
   workflowDependencyStatus: {
     experimental_description: "Report whether BB Workflows is installed, enabled, and available for Stelow execution",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: workflowDependencyStatusSchema,
   },
   installWorkflowDependency: {
     experimental_description: "Install the built-in BB Workflows plugin on explicit user request",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
   },
   enableWorkflowDependency: {
     experimental_description: "Enable the installed BB Workflows plugin on explicit user request",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
   },
   agentGraphStatus: {
     experimental_description: "Report whether Agent Graph is installed, enabled, and running for the card live-graph action",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: agentGraphCapabilityStatusSchema,
   },
   installTool: {
     experimental_description: "Install one optional host tool with the official installer",
-    input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
+    input: z.object({ id: z.enum(HOST_TOOL_IDS) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
   uiDesignMcpStatus: {
     experimental_description:
       "Per-agent-CLI registration state for the optional UI design reference MCP, against bb's provider registry",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: uiDesignMcpStatusSchema,
   },
   registerUiDesignMcp: {

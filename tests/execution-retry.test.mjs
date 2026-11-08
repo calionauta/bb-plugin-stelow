@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
 import { retryExecutionRun } from "../server/execution-lifecycle-retry.ts";
-import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun } from "../lib/execution-run-ledger.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 
 /**
  * The door in the failed-run hold.
@@ -18,14 +18,6 @@ import { stageLabel } from "../lib/workflow-vocabulary.mjs";
  * working, retried a card that is archived — would either rewrite history or
  * leave the reader pressing a button that changes nothing.
  */
-
-function ledger() {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
-  ensureExecutionRunTable(db);
-  return db;
-}
 
 const card = (overrides = {}) => ({
   id: "card_1",
@@ -106,7 +98,7 @@ function deps(db, current, options = {}) {
 }
 
 test("a failed run retries at the card's current stage", async () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db);
   const d = deps(db, card());
   const result = await retryExecutionRun(d, "exec_1");
@@ -118,7 +110,7 @@ test("a failed run retries at the card's current stage", async () => {
 test("the retry is recorded on the card, naming the run it replaces", async () => {
   // Every destructive or background operation leaves an openable record: a bare
   // toast tells a reader nothing they can find again an hour later.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db);
   const d = deps(db, card(), []);
   await retryExecutionRun(d, "exec_1");
@@ -137,7 +129,7 @@ test("a card a stage ahead of its run refuses to retry it, and launches nothing"
   // retry must be refused, and NOTHING may be launched: a guard that refuses in
   // the message but still dispatches would re-run an old stage's recipe over
   // work the card has since done.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db, { id: "exec_1", stage: "critique", recipe: "plan-critique" });
 
   const ahead = deps(db, card({ stage: "execution" }));
@@ -162,7 +154,7 @@ test("a state is named in the reader's words, never the raw enum", async () => {
   // them. `needs_input` is the only status whose label differs from its value,
   // and it is the one that matters most: it is the state where a person is being
   // asked something, and `needs_input` is not a phrase anyone reads.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db, { id: "exec_1", status: "failed" });
   db.prepare("UPDATE execution_runs SET normalized_status='needs_input' WHERE id='exec_1'").run();
   const result = await retryExecutionRun(deps(db, card()), "exec_1");
@@ -175,7 +167,7 @@ test("a run from a stage the card has left is refused, and says how to reach it"
   // The trap this closes: a card advanced after a failure, the reader finds the
   // old failed row weeks later and presses Retry. Re-running that recipe would
   // write the old stage's artifacts over work the card has since done.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db, { stage: "critique" });
   const result = await retryExecutionRun(deps(db, card({ stage: "execution" }), []), "exec_1");
   assert.equal(result.ok, false);
@@ -188,7 +180,7 @@ test("a run from a stage the card has left is refused, and says how to reach it"
 });
 
 test("an archived card's runs cannot be retried", async () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db);
   const result = await retryExecutionRun(
     deps(db, card({ status: "archived" }), []),
@@ -201,7 +193,7 @@ test("an archived card's runs cannot be retried", async () => {
 test("a launch refusal is reported, not swallowed", async () => {
   // A retry the server declines leaves the card exactly where it was. Returning
   // ok:true there would tell the reader the hold released when it did not.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   seed(db);
   const result = await retryExecutionRun(
     deps(db, card(), { launchError: "This card already owns an active execution run." }),
@@ -212,7 +204,7 @@ test("a launch refusal is reported, not swallowed", async () => {
 });
 
 test("a run that does not exist is refused plainly", async () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   const result = await retryExecutionRun(deps(db, card(), []), "exec_missing");
   assert.equal(result.ok, false);
   assert.match(result.error, /not found/i);

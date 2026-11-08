@@ -15,12 +15,15 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 export type AnswerDecision = { question: string; answers: string[] };
 export type ResumeArgs = { context: Record<string, unknown>; localRunId: string; recipeId: string };
-export type ResumeFailure = { error: string | null };
 export type StartContext = {
   prompt: string;
   intent?: string;
   stage?: string;
   reviewMode?: string;
+  /** Scope ids the run touches; served decision receipts are filtered by these. */
+  scopeIds?: string[];
+  /** Already-loaded decision receipts (approvals-dir reader owns loading). */
+  decisionReceipts?: Array<{ id: string; kind?: string; scopeIds?: string[] }>;
 };
 
 export type LifecycleDeps = {

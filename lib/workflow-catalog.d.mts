@@ -1,0 +1,15 @@
+export type TransitionKind = "next" | "accept" | "reject" | "rework";
+export type StageTransitions = Record<TransitionKind, readonly string[]>;
+export declare const STAGE_CATALOG: ReadonlyArray<Record<string, unknown> & { id: string }>;
+export declare const WORKFLOW_PHASES: ReadonlyArray<{ id: string; label: string }>;
+export declare const WORKFLOW_ROUTES: Readonly<Record<string, unknown>>;
+export declare const PHASE_ENTRY_STAGES: Readonly<Record<string, string>>;
+export declare const WORKFLOW_STAGES: ReadonlyArray<Record<string, unknown> & { id: string; phase: string }>;
+export declare const STAGE_SEQUENCE: readonly string[];
+export declare const STAGE_BY_ID: Record<string, { id: string; transitions?: Partial<Record<TransitionKind, string[]>> } & Record<string, unknown>>;
+export declare const STAGE_TRANSITIONS: Readonly<Record<string, StageTransitions>>;
+export declare const STAGE_LABELS: Readonly<Record<string, string>>;
+export declare const STAGE_PRODUCES: Readonly<Record<string, string>>;
+export declare const STAGE_SKILL: Readonly<Record<string, string>>;
+export declare const STAGE_DOC: Readonly<Record<string, string | null>>;
+export declare const PHASE_LABELS: Readonly<Record<string, string>>;

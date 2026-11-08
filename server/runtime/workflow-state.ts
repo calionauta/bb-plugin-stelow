@@ -5,12 +5,14 @@
  * A project can hold several workflows (one per card), so state.md is never
  * found by name: it is resolved through the ownership records in
  * stelow.json, and a state file is only trusted when it names the same
- * owner. The transitions table is read from the same vendored copy the
- * seeder installs, so the stage vocabulary a worker sees and the one the
- * host validates can never come from two different files.
+ * owner. Stage vocabulary comes from the canonical JSON catalog
+ * (data/stelow-stage-catalog.json via lib/workflow-catalog.mjs) — the
+ * advance path never parses the vendored prose mirror. That mirror remains
+ * for workers to read, and lib/transition-facts.mjs audits offline that it
+ * matches the catalog.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, sep } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { sep } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import {
@@ -18,14 +20,53 @@ import {
   workflowEntryForOwner,
   workflowStateRelativeDir,
 } from "../../lib/workflow-state-identity.mjs";
-import { TRANSITIONS_REF } from "../plugin-paths.js";
+import { legalMoves } from "../../lib/workflow-moves.mjs";
 import { array } from "./values.js";
 import type { WorkerCard } from "../workers-types.js";
-import { join, readJson } from "./root-paths.js";
+import { join } from "./root-paths.js";
 
-/** The transitions table as installed inside a workspace. */
-const WORKSPACE_TRANSITIONS =
-  "skills/stelow-workflow-orchestrator/references/transitions.md";
+/**
+ * Cardless `advance` re-root. `seed` writes per-workflow dirs
+ * `.stelow/<date>/<dir>/state.md`, but the cardless path ran the helper in
+ * project-root mode, so every seeded cardless workflow read as "missing state —
+ * reseed". Exactly one match re-roots to it; zero keeps the old project-root
+ * behavior; several refuse — guessing would advance the wrong workflow.
+ */
+export type LegacyStateSearch =
+  | { kind: "single"; stateDir: string }
+  | { kind: "ambiguous"; count: number }
+  | { kind: "none" };
+
+export function findSingleLegacyStateDir(rootPath: string): LegacyStateSearch {
+  // NOTE: the local join() takes exactly (root, relative) — build multi-level
+  // paths as one relative string, or segments are silently dropped.
+  let dates: string[];
+  try {
+    dates = readdirSync(join(rootPath, ".stelow"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return { kind: "none" };
+  }
+  const hits: string[] = [];
+  for (const date of dates) {
+    let dirs: string[];
+    try {
+      dirs = readdirSync(join(rootPath, `.stelow/${date}`), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      continue;
+    }
+    for (const dir of dirs) {
+      const stateDir = join(rootPath, `.stelow/${date}/${dir}`);
+      if (existsSync(join(stateDir, "state.md"))) hits.push(stateDir);
+    }
+  }
+  if (hits.length === 1) return { kind: "single", stateDir: hits[0] };
+  if (hits.length > 1) return { kind: "ambiguous", count: hits.length };
+  return { kind: "none" };
+}
 
 /**
  * What a state-directory lookup learned, kept apart because "the records
@@ -160,59 +201,43 @@ export function stateRootOf(stateDir: string | null): string | null {
 }
 
 /**
- * Every stage the installed transitions table routes the current one to.
- * Used to offer the human the moves the workflow actually allows, so the
- * panel never advertises a stage the vendored table rejects.
+ * Every stage the workflow may actually move to from the current one.
+ *
+ * Used to offer the human the moves the workflow allows, so the panel never
+ * advertises a stage the state machine refuses.
+ *
+ * The projection used to read the catalog's transition rows and offer every
+ * target — no intent route, no review mode. So the panel offered
+ * `diff-gate` in Auto, where the stage does not exist, and `planning` at
+ * `context` on a bugfix, where the route does not go; the worker was
+ * refused by the helper seconds later. `lib/workflow-moves.mjs` applies the
+ * same rule the helper enforces, and a parity test runs the pinned helper
+ * over every triple to keep the two from drifting.
  */
 export function parseNextStages(
-  rootPath: string | null,
   currentStage: string,
+  options: {
+    intent?: string | null;
+    reviewPolicy?: string | string[] | null;
+    quality?: string | null;
+    explorationCount?: string | number | null;
+  } = {},
 ): string[] {
-  if (!rootPath) return [];
-  const transitionsPath = join(rootPath, WORKSPACE_TRANSITIONS);
-  if (!existsSync(transitionsPath)) return [];
-  let content: string;
-  try {
-    content = readFileSync(transitionsPath, "utf8");
-  } catch {
-    return [];
-  }
-  // NOTE: do not use a `(?=^### |\Z)`-style regex here — `\Z` is an
-  // end-of-string anchor in Python but a literal "Z" in JavaScript, which
-  // silently broke parsing of the last stage block (`audit`). Splitting on
-  // headers avoids the dialect trap and any regex injection via stage names.
-  const sections = content.split(/^### /m);
-  const section = sections.find(
-    (entry) =>
-      entry === currentStage ||
-      entry.startsWith(`${currentStage}\n`) ||
-      entry.startsWith(`${currentStage} `),
-  );
-  if (!section) return [];
-  const stages = new Set<string>();
-  for (const raw of section.split("\n")) {
-    const line = raw.trim();
-    for (const key of ["next", "accept", "reject", "rework"] as const) {
-      const match = line.match(new RegExp(`^${key}:\\s*(.*)$`));
-      if (!match) continue;
-      // Trailing "(...)" segments are human comments ("(none — stays at
-      // triage)", "shape (shape rework — same stage)"), not stages. Without
-      // stripping, a comment either leaks words (comma split keeps them) or
-      // hides a real target (the whole token contains "(" and is dropped).
-      const value = match[1].split("(")[0];
-      for (const token of value.split(",")) {
-        const stage = token.replace(/[[\]\s"']/g, "");
-        if (stage && /^[a-z][a-z0-9-]*$/.test(stage)) stages.add(stage);
-      }
-    }
-  }
-  return Array.from(stages);
+  return legalMoves({
+    intent: options.intent ?? "",
+    reviewPolicy: options.reviewPolicy ?? null,
+    stage: currentStage,
+    quality: options.quality ?? null,
+    explorationCount: options.explorationCount ?? null,
+  }).allowed;
 }
 
 /**
  * The workspace is advanceable when its state and tracking files are both
- * present and its transitions copy is installed from the vendored upstream
- * contract. Returns the refusal to show, or null when the move may proceed.
+ * present. The transitions mirror is worker reading material, not an
+ * advance precondition: the host validates against the canonical catalog,
+ * so a missing mirror never blocks a move. Returns the refusal to show,
+ * or null when the move may proceed.
  *
  * `requireOwnedState` is the card-worker guard: a worker whose state dir
  * cannot be verified must reseed rather than fall back to the project-root
@@ -225,7 +250,6 @@ export async function ensureProjectArtifacts(
   requireOwnedState = false,
 ): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
-  const transitions = join(rootPath, WORKSPACE_TRANSITIONS);
   // The card-worker guard, and the same verdict every other surface reaches, so
   // it reads the shared sentence: a reader who got it from `stelow advance` and
   // a reader who got it from the card's Failed chip were being told two
@@ -235,10 +259,6 @@ export async function ensureProjectArtifacts(
   const state = stateDir
     ? join(stateDir, "state.md")
     : join(rootPath, "state.md");
-  if (!existsSync(transitions)) {
-    mkdirSync(dirname(transitions), { recursive: true });
-    writeFileSync(transitions, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
-  }
   if (
     !existsSync(state) ||
     !(await bb.sdk.files

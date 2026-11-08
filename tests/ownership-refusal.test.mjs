@@ -22,17 +22,109 @@ import {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// The two words in the sentence are UI copy that lives in the components, so the
-// one half a string CAN reach is checked here: the menu still renders the label
-// the refusal tells the reader to look for. The other half — whether that action
-// actually works on a card the refusal is written for — is
-// `tests/reseed-unowned-door.test.mjs`, and it is the half that used to be
-// missing.
-assert.match(
-  readFileSync(join(root, "components/manage/card-actions-menu.tsx"), "utf8"),
-  /Restart fresh…/,
+// The two words in the sentence are UI copy that lives in the components, so
+// both halves are asserted where a reader would see them: the menu really
+// renders the label the refusal names, and the repair dialog really reads the
+// shared advice rather than choosing it inline. Rendering is what tells a live
+// branch from a dead one — a text pin can only report that the words appear in
+// the file. The other half — whether that action actually works on a card the
+// refusal is written for — is `tests/reseed-unowned-door.test.mjs`, and it is
+// the half that used to be missing.
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
+
+globalThis.__bbPluginRuntime = { pluginSdkApp: { useRpc: () => ({ call: async () => ({}) }) } };
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
+const { createElement: h } = await import("react");
+const { render, screen, fireEvent, cleanup } = await import("@testing-library/react");
+const { CardActionsMenu } = await import("../components/manage/card-actions-menu.tsx");
+const { BuildLifecycleDialogs } = await import("../components/detail/build-lifecycle-dialogs.tsx");
+
+const noop = () => {};
+const manageable = {
+  id: "card_1",
+  intent: "feature",
+  displayName: "Checkout",
+  name: "checkout",
+  projectName: "Proj",
+  kind: "build",
+  stage: "execution",
+  activity: "error",
+  status: "in-progress",
+  needsAttention: true,
+};
+
+// `activity: error` is what makes the restart-fresh entry recoverable, so this
+// is the card the refusal is written for — a menu that dropped the entry would
+// send the reader to a door that is not there.
+render(h(CardActionsMenu, {
+  card: manageable,
+  onRestartFresh: noop,
+  onArchive: noop,
+  onDiscard: noop,
+  onDelete: noop,
+  onRestore: noop,
+  onReclassify: async () => true,
+}));
+fireEvent.click(screen.getByRole("button", { name: "Card actions" }));
+assert.ok(
+  screen.getByRole("button", { name: "Restart fresh…" }),
   "the action the refusal names is a label the menu really renders",
 );
+cleanup();
+
+const lifecycleState = (overrides = {}) => ({
+  repairOpen: true,
+  setRepairOpen: noop,
+  doRepair: async () => {},
+  restartWorkerOpen: false,
+  setRestartWorkerOpen: noop,
+  doRestartWorker: noop,
+  recoveryAttachProjectId: null,
+  setRecoveryAttachProjectId: noop,
+  doAttachRecoveryCheckout: noop,
+  archiveOpen: false,
+  setArchiveOpen: noop,
+  doArchive: noop,
+  deleteOpen: false,
+  setDeleteOpen: noop,
+  doDelete: noop,
+  discardOpen: false,
+  setDiscardOpen: noop,
+  discardConfirm: null,
+  doDiscard: noop,
+  restoreOpen: false,
+  setRestoreOpen: noop,
+  doRestore: noop,
+  promoteOpen: false,
+  setPromoteOpen: noop,
+  promoteName: "",
+  setPromoteName: noop,
+  promoting: false,
+  doPromote: noop,
+  ...overrides,
+});
+
+function repairDialogFor(cardLastError) {
+  render(h(BuildLifecycleDialogs, {
+    state: lifecycleState(),
+    cardDisplayName: "Checkout",
+    cardStage: "execution",
+    cardLastError,
+  }));
+  const body = document.body.textContent ?? "";
+  cleanup();
+  return body;
+}
+
+const ownershipCopy = repairDialogFor(OWNERSHIP_UNVERIFIED);
+assert.match(ownershipCopy, /Retry cannot help here/, "an unowned card is told the cheaper action cannot work");
+assert.doesNotMatch(ownershipCopy, /Try Retry first/, "and the ordinary advice is not left beside it");
+
+const ordinaryCopy = repairDialogFor("Provider error 400 from the model endpoint.");
+assert.match(ordinaryCopy, /Try Retry first/, "an ordinary failure keeps the ordinary advice");
+assert.doesNotMatch(ordinaryCopy, /Retry cannot help here/, "the ownership advice is not re-spelled in the component");
 
 assert.equal(
   isOwnershipRefusal(OWNERSHIP_UNVERIFIED),
@@ -134,20 +226,6 @@ assert.notEqual(
   ownershipRepairAdvice(OWNERSHIP_UNVERIFIED),
   ownershipRepairAdvice("Provider error 400"),
   "the two cases must not read as one sentence with two titles",
-);
-
-// The component reads the advice rather than choosing it inline: a ternary in
-// JSX can only be tested by matching source, and this decision is the one that
-// has to survive being re-spelled.
-const dialogs = readFileSync(
-  join(root, "components/detail/build-lifecycle-dialogs.tsx"),
-  "utf8",
-);
-assert.match(dialogs, /ownershipRepairAdvice\(cardLastError\)/, "the dialog reads the shared advice");
-assert.doesNotMatch(
-  dialogs,
-  /Try Retry first/,
-  "the advice is not re-spelled in the component, so it cannot drift from the predicate",
 );
 
 console.log(

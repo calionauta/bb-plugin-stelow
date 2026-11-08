@@ -1,6 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { attachChildTokenBreakdown, attachChildTokenUsage, shapeChildThreads } from "../lib/thread-children.mjs";
-import { tokenBreakdownFromEvents, tokenUsageFromEvents } from "../lib/token-usage.mjs";
+import { tokenBreakdownFromEvents, usageFromEvents } from "../lib/token-usage.mjs";
+import { firstTurnVerdict } from "../lib/first-turn-contract.mjs";
+import type { UsageSource } from "../lib/token-usage.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -23,6 +25,7 @@ export type WorkerHistoryEntry = {
   endedAt: number | null;
   endedReason: string | null;
   tokenUsage: number | null;
+  tokenUsageSource: UsageSource;
   tokenBreakdown: TokenBreakdown;
   children: ChildThread[];
 };
@@ -46,32 +49,49 @@ const OWNER_SELECT = `
   WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1
 `;
 
-async function tokenReport(bb: BbPluginApi, threadId: string): Promise<{ total: number | null; breakdown: TokenBreakdown }> {
+/**
+ * One family's newest event, asked for on its own.
+ *
+ * A single request for both families with a small limit is NOT equivalent, and the
+ * difference was measured: the two families interleave, and on 2 of the 148 threads
+ * that report both, the newest two events are both context readings — so a
+ * two-event page discarded a real provider total (1,125,141) in favour of an
+ * estimate (329,821). Asking per family makes each family's own newest event
+ * guaranteed rather than probable, whatever the traffic ratio.
+ */
+/** The two event families this module reads. Spelled as the SDK's own union so a
+ * renamed event type fails the build rather than silently returning nothing. */
+type EventType = "thread/tokenUsage/updated" | "thread/contextWindowUsage/updated";
+
+async function latestOfType(bb: BbPluginApi, threadId: string, type: EventType) {
   try {
-    const events = await bb.sdk.threads.events.list({
-      threadId,
-      types: ["thread/tokenUsage/updated"],
-      order: "desc",
-      limit: "1",
-    });
-    return { total: tokenUsageFromEvents(events), breakdown: tokenBreakdownFromEvents(events) };
+    return await bb.sdk.threads.events.list({ threadId, types: [type], order: "desc", limit: "1" });
   } catch {
-    return { total: null, breakdown: null };
+    return [];
   }
 }
 
+async function tokenReport(
+  bb: BbPluginApi,
+  threadId: string,
+): Promise<{ total: number | null; breakdown: TokenBreakdown; source: UsageSource }> {
+  const [tokenEvents, contextEvents] = await Promise.all([
+    latestOfType(bb, threadId, "thread/tokenUsage/updated"),
+    latestOfType(bb, threadId, "thread/contextWindowUsage/updated"),
+  ]);
+  const usage = usageFromEvents([...tokenEvents, ...contextEvents]);
+  // The breakdown comes from the token report alone: a context reading has no
+  // input/output/cached split, and fabricating legs from a single number would
+  // invent a measurement.
+  return { total: usage.total, breakdown: tokenBreakdownFromEvents(tokenEvents), source: usage.source };
+}
+
 async function readChildUsage(bb: BbPluginApi, child: ShapedChild) {
-  try {
-    const events = await bb.sdk.threads.events.list({
-      threadId: child.threadId,
-      types: ["thread/tokenUsage/updated"],
-      order: "desc",
-      limit: "1",
-    });
-    return [child.threadId, tokenUsageFromEvents(events), tokenBreakdownFromEvents(events)] as const;
-  } catch {
-    return [child.threadId, null, null] as const;
-  }
+  const [tokenEvents, contextEvents] = await Promise.all([
+    latestOfType(bb, child.threadId, "thread/tokenUsage/updated"),
+    latestOfType(bb, child.threadId, "thread/contextWindowUsage/updated"),
+  ]);
+  return [child.threadId, usageFromEvents([...tokenEvents, ...contextEvents]).total, tokenBreakdownFromEvents(tokenEvents)] as const;
 }
 
 async function childThreads(bb: BbPluginApi, threadId: string): Promise<ChildThread[]> {
@@ -86,10 +106,35 @@ async function childThreads(bb: BbPluginApi, threadId: string): Promise<ChildThr
   }
 }
 
+/**
+ * The worker's item events, which is where a skill read is visible.
+ *
+ * A separate read from the usage families because it answers a different question:
+ * those carry token counts, these carry what the worker DID. The limit is generous
+ * on purpose — the first-turn contract is about the opening of a long run, so a page
+ * too small to reach the first advance would report every worker as compliant.
+ */
+async function itemEvents(bb: BbPluginApi, threadId: string) {
+  try {
+    return await bb.sdk.threads.events.list({ threadId, types: ["item/completed"], order: "asc", limit: "200" });
+  } catch {
+    return [];
+  }
+}
+
 async function history(db: Db, bb: BbPluginApi, cardId: string): Promise<WorkerHistoryEntry[]> {
   const rows = db.prepare(HISTORY_SELECT).all(cardId) as HistoryRow[];
   return Promise.all(rows.map(async (row) => {
-    const [report, children] = await Promise.all([tokenReport(bb, row.thread_id), childThreads(bb, row.thread_id)]);
+    const [report, children, items] = await Promise.all([
+      tokenReport(bb, row.thread_id),
+      childThreads(bb, row.thread_id),
+      itemEvents(bb, row.thread_id),
+    ]);
+    // The first-turn verdict is derived from what the worker did, not from what it was
+    // told: a skill read is a tool call naming a SKILL.md, and the rule is that they
+    // happen on advance. Reported rather than blocked, because the plugin cannot stop
+    // a call in flight and a refusal here would be a deadlock with a good message.
+    const firstTurn = firstTurnVerdict(items);
     return {
       threadId: row.thread_id,
       presetName: row.preset_name,
@@ -97,7 +142,9 @@ async function history(db: Db, bb: BbPluginApi, cardId: string): Promise<WorkerH
       endedAt: row.ended_at,
       endedReason: row.ended_reason,
       tokenUsage: report.total,
+      tokenUsageSource: report.source,
       tokenBreakdown: report.breakdown,
+      firstTurn,
       children,
     };
   }));

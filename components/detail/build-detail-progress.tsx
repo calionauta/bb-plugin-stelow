@@ -56,6 +56,9 @@ export function BuildArtifacts({ view }: { view: BuildDetailView }) {
               fileEnvironmentId={detail.fileEnvironmentId}
               onView={view.setViewerFile}
               groupTitleForStage={artifactGroupTitle}
+              cardId={card.id}
+              reviewable={card.status !== "archived"}
+              onReviewedChanged={view.load}
             />
           )
           : <p className="text-xs text-muted-foreground">Loading…</p>}
@@ -78,5 +81,8 @@ function artifactHint(
     evidence > 0 ? ` + ${evidence} evidence` : "",
     " · audit trail",
     unregistered ? " · some unregistered" : "",
+    // The review progress is a section summary, not a body line: closing the
+    // section costs the reader the rows, never the number (AGENTS.md).
+    detail.reviewLine ? ` · ${detail.reviewLine}` : "",
   ].join("");
 }

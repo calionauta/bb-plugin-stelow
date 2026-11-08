@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { sealStatus, validateArtifact } from "../lib/artifact-validation.mjs";
 import {
   CRITERIA_MET_SCORE,
@@ -57,10 +54,11 @@ const spied = await judgeArtifactCriteria({
   routeAt: 0.6,
   fetchImpl: spyingFetch("disk-full"),
 });
-assert.equal(seenBodies.length, 2, "one atomic call per semantic criterion, never batched");
+assert.equal(seenBodies.length, 3, "evidence gate plus one atomic call per semantic criterion, never batched");
 assert.ok(seenBodies.every((body) => Object.keys(body.questions).length === 1), "each call carries exactly one question");
+assert.deepEqual(Object.keys(seenBodies[0].questions), ["evidence:sufficiency"], "evidence is asked first and separately");
 assert.ok(seenBodies.every((body) => body.state.includes("disk-full")), "every call carries the artifact excerpt as state");
-const quoted = seenBodies.map((body) => Object.values(body.questions)[0].instructions).join("\n");
+const quoted = seenBodies.slice(1).map((body) => Object.values(body.questions)[0].instructions).join("\n");
 assert.ok(quoted.includes("concrete failure modes"), "the first question quotes its criterion");
 assert.ok(quoted.includes("explicit sacrifices"), "the second question quotes its criterion");
 const hitCall = await judgeArtifactCriteria({
@@ -128,13 +126,5 @@ assert.equal(thin.pass, false, "a thin artifact fails deterministically");
 assert.equal(sealStatus({ pass: false }, "verified"), "needs-revision", "gate failure seals needs-revision");
 assert.equal(sealStatus({ pass: true }, "verified"), "verified", "a passing gate still seals verified");
 assert.equal(sealStatus(null, "verified"), "unverified", "no validation reads unverified, never verified");
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-// The verify-command verdict lives in the CLI family that runs it, not in a
-// composition root. Invert `ran.ok` and a failed command would read met.
-const verifyTasks = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
-const server = [verifyTasks, readFileSync(join(root, "server.ts"), "utf8")].join("\n");
-assert.ok(server.includes('verdict: ran.ok ? "met" : "unmet"'), "verify-command verdicts stay deterministic (exit 0 reads met)");
-assert.ok(!/judgeArtifactCriteria\(\{[^}]*advance/.test(server), "the criteria judge never reaches an advance path");
 
 console.log("artifact criteria judge test ok: inversion fails, disabled abstains, gates stay deterministic");

@@ -118,14 +118,10 @@ function seedProject(specContent) {
 
 // `scope` subcommand: absent in older vendored copies (workers fall back
 // to tracked edits plus host gates); when present, start|done commit with
-// validation. Since 0.85 `done` refuses close without red-first Record
-// evidence (strict by default, advisory under experimental quality): a
-// taskless scope never carries evidence, so it refuses in strict and only
-// closes with a warning when quality is experimental. The probe is
-// behavioral: an unknown subcommand skips with a log instead of failing the
-// suite on an old pin.
+// validation. The probe is behavioral: an unknown subcommand skips with a
+// log instead of failing the suite on an old pin.
 {
-  const { dir, run } = seedProject(MACHINE_SPEC);
+  const { dir, run, tracking } = seedProject(MACHINE_SPEC);
   try {
     assert.equal(run(["sync-scopes", "--json"]).status, 0, "scopes sync before scope transitions");
     const probe = run(["scope", "start", "--scope", "scope-1", "--json"]);
@@ -137,34 +133,25 @@ function seedProject(specContent) {
       assert.deepEqual(Object.keys(started).sort(), ["id", "started_at", "status"], "start --json envelope is stable");
       assert.equal(started.status, "in-progress", "start marks in-progress");
       assert.equal(typeof started.started_at, "string", "start stamps once");
-      const startedDone = run(["scope", "done", "--scope", "scope-1", "--json"]);
-      assert.equal(startedDone.status, 1, "taskless strict done refuses");
-      assert.match(startedDone.stderr, /refuses close without red-first Record evidence/, "the refusal names the missing evidence");
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// Same helper, experimental quality: the red-first gap is advisory, so the
-// taskless scope closes with a warning and the envelopes still commit.
-{
-  const { dir, run, tracking } = seedProject(MACHINE_SPEC);
-  try {
-    assert.equal(run(["sync-scopes", "--json"]).status, 0, "scopes sync before scope transitions");
-    const probe = run(["scope", "start", "--scope", "scope-1", "--json"]);
-    if (probe.status !== 0 && /unknown subcommand/.test(probe.stderr)) {
-      console.log("vendor contracts SKIPPED scope subcommand advisory probe: not in this vendored copy");
-    } else {
-      assert.equal(probe.status, 0, "start commits");
-      const trackingPath = join(dir, "stelow.json");
-      const data = JSON.parse(readFileSync(trackingPath, "utf8"));
-      data.workflows[0].config = { quality: "experimental" };
-      writeFileSync(trackingPath, JSON.stringify(data, null, 2), "utf8");
-      const done = run(["scope", "done", "--scope", "scope-1", "--json"]);
-      assert.equal(done.status, 0, "advisory done commits");
-      assert.match(done.stderr, /warning/, "the advisory gap is announced, never silent");
       const scopes = () => tracking().workflows[0].scopes;
+      assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "in-progress", "tracking reflects start");
+      // Red-first contract (post-0.73.0-alpha helper): an evidence-less done
+      // refuses in strict (the default) instead of committing.
+      const refused = run(["scope", "done", "--scope", "scope-1", "--json"]);
+      assert.equal(refused.status, 1, "taskless done refuses without red-first evidence");
+      assert.match(refused.stderr, /red_proof|freeze_sha|baseline/, "refusal names the missing evidence");
+      assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "in-progress", "a refused done leaves the status");
+      // A compliant Record (verified + red_proof/freeze_sha/baseline) commits.
+      const trackingPath = join(dir, "stelow.json");
+      const current = JSON.parse(readFileSync(trackingPath, "utf8"));
+      current.workflows[0].scopes.find((scope) => scope.id === "scope-1").record = {
+        verified: true,
+        red_proof: { failed_command: "npm test -- scope-1", exit_code: 1 },
+        freeze_sha: "f".repeat(40),
+        baseline: { "npm test -- scope-1": 1 },
+      };
+      writeFileSync(trackingPath, JSON.stringify(current, null, 2));
+      assert.equal(run(["scope", "done", "--scope", "scope-1", "--json"]).status, 0, "evidenced done commits");
       assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "done", "tracking reflects done");
       assert.equal(run(["scope", "done", "--scope", "scope-1"]).status, 1, "done never regresses");
       assert.equal(run(["scope", "start", "--scope", "scope-1"]).status, 1, "finished never restarts");

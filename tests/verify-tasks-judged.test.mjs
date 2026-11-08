@@ -1,21 +1,25 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { resolveScoredVerdicts } from "../lib/score-verdicts.mjs";
 import {
   resolveScopeVerdicts,
   resolveTaskVerdicts,
   taskVerifyCommand,
-} from "../lib/task-evidence.mjs";
+} from "../lib/question-evidence.mjs";
+import { createVerifyTasksCommand } from "../server/runtime/cli/cli-verify-tasks.ts";
 
-// Verify-tasks judged remainder: deterministic verify-first, then the
-// judged remainder. Tasks carrying their own verify command resolve from
-// the exit code alone (exit 0 met, else unmet) and skip the judge; the rest
-// resolve through one atomic Score each against the point floor. Scope
-// rollup is deterministic: met iff every task met, unmet iff any task
-// unmet, else unverifiable — a judged remainder below the floor rolls up
-// to unverifiable, never verified.
+// Verify-tasks: the judged remainder resolves through one atomic Score each
+// against the point floor. Scope rollup is deterministic: met iff every task
+// met, unmet iff any task unmet, else unverifiable — a judged remainder below
+// the floor rolls up to unverifiable, never verified.
+//
+// A task may declare its own verify command (Spec-Kit shape), and the verb is
+// written to resolve those from the exit code alone and skip the judge. That
+// half cannot run today: `scopes.ts` `projectTask` drops a task's `verify`, so
+// the loaded scopes never carry one. The pure extraction is pinned here and the
+// dead branch is named at the bottom rather than silently trusted.
 
 // Verify-command extraction is string-only: arrays/objects read as absent
 // and fall back to the judge instead of executing something unexpected.
@@ -89,19 +93,115 @@ assert.equal(
   "a wrong answer shape abstains",
 );
 
-// Server wiring: verify-first is authoritative (exit-code verdicts with
-// full confidence), the judge covers only the remainder, and the rollup is
-// the deterministic resolver — removing any of these fails here. The verb owns
-// that wiring now, in the CLI family that runs it.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
-assert.ok(server.includes('verdict: ran.ok ? "met" : "unmet"'), "verify commands resolve deterministically from the exit code");
-assert.ok(server.includes("confidence: 1,"), "command verdicts carry full confidence (authoritative over the judge)");
-assert.match(server, /const judgedTasks = doneTasks\.filter\(\(task\) => task\.verify === null\)/, "only command-less tasks reach the judge");
-assert.match(server, /if \(judgedTasks\.length === 0\) return commandFindings;/, "a fully-declared board skips the judge entirely");
-assert.ok(server.includes("resolveScopeVerdicts({ scopes, taskFindings: findings })"), "scopes roll up through the deterministic resolver");
-const verifiedShortcut =
-  /taskFindings\.filter\(\(finding\) => finding\.verdict === "met"\)\.length === taskFindings\.length \? "verified"/;
-assert.ok(!verifiedShortcut.test(server), "no shortcut ever seals verified from task findings");
+// Server wiring: driven through the verb itself, not read as text. The pin
+// this replaces matched six literals in cli-verify-tasks.ts, so a branch
+// hoisted behind an earlier return passed it while the command stopped
+// judging. The drive observes the two halves that can run: every completed
+// task reaches the judge, and the scope rollup stays the deterministic
+// resolver rather than a shortcut.
+//
+// The deterministic verify-first half has no reachable fixture: `scopes.ts`
+// `projectTask` drops a task's `verify`, so `taskVerifyCommand` is always null
+// over the loaded scopes and no workspace can put a task on that path. The
+// pure extraction is asserted above; the CLI's exit-code mapping is dead
+// until the projection carries the field.
+delete process.env.STELOW_DECISION_API; // the host kill switch would refuse before the wiring runs
 
-console.log("verify tasks judged test ok: verify-fail refuses despite judge-pass, weak remainder rolls unverifiable");
+/** One workspace whose tracking file owns the given done tasks. */
+function scopesWorkspace(tasks) {
+  const root = mkdtempSync(join(tmpdir(), "stelow-verify-tasks-"));
+  writeFileSync(join(root, "stelow.json"), JSON.stringify({
+    workflows: [{
+      workflowId: "card_1",
+      name: "Checkout",
+      created: "2026-09-24T00:00:00.000Z",
+      dirHash: "sw-1",
+      scopes: [{ id: "scope-1", title: "Rate limiter", status: "done", tasks }],
+    }],
+  }));
+  return root;
+}
+
+/** The decision row and config the judging route reads from the database. */
+function judgingDb() {
+  return {
+    prepare(sql) {
+      return {
+        get() {
+          if (sql.includes("FROM decision_points")) {
+            return { mode: "api", thresholds: "{}", provider: null, endpoint: null, api_key: null, model: null, preset_id: null };
+          }
+          if (sql.includes("FROM decision_api_config")) {
+            return { endpoint: "", api_key: "", model: "", provider: null };
+          }
+          return undefined;
+        },
+      };
+    },
+  };
+}
+
+/** Drive the real verb with a card, a workspace, and a scripted judge. */
+async function driveVerifyTasks({ workspaceRoot, judged }) {
+  const judgedCalls = [];
+  const card = { id: "card_1", project_id: "proj_1", worker_thread_id: "thr_worker", dir_hash: "sw-1", status: "in-progress", kind: "build" };
+  const deps = {
+    db: judgingDb(),
+    getCardByWorkerThread: (threadId) => (threadId === "thr_worker" ? card : undefined),
+    getCard: (cardId) => (cardId === "card_1" ? card : undefined),
+    cardWorkspace: async () => ({ path: workspaceRoot, hostId: "host1" }),
+    workingDiffFor: async () => "diff --git a/rate.ts b/rate.ts",
+    decisionRoute: () => ({ provider: null, endpoint: "", apiKey: null, model: null }),
+    judgeScoredBatch: async (args) => {
+      judgedCalls.push(args);
+      return judged;
+    },
+  };
+  const result = await createVerifyTasksCommand(deps)(["verify-tasks", "--json"], { threadId: "thr_worker", projectId: "proj_1" });
+  assert.equal(result.exitCode, 0, result.stderr);
+  return { payload: JSON.parse(result.stdout), judgedCalls };
+}
+
+const mixedRoot = scopesWorkspace([
+  { id: "task-a", title: "Add rate limiter", status: "done" },
+  { id: "task-b", title: "Write migration", status: "done" },
+]);
+try {
+  const mixed = await driveVerifyTasks({
+    workspaceRoot: mixedRoot,
+    judged: {
+      ok: true,
+      findings: [
+        { id: "task-a", name: "Add rate limiter", score: 1.9, confidence: 0.9, verdict: "met", error: null },
+        { id: "task-b", name: "Write migration", score: 1.0, confidence: 0.9, verdict: "unmet", error: null },
+      ],
+    },
+  });
+  assert.deepEqual(
+    mixed.judgedCalls[0].items.map((item) => item.id),
+    ["task-a", "task-b"],
+    "every completed task reaches the judge, in done-task order",
+  );
+  assert.equal(mixed.payload.findings[1].source, "judge", "judge findings are tagged at the boundary");
+  assert.deepEqual(mixed.payload.summary, { met: 1, unmet: 1, unverifiable: 0 }, "the summary counts the merged findings");
+  assert.equal(mixed.payload.scopes[0].verdict, "unmet", "one unmet task rolls the whole scope up unmet");
+} finally {
+  rmSync(mixedRoot, { recursive: true, force: true });
+}
+
+const allMetRoot = scopesWorkspace([{ id: "task-a", title: "Add rate limiter", status: "done" }]);
+try {
+  const allMet = await driveVerifyTasks({
+    workspaceRoot: allMetRoot,
+    judged: {
+      ok: true,
+      findings: [{ id: "task-a", name: "Add rate limiter", score: 1.9, confidence: 0.9, verdict: "met", error: null }],
+    },
+  });
+  assert.equal(allMet.payload.scopes[0].verdict, "met", "every task evidenced rolls the scope up met");
+  assert.notEqual(allMet.payload.scopes[0].verdict, "verified", "no shortcut ever seals verified from task findings");
+} finally {
+  rmSync(allMetRoot, { recursive: true, force: true });
+}
+
+console.log("verify tasks judged test ok: judged remainder driven end to end, deterministic rollup, no verified shortcut");

@@ -1,14 +1,14 @@
 export function TrackSkeleton({ columns = 5 }: { columns?: number }) {
   return (
     <div className="space-y-4" aria-label="Loading" aria-busy="true">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <div className="h-5 w-72 animate-pulse rounded bg-muted/50" />
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+        <div className="min-w-0 space-y-2">
+          <div className="h-5 w-72 max-w-full animate-pulse rounded bg-muted/50" />
           <div className="h-7 w-28 animate-pulse rounded bg-muted/50" />
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <div className="h-11 w-28 animate-pulse rounded-md bg-muted/50" />
-          <div className="h-11 w-24 animate-pulse rounded-md bg-muted/50" />
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:w-auto lg:flex-nowrap">
+          <div className="h-11 w-full animate-pulse rounded-md bg-muted/50 sm:w-28" />
+          <div className="h-11 w-full animate-pulse rounded-md bg-muted/50 sm:w-24" />
         </div>
       </header>
       <div className="h-11 animate-pulse rounded-md border bg-muted/30" />

@@ -120,6 +120,14 @@ export const protocols = {
   interfacePick: "interface",
   doneProtocol: "done",
   splitProtocol: "split",
+
+  workflowIntro: "WORKFLOW_INTRO_SENTINEL",
+
+  workflowSkills: "WORKFLOW_SKILLS_SENTINEL",
+
+
+  commandFailureRule: "command failure rule",
+  userInputContract: "user input contract",
 };
 
 export const errors = {

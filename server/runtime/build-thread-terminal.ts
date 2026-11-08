@@ -100,6 +100,7 @@ export async function syncTerminalIdle(
   deps.updateCard(snapshot.card.id, {
     activity: "idle",
     last_assistant_text: snapshot.lastOutput,
+    last_idle_text: snapshot.lastOutput,
     last_error: null,
     last_idle_at: idleAt,
     stage: snapshot.stage,
@@ -194,7 +195,10 @@ async function sendDoneNudge(
     auto_continue_count: next.count,
     auto_continue_stage: next.stage,
   };
-  if (snapshot.lastOutput != null) fields.last_assistant_text = snapshot.lastOutput;
+  if (snapshot.lastOutput != null) {
+    fields.last_assistant_text = snapshot.lastOutput;
+    fields.last_idle_text = snapshot.lastOutput;
+  }
   deps.updateCard(snapshot.card.id, fields);
   return { outcome: "resumed" };
 }

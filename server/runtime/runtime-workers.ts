@@ -30,6 +30,7 @@ import { WORKER_PROTOCOL_CLAUSES } from "./worker-protocol-clauses.js";
 import type { RuntimeServices } from "./runtime-services.js";
 import type { CardLedger } from "./card-ledger.js";
 import type { TrackPrompts } from "./track-prompts.js";
+import type { ActionRecorder } from "./action-log-runtime.js";
 
 export type WorkerRuntimeDeps = {
   bb: BbPluginApi;
@@ -38,15 +39,22 @@ export type WorkerRuntimeDeps = {
   services: RuntimeServices;
   ledger: CardLedger;
   prompts: TrackPrompts;
+  /** The flight recorder shared by every surface; optional in narrow tests. */
+  actions?: ActionRecorder;
 };
 
 export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
   const spawnDisposable = createDisposableSpawner(deps.bb);
   const { services, ledger, prompts } = deps;
+  // Filled by the composition root once the drafting server exists (it owns
+  // suggestCardName but is constructed after the workers). See SCOPE-1 spike
+  // notes: a holder breaks the cycle without reordering construction.
+  const titleRefresh: { request: ((cardId: string) => void) | null } = { request: null };
   const workers = createWorkers({
     db: deps.db,
     bb: deps.bb,
     now: deps.now,
+    actions: deps.actions,
     getCard: services.getCard,
     updateCard: services.updateCard,
     comment: (cardId, body) =>
@@ -68,13 +76,14 @@ export function createWorkerRuntime(deps: WorkerRuntimeDeps) {
       protocols: WORKER_PROTOCOL_CLAUSES,
     }),
     resetAutoContinue,
+    titleRefresh,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,
       presetNotFound: ERRORS.presetNotFound,
     },
   });
-  return { workers, spawnDisposable };
+  return { workers, spawnDisposable, titleRefresh };
 }
 
 export function createDraftRuntime(

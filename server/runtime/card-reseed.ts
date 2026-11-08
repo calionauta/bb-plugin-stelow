@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { bandForCardKindStage } from "../../lib/preset-staleness.mjs";
+import { presetBandsForCardKindStage } from "../../lib/preset-staleness.mjs";
 import { researchStrategyById } from "../../lib/research-strategies.mjs";
-import { techniqueById } from "../../lib/stage-catalog.mjs";
+import { techniqueById } from "../../lib/technique-catalog.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import { freshStatusForReseed, resolveReseedIntent } from "../../lib/workflow-intent-policy.mjs";
 import type { PresetRow } from "../presets.js";
@@ -29,9 +29,11 @@ type Protocols = {
   draftProtocol: string;
   turnDiscipline: string;
   commitStyle: string;
+  commandFailureRule: string;
   interfacePick: string;
   doneProtocol: string;
   splitProtocol: string;
+  userInputContract: string;
 };
 type ReseedDeps = {
   db: Db;
@@ -41,19 +43,22 @@ type ReseedDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   workflowStateDir: (rootPath: string, card: WorkerCard) => Promise<string | null>;
   readStateConfig: (rootPath: string, card: WorkerCard) => Promise<{
-    appetite?: string | null;
+    quality?: string | null;
+    explorationCount?: number | null;
+    explorationHybrid?: boolean | null;
+    redFirst?: string | null;
     reviewGates?: string[] | null;
   } | null>;
   seedWorkflow: (args: {
     rootPath: string;
     card: WorkerCard;
     intent: string;
-    appetite: string;
+    knobs: { quality: string; explorationCount: number; explorationHybrid: boolean; redFirst?: string };
     reviewGates: string[];
   }) => Promise<SeedResult>;
   getPresetById: (presetId: string) => PresetRow | null;
   pinCardPreset: (cardId: string, presetId: string) => boolean;
-  getReliablePreset: (band: string, cardId: string) => PresetRow;
+  getReliablePreset: (band: string | string[], cardId: string) => PresetRow;
   presetParams: (preset: PresetRow) => PresetParams;
   strategyList: (card: WorkerCard) => string[];
   strategyRounds: (card: WorkerCard) => Array<{ id: string; file: string }>;
@@ -140,7 +145,16 @@ async function reseedCard(
     rootPath: source.path,
     card,
     intent: decision.intent,
-    appetite: config?.appetite ?? "Core",
+    knobs: {
+      quality: config?.quality ?? "production",
+      explorationCount: config?.explorationCount ?? 3,
+      explorationHybrid: config?.explorationHybrid ?? (config?.explorationCount ?? 3) >= 2,
+      // An explicit red_first survives the reseed; absent stays absent so the
+      // quality-derived default applies (never silently re-stricten). Spelled as a
+      // spread because `redFirst: undefined` leaves the KEY present holding undefined,
+      // which is not a JSON value — the failure mode that broke boardWorkflowDefaults.
+      ...(typeof config?.redFirst === "string" ? { redFirst: config.redFirst } : {}),
+    },
     reviewGates: config?.reviewGates ?? [],
   });
   if (seed.error) return reseedFailure(seed.error);
@@ -177,7 +191,7 @@ function resolvePreset(
   card: WorkerCard,
 ): PresetRow | { error: string } {
   if (!presetId) {
-    return deps.getReliablePreset(bandForCardKindStage(card.kind, card.stage), cardId);
+    return deps.getReliablePreset(presetBandsForCardKindStage(card.kind, card.stage), cardId);
   }
   const preset = deps.getPresetById(presetId);
   if (!preset || !deps.pinCardPreset(cardId, preset.id)) {
@@ -337,6 +351,11 @@ function applyReseedState(
     last_assistant_text: null,
     auto_continue_count: reset.count,
     auto_continue_stage: reset.stage,
+    // A reseed is the human's explicit new start, so it opens a new failure
+    // episode: the replacement must not inherit an exhausted spawn-retry budget
+    // keyed to the worker the person just replaced.
+    spawn_retry_count: 0,
+    spawn_retry_thread: null,
   });
 }
 

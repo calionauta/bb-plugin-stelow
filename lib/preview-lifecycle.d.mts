@@ -45,8 +45,4 @@ export interface PreviewRuntime {
 }
 
 export declare function createPreviewLifecycle(deps: PreviewDeps): PreviewRuntime;
-export declare function startPreview(deps: PreviewDeps, target: PreviewTarget): Promise<{ ok: boolean; error: string | null }>;
-export declare function stopPreviews(deps: PreviewDeps, target: PreviewTarget): Promise<{ ok: boolean; error: string | null }>;
-export declare function sharePreview(deps: PreviewDeps, target: PreviewTarget): Promise<{ ok: boolean; error: string | null }>;
 export declare function previewView(deps: PreviewDeps, target: PreviewTarget, appOrigin?: string | null): Promise<Record<string, unknown>>;
-export declare function disposePreviews(deps: PreviewDeps): void;

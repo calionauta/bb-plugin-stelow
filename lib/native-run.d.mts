@@ -9,8 +9,6 @@ export type NativeRunRef = {
   stageLabel?: string | null;
 };
 
-export declare const RUN_ACTIVITY: "running";
-
 export declare function liveRun(runs: unknown): NativeRunRef | null;
 
 /** Whether a live run means the card must keep running, given open questions. */

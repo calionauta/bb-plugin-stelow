@@ -7,9 +7,11 @@ import {
   cardStatusSchema,
   scopeSummarySchema,
   tokenBreakdownSchema,
+  workerHistoryEntrySchema,
   trackableStatusSchema,
 } from "./contracts.js";
 import { executionRunSchema } from "./execution-contract.js";
+import { scopeDraftSchema, scopeXraySchema } from "./scope-xray-contract.js";
 
 /**
  * A boundary question's framing. Resolved from the `[Stelow boundary <id>]`
@@ -43,6 +45,24 @@ export const cardDetailRpcContract = {
       reason: z.enum(EXPOSURE_REASONS),
     }),
   },
+  /**
+   * Whether the verify failure parking this card is still the failure to act
+   * on: the last test run's HEAD versus the checkout's HEAD now.
+   *
+   * A SEPARATE call, like `sharedCheckoutExposure` above and for the same
+   * reason — the answer costs a subprocess, and most cards never show the
+   * notice. Asked when the reader is looking at a decision hero.
+   */
+  verifyBlockage: {
+    experimental_description: "Whether a verify failure blocking this card is stale: last test run HEAD versus checkout HEAD now",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      state: z.enum(["clear", "stale", "confirmed", "unknown"]),
+      exitCode: z.number().nullable(),
+      runHeadSha: z.string().nullable(),
+      currentHeadSha: z.string().nullable(),
+    }),
+  },
   cardDetail: {
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
@@ -55,7 +75,7 @@ export const cardDetailRpcContract = {
         intent: z.string(),
         projectId: z.string(),
         projectName: z.string(),
-        workspaceKind: z.enum(["project", "exploratory"]),
+        workspaceKind: z.enum(["project", "exploratory", "worktree"]),
         workspacePath: z.string().nullable(),
         environmentLabel: z.string().nullable(),
         kind: z.enum(["build", "research", "explore"]),
@@ -107,6 +127,15 @@ export const cardDetailRpcContract = {
         }).nullable(),
         needsAttention: z.boolean(),
         hasPendingReview: z.boolean(),
+        // The board's run-failure signal, so the detail card TYPE matches the
+        // board card type. The detail renders `blockingRun` (stage-scoped) — this
+        // is not a second place the reason is shown.
+        runFailure: z
+          .object({
+            label: z.string(),
+            detail: z.string(),
+          })
+          .nullable(),
         integrationPending: z.object({
           state: z.enum(["unpublished", "local", "unmerged"]),
           label: z.string(),
@@ -301,33 +330,10 @@ export const cardDetailRpcContract = {
       // The approved scope map, drawn as a graph. A server projection and
       // nothing the card can write: the X-ray reports the map, the worker owns
       // the map. Null on a card with no approved map to draw.
-      scopeXray: z
-        .object({
-          source: z.literal("server-projection"),
-          mutable: z.literal(false),
-          mapId: z.string(),
-          mapVersion: z.string(),
-          freshness: z.enum(["current", "stale", "unknown"]),
-          nodes: z.array(
-            z.object({
-              id: z.string(),
-              title: z.string(),
-              capabilities: z.array(z.string()),
-              state: z.enum(["current", "stale", "blocked", "unknown"]),
-              provenance: z.array(z.string()),
-            }),
-          ),
-          edges: z.array(
-            z.object({
-              from: z.string(),
-              to: z.string(),
-              kind: z.literal("depends-on"),
-              state: z.enum(["current", "stale", "blocked", "unknown"]),
-              provenance: z.array(z.string()),
-            }),
-          ),
-        })
-        .nullable(),
+      scopeXray: scopeXraySchema.nullable(),
+      // The draft map preview for the gate review. Present only when no
+      // approved map exists, so a draft never competes with the real map.
+      scopeDraft: scopeDraftSchema.nullable(),
       // Which of this card's files another live card holds, derived from the
       // same enriched scopes the card renders. Null when nothing is blocked —
       // the hero reads it to say WHY it is idle instead of the generic
@@ -355,29 +361,19 @@ export const cardDetailRpcContract = {
           absolutePath: z.string(),
           hostId: z.string(),
           note: z.string().nullable().optional(),
+          // A mark bound to the version in `generatedAt`, not a checkbox.
+          // `reviewed` means the mark matches the file on the card; `stale`
+          // means a mark exists but the file changed since it was written
+          // (`reviewState` in lib/artifact-review.mjs).
+          reviewed: z.boolean(),
+          stale: z.boolean(),
         }),
       ),
-      workerHistory: z.array(
-        z.object({
-          threadId: z.string(),
-          presetName: z.string().nullable(),
-          startedAt: z.number(),
-          endedAt: z.number().nullable(),
-          endedReason: z.string().nullable(),
-          tokenUsage: z.number().nullable(),
-          tokenBreakdown: tokenBreakdownSchema,
-          children: z.array(
-            z.object({
-              threadId: z.string(),
-              title: z.string().nullable(),
-              status: z.string(),
-              providerId: z.string().nullable(),
-              tokenUsage: z.number().nullable(),
-              tokenBreakdown: tokenBreakdownSchema,
-            }),
-          ),
-        }),
-      ),
+      // "3 of 7 reviewed · 1 reviewed before the file changed", or null when
+      // the card has no artifacts. One derived line, so the section and the
+      // rows cannot disagree about how much has been read.
+      reviewLine: z.string().nullable(),
+      workerHistory: z.array(workerHistoryEntrySchema),
       executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for

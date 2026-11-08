@@ -1,4 +1,5 @@
 import { mkdirSync, copyFileSync, existsSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 const pluginRoot = process.cwd();
@@ -23,6 +24,29 @@ copyTree(join(pluginRoot, "data"), join(dist, "data"));
 copyTree(join(pluginRoot, "references"), join(dist, "references"));
 copyTree(join(pluginRoot, "skills"), join(dist, "skills"));
 console.log("postbuild: data/, references/ and skills/ copied to dist/");
+
+// Mirror proof: the shipped dist/skills tree must carry the freeze marker the
+// red-first pipeline froze. A skills/ diff in git proves only that someone
+// committed it; grepping the shipped dist/skills/<file> is the only proof the
+// upstream change reached users (see AGENTS.md "Skills sync"). Warn-only
+// until the upstream contract (Fase 0-2) ships freeze markers — a missing
+// marker means "not yet frozen upstream", never a broken build.
+try {
+  const out = execFileSync("grep", ["-rli", "freeze", join(dist, "skills")], { encoding: "utf8" }).trim();
+  const hits = out ? out.split("\n").filter(Boolean) : [];
+  if (hits.length === 0) {
+    console.warn("postbuild: dist/skills carries no freeze marker yet — upstream freeze not synced (warn-only until Fase 0-2 lands)");
+  } else {
+    console.log(`postbuild: dist/skills freeze mirror ok (${hits.length} files)`);
+  }
+} catch (error) {
+  if (error?.status === 1) {
+    console.warn("postbuild: dist/skills carries no freeze marker yet — upstream freeze not synced (warn-only until Fase 0-2 lands)");
+  } else {
+    console.error(`postbuild: freeze mirror grep failed: ${error?.message ?? String(error)}`);
+    process.exit(1);
+  }
+}
 
 // Freshness signal: the panel and bb caches are sticky, so the UI shows the
 // exact running build (version + build time) instead of leaving users

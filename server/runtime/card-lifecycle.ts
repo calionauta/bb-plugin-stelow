@@ -367,6 +367,7 @@ function deleteCardRows(deps: CardLifecycleDeps, cardId: string): void {
     "expired_questions",
     "ask_contracts",
     "inbox_events",
+    "artifact_reviews",
   ]) {
     deps.db.prepare(`DELETE FROM ${table} WHERE card_id = ?`).run(cardId);
   }

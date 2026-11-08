@@ -6,6 +6,7 @@ import {
   upsertPausedEvent,
 } from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
+import { ensureInboxQuestionColumns } from "../lib/inbox-events.mjs";
 
 /**
  * One stuck card is one action item, not a stream of identical rows.
@@ -42,6 +43,7 @@ function memoryDb() {
     CREATE TABLE worker_ledger (card_id TEXT NOT NULL, stalled_count INTEGER NOT NULL DEFAULT 0);
   `);
   ensureInboxOccurrencesColumn(db);
+  ensureInboxQuestionColumns(db);
   return db;
 }
 

@@ -62,22 +62,25 @@ export function createPresetCrudHandlers(
     if (input.id === null && id === "preset_default") {
       throw new Error("Built-in presets cannot be replaced.");
     }
-    const existing = db.prepare("SELECT built_in FROM presets WHERE id = ?")
-      .get(id) as { built_in: number } | undefined;
+    const existing = db.prepare("SELECT built_in, environment_kind FROM presets WHERE id = ?")
+      .get(id) as { built_in: number; environment_kind: string } | undefined;
     if (existing?.built_in === 1 && input.id !== id) {
       throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
     }
+    refuseBuiltInEnvironmentChange(existing, input);
     writePreset(db, input, trimmed, id, now());
     return { preset: { id, name: trimmed } };
   }
 
   async function deletePreset({ id }: { id: string }) {
-    const row = db.prepare("SELECT built_in FROM presets WHERE id = ?")
-      .get(id) as { built_in: number } | undefined;
+    const row = db.prepare("SELECT built_in, is_default FROM presets WHERE id = ?")
+      .get(id) as { built_in: number; is_default: number } | undefined;
     if (!row) return { deleted: false, error: deps.errors.presetNotFound };
     if (row.built_in === 1) {
       return { deleted: false, error: "Built-in presets cannot be deleted." };
     }
+    const defaultRefusal = refuseDefaultDelete(row);
+    if (defaultRefusal) return { deleted: false, error: defaultRefusal };
     const inUse = countCardAssignments(db, id);
     if (inUse > 0) {
       return { deleted: false, error: `Preset is assigned to ${inUse} card(s). Unassign first.` };
@@ -88,6 +91,36 @@ export function createPresetCrudHandlers(
   }
 
   return { listPresets, upsertPreset, deletePreset };
+}
+
+/**
+ * The built-in environment lock, enforced at the save boundary rather than in
+ * the UI. The dialog disables the control for built-ins, but the RPC is the
+ * boundary every writer reaches — the settings form, the CLI, and any direct
+ * caller. Flipping the built-in default's kind would re-route every
+ * auto-started worker and become the inherited kind of every preset created
+ * afterwards.
+ */
+function refuseBuiltInEnvironmentChange(
+  existing: { built_in: number; environment_kind: string } | undefined,
+  input: PresetUpsertInput,
+): void {
+  if (existing?.built_in === 1 && input.environmentKind !== existing.environment_kind) {
+    throw new Error("Built-in presets keep their own environment. Duplicate it to change this.");
+  }
+}
+
+/**
+ * Deleting the default would silently promote the oldest remaining row via
+ * the card-resolution fallback, so the delete names its exit instead: set
+ * another default first. Card assignments stay the later check because they
+ * are the one refusal that names a count.
+ */
+function refuseDefaultDelete(row: { built_in: number; is_default: number }): string | null {
+  if (row.is_default === 1) {
+    return "Preset is the board default. Set another preset as default first.";
+  }
+  return null;
 }
 
 /**

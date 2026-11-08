@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 import { gapSummaryPresentation, qualitySealPresentation, summarizeScopeProgress } from "../lib/build-progress-presentation.mjs";
+
+// The seal's host seam, stubbed before the SDK module is imported: it reads
+// `globalThis.__bbPluginRuntime` at import time, so the stub has to exist first.
+let sealAnswer = () => Promise.resolve({ status: "verified" });
+globalThis.__bbPluginRuntime = {
+  pluginSdkApp: {
+    useRpc: () => ({ call: (name, payload) => sealAnswer(name, payload) }),
+  },
+};
+register(pathToFileURL(new URL("./register-tsx.mjs", import.meta.url).pathname), import.meta.url);
+await import("./dom-setup.mjs");
 
 const scopes = [
   { name: "Finished", status: "done", tasks: [{ name: "Task done", status: "completed" }] },
@@ -56,15 +66,33 @@ assert.equal(
   "quality failures remain inspectable in the control title",
 );
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const qualityDirective = readFileSync(
-  join(root, "components/messages/stelow-quality-directive.tsx"),
-  "utf8",
-);
-assert.match(
-  qualityDirective,
-  /\.catch\(\(\) => \{[\s\S]*?setSeal\(\{ status: "load-failed" \}\)/,
-  "a failed quality request leaves loading and enters the unavailable state",
-);
+// The quality seal's request lifecycle, rendered rather than read: the
+// component is mounted against a stubbed host, so a rejected `qualitySeal`
+// request has to leave the loading state and land on the unavailable verdict
+// for the assertion to pass. A source pin could not tell a live `.catch` from
+// one sitting in a dead branch.
+const { createElement: h } = await import("react");
+const { render, cleanup, waitFor } = await import("@testing-library/react");
+const { StelowQualityDirective } = await import("../components/messages/stelow-quality-directive.tsx");
+
+function mountQuality() {
+  return render(h(StelowQualityDirective, {
+    attributes: { path: "docs/report.md" },
+    source: "::stelow-quality{path: docs/report.md}",
+    message: { threadId: "thr_1" },
+    openWorkspaceFile: () => true,
+  }));
+}
+
+const loaded = mountQuality();
+await waitFor(() => assert.match(loaded.container.textContent, /verified/, "an answered request shows the verdict"));
+cleanup();
+
+sealAnswer = () => Promise.reject(new Error("quality seal unavailable"));
+const failed = mountQuality();
+assert.match(failed.container.textContent, /quality…/, "quality starts in an honest loading state");
+await waitFor(() => assert.match(failed.container.textContent, /unavailable/, "a failed request lands on the unavailable verdict"));
+assert.doesNotMatch(failed.container.textContent, /quality…/, "and it no longer reads as loading");
+cleanup();
 
 console.log("build progress presentation test ok: progress, rework, and quality states");

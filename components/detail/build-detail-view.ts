@@ -74,14 +74,8 @@ type PresentationState = {
   showArtifacts: () => void;
 };
 
-type AdvanceState = {
-  advancing: string | null;
-  pendingAdvance: string | null;
-  setPendingAdvance: (stage: string | null) => void;
-  advance: (stage: string) => Promise<void>;
-};
 
-export type BuildDetailView = BuildDataState & PresentationState & AdvanceState & {
+export type BuildDetailView = BuildDataState & PresentationState & {
   lifecycle: ReturnType<typeof useBuildDetailLifecycle>;
   comments: ReturnType<typeof useDetailComment>;
   execution: ReturnType<typeof useExecutionRuns>;

@@ -133,7 +133,7 @@ test("an idle card with nothing held still resumes and still parks", async () =>
   assert.equal(free.row().activity, "running");
 
   const stuck = harness(
-    card({ status: "in-progress", stage: "shape", activity: "running", last_assistant_text: "same output" }),
+    card({ status: "in-progress", stage: "shape", activity: "running", last_assistant_text: "same output", last_idle_text: "same output" }),
     { status: "idle", output: "same output", state: "name: Useful\ncurrent_stage: shape\n", hold: null },
   );
   await stuck.sync(stuck.row().id);

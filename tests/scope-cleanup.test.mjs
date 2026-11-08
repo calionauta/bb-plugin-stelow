@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { acquireScopeClaims, addClaimWaiters, ensureCardClaimsTables, liveClaimsForWorkspace } from "../lib/card-claims.mjs";
+import { addClaimWaiters, ensureCardClaimsTables, liveClaimsForWorkspace } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { finishScope, isScopeTerminal } from "../lib/scope-batch-cleanup.mjs";
 
 function freshDb() {

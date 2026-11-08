@@ -14,8 +14,8 @@ import {
 // One list row for all tracks: Build geometry standard, context per meta.
 assert.match(
   trackLists,
-  /function TrackListRow\(\{ card, meta, onOpen, onOpenThread \}/,
-  "all three list views share one row",
+  /function TrackListRow\(\{ card, meta, onOpen, onOpenThread, selection \}/,
+  "all three list views share one row, and the selection mode is threaded through it rather than forked",
 );
 assert.match(
   trackLists,
@@ -23,47 +23,70 @@ assert.match(
   "every list adapter renders the shared row",
 );
 
-// Attention chip parity: tiles and rows share one component, and the chip
-// renders only when the activity pill doesn't already say it — "Waiting
-// for you" plus "Answer required" read as the same state twice.
-assert.match(
+// One chip per state, on both surfaces.
+//
+// A stalled card used to wear TWO chips — `Paused` from pausedActivityLabel and
+// `Paused. Resume it.` from the amber AttentionChip — because both were fed by
+// the same predicate and neither knew the other had already spoken. The board
+// said one state twice, on the narrowest row in the product. What this pins is
+// the REFUSAL: the amber attention chip is gone, so it cannot come back as a
+// "harmless" second call site, and each surface renders the pause chip at
+// exactly one place.
+assert.doesNotMatch(
   buildStatusPills,
-  /export function AttentionChip\(\{ label \}/,
-  "one attention chip serves tiles and rows",
+  /export function AttentionChip/,
+  "the attention chip that duplicated the pause chip is deleted, not merely unused — an exported "
+  + "component with no caller is how it got reintroduced the first time",
 );
+assert.doesNotMatch(
+  `${boardCards}\n${trackLists}`,
+  /<AttentionChip/,
+  "a tile or row rendering a second chip for the same stall is the regression this pins",
+);
+// The slice is the tile's CHIP component, not `CardMetaRows`: the chips were
+// extracted when the list outgrew a 50-line function, and pinning the render
+// function would have read zero pause chips while the tile rendered one.
+const tileChips = boardCards.slice(
+  boardCards.indexOf("function CardAlertChips"),
+  boardCards.indexOf("function CardContextRow"),
+);
+const pauseSites = (source) => (source.match(/<PausedChip /g) ?? []).length;
+assert.equal(
+  pauseSites(tileChips),
+  1,
+  "one pause chip per tile: two is the same fact told twice, zero is a stall the reader cannot see",
+);
+// The lightweight list row swaps `ActivityPill` for the pause chip rather than
+// stacking them, because the pill already says `Paused` for every idle card.
 assert.match(
   boardCards,
-  /<AttentionChip label=\{attentionLabel\(card\.activity\)\} \/>/,
-  "tiles render the shared chip",
-);
-const metaRows = boardCards.slice(
-  boardCards.indexOf("export function CardMetaRows"),
-  boardCards.indexOf("export function CardHeading"),
-);
-assert.match(
-  metaRows,
-  /cardShowsAttention\(card\)/,
-  "tiles chip only what the pill doesn't already state",
+  /pausedActivityLabel\(card\)/,
+  "the tile's pause chip is fed by the shared label, not by a locally rebuilt condition",
 );
 
 // Focused-card keyboard: Enter/Space opens the card, W opens its worker
 // thread. Guarded to the card surface so typing elsewhere never navigates.
+// Both tiles share one shell, so the pins read the shell — not each tile.
+const cardShell = boardCards.slice(
+  boardCards.indexOf("function CardShell"),
+  boardCards.indexOf("function CardResumeFooter"),
+);
 const boardCard = boardCards.slice(
   boardCards.indexOf("export function BoardCard"),
   boardCards.indexOf("export function LightweightTrackCard"),
 );
 assert.match(
-  boardCard,
+  cardShell,
   /event\.target !== event\.currentTarget/,
   "card keys ignore events from nested controls",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /event\.key === "w" \|\| event\.key === "W"/,
   "W opens the worker thread from a focused build card",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /navigate\.toThread\(card\.workerThreadId\)/,
   "W navigates to the card's own worker thread",
 );
@@ -72,7 +95,7 @@ const lightweightCard = boardCards.slice(
   boardCards.indexOf("export function ResearchCard"),
 );
 assert.match(
-  lightweightCard,
+  cardShell,
   /event\.key === "w" \|\| event\.key === "W"/,
   "W opens the worker thread from a focused research/explore card",
 );
@@ -87,15 +110,30 @@ const listRowStatus = trackLists.slice(
   trackLists.indexOf("function ListRowStatus"),
   trackLists.indexOf("function TrackListRow"),
 );
-assert.match(
-  listRowStatus,
-  /showAttention\(card\) \? <AttentionChip label=\{attentionLabel\(card\.activity\)\}/,
-  "rows follow the same rule — no duplicate state pair",
+assert.equal(
+  pauseSites(listRowStatus),
+  1,
+  "one pause chip per list row, for the same reason as the tile",
 );
 assert.match(
+  listRowStatus,
+  /\{paused \? null : <ActivityPill activity=\{card\.activity\} \/>\}/,
+  "a paused row suppresses the generic `Paused` pill instead of printing the state twice — the pair "
+  + "that made one stall read as two chips",
+);
+assert.doesNotMatch(
   trackLists,
-  /!\[(?:"|')awaiting-answer(?:"|'), (?:"|')error(?:"|')\]\.includes\(card\.activity\)/,
-  "row attention suppression covers both terminal wait and error states",
+  /showAttention\(/,
+  "the row's attention predicate is deleted with the chip it fed; a leftover predicate is a door with no room",
+);
+// The pair of predicates that used to disagree about what a stall is lives in
+// one module now (`lib/card-stall.mjs`), so a row cannot suppress the generic
+// pill on a condition the chip was not fed by. Asserted here as the wiring, and
+// in tests/card-attention.test.mjs as the behaviour.
+assert.match(
+  trackLists,
+  /pausedActivityLabel\(card\)/,
+  "the row's chip and its suppression come from one label, so they cannot disagree",
 );
 assert.match(
   trackLists,
@@ -110,7 +148,7 @@ assert.match(
   "opening a card remembers it for focus return",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /useReturnFocus<HTMLDivElement>\(card\.id\)/,
   "build board cards restore focus on return",
 );
@@ -149,13 +187,17 @@ assert.match(
   /<BuildStatusPills card=\{card\} statusTone=\{statusTone\} intentLabel=\{intentLabel\} \/>/,
   "open Build cards use the same state presentation as Kanban tiles",
 );
+const resumeFooter = boardCards.slice(
+  boardCards.indexOf("function CardResumeFooter"),
+  boardCards.indexOf("export function BoardCard"),
+);
 assert.match(
-  boardCard,
+  resumeFooter,
   /cardCanResume\(card\) && card\.activity !== "error"/,
   "build tiles offer heading recovery for idle stalls only, never for failures",
 );
 assert.match(
-  lightweightCard,
+  resumeFooter,
   /cardCanResume\(card\) && card\.activity !== "error"/,
   "research/explore tiles match: heading recovery is idle-only",
 );
@@ -170,7 +212,7 @@ assert.doesNotMatch(
   "research/explore tiles render no failure body either",
 );
 assert.match(
-  boardCard,
+  cardShell,
   /liveBorderClass\(card\)/,
   "a Build card needing attention uses its shared live attention border",
 );

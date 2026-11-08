@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { classifyAskCancel, interruptionWhy, TRANSIENT_CANCEL_REASONS } from "../lib/ask-cancel.mjs";
+import { classifyAskCancel, interruptionWhy, TRANSIENT_CANCEL_REASONS } from "../lib/question-gate.mjs";
 
 // Full cancel-reason matrix: only infrastructure transients persist.
 assert.equal(classifyAskCancel("submitted", null), "passthrough", "answered questions pass through");
@@ -25,7 +25,7 @@ console.log("ask cancel test ok: full reason matrix, honest worker messaging");
 // Persist retry policy: only lock contention is retried, everything else
 // fails fast to the honest re-ask-once message (retrying a closed DB or a
 // schema mismatch would only delay it).
-import { isRetryablePersistError } from "../lib/ask-cancel.mjs";
+import { isRetryablePersistError } from "../lib/question-gate.mjs";
 assert.equal(isRetryablePersistError("SqliteError: database is locked"), true, "locked DB retries");
 assert.equal(isRetryablePersistError("SQLITE_BUSY: snapshot"), true, "busy snapshot retries");
 assert.equal(isRetryablePersistError("SqliteError: no such table: expired_questions"), false, "schema mismatch fails fast");

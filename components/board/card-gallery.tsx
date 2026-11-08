@@ -23,6 +23,24 @@ type CardGalleryDialogProps = {
 };
 
 // One expanded modal serves Bucket and hill piles with the same board tiles.
+//
+// Its width follows the content rather than a fixed share of the viewport. `sm:w-[70vw]`
+// was chosen for a full grid and reads as a mistake for four cards: the modal stayed wide
+// while the tiles huddled left. The bounds below let a small bucket sit at a readable
+// measure and a large one grow, without either of them centring a void.
+//
+// The tile grid is `auto-fit` with the board column's own bounds, never `auto-fill`.
+// `auto-fill` creates phantom tracks to fill the width, so four cards in a wide modal
+// reserved the empty columns as real tracks and every tile huddled left — the void in the
+// screenshot. `auto-fit` collapses those empty tracks, which is the whole fix.
+//
+// The upper bound stays `320px` rather than becoming `1fr`: a tile is the board's own tile at
+// the board's own size, and `1fr` would stretch it to fill a wide modal. That was my first
+// attempt at this fix, and the existing assertion in kanban-layout.test.mjs caught it —
+// `no gallery track stretches to fill the modal` is a real rule, not a formatting preference.
+//
+// `min(240px,100%)` keeps a card readable on a phone without overflowing it: the `100%` arm
+// wins below 260px, which is what makes one column work at 375px.
 export function CardGalleryDialog({
   open,
   title,
@@ -41,7 +59,7 @@ export function CardGalleryDialog({
     >
       <DialogContent
         fullscreenOnMobile
-        className="h-[85dvh] overflow-y-auto sm:w-[70vw] sm:max-w-[70vw]"
+        className="h-[85dvh] overflow-y-auto sm:w-auto sm:min-w-[min(92vw,32rem)] sm:max-w-[min(92vw,64rem)]"
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -52,7 +70,7 @@ export function CardGalleryDialog({
         ) : (
           <ul
             data-gallery-tiles
-            className="grid content-start items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]"
+            className="grid content-start items-start justify-start gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),320px))]"
           >
             {cards.map((card) => (
               <li key={card.id}>

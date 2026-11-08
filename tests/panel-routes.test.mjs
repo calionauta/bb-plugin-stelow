@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   cardSubPath,
+  inboxAskSubPath,
   inboxCardSubPath,
   parseStelowSubPath,
   trackOfCard,
   trackRootSubPath,
   trackTitle,
 } from "../components/panel/stelow-route.mjs";
+import { loadComponent, renderTree } from "./helpers/render-component.mjs";
 
 const track = (value) => ({ kind: "track", track: value });
 
@@ -45,6 +46,31 @@ assert.deepEqual(
   { kind: "bare-card", cardId: "card_abc123", eventId: null, executionRunId: null },
   "a trackless card route remains supported",
 );
+
+// The narrow door onto a question. Its own route, not a flag on the card route:
+// it renders the ask and its evidence, not the card's nine sections. Both halves
+// are asserted — the builder and the parser — because a round trip that lost the
+// event id would open the door on the wrong ask.
+assert.equal(
+  inboxAskSubPath("card_abc123", "evt_xyz789"),
+  "inbox/ask/card_abc123/event/evt_xyz789",
+  "the narrow door's path names the card AND the ask it belongs to",
+);
+assert.deepEqual(
+  parseStelowSubPath(inboxAskSubPath("card_abc123", "evt_xyz789")),
+  { kind: "ask", cardId: "card_abc123", eventId: "evt_xyz789", origin: "inbox" },
+  "and it parses back to the ask route, not to a card or a track",
+);
+// The card route must stay reachable for the same ids: the door falls back to
+// the card wherever its gate refuses, so both routes have to coexist.
+assert.deepEqual(
+  parseStelowSubPath(inboxCardSubPath("card_abc123", "evt_xyz789")),
+  { kind: "card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null, origin: "inbox" },
+  "the card route is untouched, so a refusal has somewhere to go",
+);
+// A malformed ask path must not fall through to the card: an id-less door has
+// nothing to open, and the parser's last resort is the Build board.
+assert.equal(parseStelowSubPath("inbox/ask/card_abc123").kind, "track", "an ask path without an event id is not a route");
 assert.deepEqual(
   parseStelowSubPath("/card/card_abc123/event/evt_xyz789/"),
   { kind: "bare-card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null },
@@ -83,19 +109,94 @@ assert.equal(
 );
 assert.equal(inboxCardSubPath("card_abc123", "evt_xyz789"), "inbox/card/card_abc123/event/evt_xyz789", "inbox events always identify both ids");
 
-// React has no mounted renderer in this repository. These wiring pins catch
-// hidden keep-alive panels becoming active, which would restart subscriptions.
-const panelSource = readFileSync(new URL("../components/panel/stelow-panel.tsx", import.meta.url), "utf8");
-const renderingSource = readFileSync(new URL("../components/app-support/panel-rendering.tsx", import.meta.url), "utf8");
-assert.match(panelSource, /renderTrack\(track, track === tab\)/, "only the selected keep-alive track receives active=true");
-for (const component of ["BuildPanel", "ResearchPanel", "ExplorePanel"]) {
-  const openTag = renderingSource.match(new RegExp(`<${component}\\b[\\s\\S]*?>`));
-  assert.ok(openTag, `${component} must be mounted by the track renderer`);
-  assert.match(
-    openTag[0],
-    /\bactive=\{active\}/,
-    `${component} must forward the routed active state`,
-  );
-}
+// React has no mounted renderer here, so these wiring claims are asked of the
+// components themselves — compiled and walked to a plain tree — rather than of
+// their source text. An edit that changed what renders now fails here; a regex
+// over the file could not tell the two apart.
+const stelowPanel = loadComponent("components/panel/stelow-panel.tsx", "StelowPanel", {
+  react: {
+    useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+    useEffect: () => {},
+    useMemo: (fn) => fn(),
+    useCallback: (fn) => fn,
+  },
+  "./stelow-tab-bar": { StelowTabBar: () => null },
+  "./stelow-route.mjs": { parseStelowSubPath },
+});
+
+const seen = [];
+const shellProps = {
+  counts: { inbox: 0, build: 0, research: 0, explore: 0, about: 0 },
+  aboutAlert: false,
+  updateBadge: null,
+  onSelectTrack: () => {},
+  renderCard: () => ({ card: true }),
+  renderTrack: (tab, active) => {
+    seen.push({ tab, active });
+    return null;
+  },
+};
+renderTree(stelowPanel({ ...shellProps, subPath: "build" }));
+assert.deepEqual(
+  seen.filter((entry) => entry.active).map((entry) => entry.tab),
+  ["build"],
+  "only the selected keep-alive track receives active=true",
+);
+assert.deepEqual(
+  seen.map((entry) => entry.tab),
+  ["inbox", "build", "research", "explore", "about"],
+  "every track stays mounted so subscriptions survive a tab switch",
+);
+seen.length = 0;
+renderTree(stelowPanel({ ...shellProps, subPath: "about" }));
+assert.deepEqual(
+  seen.filter((entry) => entry.active).map((entry) => entry.tab),
+  ["about"],
+  "the active track follows the route rather than a fixed tab",
+);
+
+// The track renderer, rendered: each route mounts its own panel with the routed
+// active state and the config object it imported.
+const marker = (name) => {
+  const fn = () => null;
+  fn.displayName = name;
+  return fn;
+};
+const EXPLORE_PANEL_CONFIG = { kind: "explore" };
+const RESEARCH_PANEL_CONFIG = { kind: "research" };
+const BuildPanel = marker("BuildPanel");
+const TrackPanelForKind = marker("TrackPanelForKind");
+const renderTrackPanel = loadComponent("components/app-support/panel-rendering.tsx", "renderTrackPanel", {
+  "../panels/build-panel": { BuildPanel },
+  "../panels/track-panel": { TrackPanelForKind },
+  "../panels/track-panel-state": { EXPLORE_PANEL_CONFIG, RESEARCH_PANEL_CONFIG },
+  "../panels/track-panel-view": { EXPLORE_VIEW_CONFIG: { kind: "explore" }, RESEARCH_VIEW_CONFIG: { kind: "research" } },
+  "../panels/track-panel-dialogs": { EXPLORE_DIALOGS_CONFIG: { kind: "explore" }, RESEARCH_DIALOGS_CONFIG: { kind: "research" } },
+  "../panels/inbox-panel": { InboxPanel: marker("InboxPanel") },
+  "../settings/about-panel": { AboutPanel: marker("AboutPanel") },
+  "../settings/preset-onboarding": { PresetOnboardingDialog: marker("PresetOnboardingDialog") },
+  "../settings/preset-manager-shell": { PresetManagerDialog: marker("PresetManagerDialog") },
+  "../detail/card-detail-route": { BareCardRoute: marker("BareCardRoute"), StelowCardDetail: marker("StelowCardDetail"), INTENT_LABEL: {} },
+  // The router's fourth case, stubbed like the rest: this file is about routes,
+  // not about what the door renders.
+  "../detail/card-ask-body": { CardAskBody: marker("CardAskBody") },
+  "../panels/inbox-panel-actions": {
+    goToInboxCard: () => undefined,
+    goToInboxAsk: () => undefined,
+    goToHolderCard: () => undefined,
+  },
+});
+
+const build = renderTrackPanel("build", true);
+assert.equal(build.type, BuildPanel, "build mounts the extracted Build panel");
+assert.equal(build.props.active, true, "and forwards the routed active state");
+const research = renderTrackPanel("research", false);
+assert.equal(research.type, TrackPanelForKind, "research mounts through the generic track panel");
+assert.equal(research.props.active, false, "research forwards active=false when it is not the selected tab");
+assert.equal(research.props.panelConfig, RESEARCH_PANEL_CONFIG, "and passes the Research panel config it imported");
+const explore = renderTrackPanel("explore", true);
+assert.equal(explore.type, TrackPanelForKind, "explore mounts through the generic track panel");
+assert.equal(explore.props.panelConfig, EXPLORE_PANEL_CONFIG, "with the Explore panel config");
+assert.equal(explore.props.active, true, "and the routed active state");
 
 console.log("panel routes test ok: tracks, cards, events, padding, active state, and safe fallback");

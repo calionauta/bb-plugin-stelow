@@ -100,7 +100,13 @@ export const scopeSummarySchema = z.object({
   elapsedMs: z.number().nullable(),
 });
 
+/** @deprecated Alias only. Run knobs replaced the appetite ladder. */
 export const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
+export const qualitySchema = z.enum(["production", "experimental"]);
+export const explorationCountSchema = z.number().int().min(1).max(5);
+/** Red-first acceptance gate. Optional everywhere: absent means the
+ * quality-derived default applies downstream, never an invented mode. */
+export const redFirstSchema = z.enum(["strict", "advisory", "off"]);
 export const reviewModeSchema = z.enum([
   "Auto",
   "Product Spec Gate",
@@ -114,8 +120,27 @@ export const reviewModeSchema = z.enum([
 export const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
 export const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
 export const boardWorkflowDefaultsSchema = z
-  .object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) })
-  .strict();
+  .object({
+    quality: qualitySchema,
+    explorationCount: explorationCountSchema,
+    reviewMode: z.string(),
+    reviewGates: z.array(reviewGateAtomSchema).default([]),
+    /** Deprecated alias for stored values written before knobs; migrated on read. */
+    appetite: appetiteSchema.optional(),
+    redFirst: redFirstSchema.optional(),
+  })
+  // Tolerant, not strict, and deliberately generic: this schema reads a kv row
+  // written by an older build, so the row can carry keys this version retired.
+  // Naming each retired key here was the old approach and it rotted — every
+  // retirement needed a new optional field and a docstring explaining that the
+  // field means nothing, which is legacy kept alive to parse legacy. zod's
+  // default strips unknown keys while still validating the ones it knows, so a
+  // stale row parses, its unknown keys vanish, and the operator's review gates
+  // survive. A malformed KNOWN value still fails, so this is not a lax schema —
+  // only unknown keys are forgiven.
+  .strip();
+
+/** Legacy appetite → knobs. Rigor always strongest; breadth keeps old intent. */
 
 export const taskSchema = z.object({
   id: z.string(),
@@ -196,6 +221,27 @@ export const askOptionSchema = z.object({
   // document as if it were the evidence for every option, which reads as a
   // broken control rather than as the recovery it is.
   artifactInherited: z.boolean(),
+  // Sparse like the producer (`cleanOptions` in lib/question-batch): an
+  // explicit true travels, absence means off. Declared here because zod
+  // STRIPS unknown keys, so without this line the flags were silently
+  // dropped on the way out of cardDetail while the renderer kept reading
+  // them — every opt-out confirm (scope IN/OUT) rendered unchecked, which
+  // inverts its meaning: "keeping means doing nothing" became "nothing is
+  // kept", and the shape the ask declared was unreadable at the card.
+  // A plain boolean, not a literal true: the readers test `=== true`
+  // (lib/question-batch `preselectedAnswers`, batch-types "absent or false
+  // reads as unchecked"), so a producer that spells out `false` must parse
+  // rather than fail the whole cardDetail payload.
+  selected: z.boolean().optional(),
+  // A conditional option ("trim the scope — tell me which"): submit waits
+  // for the note box. Lost the same way `selected` was, so the marker and
+  // the field-level refusal never reached a reader served by this contract.
+  needsNote: z.boolean().optional(),
+  // The recommendation as DATA, not only as a phrase in `label` (issue #384).
+  // Counted by `askShapeRefusal` for the one-per-radio rule, and what lets the
+  // form sort, preselect, or offer "take the recommendations" as one action.
+  // Sparse like its siblings: absence means "not recommended".
+  recommended: z.boolean().optional(),
 });
 
 export const workflowSchema = z.object({
@@ -204,7 +250,11 @@ export const workflowSchema = z.object({
   description: z.string(),
   status: trackableStatusSchema,
   stage: z.string(),
-  appetite: z.string(),
+  quality: z.string(),
+  explorationCount: z.number(),
+  explorationHybrid: z.boolean(),
+  /** Deprecated alias passthrough for old tracking entries. */
+  appetite: z.string().optional(),
   reviewMode: z.string(),
   reviewGates: z.array(reviewGateAtomSchema),
   dirHash: z.string().optional(),
@@ -234,4 +284,72 @@ export const githubReleaseSchema = z.object({
   url: z.string(),
   checkedAt: z.number(),
   newer: z.boolean(),
+});
+
+/**
+ * One worker's history row, as the card detail panel receives it.
+ *
+ * Lifted out of `card-detail-rpc-contract.ts` when that file crossed the repository's
+ * 400-line budget, which is the budget working: the row is a shape of its own, shared
+ * with the contracts module, not a detail of the card-detail response.
+ *
+ * `tokenUsageSource` and `firstTurn` are both declared because zod strips undeclared
+ * keys — a field that is not named here never reaches the UI that would show it, which
+ * is how the token provenance crossed three files and vanished at this boundary.
+ */
+export const workerHistoryEntrySchema = z.object({
+  
+        threadId: z.string(),
+        presetName: z.string().nullable(),
+        startedAt: z.number(),
+        endedAt: z.number().nullable(),
+        endedReason: z.string().nullable(),
+        tokenUsage: z.number().nullable(),
+        // The provenance of `tokenUsage`, and it has to cross the RPC boundary or
+        // the UI cannot tell an estimate from a measurement: a zod object strips
+        // undeclared keys, so the field travelled all the way here and was
+        // silently dropped, leaving every row labelled "provider-reported".
+        tokenUsageSource: z.enum(["provider", "context-estimate"]).nullable(),
+        // The first-turn verdict: whether this worker read skills before advancing,
+        // and which. Declared here because zod strips undeclared keys, so a field
+        // that is not named never reaches the UI that would show it.
+        firstTurn: z
+          .object({
+            advanced: z.boolean(),
+            skillsReadBeforeWork: z.number(),
+            violated: z.boolean(),
+            readsBeforeAdvance: z.array(z.object({ skill: z.string(), bulk: z.boolean() })),
+          })
+          .nullable(),
+        tokenBreakdown: tokenBreakdownSchema,
+        children: z.array(
+          z.object({
+            threadId: z.string(),
+            title: z.string().nullable(),
+            status: z.string(),
+            providerId: z.string().nullable(),
+            tokenUsage: z.number().nullable(),
+            tokenBreakdown: tokenBreakdownSchema,
+          }),
+        ),
+});
+
+/**
+ * The answer doors' shared result: the answers, and what the resume did.
+ *
+ * Both doors (`answerQuestions`, `answerExpiredQuestions`) commit the answers
+ * first and wake the worker second, so the two facts are reported apart. A
+ * `null` delivery is not "nothing happened" — it is a refusal, where nothing
+ * was attempted, and it must not borrow the words of a failed attempt.
+ *
+ * `deliveryLine` is the sentence the reader sees, composed once in
+ * `lib/answer-delivery.mjs`. A client that re-words it would be a second source
+ * of truth for the same fact.
+ */
+export const answerResultSchema = z.object({
+  ok: z.boolean(),
+  answered: z.number(),
+  error: z.string().nullable(),
+  delivery: z.enum(["sent", "queued", "refused"]).nullable(),
+  deliveryLine: z.string().nullable(),
 });

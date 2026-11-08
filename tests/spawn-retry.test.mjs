@@ -5,6 +5,7 @@ import {
   claimSpawnRetry,
   isRetryableSpawnError,
   resetSpawnRetry,
+  spawnRetryAttempts,
   spawnRetryDelayMs,
 } from "../lib/spawn-retry.mjs";
 
@@ -36,22 +37,38 @@ assert.equal(spawnRetryDelayMs(2, () => 5), 4000, "rand above 1 clamps to the ce
 assert.equal(spawnRetryDelayMs(2, () => -1), 2000, "rand below 0 clamps to the floor");
 assert.equal(MAX_SPAWN_RETRIES, 3, "exactly 3 attempts");
 
-// Claim ledger: attempts are scoped per thread, bounded, resettable.
+// Claim ledger: attempts are scoped per card failure EPISODE, not per thread.
+// An automatic retry spawns a replacement, and a replacement that dies before
+// starting is the same episode — keying the budget to the failed thread id
+// reopened a fresh 3-attempt budget on every replacement and turned a permanent
+// provider error into an endless spawn loop (189 threads).
 const db = new Database(":memory:");
 db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY, spawn_retry_count INTEGER NOT NULL DEFAULT 0, spawn_retry_thread TEXT)");
 db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
+const row = () => db.prepare(
+  "SELECT spawn_retry_count, spawn_retry_thread FROM cards WHERE id = ?",
+).get("card_1");
+
+assert.equal(spawnRetryAttempts(row()), 0, "a row with no episode has 0 attempts");
+assert.equal(spawnRetryAttempts(null), 0, "a null card has 0 attempts");
 
 assert.equal(claimSpawnRetry(db, "card_1", "thr_a"), 1, "first claim is attempt 1");
+assert.equal(spawnRetryAttempts(row()), 1, "an active episode reports its stored count");
 assert.equal(claimSpawnRetry(db, "card_1", "thr_a"), 2, "second claim is attempt 2");
 assert.equal(claimSpawnRetry(db, "card_1", "thr_a"), 3, "third claim is attempt 3");
+assert.equal(spawnRetryAttempts(row()), 3, "the episode reports all three spent attempts");
 assert.equal(claimSpawnRetry(db, "card_1", "thr_a"), 0, "fourth claim is exhausted");
-assert.equal(claimSpawnRetry(db, "card_1", "thr_b"), 1, "a new failed thread starts a fresh episode");
+assert.equal(
+  claimSpawnRetry(db, "card_1", "thr_replacement"),
+  0,
+  "a replacement thread continues the same episode — exhausted budget stays exhausted",
+);
+assert.equal(spawnRetryAttempts(row()), 3, "the replacement claim did not extend the budget");
 assert.equal(claimSpawnRetry(db, "card_missing", "thr_a"), 0, "missing card claims nothing");
 resetSpawnRetry(db, "card_1");
-const reset = db.prepare("SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards WHERE id = ?").get("card_1");
-assert.equal(reset.count, 0, "reset clears the count");
-assert.equal(reset.thread, null, "reset clears the thread scope");
+assert.equal(spawnRetryAttempts(row()), 0, "reset clears the episode count");
+assert.equal(row().spawn_retry_thread, null, "reset clears the thread scope");
 assert.equal(claimSpawnRetry(db, "card_1", "thr_a"), 1, "post-reset claim restarts at 1");
 
 db.close();
-console.log("spawn-retry test ok: classification, backoff windows, per-thread claim ledger");
+console.log("spawn-retry test ok: classification, backoff windows, per-episode claim ledger");

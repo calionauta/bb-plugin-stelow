@@ -1,4 +1,5 @@
 import { STAGE_BANDS } from "../lib/workflow-vocabulary.mjs";
+import { PRESET_TIERS, tierBandForStage } from "../lib/preset-staleness.mjs";
 import { refreshRestartPending } from "../lib/worker-ledger.mjs";
 import type { PresetAccessors } from "./preset-accessors.js";
 import type {
@@ -10,6 +11,30 @@ import type {
 type BandPresetInput = { band: string; presetId: string | null };
 type CardPresetInput = { cardId: string; presetId: string | null };
 type SingletonInput = { presetId: string | null };
+
+/** The original per-phase bands, with the stages each one divides. */
+function bandCatalog() {
+  return Object.keys(STAGE_BANDS).map((band) => ({ band, stages: STAGE_BANDS[band] }));
+}
+
+/**
+ * The model-hint bands, with the stages that declare each hint.
+ *
+ * Derived from the catalog rather than listed, so adding a stage upstream
+ * makes it assignable here without an edit, and a tier nothing declares never
+ * appears as a row nobody can act on. Empty tiers are dropped for the same
+ * reason: an unassignable band in the manager is noise.
+ */
+function tierCatalog() {
+  return PRESET_TIERS
+    .map((band) => ({
+      band,
+      stages: Object.keys(STAGE_BANDS)
+        .flatMap((phase) => STAGE_BANDS[phase])
+        .filter((stage) => tierBandForStage(stage) === band),
+    }))
+    .filter((entry) => entry.stages.length > 0);
+}
 
 export function createPresetAssignmentHandlers(
   deps: PresetServerDeps,
@@ -29,15 +54,22 @@ function createStageHandlers(deps: PresetServerDeps, accessors: PresetAccessors)
       .all() as Array<{ band: string; preset_id: string }>;
     const map = new Map(rows.map((row) => [row.band, row.preset_id]));
     return {
-      bands: Object.keys(STAGE_BANDS).map((band) => ({
+      // Two families, one table. Phase bands are the original routing; tier
+      // bands are the model-hint layer, offered so a stage's declared tier can
+      // be pinned to its own preset. Both are listed here because both are
+      // assignable keys, and a tier the manager cannot see is a tier nobody
+      // can configure.
+      bands: [...bandCatalog(), ...tierCatalog()].map(({ band, stages }) => ({
         band,
         presetId: map.get(band) ?? null,
-        stages: STAGE_BANDS[band],
+        stages,
       })),
     };
   }
   async function setBandPreset({ band, presetId }: BandPresetInput) {
-    if (!STAGE_BANDS[band]) return { ok: false, error: `Unknown band: ${band}` };
+    if (!bandCatalog().some((entry) => entry.band === band) && !tierCatalog().some((entry) => entry.band === band)) {
+      return { ok: false, error: `Unknown band: ${band}` };
+    }
     if (presetId) {
       if (!accessors.getPresetById(presetId)) {
         return { ok: false, error: deps.errors.presetNotFound };

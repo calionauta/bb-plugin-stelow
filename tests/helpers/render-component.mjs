@@ -65,6 +65,14 @@ export function loadComponent(relativePath, exportName, stubs) {
  * stays an opaque node and no claim about it can be asked.
  */
 export function walk(node, visit, depth = 0) {
+  // JSX children nest as arrays, so a list of rows sits one array deep. Walking
+  // the array as a node would visit it (it has no `type`) and then look for
+  // `children` on it, which arrays do not have — every row inside a mapped list
+  // was invisible to every lookup built on this.
+  if (Array.isArray(node)) {
+    for (const child of node) walk(child, visit, depth);
+    return;
+  }
   if (!node || typeof node !== "object" || depth > 20) return;
   if (typeof node.type === "function") {
     walk(node.type(node.props ?? {}, ...(node.children ?? [])), visit, depth + 1);
@@ -97,4 +105,29 @@ export function findElementByClass(node, className) {
 export function classesOf(node) {
   const value = node?.props?.className;
   return typeof value === "string" ? value.split(/\s+/) : [];
+}
+
+/**
+ * Render a JSX tree the way React does: children reach a component through its
+ * props. `walk` calls a component with children as positional arguments, which
+ * a component that destructures `children` from props never sees — this is the
+ * variant that resolves children first, so the output is the tree a reader
+ * would actually get.
+ */
+export function renderTree(node) {
+  if (Array.isArray(node)) return node.map(renderTree);
+  if (node === null || node === undefined || typeof node !== "object") return node;
+  const children = (node.children ?? []).map(renderTree);
+  if (typeof node.type === "function") {
+    return renderTree(node.type({ ...node.props, children }));
+  }
+  return { type: node.type, props: node.props ?? {}, children };
+}
+
+/** Every string a rendered tree carries, joined for a single-text search. */
+export function treeText(node) {
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map(treeText).join(" ");
+  if (!node || typeof node !== "object") return "";
+  return (node.children ?? []).map(treeText).join(" ");
 }

@@ -7,7 +7,6 @@ type Db = {
   };
   transaction(fn: (...args: any[]) => any): (...args: any[]) => any;
 };
-export declare const TERMINAL_SCOPE_OUTCOMES: string[];
 export declare function isScopeTerminal(outcome: unknown): boolean;
 export declare function finishScope(db: Db, args: {
   batchId?: string | null;

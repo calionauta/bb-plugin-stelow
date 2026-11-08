@@ -5,7 +5,10 @@ import {
   acceptanceRefusal,
   acceptedDate,
   isAccepted,
+  unmergedPrNumber,
 } from "../lib/card-acceptance.mjs";
+import * as cardAcceptance from "../lib/card-acceptance.mjs";
+import { findElementByType, loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
 /**
  * Human acceptance is a receipt, never a gate.
@@ -85,4 +88,78 @@ test("the same stamp renders the same line, so no surface can phrase it differen
   const at = Date.UTC(2026, 0, 15, 0, 0, 0);
   assert.equal(acceptanceLine(at), acceptanceLine(at));
   assert.equal(acceptedDate(at), "2026-01-15");
+});
+
+test("the cross-reference names only a still-open pull request", () => {
+  // A Done card can carry both a receipt and an unmerged PR with nothing
+  // linking them — approving then reads as finishing. Merged, closed, absent
+  // and unreadable all read as null: the note is advisory, so a missing
+  // sentence is a missing sentence, never an error on the receipt.
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "open" } }), 322, "an open PR is named");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "draft" } }), 322, "a draft still needs merging");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "merged" } }), null, "merged needs no cross-reference");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: 322, state: "closed" } }), null, "closed needs none either");
+  assert.equal(unmergedPrNumber({ pullRequest: null }), null, "no PR means no note");
+  assert.equal(unmergedPrNumber(null), null, "an unreadable snapshot reads as no note, never a throw");
+  assert.equal(unmergedPrNumber({ pullRequest: { number: "322", state: "open" } }), null, "a non-numeric number is not rendered");
+});
+
+// Wiring, asked of the RENDERED row rather than of its source text: it reads
+// the publication snapshot instead of re-deriving PR state, and only while the
+// button is still offered — after acceptance the row is a stamp, and a fetch
+// per render of a settled row would be a request nobody asked for. The rpc is a
+// recorder, so "did it ask?" and "what did it ask?" are facts about the call.
+const rpcCalls = [];
+function loadRow() {
+  const hooks = {
+    useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+    useEffect: (effect) => { effect(); },
+  };
+  return loadComponent("components/detail/acceptance-row.tsx", "AcceptanceRow", {
+    react: hooks,
+    "@/components/ui/button": { Button: (props, ...children) => ({ type: "button", props, children }) },
+    "@get-bb/plugin-sdk/app": {
+      useRpc: () => ({
+        call: (method, args) => {
+          rpcCalls.push([method, args]);
+          return Promise.resolve({ pullRequest: { number: 7, state: "open" } });
+        },
+      }),
+    },
+    "../../lib/card-acceptance.mjs": cardAcceptance,
+    "./use-acceptance-action": { useAcceptanceAction: () => ({ accepting: false, doAccept: async () => {} }) },
+  });
+}
+const AcceptanceRow = loadRow();
+
+function renderRow(overrides = {}) {
+  rpcCalls.length = 0;
+  return renderTree(AcceptanceRow({
+    cardId: "card_1",
+    status: "completed",
+    acceptanceLine: null,
+    onChanged: () => {},
+    ...overrides,
+  }));
+}
+
+test("the row asks the publication snapshot only while the receipt can be written", () => {
+  const pending = renderRow();
+  assert.deepEqual(
+    rpcCalls,
+    [["publicationStatus", { cardId: "card_1" }]],
+    "the cross-reference asks the snapshot that owns PR state",
+  );
+  assert.ok(findElementByType(pending, "button"), "a completed card without a receipt still offers the button");
+
+  // A card that already carries a receipt is a stamp: no button, no fetch.
+  const stamped = renderRow({ acceptanceLine: "Accepted by you on 2026-10-02." });
+  assert.deepEqual(rpcCalls, [], "a card that already carries a receipt does not ask again");
+  assert.equal(findElementByType(stamped, "button"), null, "and stops offering the button");
+  assert.match(treeText(stamped), /Accepted/, "the row reads as the receipt it holds");
+
+  // And an unfinished card is neither: the row is empty and asks nothing.
+  const early = renderRow({ status: "in-progress" });
+  assert.deepEqual(rpcCalls, [], "only a completed card asks for its PR state");
+  assert.equal(treeText(early).trim(), "", "an unfinished card renders no row at all");
 });

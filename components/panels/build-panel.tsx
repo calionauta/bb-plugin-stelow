@@ -8,7 +8,6 @@ import { useBucketGallery } from "../board/card-gallery";
 import { TrackSkeleton } from "../panel/track-skeleton";
 import {
   analysisPreset,
-  moveBuildCard,
   useBuildPanelState,
   type BuildCard,
 } from "./build-panel-state";
@@ -37,6 +36,12 @@ function buildViewState(state: ReturnType<typeof useBuildPanelState>, rpc: Retur
     githubAuthMissing: state.data.githubStatus?.pluginAvailable === true
       && state.data.githubStatus.ghOk === false,
     githubAutomationEnabled: state.data.githubAutomationEnabled,
+    selectMode: state.selectMode,
+    enterSelectMode: state.enter,
+    exitSelectMode: state.exit,
+    selectedIds: state.selectedIds,
+    toggleSelection: state.toggle,
+    clearSelection: state.clearSelection,
     toggleProject: state.toggleProject,
     toggleStage: state.toggleStage,
     toggleIntent: state.toggleIntent,
@@ -83,9 +88,9 @@ function BuildDialogs(props: DialogsProps) {
       projectId={props.projectId}
       data={props.state.data}
       analysisWorkerPreset={analysisPreset(props.state.data)}
-      appetite={props.state.appetite}
+      prefs={props.state.prefs}
       reviewGates={props.state.reviewGates}
-      onAppetiteChange={props.state.setAppetite}
+      onPrefsChange={props.state.updatePrefs}
       onReviewGatesChange={props.state.setReviewGates}
       bucketGallery={props.bucketGallery}
       rpc={props.rpc}
@@ -174,7 +179,7 @@ export function BuildPanel({
   const viewState = buildViewState(state, rpc);
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
           {state.isInitialLoad ? <TrackSkeleton /> : (
             <BuildPanelView
@@ -185,7 +190,6 @@ export function BuildPanel({
               onOpenGithub={dialogs.openGithub}
               onOpenCard={openCard}
               onOpenThread={(threadId) => navigate.toThread(threadId)}
-              onMoveCard={(cardId, target) => void moveBuildCard(rpc, cardId, target)}
             />
           )}
         </div>

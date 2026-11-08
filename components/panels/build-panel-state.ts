@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import type { GithubStatus } from "../github/github-dialog-state";
 import {
+  sanitizeKnobPrefs,
   sanitizeReviewGates,
-  type Appetite,
+  type KnobPrefs,
   type ReviewGates,
 } from "../creation/creation-settings";
 import {
@@ -15,6 +15,7 @@ import {
   usePersistentCollapsedGroups,
 } from "../panel/panel-state-hooks";
 import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
+import { useSelectionMode } from "../../hooks/use-selection-mode";
 import {
   filterAndGroupBuildCards,
   reviewGatesAfterDefaults,
@@ -74,14 +75,19 @@ function readStoredReviewGates(): StoredReviewGates {
 }
 
 function useBuildWorkflowPreferences(rpc: BuildRpc) {
-  const [appetite, setAppetite] = useState<Appetite>("Lean");
+  const [prefs, setPrefs] = useState<KnobPrefs>({ quality: "production", explorationCount: "3", redFirst: "strict" });
+  const updatePrefs = useCallback((patch: Partial<KnobPrefs>) => setPrefs((current) => ({ ...current, ...patch })), []);
   const [initialReviewGates] = useState(() => readStoredReviewGates());
   const [reviewGates, setReviewGates] = useState<ReviewGates>(
     initialReviewGates.value,
   );
   useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then((defaults) => {
-      setAppetite(defaults.appetite);
+      setPrefs((current) => sanitizeKnobPrefs({
+        quality: defaults.quality,
+        explorationCount: String(defaults.explorationCount),
+        redFirst: defaults.redFirst,
+      }, current));
       setReviewGates((current) => reviewGatesAfterDefaults(
         current,
         sanitizeReviewGates(defaults.reviewGates),
@@ -96,7 +102,7 @@ function useBuildWorkflowPreferences(rpc: BuildRpc) {
       // Persistence is a convenience; inaccessible storage keeps the defaults.
     }
   }, [reviewGates]);
-  return { appetite, reviewGates, setAppetite, setReviewGates };
+  return { prefs, reviewGates, updatePrefs, setReviewGates };
 }
 
 function resetFilters(clear: {
@@ -210,6 +216,11 @@ export function useBuildPanelState(rpc: BuildRpc, projectId: string | null) {
     ...current,
     [column]: !current[column],
   }));
+  // Selection is a MODE, and the ids are pruned against what this board actually
+  // renders. Both rules are explained where they live: see
+  // `hooks/use-selection-mode.ts`.
+  const presentIds = useMemo(() => Object.values(filters.grouped).flat().map((card) => card.id), [filters.grouped]);
+  const selection = useSelectionMode(presentIds, viewMode);
   return {
     ...data,
     ...preferences,
@@ -220,6 +231,7 @@ export function useBuildPanelState(rpc: BuildRpc, projectId: string | null) {
     setViewMode,
     toggleColumn,
     toggleListGroup,
+    ...selection,
   };
 }
 
@@ -231,9 +243,3 @@ export function analysisPreset(data: BuildPanelData) {
   return data.boardPresets.find((preset) => preset.id === assignment?.presetId) ?? fallback;
 }
 
-export async function moveBuildCard(rpc: BuildRpc, cardId: string, target: string) {
-  if (!(BUILD_BOARD_COLUMNS as readonly string[]).includes(target)) return;
-  const status = target as "inbox" | "analysis" | "planning" | "execution" | "review" | "completed" | "archived";
-  const result = await rpc.call("moveCard", { cardId, status });
-  if (!result.ok) toast.error(result.error ?? "Move failed");
-}

@@ -7,6 +7,7 @@ import {
   creationModule,
   strategyPickerModule,
   detailViewer,
+  detailContent,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
 // The viewer is shared by every detail track. It owns both live file reads and
@@ -28,10 +29,20 @@ assert.doesNotMatch(
   "no local viewer copy survives in the detail slice",
 );
 assert.match(
-  detailViewer,
+  detailContent,
   /rpc\.call\("readCardFile", \{ cardId, path: file\.path \}\)/,
   "the viewer reads the selected card file through the host",
 );
+// The claim is that both halves come from the extracted module, not that the
+// import list never grows: pinning the literal braces made adding a type to it
+// a failure for no behavioral reason.
+const contentImport = detailViewer.match(/import \{([^}]*)\} from "\.\/artifact-content";/);
+assert.ok(contentImport,
+  "the dialog takes its renderer from artifact-content, so navigation and rendering cannot fork");
+assert.match(contentImport[1], /\bArtifactContent\b/,
+  "the rendered document is artifact-content's, not a local copy");
+assert.match(contentImport[1], /\buseArtifactContent\b/,
+  "and so is the loader, so two documents cannot disagree about what was read");
 assert.match(
   detailViewer,
   /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body: commentBody\(file, drafts\) \}\)/,
@@ -144,14 +155,16 @@ assert.match(
 // that was the whole "N finished vs N in Done" confusion.
 //
 // The two quiet auto-completions (research, explore) no longer each carry
-// their own line: they share one completion writer, so the trail cannot
-// drift between them. tests/runtime-research-track-sync.test.mjs asserts
-// executably that BOTH tracks reach it; this pin only keeps the count at
-// one shared site.
+// their own line, and neither does the explicit `done` CLI: all three reach
+// server/runtime/card-completion.ts, so the completion column set — the
+// `last_error` clear and the auto-continue reset included — cannot drift
+// between a poll and a worker's own commit. tests/runtime-research-track-sync
+// asserts executably that both tracks write the full set; this pin keeps the
+// number of writers at one.
 assert.equal(
-  (server.match(/recordStageEvent\(card\.id, "done"\)/g) ?? []).length,
+  (server.match(/status: "completed"/g) ?? []).length,
   1,
-  "the quiet auto-completions share one done-trail writer",
+  "one writer sets the completed status: every track and the done CLI reach server/runtime/card-completion.ts",
 );
 assert.match(
   server,

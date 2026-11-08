@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
-import { Button } from "@/components/ui/button";
 import { STELOW_PANEL_ID } from "../panel/stelow-route.mjs";
 
 const NUDGE_STORAGE_KEY = "stelow-hide-graph-nudge";
@@ -24,33 +23,6 @@ export function useAgentGraphAvailable(): boolean | null {
     return () => { cancelled = true; };
   }, [rpc]);
   return available;
-}
-
-/**
- * The card-scoped graph action, beside "Open thread".
- *
- * There is no cross-plugin thread-panel seam: `openThreadPanel` opens only
- * actions registered by the same plugin, and Agent Graph exposes no
- * thread-addressed route, so a deep link to "the graph of this thread" does
- * not exist. What does exist is card-scoped: the worker thread itself, whose
- * header holds the live graph one click in. This button therefore opens this
- * card's thread, is worded by the benefit rather than the plugin name, and
- * renders only while the capability runs — never a dead button.
- */
-export function OpenGraphButton({ threadId }: { threadId: string | null | undefined }) {
-  const navigate = useBbNavigate();
-  const available = useAgentGraphAvailable();
-  if (!threadId || available !== true) return null;
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={() => navigate.toThread(threadId)}
-      title="Open this card's worker thread — the thread header shows what the agent is doing live."
-    >
-      See live graph ↗
-    </Button>
-  );
 }
 
 /**

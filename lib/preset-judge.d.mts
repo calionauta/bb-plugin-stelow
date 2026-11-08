@@ -1,5 +1,4 @@
 export declare const PRESET_JUDGE_TIMEOUT_MS: number;
-export declare const PRESET_JUDGE_POLL_MS: number;
 
 export declare function buildPresetJudgePrompt(options: {
   kind: "choice" | "criteria";

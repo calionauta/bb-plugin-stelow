@@ -44,4 +44,15 @@ assert.equal(artifactRenderKind("  .html  "), "html", "surrounding whitespace is
 assert.equal(MOCKUP_SANDBOX, "allow-scripts", "a mockup may run, but never reach bb's origin");
 assert.doesNotMatch(MOCKUP_SANDBOX, /allow-same-origin/, "the sandbox must not hand over the parent origin");
 
+// --- Derived diagram source links out, it is not code to skim. -------------
+// `.mmd` is the Mermaid source emitted next to a durable `.html` view; the
+// viewer shows the source with a pele.run playground link. The branch must be
+// extension-anchored or `a.mmd.txt` starts rendering as a diagram.
+for (const path of ["x/breadboard.mmd", "X.MMD", "  a.mmd  "]) {
+  assert.equal(artifactRenderKind(path), "mermaid", `${path} is a derived diagram`);
+}
+for (const path of ["a.mmd.txt", "a.mmd.bak"]) {
+  assert.equal(artifactRenderKind(path), "source", `${path} only ends in a diagram name`);
+}
+
 console.log("artifact render kind ok: mockups are looked at, documents are read, code is source");

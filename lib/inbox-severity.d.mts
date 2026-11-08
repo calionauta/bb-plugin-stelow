@@ -3,7 +3,6 @@ export declare const SEVERITY_ACTION: number;
 export declare const SEVERITY_ESCALATING: number;
 export declare const SEVERITY_STALL_MS: number;
 export declare const SEVERITY_OLD_MS: number;
-export declare const SEVERITY_ERROR_REPETITIONS: number;
 
 export declare function stalledDays(ms: number): number;
 

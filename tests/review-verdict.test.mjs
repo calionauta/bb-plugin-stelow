@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { buildReviewPrompt, extractJsonBlock, parseReviewOutput, reviewSummary, reviewCoversFingerprint, MAX_REVIEW_CHARS } from "../lib/review-verdict.mjs";
+import {
+  buildReviewPrompt,
+  extractJsonBlock,
+  isContradictoryApproval,
+  parseReviewOutput,
+  reviewCoversFingerprint,
+  reviewSummary,
+  MAX_REVIEW_CHARS,
+} from "../lib/review-verdict.mjs";
 
 const ARTIFACT = "## Top 10:\n#### 1/10 Ensure outcome one\n- Alternative: achieve result one\n";
 
@@ -59,5 +67,25 @@ assert.equal(reviewCoversFingerprint(reviews, "2"), false, "failing review never
 assert.equal(reviewCoversFingerprint(reviews, "9"), false, "stale fingerprint is uncovered");
 assert.equal(reviewCoversFingerprint([], "3"), false, "no reviews means uncovered");
 assert.equal(reviewCoversFingerprint([{ name: "x.md", content: "free prose" }], "3"), false, "unshaped files never satisfy");
+
+// A pass that carries FAIL findings is discarded: the approval contradicts
+// its own quoted evidence, so it degrades to human-review and never covers.
+const contradictionFinding = '{"criterion": "scope fits",'
+  + ' "quote": "#### 1/10 Ensure outcome one",'
+  + ' "verdict": "FAIL", "repair": "narrow scope"}';
+const contradiction = '```json\n{"verdict": "pass",'
+  + ` "findings": [${contradictionFinding}]}\n\`\`\``;
+const contradicted = parseReviewOutput(contradiction, ARTIFACT);
+assert.equal(contradicted.status, "human-review", "contradictory pass is thrown out");
+assert.equal(contradicted.contradictory, true, "contradiction flagged");
+assert.equal(contradicted.findings.length, 1, "evidence preserved for the human");
+assert.match(reviewSummary(contradicted), /Contradictory pass discarded/, "summary names the discard");
+assert.equal(isContradictoryApproval(contradicted), false, "a degraded verdict is no longer a pass");
+assert.equal(isContradictoryApproval({ status: "pass", findings: [{ verdict: "FAIL" }] }), true, "pass with FAIL is contradictory");
+assert.equal(isContradictoryApproval({ status: "pass", findings: [{ verdict: "PASS" }] }), false, "clean pass stands");
+assert.equal(isContradictoryApproval({ status: "needs-revision", findings: [{ verdict: "FAIL" }] }), false, "non-pass never contradicts");
+assert.equal(isContradictoryApproval(null), false, "malformed input is not contradictory");
+assert.equal(parsed.contradictory, false, "ordinary verdict carries a false flag");
+assert.equal(forgedParsed.contradictory, false, "dropped-quote pass carries a false flag");
 
 console.log("review verdict test ok: prompt shaping, quote verification, graceful degradation");

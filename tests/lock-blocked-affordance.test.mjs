@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { blockedFileWait, lockBlockEvent, lockBlockSummary, lockBlockDedupeKey, lockWaitCopy, lockWaitHero, scopeClaimLines } from "../lib/lock-blocked.mjs";
-import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents } from "../lib/inbox-events.mjs";
+import {
+  ensureInboxQuestionColumns,
+  ensureInboxResolvedReasonColumn,
+  ensureInboxSeverityColumns,
+  insertInboxEvent,
+  listInboxEvents,
+} from "../lib/inbox-events.mjs";
 import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 
 /**
@@ -50,6 +56,8 @@ function database() {
     );
   `);
   ensureInboxResolvedReasonColumn(db);
+  ensureInboxSeverityColumns(db);
+  ensureInboxQuestionColumns(db);
 ensureInboxOccurrencesColumn(db);
   db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run(
     "card_blocked", "Blocked", "blocked", "project_1", "build",

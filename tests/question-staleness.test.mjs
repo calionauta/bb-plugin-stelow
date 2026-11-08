@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { anyStale, stalenessOf } from "../lib/question-staleness.mjs";
+import { anyStale, stalenessOf } from "../lib/question-store.mjs";
 
 // No baseline (pre-ledger questions, label-only options): silence, never a
 // verdict. Staleness must prove itself from a snapshot.

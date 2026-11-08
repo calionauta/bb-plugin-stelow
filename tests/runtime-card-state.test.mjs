@@ -17,7 +17,18 @@ function card(overrides = {}) {
   };
 }
 
-function updaterHarness(initial = card(), openQuestion = false) {
+function collectingActions() {
+  const recorded = [];
+  return {
+    recorded,
+    record(entry) {
+      recorded.push(entry);
+      return { id: `act_${recorded.length}`, occurrences: 1, deduped: false };
+    },
+  };
+}
+
+function updaterHarness(initial = card(), openQuestion = false, actions = undefined) {
   let row = initial;
   const calls = [];
   const db = {
@@ -52,6 +63,7 @@ function updaterHarness(initial = card(), openQuestion = false) {
     recordErrorInbox: (...args) => calls.push(["recordError", ...args]),
     resolveInbox: (...args) => calls.push(["resolve", ...args]),
     resolveAllInbox: (...args) => calls.push(["resolveAll", ...args]),
+    actions,
   });
   return { calls, updateCard, row: () => row };
 }
@@ -250,4 +262,46 @@ test("explicit restore is the only path that flips an archived card back to live
   const unflagged = updaterHarness(card({ status: "archived" }));
   unflagged.updateCard("card_1", { status: "in-progress" });
   assert.equal(unflagged.row().status, "archived");
+});
+
+// ── card.updated records state changes, not prose bookkeeping ───────────────
+test("a write that only changes last_assistant_text records no card.updated row", () => {
+  const actions = collectingActions();
+  const harness = updaterHarness(card(), false, actions);
+
+  harness.updateCard("card_1", { last_assistant_text: "still working on it" });
+
+  assert.equal(actions.recorded.length, 0, "prose-only updates are not state changes");
+  assert.equal(
+    harness.row().last_assistant_text,
+    "still working on it",
+    "the write itself still lands; only the log stays quiet",
+  );
+});
+
+test("a status change records one row naming only the meaningful field", () => {
+  const actions = collectingActions();
+  const harness = updaterHarness(card(), false, actions);
+
+  harness.updateCard("card_1", { status: "completed", last_assistant_text: "finished" });
+
+  assert.equal(actions.recorded.length, 1, "one update is one row");
+  const [row] = actions.recorded;
+  assert.equal(row.kind, "card.updated");
+  assert.equal(row.cardId, "card_1");
+  assert.deepEqual(row.detail.fields, ["status"], "only the state field survives the filter");
+  assert.equal("last_assistant_text" in row.detail, false, "the prose is never copied into detail");
+});
+
+test("a stage change still records, with its before and after", () => {
+  const actions = collectingActions();
+  const harness = updaterHarness(card({ stage: "select" }), false, actions);
+
+  harness.updateCard("card_1", { stage: "setup" });
+
+  assert.equal(actions.recorded.length, 1);
+  const [row] = actions.recorded;
+  assert.deepEqual(row.detail.fields, ["stage"]);
+  assert.deepEqual(row.detail.stage, { from: "select", to: "setup" });
+  assert.equal(row.stage, "setup", "the row names the stage it moved to");
 });

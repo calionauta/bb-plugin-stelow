@@ -1,0 +1,4 @@
+{
+  "$comment": "Every installable host tool must be named by the vendored methodology it claims to serve. The About panel's rows say workers use these tools when present, so a tool the skills never mention is a promise with no mechanism — the failure mode the supervisor copy shipped with. `hostOnly` names tools whose consumer is host code rather than the skill tree, each with a reason; an exemption the skills now mention is stale and must be dropped, exactly like a healed upstream fork.",
+  "hostOnly": []
+}

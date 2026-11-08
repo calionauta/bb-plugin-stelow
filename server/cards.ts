@@ -1,17 +1,20 @@
-import { isAbsolute, relative, resolve } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
+import { existsSync } from "node:fs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
+import { effectiveActivity } from "../lib/card-activity.mjs";
+import { defaultProjectSource, resolveCardWorkspacePath } from "../lib/card-workspace.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
 import { integrationPending } from "../lib/integration-pending.mjs";
 import { loadCardScopes } from "./scopes.js";
+import { createCardFileHandlers } from "./card-files.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
 import { readCardStatus } from "../lib/card-status.mjs";
 import { stallCount } from "../lib/worker-ledger.mjs";
+import { runFailure } from "../lib/run-failure.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
 import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
 import type { WorkerCard } from "./workers-types.js";
@@ -35,13 +38,31 @@ export function createCardStore(bb: BbPluginApi, db: Db) {
 
   const cardWorkspace = async (card: WorkerCard): Promise<Workspace | null> => {
     if (card.workspace_kind === "exploratory") {
-      return card.workspace_path
-        ? { path: card.workspace_path, hostId: card.workspace_host_id }
-        : null;
+      // Kept as-is rather than routed through the rule: an exploratory card's
+      // workspace is its own directory by definition and never falls back to a
+      // project source, so a missing one is UNKNOWN, not "use the checkout".
+      return resolveCardWorkspacePath(
+        {
+          workspaceKind: card.workspace_kind,
+          workspacePath: card.workspace_path,
+          workspaceHostId: card.workspace_host_id,
+        },
+        null,
+      );
     }
     const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    return source?.path ? { path: source.path, hostId: source.hostId } : null;
+    // A card that recorded a linked worktree works there: the project's default
+    // source is a different directory holding a different branch, and binding
+    // verify/scan/done to it is the dead end that kept finished cards at audit.
+    return resolveCardWorkspacePath(
+      {
+        workspaceKind: card.workspace_kind,
+        workspacePath: card.workspace_path,
+        workspaceHostId: card.workspace_host_id,
+      },
+      defaultProjectSource(project),
+      existsSync,
+    );
   };
 
   return { getCard, cardWorkspace };
@@ -59,14 +80,17 @@ type CardsDeps = {
   githubAutomationEnabled: () => boolean;
   store: ReturnType<typeof createCardStore>;
   strategyList: (row: WorkerCard) => string[];
-  getReliablePreset: (band: string, cardId: string) => Preset;
-  fetchPendingQuestions: (threadId: string | null) => Promise<unknown[]>;
+  getReliablePreset: (band: string | string[], cardId: string) => Preset;
+  /** `null` is UNKNOWN (the live ask read failed); a caller must not read it
+   * as "nothing is waiting". */
+  fetchPendingQuestions: (threadId: string | null) => Promise<unknown[] | null>;
   openExpiredQuestionIds: (cardId: string) => string[];
 };
 
 export function createCardsServer(deps: CardsDeps) {
   const { getCard, cardWorkspace } = deps.store;
   const createInternal = createCardInternal(deps.create);
+  const fileHandlers = createCardFileHandlers({ bb: deps.bb, errors: deps.errors, getCard, cardWorkspace });
   const listCards = async ({ projectId, kind }: { projectId?: string | null; kind?: string | null }) => {
     const rows = queryCards(deps.db, projectId ?? null, kind ?? null);
     const projects = await deps.bb.sdk.projects.list();
@@ -82,16 +106,6 @@ export function createCardsServer(deps: CardsDeps) {
     return { cards };
   };
 
-  const readCardFile = async ({ cardId, path }: { cardId: string; path: string }) => {
-    const card = getCard(cardId);
-    if (!card) return { content: null, truncated: false, error: deps.errors.cardNotFound };
-    const workspace = await cardWorkspace(card);
-    if (!workspace?.path) return { content: null, truncated: false, error: deps.errors.workspaceUnavailable };
-    const full = readableCardPath(workspace.path, path);
-    if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
-    return readTextFile(deps.bb, full);
-  };
-
   return {
     getCard,
     cardWorkspace,
@@ -103,7 +117,7 @@ export function createCardsServer(deps: CardsDeps) {
         githubAutomationEnabled: deps.githubAutomationEnabled(),
       }),
       listCards,
-      readCardFile,
+      ...fileHandlers,
       createCard: (input: CardCreateInput) => createInternal(input),
     },
   };
@@ -125,6 +139,55 @@ function queryCards(
   return (where ? statement.all(...values) : statement.all()) as WorkerCard[];
 }
 
+/**
+ * The two timestamps the board reads, and they are different questions.
+ *
+ * `updatedAt` is when the row was last written — a sync poll moves it without
+ * the card having moved, so it orders the board but says nothing about how long
+ * a card has waited. `lastIdleAt` is when the worker stopped producing, which
+ * is what `idleDurationLabel` measures and what the host already uses to decide
+ * the card needs attention at all (`attentionState` above). Both travel so the
+ * tile can answer "how long has this been sitting" from the stall's own clock.
+ */
+function idleClock(row: WorkerCard) {
+  return { updatedAt: row.updated_at, lastIdleAt: row.last_idle_at ?? null };
+}
+
+/** The name a card's context line shows; an exploratory card has no project. */
+function projectLabel(projectNames: Map<string, string>, row: WorkerCard): string {
+  if (row.workspace_kind === "exploratory") return "Exploratory work";
+  return projectNames.get(row.project_id) ?? row.project_id;
+}
+
+/**
+ * The card's derived signals, read once per row and spread into the projection.
+ *
+ * These travel BESIDE `activity`, never inside it. Each is a measurement or a
+ * recorded fact about something other than the card's own thread state, so folding
+ * any of them into `activity` would erase the last verified projection the board is
+ * showing — the mistake `readMissSince` is annotated against below.
+ *
+ * They live here, in `server/cards.ts`, rather than in a helper module because
+ * `tests/creation-contracts.test.mjs` pins the literal
+ * `hasPendingReview: hasPendingReview(deps.db, row.id)` against the server source.
+ * Keeping that expression verbatim keeps the pin green; moving it to a new file or
+ * renaming the argument turns it red. The grouping exists for the LINE BUDGET, not
+ * for taste: `enrichCard` sat at 49 of a 50-line ceiling, so the four derivations move
+ * out as one spread and the new field fits. Never solve a budget by compressing a
+ * comment or packing a line — both fail `quality:shape`.
+ */
+function cardSignals(deps: CardsDeps, row: WorkerCard) {
+  return {
+    hasPendingReview: hasPendingReview(deps.db, row.id),
+    integrationPending: integrationPending(deps.db, row),
+    stallCount: stallCount(deps.db, row.id),
+    // The newest failed host run, as the tile's second failure source. It is a
+    // recorded fact about a run, not about the worker thread, so it travels
+    // beside `activity` like the other three.
+    runFailure: runFailure(deps.db, row),
+  };
+}
+
 async function enrichCard(
   deps: CardsDeps,
   workspaceFor: (card: WorkerCard) => Promise<Workspace | null>,
@@ -143,7 +206,7 @@ async function enrichCard(
     prompt: row.prompt,
     intent: row.intent,
     projectId: row.project_id,
-    projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectNames.get(row.project_id) ?? row.project_id),
+    projectName: projectLabel(projectNames, row),
     workspaceKind: row.workspace_kind,
     workspacePath: row.workspace_path,
     environmentLabel: row.environment_label ?? null,
@@ -162,13 +225,11 @@ async function enrichCard(
     // would erase the last verified projection the board is currently showing.
     readMissSince: row.read_miss_since ?? null,
     needsAttention: attention !== null,
-    hasPendingReview: hasPendingReview(deps.db, row.id),
-    integrationPending: integrationPending(deps.db, row),
+    ...cardSignals(deps, row),
     presetName: preset.name,
     presetProviderId: preset.provider_id,
     presetModelId: preset.model_id,
-    updatedAt: row.updated_at,
-    stallCount: stallCount(deps.db, row.id),
+    ...idleClock(row),
     scopeSummary: scopeTally(summary),
     doingNow: summary.doingNow,
     executingScope: summary.executingScope,
@@ -179,12 +240,17 @@ async function liveActivity(
   deps: CardsDeps,
   row: WorkerCard,
 ): Promise<"idle" | "running" | "awaiting-answer" | "error" | "held"> {
-  let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
+  const activity = row.activity as "idle" | "running" | "awaiting-answer" | "error" | "held";
   if (activity === "error" || !row.worker_thread_id) return activity;
   const pending = await deps.fetchPendingQuestions(row.worker_thread_id);
-  return pending.length > 0 || deps.openExpiredQuestionIds(row.id).length > 0
-    ? "awaiting-answer"
-    : activity;
+  // An unreadable question source is UNKNOWN, not zero: `null` keeps the last
+  // verified projection. A successful read of zero ENDS an await — the stored
+  // column is never rewritten when its question is answered or expires, so
+  // trusting it here left three cards amber with nothing to answer.
+  const openQuestions = pending === null
+    ? null
+    : pending.length + deps.openExpiredQuestionIds(row.id).length;
+  return effectiveActivity(activity, openQuestions);
 }
 
 function attentionState(
@@ -243,26 +309,4 @@ async function scopeSummary(
 function scopeTally(summary: ScopeSummary) {
   const { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs } = summary;
   return { scopesTotal, scopesDone, tasksTotal, tasksDone, elapsedMs };
-}
-
-function readableCardPath(rootPath: string, path: string): string | null {
-  const resolved = resolveArtifactPath(rootPath, path);
-  if (resolved) return resolved;
-  if (!isAbsolute(path) || path.split(/[\\/]+/).some((segment) => segment === "..")) return null;
-  const absolute = resolve(path);
-  return relative(rootPath, absolute).split(/[\\/]+/)[0] !== ".." ? absolute : null;
-}
-
-async function readTextFile(bb: BbPluginApi, path: string) {
-  try {
-    const file = await bb.sdk.files.read({ path });
-    const content = typeof file.content === "string" ? file.content : null;
-    if (content === null || content.includes("\0")) {
-      return { content: null, truncated: false, error: "Not a readable text file." };
-    }
-    const limit = 200_000;
-    return { content: content.slice(0, limit), truncated: content.length > limit, error: null };
-  } catch {
-    return { content: null, truncated: false, error: "Could not read the file." };
-  }
 }

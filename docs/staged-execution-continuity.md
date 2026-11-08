@@ -150,7 +150,7 @@ Green:
 - `npm run typecheck`
 - `npm test` (144 wired test files, including the adapter, route, ledger,
   artifact, migration, deep-link, fresh-install, and sync contracts)
-- `node tests/persisted-card-migration.test.mjs`
+- `node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/persisted-card-migration.test.mjs`
   - cold install, all legacy review-mode upgrades, reopen, bounded retry,
     archive, delete refusal/owned-state cleanup, and unknown old stage;
 - `node tests/execution-deep-link.test.mjs`

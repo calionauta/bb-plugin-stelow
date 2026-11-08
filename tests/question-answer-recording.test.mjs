@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { answerCommentBody, answeredCardPatch } from "../lib/question-answer-recording.mjs";
+import { answerCommentBody, answeredCardPatch } from "../lib/question-evidence.mjs";
 
 // Every answer leaves a record — the drift this module removes was that the
 // live door skipped the comment for an undeclared answer while the recovery

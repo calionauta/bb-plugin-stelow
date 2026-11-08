@@ -15,6 +15,7 @@ import { createAutoContinueVeto } from "./decision-auto-continue.js";
 import { createDecisionRoute } from "./decision-route.js";
 import { createDecisionSeed } from "./decision-seed.js";
 import { createSeverityBump } from "./decision-severity.js";
+import { createTierShadow } from "./decision-tier.js";
 import type { ConfigRow, PointRow } from "./decision-store.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -53,5 +54,6 @@ export function createDecisionApiSeams(ctx: DecisionSeamDeps) {
     ...createDecisionSeed({ ...shared, judgeViaPreset: ctx.judgeViaPreset }),
     ...createAutoContinueVeto(shared),
     ...createSeverityBump({ ...shared, db: ctx.db, now: ctx.now }),
+    ...createTierShadow(shared),
   };
 }

@@ -1,7 +1,8 @@
 import { describeCardEnvironment } from "../lib/tracks.mjs";
+import { resolveKnobInput } from "../lib/workflow-config.mjs";
 import { assertCardStatus } from "../lib/card-status.mjs";
 import { environmentFallbackNotice } from "../lib/card-environment.mjs";
-import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create.js";
+import type { CardCreateInput, CardsCreateDeps, Preset, Prepared, ResolvedTrack, Workspace } from "./cards-create-types.js";
 
 function recordOf(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -100,8 +101,17 @@ export async function finishCard(
     if (track.seed.dirHash) void deps.lineage(workspace.rootPath, track.seed.dirHash, thread.id, preset.id, "initial");
   }
   if (!track.research && !track.explore) {
+    const knobs = resolveKnobInput(input);
     await deps.bb.storage.kv.set("board-workflow-defaults", {
-      appetite: input.appetite,
+      quality: knobs.quality,
+      explorationCount: knobs.explorationCount,
+      // Conditional, not `redFirst: knobs.redFirst`. That value is `undefined` when the
+      // caller did not choose a mode — "derive me downstream" is the contract — and a key
+      // holding undefined is not a JSON value. It survived here only because the storage
+      // layer serialises, and the same pattern on the READ side is what made
+      // `boardWorkflowDefaults` refuse the whole call with
+      // "rpc result at $result.redFirst is not a JSON value (undefined)".
+      ...(typeof knobs.redFirst === "string" ? { redFirst: knobs.redFirst } : {}),
       reviewMode: track.reviewRung,
       reviewGates: track.reviewGates,
     });

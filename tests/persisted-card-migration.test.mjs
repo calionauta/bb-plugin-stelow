@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { templateStages } from "../lib/state-template.mjs";
+import { createCardLifecycleHandlers } from "../server/runtime/card-lifecycle.ts";
 import {
   ownsWorkflowState,
   stateWorkflowId,
@@ -133,8 +134,8 @@ const stateOwner = (state) => stateWorkflowId(state);
     );
     for (const stage of ["selection", "plan-gate", "diff-gate"]) {
       assert.deepEqual(
-        requiredForStage({ stage, appetite: "Core", reviewMode: mode.label }),
-        requiredForStage({ stage, appetite: "Core", reviewMode: mode.gates }),
+        requiredForStage({ stage, explorationCount: 3, reviewMode: mode.label }),
+        requiredForStage({ stage, explorationCount: 3, reviewMode: mode.gates }),
         `${mode.label} keeps the same ${stage} contracts after upgrade`,
       );
     }
@@ -178,8 +179,11 @@ const stateOwner = (state) => stateWorkflowId(state);
   );
 }
 
-// Retry: start-phase recovery is persisted, bounded, and scoped to the same
-// failed worker. A reseeded/new worker episode gets a fresh budget.
+// Retry: start-phase recovery is persisted, bounded, and scoped to the card's
+// failure episode. An automatic retry spawns a replacement, and a replacement
+// that dies before starting is the same episode — only a successful start
+// (resetSpawnRetry) or a human restart opens a fresh budget. Keying the budget
+// to the thread id restarted 1/3 on every replacement and looped forever.
 {
   const retry = fixture("retry");
   assert.equal(
@@ -216,8 +220,8 @@ const stateOwner = (state) => stateWorkflowId(state);
   );
   assert.equal(
     claimSpawnRetry(db, retry.card.id, "thr_new_worker"),
-    1,
-    "a replacement worker starts a fresh retry episode",
+    0,
+    "a replacement worker continues the exhausted episode instead of starting at one",
   );
   resetSpawnRetry(db, retry.card.id);
   assert.equal(
@@ -256,9 +260,10 @@ const stateOwner = (state) => stateWorkflowId(state);
   );
 }
 
-// Delete: hard delete is only a second step after archive. Pin the server
-// lifecycle guard and the owned-state cleanup because deletion crosses the
-// host boundary and cannot be exercised by a pure helper.
+// Delete: hard delete is only a second step after archive. The server lifecycle
+// guard and the owned-state cleanup are driven through the real handler rather
+// than read as source text, because deletion crosses the host boundary and the
+// behavior — refusal, owned-state resolution, row removal — is what matters.
 {
   const deleteCase = fixture("delete");
   assert.equal(
@@ -266,30 +271,79 @@ const stateOwner = (state) => stateWorkflowId(state);
     true,
     "delete fixture is archived before deletion",
   );
-  const server = [
-    readFileSync(join(root, "server.ts"), "utf8"),
-    readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
-    readFileSync(join(root, "server", "runtime", "card-lifecycle.ts"), "utf8"),
-  ].join("\n");
-  const deleteStart = server.indexOf("async function deleteCard(");
-  const deleteEnd = server.indexOf("async function discardPreview(", deleteStart);
-  assert.ok(deleteStart >= 0 && deleteEnd > deleteStart, "delete RPC exists");
-  const deleteRpc = server.slice(deleteStart, deleteEnd);
-  assert.match(
-    deleteRpc,
-    /if\s*\(card\.status\s*!==\s*"archived"\)\s*return\s*\{\s*deleted: false,\s*error: "Only archived cards can be deleted\./,
-    "delete refuses an unarchived persisted card",
+
+  const db = new Database(":memory:");
+  for (const table of [
+    "comments",
+    "expired_questions",
+    "ask_contracts",
+    "inbox_events",
+    "artifact_reviews",
+    "github_imports",
+  ]) {
+    db.exec(`CREATE TABLE ${table} (card_id TEXT)`);
+  }
+  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
+  const stateDirCalls = [];
+  const cards = new Map();
+  const handlers = createCardLifecycleHandlers({
+    db,
+    bb: { realtime: { publish: () => {} } },
+    getCard: (cardId) => cards.get(cardId),
+    cardWorkspace: async () => ({ path: "/repo", hostId: null }),
+    workflowStateDir: async (_bb, rootPath, workflowId, dirHash) => {
+      stateDirCalls.push([rootPath, workflowId, dirHash]);
+      return null;
+    },
+    workers: { stop: async () => {}, deleteCard: () => {} },
+    stopOwnedRuns: async () => true,
+    cancelScopeBatches: () => {},
+    updateCard: () => {},
+    releaseClaims: async () => {},
+    removeCardPreset: () => {},
+    logCardComment: () => "cmt_1",
+    runGitIn: async () => ({ ok: true, stdout: "" }),
+    exploratoryScope: "exploratory",
+    discardEvidence: async () => ({}),
+    discardEligibility: () => ({}),
+    discardConfirm: () => "",
+    discardTrail: () => "",
+    errors: { cardNotFound: "Card not found." },
+  });
+
+  cards.set("card_unarchived", { id: "card_unarchived", status: "in-progress", dir_hash: "h1", worker_thread_id: null });
+  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_unarchived");
+  const refused = await handlers.deleteCard({ cardId: "card_unarchived" });
+  assert.deepEqual(
+    refused,
+    { deleted: false, error: "Only archived cards can be deleted. Archive it first." },
+    "delete refuses a persisted card that is not archived",
   );
-  assert.match(
-    server,
-    /deps\.workflowStateDir\(\s*deps\.bb,\s*workspace\.path,\s*card\.id,\s*card\.dir_hash,?\s*\)/,
-    "delete removes only state owned by the card",
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id = ?").get("card_unarchived").n,
+    1,
+    "a refused delete leaves the row in place",
   );
-  assert.match(
-    server,
-    /DELETE FROM cards WHERE id = \?/,
+
+  cards.set("card_archived", { id: "card_archived", status: "archived", dir_hash: "h1", worker_thread_id: "thr_old" });
+  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_archived");
+  const deleted = await handlers.deleteCard({ cardId: "card_archived" });
+  assert.deepEqual(
+    deleted,
+    { deleted: true, error: null },
+    "an archived card deletes",
+  );
+  assert.deepEqual(
+    stateDirCalls,
+    [["/repo", "card_archived", "h1"]],
+    "delete resolves only the state owned by the card it is deleting",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id = ?").get("card_archived").n,
+    0,
     "delete removes the persisted card row",
   );
+  db.close();
 }
 
 // Unknown old stage IDs: persisted cards must remain inspectable and safe.
@@ -325,7 +379,7 @@ const stateOwner = (state) => stateWorkflowId(state);
   assert.deepEqual(
     requiredForStage({
       stage: unknown.card.stage,
-      appetite: "Core",
+      explorationCount: 3,
       reviewMode: "Auto",
     }),
     [],

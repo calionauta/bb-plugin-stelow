@@ -2,13 +2,26 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { WorkerSpawnArgs } from "./workers-types.js";
 
 export type WorkerThread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
+type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
+
+/**
+ * The single SDK spawn site. Every thread — worker or disposable — is born
+ * here, so a seventh spawn path fails the spawn-freshness pin before it
+ * ships silently.
+ */
+export async function spawnThread(
+  bb: BbPluginApi,
+  args: SpawnArgs,
+): Promise<WorkerThread> {
+  return bb.sdk.threads.spawn(args);
+}
 
 export async function spawnCardWorker(
   bb: BbPluginApi,
   args: WorkerSpawnArgs,
 ): Promise<WorkerThread> {
   // delegation-site: worker-spawn
-  return bb.sdk.threads.spawn(args);
+  return spawnThread(bb, args as SpawnArgs);
 }
 
 export async function replaceCardWorker(

@@ -18,34 +18,25 @@ import { summarizeTimeline } from "../../../lib/card-metrics.mjs";
 import { isDoneStatus, isSkippedStatus } from "../../../lib/trackables.mjs";
 import { isArchivedCard } from "../../../lib/worker-action-policy.mjs";
 import { recordSplitAnswer } from "../../../lib/split-proposal.mjs";
-import { consumeAskContract } from "../../../lib/ask-contracts.mjs";
+import { consumeAnsweredContract } from "../../../lib/question-contracts.mjs";
+import { observeFromCard } from "../../../lib/premise-staleness.mjs";
 import { resetAutoContinue } from "../../../lib/auto-continue.mjs";
 import { workerEnvironment } from "../../workers.js";
 import { cardAttachments } from "../card-files.js";
 import { seedWorkflow } from "../workflow-seeding.js";
 import { createQuestionContractsGate } from "../question-contracts-gate.js";
 import { createCritiqueGapState } from "../critique-gap-state.js";
-import { createQuestionAnswers, type AnswerBoundaryPort, type BoundaryPortReader } from "../question-answers.js";
+import { createQuestionAnswers } from "../question-answers.js";
+import type { AnswerBoundaryPort, BoundaryPortReader } from "../answer-resume.js";
+import { markCommentsCarried, pendingAnswerComments } from "../answer-feedback.js";
 import { createGapSummary } from "../gap-summary.js";
 import { readReviewFiles } from "../review-records.js";
 import { createQualitySeal } from "../quality-seal.js";
-import { createCardAdvance, createGateHandlers } from "../card-gates.js";
 import { createAuditTrailStatus } from "../card-audit-trail.js";
 import { createCardDiff } from "../card-diff.js";
 import { createCardReseed } from "../card-reseed.js";
 import { recoveredCheckoutIntegrity } from "../../workspaces-recovery.js";
-import {
-  CARD_OWNER_RULES,
-  CLI_EQUIVALENTS,
-  COMMIT_STYLE,
-  DONE_PROTOCOL,
-  DRAFT_PROTOCOL,
-  INTERFACE_PICK,
-  NEVER_SEED,
-  RECON_PROTOCOL,
-  SPLIT_PROTOCOL,
-  TURN_DISCIPLINE,
-} from "../plugin-protocols.js";
+
 import type { RuntimeCore } from "../runtime-core.js";
 import type { Deferred } from "./deferred.js";
 
@@ -62,19 +53,13 @@ export type GateSurfaceDeps = {
   boundary: Deferred<AnswerBoundaryPort>;
 };
 
-/** The protocol clauses the reseed prompt quotes into a restarted card. */
-const RESEED_PROTOCOLS = {
-  cardOwnerRules: CARD_OWNER_RULES,
-  neverSeed: NEVER_SEED,
-  cliEquivalents: CLI_EQUIVALENTS,
-  reconProtocol: RECON_PROTOCOL,
-  draftProtocol: DRAFT_PROTOCOL,
-  turnDiscipline: TURN_DISCIPLINE,
-  commitStyle: COMMIT_STYLE,
-  interfacePick: INTERFACE_PICK,
-  doneProtocol: DONE_PROTOCOL,
-  splitProtocol: SPLIT_PROTOCOL,
-} as const;
+import { WORKER_PROTOCOL_CLAUSES } from "../worker-protocol-clauses.js";
+
+/** The protocol clauses the reseed prompt quotes into a restarted card.
+ *
+ * One bag, not a fourth hand-copied literal: identical clauses under a second
+ * name is what let the ask contract drift out of the spawn paths. */
+const RESEED_PROTOCOLS = WORKER_PROTOCOL_CLAUSES;
 
 export function createGateSurfaces(deps: GateSurfaceDeps) {
   const { core } = deps;
@@ -88,8 +73,6 @@ export function createGateSurfaces(deps: GateSurfaceDeps) {
     answerExpiredQuestions: answers.answerExpiredQuestions,
     gapSummary: buildGapSummary(core, critiqueGapState),
     qualitySeal: buildQualitySeal(core),
-    gateHandlers: buildGateHandlers(core),
-    advanceCard: buildAdvanceCard(core, questionContractsGate),
     auditTrailStatus: buildAuditTrailStatus(core),
     cardDiff: buildCardDiff(core),
     reseedCard: buildReseedCard(core),
@@ -127,6 +110,7 @@ function buildQuestionAnswers(
   return createQuestionAnswers({
     bb,
     db,
+    actions: core.actions,
     errors: {
       cardNotFound: ERRORS.cardNotFound,
       cardArchived: ERRORS.cardArchived,
@@ -140,7 +124,24 @@ function buildQuestionAnswers(
     syncOpenQuestionInbox: questions.syncOpenQuestionInbox,
     markInboxQuestionsAnswered: core.markInboxQuestionsAnswered,
     recordSplitAnswer,
-    consumeAskContract,
+    consumeAnsweredContract,
+    // The premise observation is the card's OWN state dir: a rewind is a file
+    // that changed, so the read has to happen at answer time and against the
+    // workspace the card currently has — never against a snapshot taken when
+    // the question was asked.
+    premiseObservation: async (cardId) => {
+      const card = getCard(cardId);
+      if (!card?.dir_hash) return null;
+      const workspace = await core.cardWorkspace(card).catch(() => null);
+      const rootPath = workspace?.path;
+      if (!rootPath) return null;
+      const stateDir = await core.workflowStateDir(bb, rootPath, card.id, card.dir_hash).catch(() => null);
+      return stateDir ? observeFromCard({ stateDir }) : null;
+    },
+    // A comment written while the card waits on an answer rides that answer.
+    // Read here, marked carried only by the door that lands the send.
+    answerFeedback: async (cardId) => pendingAnswerComments(db, cardId),
+    markAnswerFeedbackCarried: (ids) => markCommentsCarried(db, ids, core.now()),
     logCardComment: core.ledger.logCardComment,
     updateCard,
     hasOpenQuestions: questions.hasOpenQuestions,
@@ -181,45 +182,6 @@ function buildQualitySeal(core: RuntimeCore) {
 }
 
 /** The gate RPCs: approve, request, and the review queue behind them. */
-function buildGateHandlers(core: RuntimeCore) {
-  return createGateHandlers({
-    db: core.db,
-    bb: core.bb,
-    getCard: core.getCard,
-    cardWorkspace: core.cardWorkspace,
-    boardFromRoot: core.boardFromRoot,
-    loadBoard: core.loadBoard,
-  });
-}
-
-/** The advance RPC: the one that moves a card to the stage it asked for. */
-function buildAdvanceCard(
-  core: RuntimeCore,
-  questionGate: ReturnType<typeof buildQuestionContractsGate>,
-) {
-  const { bb, getCard, cardWorkspace, presetServer, workers } = core;
-  const ERRORS = core.ERRORS;
-  return createCardAdvance({
-    getCard,
-    cardWorkspace,
-    workflowStateDir: (rootPath, card) =>
-      core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
-    ensureArtifacts: (rootPath, stateDir, requireOwnedState) =>
-      core.ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
-    questionGate,
-    runHelper: core.runHelper,
-    getReliablePreset: presetServer.getReliablePresetForBand,
-    getCardPreset: presetServer.getPresetForCard,
-    respawn: workers.respawn,
-    updateCard: cardUpdater(core),
-    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
-    errors: {
-      cardNotFound: ERRORS.cardNotFound,
-      cardArchived: ERRORS.cardArchived,
-      workspaceUnavailable: ERRORS.workspaceUnavailable,
-    },
-  });
-}
 
 /** The audit-trail read: what a card recorded, and whether it still holds. */
 function buildAuditTrailStatus(core: RuntimeCore) {
@@ -275,14 +237,14 @@ function buildReseedCard(core: RuntimeCore) {
       core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
     readStateConfig: async (rootPath, card) =>
       core.trackProjection.readReseedConfig(card, rootPath),
-    seedWorkflow: ({ rootPath, card, intent, appetite, reviewGates }) =>
+    seedWorkflow: ({ rootPath, card, intent, knobs, reviewGates }) =>
       seedWorkflow(
         bb,
         rootPath,
         card.id,
         card.name,
         intent,
-        appetite,
+        knobs,
         reviewGates,
         true,
       ),

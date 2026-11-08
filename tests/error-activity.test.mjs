@@ -91,17 +91,19 @@ assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*stelow-border
 // of them: the record was correct and invisible, which is the same failure as
 // the error one.
 //
-// `needsAttention && activity === "idle"` is the codebase's own definition of
-// a stall (cardCanResume and cardShowsAttention both use it), so the two can
-// never disagree about what counts as paused.
+// `cardIsStalled` is the codebase's own definition of a stall now, and it is
+// the SAME call the Resume button makes (cardCanResume), so a chip and a button
+// that promise the same thing cannot come apart.
 
 const PAUSED = { activity: "idle", needsAttention: true, lastError: null };
 const IDLE_FINE = { activity: "idle", needsAttention: false, lastError: null };
 
 const paused = pausedActivityLabel(PAUSED);
 assert.ok(paused, "a stalled card must say it is waiting for someone");
-assert.equal(paused.label, "Paused");
-assert.match(paused.detail, /[Rr]etry/, "the detail names the option that continues");
+assert.equal(paused.label, "Paused. Resume it.",
+  "the chip states the state AND the action, because it is now the only chip a stalled card wears — "
+  + "the second, amber one that used to carry the action is gone");
+assert.match(paused.detail, /[Rr]esume|restart/, "the detail names the option that continues");
 
 assert.equal(pausedActivityLabel(IDLE_FINE), null,
   "a card that is merely settled is not paused");

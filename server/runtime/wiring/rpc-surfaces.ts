@@ -10,6 +10,8 @@
  * reads as a table of names.
  */
 import { boardWorkflowDefaultsSchema } from "../../contracts.js";
+import { withoutUndefined } from "../../../lib/workflow-config.mjs";
+import { resolveKnobInput } from "../../../lib/workflow-config.mjs";
 import { rpcContract } from "../../rpc-contract.js";
 import { registerRpcHandlers } from "../composition.js";
 import { workflowIdForName } from "../../../lib/workflow-state-identity.mjs";
@@ -18,8 +20,10 @@ import {
   normalizeReviewGates,
 } from "../../../lib/review-gates.mjs";
 import { seedWorkflow } from "../workflow-seeding.js";
+import { findSingleLegacyStateDir } from "../workflow-state.js";
 import { flowMetrics } from "../flow-metrics.js";
 import { buildFlowCoverage } from "../flow-coverage.js";
+import { reportClientError } from "../client-error-report.js";
 import type { FlowCoverage } from "../flow-coverage.js";
 
 /** What the strip renders when the coverage read fails outright: the same
@@ -38,6 +42,7 @@ import { createCardByWorkerThread } from "../thread-card-lookup.js";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import type { RuntimeCore } from "../runtime-core.js";
+import type { ClientErrorReport } from "../client-error-report.js";
 import type { GateSurfaces } from "./gate-surfaces.js";
 import type { ExecutionSurfaces } from "./execution-surfaces.js";
 import type { CardSurfaces } from "./card-surfaces.js";
@@ -79,9 +84,53 @@ async function buildFlowMetrics(
   return { ...result, coverage };
 }
 
+/** The card readers: detail, checkout exposure, verify blockage. One-call
+ * reports, never mutations — grouped because the table otherwise buries three
+ * reads among three mutation spreads that look identical at a glance. */
+function cardReaderHandlers(cards: CardSurfaces) {
+  return {
+    cardDetail: cards.cardDetail as never,
+    sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
+    verifyBlockage: cards.verifyBlockage as never,
+  };
+}
+
+/**
+ * The card's activity, newest first, in the shape the RPC contract declares.
+ *
+ * `detail` is passed through as the stored JSON string: the card renders the
+ * row, and a caller that needs the payload parses it deliberately rather than
+ * receiving an `any`-shaped object it did not ask for.
+ */function cardActivity(
+  core: RuntimeCore,
+  input: { cardId: string; limit?: number },
+) {
+  const rows = core.actions
+    .list({ cardId: input.cardId, limit: input.limit ?? 50 })
+    .map((row) => ({
+      at: Number(row.at),
+      lastAt: Number(row.lastAt),
+      kind: String(row.kind),
+      outcome: String(row.outcome),
+      cause: typeof row.cause === "string" ? row.cause : null,
+      occurrences: Number(row.occurrences ?? 1),
+      durationMs: Number.isFinite(Number(row.durationMs)) ? Number(row.durationMs) : null,
+      lastDurationMs: Number.isFinite(Number(row.lastDurationMs))
+        ? Number(row.lastDurationMs)
+        : null,
+      detail: typeof row.detail === "string" ? row.detail : "{}",
+    }));
+  return { rows, events: rows.reduce((sum, row) => sum + row.occurrences, 0) };
+}
+
 /** Register every Stelow RPC on the host, from the assembled surfaces. */
 export function registerStelowRpc(deps: RpcSurfacesDeps): void {
-  registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps));
+  registerRpcHandlers(deps.bb, rpcContract, createRpcHandlers(deps), {
+    actions: deps.core.actions,
+    now: deps.core.now,
+    resolveCardId: (threadId) =>
+      deps.core.ledger.getCardByWorkerThread(threadId)?.id ?? null,
+  });
 }
 
 /** The handler table: the surfaces by name, plus the inline decisions. */
@@ -101,8 +150,10 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     ...cards.cardMutations,
     ...cards.cardLifecycle,
     ...cards.cardOperations,
-    cardDetail: cards.cardDetail as never,
-    sharedCheckoutExposure: cards.sharedCheckoutExposure as never,
+    ...cards.artifactReviews,
+    ...cardReaderHandlers(cards),
+    cardActivity: (input: { cardId: string; limit?: number }) => cardActivity(core, input),
+    reportClientError: (input: ClientErrorReport) => reportClientError(core.actions, input),
     draftDoneComment: ({ cardId }: { cardId: string }) =>
       core.drafting.draftDoneComment(cardId),
     catchUp: (input: { cardId: string }) => core.briefings.catchUp(input.cardId),
@@ -110,13 +161,11 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     projects: listProjects(bb),
     flowMetrics: (input: FlowMetricsInput) =>
       buildFlowMetrics({ bb, core, gates }, input),
-    boardWorkflowDefaults: () => readBoardWorkflowDefaults(bb),
-    ...gates.gateHandlers,
+    boardWorkflowDefaults: async () => withoutUndefined(await readBoardWorkflowDefaults(bb)),
     cardDiff: gates.cardDiff,
     auditTrailStatus: gates.auditTrailStatus,
     reseedCard: gates.reseedCard,
     promoteCard: cards.promoteCard,
-    advanceCard: gates.advanceCard,
     answerQuestions: gates.answerQuestions,
     startWorkflow: startWorkflow(deps),
     ensureWorkflow: ensureWorkflow(deps),
@@ -124,7 +173,7 @@ export function createRpcHandlers(deps: RpcSurfacesDeps) {
     cardByWorkerThread: createCardByWorkerThread(
       core.ledger.getCardByWorkerThread,
     ),
-    readCardFile: cards.cards.handlers.readCardFile,
+    readCardFile: cards.cards.handlers.readCardFile, listCardFiles: cards.cards.handlers.listCardFiles,
     createCard: cards.cards.handlers.createCard,
     gapSummary: gates.gapSummary,
     qualitySeal: gates.qualitySeal,
@@ -147,11 +196,18 @@ function listProjects(bb: BbPluginApi) {
 }
 
 /**
- * The board's default appetite and review ladder.
+ * The board's default run knobs and review ladder.
  *
  * An explicit migration, never a silent safeParse fallback: a stored ladder
  * string maps to its set, so a saved "Tech Review" default survives instead of
- * degrading to Auto.
+ * degrading to Auto; a stored legacy appetite maps once to knobs (rigor
+ * always strongest), so a saved "Core" default survives as breadth 3.
+ *
+ * The caller wraps the result in `withoutUndefined`: `redFirst` is absent by
+ * contract when unchosen, and a key holding `undefined` is not a JSON value, so the
+ * wire refused the whole call with "rpc result at $result.redFirst is not a JSON
+ * value (undefined)". Three call sites built such a key by hand; the guard is at the
+ * boundary so a fourth cannot.
  */
 type BoardWorkflowDefaults = z.infer<typeof boardWorkflowDefaultsSchema>;
 
@@ -166,15 +222,34 @@ async function readBoardWorkflowDefaults(bb: BbPluginApi): Promise<BoardWorkflow
   const reviewGates = normalizeReviewGates(
     record.reviewGates ?? record.reviewMode ?? [],
   ) as BoardWorkflowDefaults["reviewGates"];
-  return {
+  const knobs = resolveKnobInput({
+    quality: parsed.data.quality,
+    explorationCount: parsed.data.explorationCount,
     appetite: parsed.data.appetite,
+    redFirst: parsed.data.redFirst,
+  });
+  // `redFirst` is pass-through and is deliberately ABSENT when the caller did not choose
+  // one — `resolveKnobInput` returns undefined for "derive me downstream" rather than a
+  // mode. Spreading it conditionally is what keeps that absence from reaching the wire:
+  // an object with the key PRESENT and holding undefined is not a JSON value, and the
+  // host validates the result before serialising, so it refused the whole call with
+  // "rpc result at $result.redFirst is not a JSON value (undefined)". The default path
+  // below never had the bug because it names "strict" explicitly; only a card whose
+  // stored defaults predate red-first hit it, which is why the board worked for some
+  // people and failed for others.
+  return {
+    quality: knobs.quality as BoardWorkflowDefaults["quality"],
+    explorationCount: knobs.explorationCount as BoardWorkflowDefaults["explorationCount"],
+    ...(typeof knobs.redFirst === "string" ? { redFirst: knobs.redFirst as BoardWorkflowDefaults["redFirst"] } : {}),
     reviewMode: legacyLabelForGates(reviewGates) ?? "Auto",
     reviewGates,
   };
 }
 
 const DEFAULT_BOARD_WORKFLOW_DEFAULTS: BoardWorkflowDefaults = {
-  appetite: "Lean",
+  quality: "production",
+  explorationCount: 3,
+  redFirst: "strict",
   reviewMode: "Auto",
   reviewGates: [],
 };
@@ -264,9 +339,18 @@ function advanceStage(deps: RpcSurfacesDeps) {
     if (!rootPath) {
       return { stage: "", stdout: "", error: "Project workspace path is unavailable." };
     }
-    const guard = await core.ensureProjectArtifacts(bb, rootPath);
+    const legacy = findSingleLegacyStateDir(rootPath);
+    if (legacy.kind === "ambiguous") {
+      return {
+        stage,
+        stdout: "",
+        error: `${legacy.count} cardless workflows under .stelow — leave exactly one to advance it from the CLI.`,
+      };
+    }
+    const stateDir = legacy.kind === "single" ? legacy.stateDir : null;
+    const guard = await core.ensureProjectArtifacts(bb, rootPath, stateDir ?? undefined);
     if (guard) return { stage, stdout: "", error: guard };
-    const result = await core.runHelper(["advance", stage], rootPath);
+    const result = await core.runHelper(["advance", stage], rootPath, stateDir ?? undefined);
     if (result.code !== 0) {
       return {
         stage,

@@ -1,4 +1,8 @@
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { rpcContract } from "../../server";
+import { unmergedPrNumber } from "../../lib/card-acceptance.mjs";
 import { useAcceptanceAction } from "./use-acceptance-action";
 
 /**
@@ -29,6 +33,11 @@ export function AcceptanceRow({
   onChanged: () => void | Promise<void>;
 }) {
   const acceptance = useAcceptanceAction(cardId, onChanged);
+  // A Done card can carry both a review receipt and an unmerged pull request
+  // with nothing linking the two halves — approving then reads as finishing.
+  // Asked lazily, only while the button is still offered: after acceptance
+  // the row is a stamp, and Publication below owns the PR state.
+  const unmergedPr = useUnmergedPrNumber(cardId, status === "completed" && !acceptanceLine);
 
   if (acceptanceLine) {
     return (
@@ -55,7 +64,31 @@ export function AcceptanceRow({
       </Button>
       <span className="text-xs text-muted-foreground">
         Optional. Records your disposition on the card; it never blocks the workflow.
+        {unmergedPr != null ? ` PR #${unmergedPr} still needs merging in Publication below — this only records your review.` : null}
       </span>
     </div>
   );
+}
+
+/**
+ * The number of the card's still-open pull request, or null. Null covers
+ * every non-answer — merged, closed, no PR, no workspace, failed read —
+ * because the note is advisory: a missing cross-reference is a missing
+ * sentence, never an error on the receipt.
+ */
+function useUnmergedPrNumber(cardId: string, enabled: boolean) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [prNumber, setPrNumber] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    rpc.call("publicationStatus", { cardId })
+      .then((publication) => {
+        if (!live) return;
+        setPrNumber(unmergedPrNumber(publication));
+      })
+      .catch(() => { if (live) setPrNumber(null); });
+    return () => { live = false; };
+  }, [rpc, cardId, enabled]);
+  return prNumber;
 }

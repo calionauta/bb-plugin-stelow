@@ -1,5 +1,3 @@
-export declare const MIN_ROUND_CHARS: number;
-export declare const MIN_EXPLORE_CHARS: number;
 export declare function researchRoundMirrorsIndex(content: unknown, indexBlob: unknown): boolean;
 export declare function isValidRoundContent(content: unknown, indexBlob: unknown, minChars?: number): boolean;
 export declare function isValidExploreContent(content: unknown, minChars?: number): boolean;

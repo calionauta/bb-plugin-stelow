@@ -26,6 +26,7 @@ import { workspaceRelative } from "./card-files.js";
 import { array, record, text } from "./values.js";
 import { join } from "./root-paths.js";
 import { workflowStateDir } from "./workflow-state.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -129,7 +130,7 @@ async function cardStageSlug(
           .catch(() => null)
       : null;
     const stage = blob
-      ? text(blob.match(/current_stage:\s*(\S+)/m)?.[1])
+      ? text(parseCurrentStage(blob) ?? undefined)
       : "";
     return stage || (card.stage ?? null);
   } catch {
@@ -266,17 +267,15 @@ async function checklistFor(
     .catch(() => null);
   const state = typeof stateFile?.content === "string" ? stateFile.content : null;
   if (!state) return null;
-  const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, {
+  const { quality, explorationCount, reviewMode, reviewGates } = parseWorkflowConfig(state, {
     strict: true,
   });
-  if (!appetite || (!reviewMode && !reviewGates)) return null;
-  const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
+  if (!quality || (!reviewMode && !reviewGates)) return null;
+  const stage = text(parseCurrentStage(state) ?? undefined);
   if (!stage) return null;
   return requiredForStage({
     stage,
-    appetite,
+    explorationCount: explorationCount ?? undefined,
     reviewMode: reviewGates ?? reviewMode ?? [],
   });
 }
-
-export type CardSeams = ReturnType<typeof createCardSeams>;

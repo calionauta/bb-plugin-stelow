@@ -8,6 +8,7 @@ import { EXECUTION_CAPABILITIES, assertCapabilities } from "../lib/execution-ada
 import { requiredOutputPaths, safeArtifactPath, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
 import { evaluateScopeBatchPilot, resolveExecutionRoute } from "../lib/execution-route.mjs";
 import { renderInlineWorkflowScript } from "../server/bb-workflow-bridge.ts";
+import { RECIPE_CONDITIONS } from "../lib/recipe-conditions.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = readJson("tests/fixtures/recipe-pilot-matrix.json");
@@ -15,8 +16,12 @@ const catalog = readJson("data/stelow-recipe-catalog.json");
 const recipes = catalog.recipes ?? [];
 const rows = new Map(manifest.recipes.map((row) => [row.id, row]));
 const knownCapabilities = new Set(EXECUTION_CAPABILITIES);
-const supportedConditions = new Set(["always", "appetite_supports_fanout", "partition_is_safe", "ui_scope_present"]);
-const artifactContext = { appetite: "Complete", partitionSafe: true, uiScopePresent: true };
+// The conditions a recipe may use, as upstream declares them. This was a
+// hand-written set that had already fallen behind the vocabulary (it was
+// missing `findings_exist`), and a set nobody reconciles is a set that
+// quietly stops describing reality.
+const supportedConditions = new Set(RECIPE_CONDITIONS);
+const artifactContext = { appetite: "Complete", explorationCount: 5, partitionSafe: true, uiScopePresent: true };
 
 function readJson(path) {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -80,17 +85,13 @@ function assertTaskGraph(recipe) {
 
 function sample(schema) {
   if (schema.enum) return schema.enum[0];
-  if (schema.const !== undefined) return schema.const;
-  // Union types (e.g. ["string", "null"]) pick the first non-null member:
-  // the sample just needs to satisfy the schema validator.
-  const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== "null") ?? null : schema.type;
-  if (type === "object") {
+  if (schema.type === "object") {
     return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, sample(child)]));
   }
-  if (type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
-  if (type === "number") return schema.const ?? 0;
-  if (type === "string") return "pilot evidence";
-  if (type === "boolean") return true;
+  if (schema.type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
+  if (schema.type === "number") return schema.const ?? 0;
+  if (schema.type === "string") return "pilot evidence";
+  if (schema.type === "boolean") return true;
   assert.fail(`matrix cannot synthesize unsupported schema type: ${schema.type}`);
 }
 
@@ -128,13 +129,17 @@ function validContents(recipe) {
     fixedConstraints: [{ name: "safety", value: "preserve warning", source: "simulation" }],
     criteria: ["scan cost", "accessibility"],
     evidence: [{ source: "simulation", reference: "pilot", claim: "split view is testable" }],
-    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid", wireframe: "+-- split --+" }],
+    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" }],
     nextAction: "Record the pilot selection.",
   };
   return Object.fromEntries(recipe.tasks.map((task) => [
     task.output,
     task.output === "scope-map.json" ? JSON.stringify(scopeMap)
-      : ["interfaces/contrast.json", "interfaces/selection-receipt.json"].includes(task.output) ? JSON.stringify(contrast)
+      : ["interfaces/contrast.json", "interfaces/selection-receipt.json", "architecture/contrast.json"].includes(task.output)
+        ? JSON.stringify(task.output.startsWith("architecture/")
+          ? { ...contrast, route: "architecture-refinement", decisionQuestion: "Which pilot architecture should be selected?" }
+          : contrast)
         : task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
   ]));
 }
@@ -202,7 +207,7 @@ assert.equal(manifest.schema_version, 1, "matrix schema version is pinned");
 assert.match(manifest.validated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, "validation time is explicit");
 assert.deepEqual(
   manifest.host,
-  { name: "bb", version: "0.46.1", command: "bb workflows validate --script <rendered-recipe-source> --json" },
+  { name: "bb", version: "0.45.0", command: "bb workflows validate --script <rendered-recipe-source> --json" },
   "real host probe is explicit",
 );
 for (const identity of manifest.evidence) {

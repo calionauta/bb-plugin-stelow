@@ -16,7 +16,11 @@ import type { ExecutionRun } from "./use-execution-runs";
  */
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-2 py-0.5 text-xs">
+    // The label column is fixed on a desktop and proportional on a phone. `7rem` is right
+    // when the card is 768px wide and takes 19% of a 375px one, where "Failed with" beside a
+    // long error code leaves the value about 230px to wrap in. Below `sm` the split is
+    // `minmax(0,auto)`, so the label takes what it needs and the value gets the rest.
+    <div className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-2 py-0.5 text-xs sm:grid-cols-[7rem_minmax(0,1fr)]">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words text-foreground">{value}</dd>
     </div>

@@ -14,10 +14,12 @@ import type {
   ScoredBatchResult,
 } from "../../decisions/scored-batch-judge.js";
 import type { CardCreateInput } from "../../cards-create.js";
+import type { RetryResult } from "../../execution-lifecycle-retry.js";
 import type { Workers } from "../../workers.js";
 import type { WorkerCard } from "../../workers-types.js";
 import type { CliResult, CliRunContext } from "./cli-contract.js";
 import type { rpcContract } from "../../rpc-contract.js";
+import type { ActionRecorder } from "../action-log-runtime.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type PresetServer = ReturnType<typeof createPresetServer>;
@@ -81,6 +83,10 @@ export type CliDeps = {
   bb: BbPluginApi;
   now: () => number;
   randomId: (prefix: string) => string;
+  /** The plugin's own flight recorder, so `bb stelow log` reads the same rows
+   * the surfaces write instead of a second, CLI-only history. Optional so a
+   * narrow test can build the bag without a database-backed log. */
+  actions?: ActionRecorder;
   getCard: (cardId: string) => WorkerCard | undefined;
   getCardByWorkerThread: (threadId: string) => WorkerCard | undefined;
   cardWorkspace: (card: WorkerCard) => Promise<CardWorkspace | null>;
@@ -151,8 +157,12 @@ export type CliDeps = {
   reviewFilesFor: (
     card: WorkerCard,
   ) => Promise<Array<{ name: string; content: string | null }>>;
-  pendingQuestions: (threadId: string | null) => Promise<PendingQuestions>;
+  /** `null` is UNKNOWN: the ask read failed, and `done` must not close a card
+   * over a question it could not see. */
+  pendingQuestions: (threadId: string | null) => Promise<PendingQuestions | null>;
   pendingAsks: (threadId: string | null) => Promise<PendingAsk[] | null>;
+  /** The card question wait, resolved from the plugin setting at call time. */
+  askTimeoutMs: () => Promise<number>;
   openExpiredQuestionIds: (cardId: string) => string[];
   askContractChecklist: (
     cardId: string,
@@ -187,6 +197,8 @@ export type CliDeps = {
     threadId?: string,
   ) => Promise<CliResult | null>;
   advanceCli: ExecutionAdvance["cli"];
+  /** The worker's own Retry button: same retrier, same refusals as the UI door. */
+  retryExecutionRun: (args: { runId: string }) => Promise<RetryResult>;
   scopeCommand: (
     argv: string[],
     ctx: CliRunContext,

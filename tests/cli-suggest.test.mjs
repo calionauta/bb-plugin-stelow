@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { cliHelpText, cliUsageLine, nearestCommand } from "../lib/cli-suggest.mjs";
+import {
+  cliHelpResult,
+  cliUnknownResult,
+  stelowCliCommands,
+} from "../server/runtime/cli-registry.ts";
+import { createCliDispatch } from "../server/runtime/cli-dispatch.ts";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/cli-dispatch.ts"), "utf8"),
-].join("\n");
-
-// Suggestions: transpositions and missing letters resolve, far strings do not.
+// The lib helpers are asserted directly.
 assert.equal(nearestCommand("advnace", ["advance", "ask", "status"]), "advance");
 assert.equal(nearestCommand("satuts", ["advance", "ask", "status"]), "status");
 assert.equal(nearestCommand("ASK", ["advance", "ask", "status"]), "ask");
@@ -36,14 +31,40 @@ assert.equal(cliHelpText(commands, "ask"), "ask: Ask questions\nbb stelow ask ..
 assert.equal(cliHelpText(commands, "nope"), null);
 assert.equal(cliHelpText(commands), "ask: Ask questions\ndone: Finish");
 
-// Wiring: the dispatcher suggests, helps, and never pastes a stale list.
-assert.match(server, /nearestCommand\(requested/, "unknown CLI commands suggest the nearest declared name");
-assert.match(server, /Did you mean/, "the suggestion reads as a question, not a bare error");
-assert.match(server, /cliUsageLine\(stelowCliCommands\)/, "fallthrough usage derives from registered metadata");
-assert.match(server, /if \(argv\[0\] === "help"\) return cliHelpResult\(argv\)/, "help answers without running a command");
-assert.match(server, /return cliUnknownResult\(argv\)/, "dispatch falls through to the same refusal seam");
-assert.match(server, /cliHelpText\(stelowCliCommands/, "help text renders from registered metadata");
-assert.match(server, /commands: stelowCliCommands/, "one command table feeds registration, usage, and help");
-assert.doesNotMatch(server, /Usage: bb stelow status\|ask\|seed\|advance\|done\|playbook\|split\|doctor\|sync-scopes\|lock\|config\|schema\|fan-out\|verify\|review\|preset\|manifest\|export\|draft/, "the stale pasted usage list is gone");
+// Wiring: driven rather than grepped. The refusal, the help answer and the
+// fallthrough are the behaviour the wiring exists for, and each is asked of the
+// real registry and dispatcher — a rename or a stale pasted list cannot satisfy
+// them, because the strings are read back out of `stelowCliCommands` now.
+const unknown = cliUnknownResult(["satuts"]);
+assert.equal(unknown.exitCode, 2, "an unknown command refuses");
+assert.match(unknown.stderr, /Did you mean "status"/, "the refusal suggests the nearest declared name");
+assert.ok(
+  unknown.stderr.includes(cliUsageLine(stelowCliCommands)),
+  "fallthrough usage derives from registered metadata",
+);
+assert.equal(
+  cliUnknownResult([]).stderr,
+  `Unknown command "".\n${cliUsageLine(stelowCliCommands)}`,
+  "an empty invocation refuses without inventing a suggestion",
+);
 
-console.log("cli suggest test ok: suggestions, derived usage, metadata help");
+const help = cliHelpResult(["help", "ask"]);
+assert.equal(help.exitCode, 0, "help answers without running a command");
+assert.equal(help.stdout, cliHelpText(stelowCliCommands, "ask"), "help text renders from registered metadata");
+assert.equal(cliHelpResult(["help", "nope"]).exitCode, 2, "help for an unknown command refuses through the same seam");
+
+let runs = 0;
+const dispatch = createCliDispatch({
+  run: async () => {
+    runs += 1;
+    return { exitCode: 0, stdout: "ran" };
+  },
+});
+const helped = await dispatch(["help"], {});
+assert.equal(helped.exitCode, 0, "the dispatcher answers help itself");
+assert.equal(runs, 0, "help never reaches the command runner");
+assert.equal((await dispatch([], {})).exitCode, 2, "an empty invocation refuses before the runner");
+assert.deepEqual(await dispatch(["status"], {}), { exitCode: 0, stdout: "ran" }, "a declared command falls through to run");
+assert.equal(runs, 1, "and reaches the runner exactly once");
+
+console.log("cli suggest test ok: suggestions, derived usage, metadata help, dispatched fallthrough");

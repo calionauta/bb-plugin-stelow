@@ -1,7 +1,5 @@
 // Type declarations for lib/preview-session.mjs
 export declare const PREVIEW_LOG_LIMIT: number;
-export declare const PREVIEW_PORT_MIN: number;
-export declare const PREVIEW_PORT_MAX: number;
 export declare const PREVIEW_MAX_SESSIONS: number;
 export declare function previewSourceLabel(environment: { isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null | undefined): string;
 export declare const PREVIEW_STATES: readonly ["stopped", "starting", "running", "failed"];
@@ -54,7 +52,6 @@ export interface PreviewView {
   log: string;
   startedAt: number | null;
 }
-export declare const EMPTY_PREVIEW: PreviewView;
 export declare function previewShape(options?: {
   detection?: { framework: string; evidence: string; port?: number | null; frames?: boolean } | null;
   declared?: { url?: string | null; port?: number | null } | null;

@@ -3,26 +3,33 @@ import { createAnswerCommand, type AnswerDoors } from "./cli-answer.js";
 import { createAskCommand } from "./cli-ask.js";
 import { createBundleWriter } from "./cli-bundle-writer.js";
 import { createCriteriaCommand } from "./cli-criteria.js";
+import { createDecideCommand } from "./cli-decide.js";
 import { createDelegatedCommands } from "./cli-draft.js";
 import { createDoneCommand } from "./cli-done.js";
 import { createExportCommand } from "./cli-export.js";
 import { createFanOutCommand } from "./cli-fan-out.js";
 import { createGapScopesCommand } from "./cli-gap-scopes.js";
 import { createGapTriageCommand } from "./cli-gap-triage.js";
+import { createGapsCommand } from "./cli-gaps.js";
 import { createGcCommand } from "./cli-gc.js";
 import { createHelperPassthroughCommands } from "./cli-helper-passthrough.js";
 import { createLockCommand } from "./cli-lock.js";
+import { createLogCommand } from "./cli-log.js";
 import { createManifestCommand } from "./cli-manifest.js";
 import { createMetricsCommand } from "./cli-metrics.js";
 import { createPreviewCommand } from "./cli-preview.js";
+import { createPruneCommand } from "./cli-prune.js";
 import { createReviewCommand } from "./cli-review.js";
+import { createRetryRunCommand } from "./cli-retry-run.js";
 import { createSeedCommand } from "./cli-seed.js";
 import { createScopeApproveCommand } from "./cli-scope-approve.js";
+import { createScanCommand } from "./cli-scan.js";
 import { createSplitCommand } from "./cli-split.js";
 import { createStorageCommand } from "./cli-storage.js";
 import { createVerifyCommand } from "./cli-verify.js";
 import { createVerifyDelegationCommand } from "./cli-verify-delegation.js";
 import { createVerifyTasksCommand } from "./cli-verify-tasks.js";
+import { createWakeCommand } from "./cli-wake.js";
 import type { CliCommandFn, CliResult, CliRunContext } from "./cli-contract.js";
 import type { CliDeps } from "./cli-deps.js";
 
@@ -38,9 +45,12 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createSeedCommand(deps),
     createAdvanceCommand(deps),
     createGapScopesCommand(deps),
+    createGapsCommand(deps),
     createMetricsCommand(deps),
     createStorageCommand(deps),
+    createLogCommand(deps),
     createGcCommand(deps),
+    createPruneCommand(deps),
     createManifestCommand(deps),
     createExportCommand(deps, exportRunBundle),
     createDoneCommand(deps, exportRunBundle),
@@ -51,11 +61,15 @@ function commandTable(deps: CliDeps, doors: AnswerDoors): CliCommandFn[] {
     createFanOutCommand(deps),
     createVerifyCommand(deps),
     createReviewCommand(deps),
+    createRetryRunCommand(deps),
     createCriteriaCommand(deps),
     createVerifyTasksCommand(deps),
+    createScanCommand(deps),
     createVerifyDelegationCommand(deps),
     createGapTriageCommand(deps),
     createScopeApproveCommand(deps),
+    createDecideCommand(deps),
+    createWakeCommand(deps),
     ...createDelegatedCommands(deps),
   ];
 }

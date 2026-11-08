@@ -5,6 +5,7 @@
  * host too, not just in the database. A stop that only writes the row leaves a
  * workflow burning tokens against a card nobody is watching.
  */
+import { z } from "zod";
 import {
   getExecutionRun,
   listExecutionRuns,
@@ -24,8 +25,9 @@ const LIVE_STATES = ["queued", "running", "needs_input"];
 const TERMINAL_STATES = ["succeeded", "failed", "cancelled"];
 
 export function createLifecycleStopper(deps: StopDeps) {
+  const runIdInput = z.object({ runId: z.string().min(1) }).strict();
   return {
-    cancelExecutionRun: ({ runId }: { runId: string }) => cancelExecutionRun(deps, runId),
+    cancelExecutionRun: (input: { runId: string }) => cancelExecutionRun(deps, runIdInput.parse(input).runId),
     stopOwned: (cardId: string, reason: string) => stopOwned(deps, cardId, reason),
   };
 }

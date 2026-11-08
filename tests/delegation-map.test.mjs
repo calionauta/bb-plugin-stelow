@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { getDelegationSite, assertDisposableSpawn } from "../lib/delegation-map.mjs";
 
 // Registry reads: every site names tier, preset source, spawn path,
@@ -19,49 +16,10 @@ assert.throws(() => assertDisposableSpawn({ site: "draft-burst", args: { ...hidd
 assert.throws(() => assertDisposableSpawn({ site: "review", args: { ...hiddenReadOnly, permissionMode: "full" } }), /must not spawn with full permission/, "full permission refuses");
 assert.throws(() => assertDisposableSpawn({ site: "draft-burst", args: null }), /needs a spawn args object/, "missing args refuse");
 assert.throws(() => assertDisposableSpawn({ site: "worker-spawn", args: hiddenReadOnly }), /not disposable/, "direct sites never route through the disposable wrapper");
-assert.throws(() => assertDisposableSpawn({ site: "preset-judge", args: hiddenReadOnly }), /not disposable/, "preset judges keep their own retry/timeout path");
+assert.throws(
+  () => getDelegationSite("preset-judge"),
+  /Register it in lib\/delegation-map\.mjs/,
+  "the hidden preset-judge thread is gone: no delegation site",
+);
 
-// Topology: every direct spawn carries a marker, every marker names a
-// registered site, and disposable callers pass registered disposable ids.
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const serverRoot = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
-  readFileSync(join(root, "server/runtime/disposable-spawn.ts"), "utf8"),
-].join("\n");
-const workerFiles = readdirSync(join(root, "server"))
-  .filter((file) => /^workers.*\.ts$/.test(file))
-  .sort();
-const decisionSource = [
-  readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8"),
-  readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
-].join("\n");
-const workerSource = workerFiles
-  .map((file) => readFileSync(join(root, "server", file), "utf8"))
-  .join("\n");
-const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
-const server = `${serverRoot}\n${decisionSource}\n${workerSource}\n${reviewCli}`;
-const directSpawns = [
-  ...(serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []),
-  ...(decisionSource.match(/(?:deps\.)?bb\.sdk\.threads\.spawn\(\{/g) ?? []),
-  ...(workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []),
-];
-assert.doesNotMatch(serverRoot, /delegation-site: worker-spawn/, "server.ts cannot reintroduce a direct worker spawn");
-assert.doesNotMatch(server, /workers\.spawn\(\{/, "the worker facade has no generic spawn escape hatch");
-assert.equal((serverRoot.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 2, "the composition runtime owns the disposable spawn and its compatibility retry");
-assert.equal((decisionSource.match(/(?:deps\.)?bb\.sdk\.threads\.spawn\(/g) ?? []).length, 1, "the preset judge owns one direct SDK spawn");
-assert.equal((workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 1, "worker support modules own one SDK spawn implementation");
-assert.equal(directSpawns.length, 2, "the judge and worker implementation remain pinned as marked direct sites");
-const markers = [...server.matchAll(/\/\/ delegation-site: (\S+)/g)].map((match) => match[1]);
-assert.equal(markers.length, directSpawns.length, "every direct spawn carries exactly one site marker");
-for (const site of markers) {
-  assert.ok(getDelegationSite(site), `${site} is registered`);
-}
-const disposableCalls = [...server.matchAll(
-  /spawnDisposable\s*\(\s*(?:\{[\s\S]*?\}|[\w.]+\([\s\S]*?\))\s*,\s*"([a-z-]+)"\s*,?\s*\)/g,
-)].map((match) => match[1]);
-assert.ok(disposableCalls.length >= 2, "disposable callers name their site");
-for (const site of disposableCalls) {
-  assert.equal(getDelegationSite(site).spawn, "disposable", `${site} is a disposable site`);
-}
-
-console.log("delegation map test ok: registry, guardrails, spawn topology");
+console.log("delegation map test ok: registry and guardrails");

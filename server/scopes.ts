@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { resolveWithinRoot } from "../lib/path-jail.mjs";
 import { parseScopeArgs } from "../lib/scope-command.mjs";
 import { workspaceUnavailable } from "../lib/workspace-refusal.mjs";
 import {
@@ -15,6 +16,7 @@ import { workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow
 import { array, record, text, type LooseRecord } from "./runtime/values.js";
 import { scopeDoneGate, scopeStartGate } from "./scope-batch-gates.js";
 import type { ScopeBatchDb } from "./scope-batch.js";
+import { trailScopeSteals } from "../lib/lock-blocked.mjs";
 
 export type ScopeStatus =
   | "pending"
@@ -131,8 +133,13 @@ export function trackingEntryForCard(
   workflowId: string,
 ): LooseRecord | null {
   try {
+    // The tracking file is always the workspace's own: resolve through the
+    // jail so a hostile rootPath (or a symlink game above it) cannot point
+    // this read at another checkout's state.
+    const trackingPath = resolveWithinRoot(rootPath, "stelow.json");
+    if (!trackingPath) return null;
     const tracking = JSON.parse(
-      readFileSync(nodeJoin(rootPath, "stelow.json"), "utf8"),
+      readFileSync(trackingPath, "utf8"),
     ) as LooseRecord;
     return workflowEntryForOwner(array(tracking.workflows), workflowId) as LooseRecord | null;
   } catch {
@@ -149,10 +156,16 @@ export function latestSpecTech(
     if (!match) return null;
     const plansRel = plansRelDir(workflowStateRelativeDir(match));
     if (!plansRel) return null;
-    const plans = nodeJoin(rootPath, ...plansRel.split("/"));
+    // plansRel derives from workflow state, not from a caller — but the
+    // state file is agent-influenced, so the joined dir still proves its
+    // containment before a readdir walks it.
+    const plans = resolveWithinRoot(rootPath, plansRel);
+    if (!plans) return null;
     const files = readdirSync(plans).filter(isSpecTechFile).sort();
     const file = files.at(-1);
-    return file ? { file, content: readFileSync(nodeJoin(plans, file), "utf8") } : null;
+    if (!file) return null;
+    const full = resolveWithinRoot(rootPath, nodeJoin(plansRel, file));
+    return full ? { file, content: readFileSync(full, "utf8") } : null;
   } catch {
     return null;
   }
@@ -164,8 +177,8 @@ export function loadCardScopes(
   opts?: { mergePlanned?: boolean },
 ): WorkflowScope[] {
   if (!rootPath) return [];
-  const tracking = nodeJoin(rootPath, "stelow.json");
-  if (!existsSync(tracking)) return [];
+  const tracking = resolveWithinRoot(rootPath, "stelow.json");
+  if (!tracking || !existsSync(tracking)) return [];
   let trackingData: LooseRecord;
   try {
     trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord;
@@ -234,6 +247,19 @@ interface ScopeCommandDeps<TCard extends ScopeCliCard> {
    * after it succeeds.
    */
   db?: ScopeBatchDb;
+  /**
+   * Trail writer for a claim that was taken out of a lapsed lease. Optional:
+   * the ledger owns comments, and a harness without one still gets the claim
+   * and still gets the steal in its gate result — what it cannot do is leave
+   * the card a record of it.
+   */
+  logCardComment?: (
+    cardId: string,
+    target: string,
+    targetId: string,
+    author: "user" | "agent",
+    body: string,
+  ) => string;
 }
 
 const SCOPE_TRANSITIONS = {
@@ -269,6 +295,19 @@ async function resolveScopeContext<TCard extends ScopeCliCard>(
   return { card, rootPath, stateDir, guard };
 }
 
+/**
+ * A start-gate refusal, formatted once.
+ *
+ * The `done` gate's refusal is deliberately not folded in: it carries the
+ * helper's stdout forward, and a formatter that could produce either shape
+ * would be the thing it replaced. The conflicts slice is bounded because a
+ * refusal is read on one screen, and the alternative to a bound is a wall.
+ */
+function scopeGateRefusal(gate: { code: string; reason: string; conflicts?: unknown }) {
+  const conflicts = gate.conflicts ? ` ${JSON.stringify(gate.conflicts).slice(0, 500)}` : "";
+  return { exitCode: 1, stderr: `${gate.code}: ${gate.reason}${conflicts}` };
+}
+
 export async function runScopeCommand<TCard extends ScopeCliCard>(
   argv: string[],
   ctx: ScopeCommandContext,
@@ -296,12 +335,8 @@ export async function runScopeCommand<TCard extends ScopeCliCard>(
         workspacePath: rootPath,
         scopes: loadCardScopes(rootPath, card.id),
       });
-      if (!gate.ok) {
-        const conflicts = "conflicts" in gate && gate.conflicts
-          ? ` ${JSON.stringify(gate.conflicts).slice(0, 500)}`
-          : "";
-        return { exitCode: 1, stderr: `${gate.code}: ${gate.reason}${conflicts}` };
-      }
+      if (!gate.ok) return scopeGateRefusal(gate);
+      trailScopeSteals(deps.logCardComment, card.id, gate.stolen);
     } catch {
       // Gate infrastructure failures fail open: a broken registry must
       // never park a worker behind a scope it could run.

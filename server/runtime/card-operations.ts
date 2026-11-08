@@ -100,7 +100,10 @@ async function retryWorker(
     deps.buildContinueInput(deps.buildNudge(card), "public"),
   );
   if (dispatch.delivery === "refused") {
-    return { ok: false, error: dispatch.error };
+    // The host's 409 "Thread is archived" is accurate and useless: the reader
+    // pressed Retry and needs the door that exists. Restart opens a fresh
+    // worker; Retry can never revive an archived thread.
+    return { ok: false, error: retryRefusal(dispatch.error) };
   }
   if (dispatch.delivery === "queued") {
     // The host took it between the read and the send. Same card state as any
@@ -238,7 +241,14 @@ async function moveStatus(
     const started = await deps.workers.fresh(cardId, "start");
     if (!started.ok) return { ok: false, error: started.error };
   }
-  deps.updateCard(cardId, { status }, { suppressCompletionEvent: true });
+  // Archiving through the drag is a terminal move, and a terminal card shows no
+  // worker state. Writing only `status` left five cards archived-and-`error`
+  // (three), archived-and-`running` (one) and archived-and-`awaiting-answer`
+  // (one): the hero rendered a live-looking state on a card the reader had just
+  // put away. `cancelCard` always wrote `{status:"archived", activity:"idle"}`;
+  // the drag reached the same place by a path that did not.
+  const activity = status === "archived" ? { activity: "idle" as const } : {};
+  deps.updateCard(cardId, { status, ...activity }, { suppressCompletionEvent: true });
   if (status === "completed") deps.recordStageEvent(cardId, "done");
   if (isClaimTerminal(status)) await deps.releaseClaims(cardId);
   return { ok: true, error: null };
@@ -265,4 +275,12 @@ async function movePhase(
   }
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
+}
+
+/** A refusal that names the exit when the worker thread itself is gone. */
+function retryRefusal(error: string): string {
+  if (/thread is archived|archived thread/i.test(error)) {
+    return "This card's worker thread is archived. Restart the card to open a fresh worker.";
+  }
+  return error;
 }

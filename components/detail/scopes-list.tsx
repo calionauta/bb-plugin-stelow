@@ -14,18 +14,13 @@ import { TEXT_META, TEXT_SECTION } from "../../lib/design-tokens";
 // rank math live in lib (tested); status presentation arrives as label
 // functions so the list never pastes its own pills.
 
-export type ScopeListTask = {
-  id: string;
-  name: string;
-  status: string;
-  source?: string | null;
-  note?: string | null;
-  conditions?: Array<{ type: string; message: string }> | null;
-  blockedBy?: string[] | null;
-  dependsOn?: string[] | null;
-};
+import type {
+  ScopeBlockedFile,
+  ScopeListScope,
+  ScopeListTask,
+} from "./scope-types";
 
-export type ScopeBlockedFile = { file: string; heldBy: string; expiresAt: number };
+export type { ScopeBlockedFile, ScopeListScope, ScopeListTask };
 
 /**
  * A condition is a fault the reader has to act on, so it is named once here
@@ -41,25 +36,6 @@ const SCOPE_SUMMARY = `${SUMMARY_BASE} block space-y-1`;
 const DEP_PILL = "rounded-md border border-dashed px-1.5 py-0.5 text-muted-foreground";
 const BLOCKED_PILL = "rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 "
   + "text-amber-700 dark:text-amber-300";
-
-export type ScopeListScope = {
-  id: string;
-  name: string;
-  type?: string | null;
-  source?: string | null;
-  gap?: string | null;
-  status: string;
-  startedAt?: string | null;
-  record?: { completedAt?: string | null; verified?: boolean | null; filesCount?: number | null; commandsCount?: number | null } | null;
-  tasks: ScopeListTask[];
-  conditions?: Array<{ type: string; message: string }> | null;
-  claimed?: boolean | null;
-  claimFiles?: string[];
-  blockedFiles?: ScopeBlockedFile[];
-  contract?: { acceptanceCriteria: string[] } | null;
-  blockedBy?: string[] | null;
-  dependsOn?: string[] | null;
-};
 
 export type ScopeStatusFns = {
   statusTone: (status: string) => string;

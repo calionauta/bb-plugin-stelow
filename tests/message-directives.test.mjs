@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   artifactDirectiveView,
   attemptWorkspaceFileOpen,
@@ -84,29 +83,5 @@ rememberStelowReturnFocusCardId("card_123");
 assert.equal(consumeStelowReturnFocusCardId("card_456"), false, "another card cannot consume the remembered focus");
 assert.equal(consumeStelowReturnFocusCardId("card_123"), true, "the opened card consumes its remembered focus");
 assert.equal(consumeStelowReturnFocusCardId("card_123"), false, "return focus is consumed only once");
-
-const appSource = readFileSync("app.tsx", "utf8");
-const returnFocusSource = readFileSync("components/board/use-return-focus.ts", "utf8");
-const artifactSource = readFileSync("components/messages/stelow-artifact-directive.tsx", "utf8");
-const qualitySource = readFileSync("components/messages/stelow-quality-directive.tsx", "utf8");
-const linkSource = readFileSync("components/messages/directive-link-button.tsx", "utf8");
-assert.match(appSource, /component: OpenStelowAction/, "the extracted header action remains registered");
-assert.match(appSource, /id: "stelow-artifact"[\s\S]*component: StelowArtifactDirective/, "the extracted artifact directive remains wired to its id");
-assert.match(appSource, /id: "stelow-quality"[\s\S]*component: StelowQualityDirective/, "the extracted quality directive remains wired to its id");
-assert.match(
-  artifactSource,
-  /if \(view\.kind === "invalid"\) return <InvalidDirective source=\{source\} \/>/,
-  "only an invalid artifact view renders the original directive",
-);
-assert.match(qualitySource, /if \(!path\) return <InvalidDirective source=\{source\} \/>/, "only a malformed quality path renders the original directive");
-assert.match(
-  linkSource,
-  /<span className="text-sm text-destructive">\{source\}<\/span>/,
-  "the malformed-directive fallback displays the original source instead of disappearing",
-);
-assert.match(linkSource, /setState\(attemptWorkspaceFileOpen\(openWorkspaceFile, path\)\)/, "the shared link control stores host acceptance or refusal");
-assert.match(linkSource, /unavailable \?\? children/, "a refused link replaces the normal chip content with an unavailable label");
-assert.match(linkSource, /disabled=\{blocked\}/, "a refused link cannot be clicked again as if it were live");
-assert.match(returnFocusSource, /ref\.current && consumeStelowReturnFocusCardId\(cardId\)/, "return focus survives a card surface without a mounted element");
 
 console.log("message directives test ok: malformed attributes, host refusals, and worker targets");

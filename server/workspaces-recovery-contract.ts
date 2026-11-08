@@ -9,7 +9,7 @@ export type RecoveryCard = {
   name: string;
   display_name: string | null;
   status: string;
-  workspace_kind: "project" | "exploratory";
+  workspace_kind: "project" | "exploratory" | "worktree";
   workspace_path: string | null;
   workspace_host_id: string | null;
   worker_thread_id: string | null;

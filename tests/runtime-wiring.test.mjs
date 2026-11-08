@@ -46,9 +46,23 @@ assert.deepEqual(
 );
 
 // --- the workflow spawn prompt routes the request it is handed ---
+// The reading list is resolved by `bb stelow playbook`, not by naming skills here.
+// This assertion used to require the literal `stelow-workflow-entry`, which pinned
+// the OLD instruction: listing skill names is what made a worker search for them,
+// and the playbook command exists to hand over exact paths instead (its own
+// docstring: workers "burned whole turns on discovery"). Pinning the command that
+// resolves the list is the topology; pinning a skill name was the prose.
 const prompt = startWorkflowPrompt("add a dark mode toggle");
 assert.match(prompt, /add a dark mode toggle/, "the request is the prompt's payload");
-assert.match(prompt, /stelow-workflow-entry/, "the entry skill is named before anything is fetched");
+assert.match(
+  prompt,
+  /Read `bb stelow playbook` and load exactly the skills it names/,
+  "the reading list comes from the playbook command, which resolves the exact paths",
+);
+assert.ok(
+  !/stelow-workflow-\*/.test(prompt),
+  "the prompt never names the skill family as a glob: that is discovery by search, and it is what the playbook replaced",
+);
 assert.match(prompt, /do NOT hand-write stage transitions/, "the advance command is the only route");
 assert.match(
   prompt,

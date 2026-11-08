@@ -1,9 +1,14 @@
 import { z } from "zod";
+import { NO_INPUT, optionalInput } from "./rpc-input.js";
 import {
+  answerResultSchema,
   attachmentSchema,
   appetiteSchema,
   boardWorkflowDefaultsSchema,
   composerExecutionSchema,
+  explorationCountSchema,
+  qualitySchema,
+  redFirstSchema,
   reviewModeInputSchema,
   cardStatusSchema,
   scopeSummarySchema,
@@ -29,7 +34,7 @@ export const cardRpcContract = {
   },
   projects: {
     experimental_description: "Projects BB knows, for board and card pickers",
-    input: z.object({}).strict(),
+    input: NO_INPUT,
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
   answerQuestions: {
@@ -43,23 +48,25 @@ export const cardRpcContract = {
           .max(12),
       })
       .strict(),
-    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+    output: answerResultSchema,
   },
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
-    input: z
-      .object({
-        // Optional, not merely nullable. `queryCards` omits the project filter
-        // when this is null, so the handler genuinely answers "every project"
-        // — but a non-optional property is what the host's schema derivation
-        // reports as REQUIRED, so a caller that omitted it (the host's own
-        // plugin probe) was refused at validation for a call the handler
-        // supports. `.nullable()` said the value could be absent; only
-        // `.optional()` makes that true of the published contract too.
-        projectId: z.string().nullable().optional(),
-        kind: z.enum(["build", "research", "explore"]).nullable().optional(),
-      })
-      .strict(),
+    input: optionalInput(
+      z
+        .object({
+          // Optional, not merely nullable. `queryCards` omits the project filter
+          // when this is null, so the handler genuinely answers "every project"
+          // — but a non-optional property is what the host's schema derivation
+          // reports as REQUIRED, so a caller that omitted it (the host's own
+          // plugin probe) was refused at validation for a call the handler
+          // supports. `.nullable()` said the value could be absent; only
+          // `.optional()` makes that true of the published contract too.
+          projectId: z.string().nullable().optional(),
+          kind: z.enum(["build", "research", "explore"]).nullable().optional(),
+        })
+        .strict(),
+    ),
     output: z.object({
       cards: z.array(
         z.object({
@@ -70,7 +77,7 @@ export const cardRpcContract = {
           intent: z.string(),
           projectId: z.string(),
           projectName: z.string(),
-          workspaceKind: z.enum(["project", "exploratory"]),
+          workspaceKind: z.enum(["project", "exploratory", "worktree"]),
           workspacePath: z.string().nullable(),
           environmentLabel: z.string().nullable(),
           kind: z.enum(["build", "research", "explore"]),
@@ -89,6 +96,16 @@ export const cardRpcContract = {
           readMissSince: z.number().nullable(),
           needsAttention: z.boolean(),
           hasPendingReview: z.boolean(),
+          // Why the card's NEWEST host run failed, or null. Carried BESIDE
+          // `activity`, never inside it: it is a fact about the run ledger, not a
+          // verdict about the card's thread, and the board renders it in the same
+          // failure slot as the worker's own error rather than as a second chip.
+          runFailure: z
+            .object({
+              label: z.string(),
+              detail: z.string(),
+            })
+            .nullable(),
           integrationPending: z.object({
             state: z.enum(["unpublished", "local", "unmerged"]),
             label: z.string(),
@@ -115,6 +132,19 @@ export const cardRpcContract = {
     experimental_description: "Read a workspace file through the card's checkout",
     input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
     output: z.object({ content: z.string().nullable(), truncated: z.boolean(), error: z.string().nullable() }),
+  },
+  listCardFiles: {
+    experimental_description: "List the viewable files beside a card file, so a brief can link to them",
+    input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
+    output: z.object({
+      directory: z.string().nullable(),
+      files: z.array(z.object({
+        name: z.string(),
+        path: z.string(),
+        absolutePath: z.string(),
+      })),
+      error: z.string().nullable(),
+    }),
   },
   qualitySeal: {
     experimental_description: "Verification seal for an artifact path",
@@ -166,13 +196,15 @@ export const cardRpcContract = {
   },
   flowMetrics: {
     experimental_description: "Lead/cycle per finished card with p50/p90, where the time went, plus stuck and review-awaiting now",
-    input: z
-      .object({
-        projectId: z.string().nullable().optional(),
-        since: z.number().int().nonnegative().nullable().optional(),
-        until: z.number().int().nonnegative().nullable().optional(),
-      })
-      .strict(),
+    input: optionalInput(
+      z
+        .object({
+          projectId: z.string().nullable().optional(),
+          since: z.number().int().nonnegative().nullable().optional(),
+          until: z.number().int().nonnegative().nullable().optional(),
+        })
+        .strict(),
+    ),
     output: z.object({
       items: z.array(
         z.object({
@@ -249,8 +281,11 @@ export const cardRpcContract = {
     }),
   },
   boardWorkflowDefaults: {
-    experimental_description: "Board defaults: planning depth and review gates for new cards",
-    input: z.object({}).strict(),
+    experimental_description: "Board defaults: run knobs and review gates for new cards",
+    input: NO_INPUT,
+    /** The stored shape carries no retired keys: readers of persisted rows are
+     * tolerant of them (see `boardWorkflowDefaultsSchema`), so nothing has to be
+     * advertised here for old data to keep parsing. */
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
@@ -270,7 +305,11 @@ export const cardRpcContract = {
         prompt: z.string().min(1).max(20_000),
         attachments: z.array(attachmentSchema).max(20).default([]),
         intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"),
-        appetite: appetiteSchema.default("Lean"),
+        quality: qualitySchema.default("production"),
+        explorationCount: explorationCountSchema.default(3),
+        redFirst: redFirstSchema.optional(),
+        /** Deprecated alias; when present without knobs it maps once to knobs. */
+        appetite: appetiteSchema.optional(),
         reviewMode: reviewModeInputSchema,
         presetId: z.string().nullable().optional(),
         start: z.boolean().default(true),
@@ -292,6 +331,19 @@ export const cardRpcContract = {
   renameCard: {
     experimental_description: "Rename a card's display title (1-120 chars); blank restores the heuristic",
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  updateCardPrompt: {
+    experimental_description: "Edit a parked card's description (up to 20000 chars after trim); refused once started, completed, or archived",
+    // No .max() here on purpose: the handler trims before measuring, so a
+    // padded-but-legal input must pass the contract and reach the handler's
+    // ERR_PROMPT_TOO_LONG only when the trimmed text is actually over-long.
+    input: z.object({ cardId: z.string(), prompt: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  updateCardWorkspace: {
+    experimental_description: "Move a parked empty card to another project/checkout (gated)",
+    input: z.object({ cardId: z.string(), projectId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   acceptCard: {

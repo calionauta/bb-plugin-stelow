@@ -232,6 +232,36 @@ test("active phase move updates the checkpoint without spawning or publishing", 
   ]);
 });
 
+test("archiving through a drag writes idle, not a live-looking worker state", async () => {
+  // Five cards were archived within three seconds of each other by a bulk drag
+  // and kept `activity` at error (three), running (one) and awaiting-answer
+  // (one): the hero rendered a live-looking state on a card the reader had just
+  // put away. `cancelCard` always wrote `{status:"archived", activity:"idle"}`;
+  // the drag reached the same place by a path that did not.
+  const { handlers, calls } = harness();
+
+  assert.deepEqual(
+    await handlers.moveCard({ cardId: "card-1", status: "archived" }),
+    { ok: true, error: null },
+  );
+  assert.deepEqual(calls, [
+    ["stop", "thread-1"],
+    ["update", "card-1", { status: "archived", activity: "idle" }, { suppressCompletionEvent: true }],
+    "release",
+  ]);
+});
+
+test("a non-terminal move does not touch activity", async () => {
+  const { handlers, calls } = harness();
+
+  await handlers.moveCard({ cardId: "card-1", status: "review" });
+  assert.deepEqual(
+    calls,
+    [["update", "card-1", { stage: "review", status: "in-progress" }]],
+    "a live card's activity belongs to its worker, not to the drag",
+  );
+});
+
 test("split receipt is written only after the worker accepts the request", async () => {
   const { handlers, calls, cardValue } = harness();
   cardValue.kind = "build";

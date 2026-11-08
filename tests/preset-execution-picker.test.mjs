@@ -1,57 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import {
   asPresetReasoningLevel,
   modeLabel,
   PRESET_REASONING_LEVELS,
 } from "../components/settings/preset-execution-values.mjs";
+import { loadComponent, renderTree, treeText } from "./helpers/render-component.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-const decisionRouterUi = readFileSync(join(root, "components/settings/decision-router-row.tsx"), "utf8");
+// The picker and the decision-router row are loaded as components and driven
+// with plain props, so the host contract, the callbacks and the mode labels are
+// facts about a rendered tree rather than about the source text that made it.
+const hostPickers = {
+  experimental_PermissionModePicker: () => null,
+  experimental_ProviderModelPicker: () => null,
+};
+const PermissionModePicker = hostPickers.experimental_PermissionModePicker;
+const ProviderModelPicker = hostPickers.experimental_ProviderModelPicker;
 
-function loadPresetExecutionPicker() {
-  const source = readFileSync(
-    join(root, "components/settings/preset-execution-picker.tsx"),
-    "utf8",
-  );
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      jsx: ts.JsxEmit.React,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
-  }).outputText;
-  const hostPickers = {
-    experimental_PermissionModePicker: () => null,
-    experimental_ProviderModelPicker: () => null,
-  };
-  const module = { exports: {} };
-  const React = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-  };
-  const execute = new Function("exports", "require", "module", "React", compiled);
-  execute(
-    module.exports,
-    (specifier) => {
-      if (specifier === "@get-bb/plugin-sdk/app") return hostPickers;
-      if (specifier === "./preset-execution-values.mjs") {
-        return { asPresetReasoningLevel };
-      }
-      throw new Error(`Unexpected import: ${specifier}`);
-    },
-    module,
-    React,
-  );
-  return {
-    PresetExecutionPicker: module.exports.PresetExecutionPicker,
-    PermissionModePicker: hostPickers.experimental_PermissionModePicker,
-    ProviderModelPicker: hostPickers.experimental_ProviderModelPicker,
-  };
-}
+const PresetExecutionPicker = loadComponent(
+  "components/settings/preset-execution-picker.tsx",
+  "PresetExecutionPicker",
+  {
+    "@get-bb/plugin-sdk/app": hostPickers,
+    "./preset-execution-values.mjs": { asPresetReasoningLevel },
+  },
+);
 
 function findElement(node, type) {
   if (!node || typeof node !== "object") return null;
@@ -93,22 +65,45 @@ for (const value of ["rules", "", "unknown"]) {
   );
 }
 
-assert.match(
-  decisionRouterUi,
-  /import \{ modeLabel \} from "\.\/preset-execution-values\.mjs"/,
-  "decision routing consumes the tested mode-label helper",
+// Decision routing consumes the tested mode-label helper: the row is rendered
+// and its mode option labels are read off the tree, so a hand-copied label or a
+// helper that stopped being used fails here instead of surviving a regex. The
+// normalization helpers live in the values module, imported and driven above.
+const DecisionRouterRow = loadComponent(
+  "components/settings/decision-router-row.tsx",
+  "DecisionRouterRow",
+  {
+    react: {
+      useState: (initial) => [initial, () => {}],
+      useEffect: () => {},
+    },
+    "../ui/button": { Button: () => null },
+    "../ui/input": { Input: () => null },
+    "./preset-execution-values.mjs": { modeLabel },
+  },
 );
-assert.doesNotMatch(
-  app,
-  /function (?:asPresetReasoningLevel|modeLabel)\(/,
-  "normalization helpers no longer live in the app shell",
+const routerRow = DecisionRouterRow({
+  rpc: { call: async () => ({}) },
+  point: {
+    id: "point-1",
+    label: "Auto-continue",
+    description: "Decide whether a finished turn made progress.",
+    modes: ["api", "preset", "rules"],
+    mode: "rules",
+    presetId: null,
+    thresholds: { routeAt: 0.7 },
+  },
+  presets: [],
+  refresh: async () => {},
+});
+const routerText = treeText(renderTree(routerRow));
+assert.ok(routerText.includes("Decision API"), "the api mode is labelled through the shared helper");
+assert.ok(routerText.includes("Preset judge"), "the preset mode is labelled through the shared helper");
+assert.ok(
+  routerText.includes("Built-in rules (default)"),
+  "the fallback mode is labelled through the shared helper",
 );
 
-const {
-  PermissionModePicker,
-  PresetExecutionPicker,
-  ProviderModelPicker,
-} = loadPresetExecutionPicker();
 for (const incomplete of [
   { providerId: "", modelId: "model", reasoningLevel: "high", permissionMode: "full" },
   { providerId: "provider", modelId: "", reasoningLevel: "high", permissionMode: "full" },

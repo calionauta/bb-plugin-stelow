@@ -21,7 +21,11 @@ type BuildContentProps = {
 
 export function BuildDetailContent({ cardId, inboxEventId, view }: BuildContentProps) {
   return (
-    <div className="flex-1 overflow-auto p-4">
+    // Tighter gutters on a phone: `p-4` on each side of a 375px screen leaves 343px of
+    // content, and the card's own sections add their padding on top of that. The bottom
+    // gutter clears the floating bulk bar, which is fixed to the viewport and would
+    // otherwise sit over the last section.
+    <div className="flex-1 overflow-auto px-3 py-3 pb-24 sm:p-4 sm:pb-4">
       <div className="mx-auto w-full max-w-3xl space-y-6">
         {view.error ? <p className="text-sm text-destructive">{view.error}</p> : null}
         <CardKindContent cardId={cardId} inboxEventId={inboxEventId} view={view} />
@@ -90,7 +94,6 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         runs={view.execution}
         focusRunId={view.focusRunId}
         intentLabels={view.intentLabels}
-        onPickStage={view.setPendingAdvance}
         mapOpen={view.mapOpen}
         onMapToggle={view.setMapOpen}
       />

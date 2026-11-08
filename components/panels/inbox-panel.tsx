@@ -3,41 +3,16 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../server";
 import { usePanelData } from "../panel/panel-state-hooks";
 import { HolderChip } from "./inbox-holder-chip";
-import { ItemActions } from "./inbox-item-actions";
+import { openAskDoor } from "./inbox-ask-door";
+import { InboxEntry } from "./inbox-row";
+import { useStableInboxOrder } from "./use-stable-inbox-order";
+import { Button } from "../ui/button";
 import { goToHolderCard, goToInboxCard } from "./inbox-panel-actions";
-import {
-  INBOX_EVENT_LABELS,
-  inboxEventPresentation,
-  inboxEventText,
-  inboxEventTime,
-} from "../../lib/inbox-event-presentation.mjs";
-import { inboxAction, inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
+import { inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
-export type InboxNotification = {
-  id: string;
-  cardId: string;
-  cardName: string;
-  projectName: string;
-  cardKind: "build" | "research" | "explore";
-  kind: "question" | "error" | "paused" | "completed";
-  summary: string;
-  occurredAt: number;
-  readAt: number | null;
-  resolvedAt: number | null;
-  archivedAt: number | null;
-  severity: number;
-  severityReasons: string[];
-  /** The card holding a file this one waits on. Identity, not prose. */
-  holderCardId: string | null;
-  holderFile: string | null;
-};
+import type { InboxNotification } from "./inbox-types";
 
-const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
-  question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },
-  error: { icon: "!", label: INBOX_EVENT_LABELS.error, tone: "bg-destructive/15 text-destructive" },
-  paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
-  completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
-};
+export type { InboxNotification };
 
 const FILTERS: Array<{ id: InboxFilter; label: string; description: string }> = [
   { id: "attention", label: "Needs attention", description: "Work that needs your decision or recovery." },
@@ -52,6 +27,11 @@ const FILTERS: Array<{ id: InboxFilter; label: string; description: string }> = 
     label: "Read",
     description: "Updates you have already seen. Mark one unread to bring it back to attention.",
   },
+  {
+    id: "archived",
+    label: "Set aside",
+    description: "Updates you dismissed. The cards were not affected — bring any back.",
+  },
   { id: "all", label: "All", description: "All active Inbox updates, newest first." },
 ];
 
@@ -59,16 +39,57 @@ const FILTER_DOT: Record<InboxFilter, string> = {
   attention: "bg-amber-500",
   resolved: "bg-emerald-500",
   read: "bg-zinc-500",
+  archived: "bg-stone-400",
   all: "bg-primary",
 };
 const FILTER_ACTIVE: Record<InboxFilter, string> = {
   attention: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   resolved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   read: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  archived: "bg-stone-500/15 text-stone-600 dark:text-stone-300",
   all: "bg-primary/15 text-primary",
 };
 
-type InboxFilter = "attention" | "resolved" | "read" | "all";
+type InboxFilter = "attention" | "resolved" | "read" | "archived" | "all";
+
+/**
+ * The filter tabs plus the Unread-only toggle: what the reader is looking at.
+ * Split out because it is the view concern, while the panel owns loading,
+ * empty states, and the list itself.
+ */
+function InboxToolbar({ filter, setFilter, unreadOnly, setUnreadOnly }: {
+  filter: InboxFilter;
+  setFilter: (filter: InboxFilter) => void;
+  unreadOnly: boolean;
+  setUnreadOnly: (unreadOnly: boolean) => void;
+}) {
+  return (
+    <>
+      <div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">
+        {FILTERS.map((entry) => (
+          <button
+            key={entry.id}
+            onClick={() => setFilter(entry.id)}
+            aria-pressed={filter === entry.id}
+            title={entry.description}
+            className={[
+              "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+              filter === entry.id ? FILTER_ACTIVE[entry.id] : "text-muted-foreground hover:bg-muted",
+            ].join(" ")}
+          >
+            <span aria-hidden className={`size-1.5 rounded-full ${FILTER_DOT[entry.id]}`} />
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} className="size-4 accent-primary" />
+        Unread only
+      </label>
+    </>
+  );
+}
 
 function PanelSkeleton() {
   return (
@@ -100,7 +121,7 @@ function PanelSkeleton() {
 function openNotification(
   rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
   navigate: ReturnType<typeof useBbNavigate>,
-  reload: () => Promise<unknown>,
+  _reload: () => Promise<unknown>,
 ) {
   return async (entry: InboxNotification) => {
     if (!entry.readAt) {
@@ -145,116 +166,6 @@ function holderChipFor(navigate: ReturnType<typeof useBbNavigate>) {
   );
 }
 
-function InboxEntryHeader({ entry, label, stateLabel }: {
-  entry: InboxNotification;
-  label: string;
-  stateLabel: string | null;
-}) {
-  return (
-    <span className="flex flex-wrap items-center gap-x-2">
-      <strong className="text-sm">{entry.cardName}</strong>
-      {stateLabel ? (
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          {label}
-        </span>
-      ) : null}
-      {entry.severity >= 2 && entry.resolvedAt == null ? (
-        <span
-          className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-          title={entry.severityReasons.join(" · ")}
-        >
-          escalating
-        </span>
-      ) : null}
-      {!entry.readAt ? (
-        <span className="size-1.5 rounded-full bg-primary">
-          <span className="sr-only">Unread</span>
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-// What the item says, in the order a reader needs it: who it is about, what
-// it says, why it escalated, and when. Split from the row so the row owns
-// only the click targets.
-function InboxEntryBody({ entry, presentation, onHolderChip }: {
-  entry: InboxNotification;
-  presentation: ReturnType<typeof inboxEventPresentation>;
-  onHolderChip: (entry: InboxNotification) => ReactNode;
-}) {
-  return (
-    <span className="min-w-0">
-      <InboxEntryHeader entry={entry} label={presentation.label} stateLabel={presentation.stateLabel} />
-      <span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>
-      {entry.holderCardId ? onHolderChip(entry) : null}
-      {entry.severityReasons.length > 0 && entry.resolvedAt == null ? (
-        <span className="mt-1 block text-xs text-muted-foreground">
-          {entry.severityReasons.slice(0, 3).join(" · ")}
-        </span>
-      ) : null}
-      <span className="mt-1 block text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>
-        {entry.projectName} · {inboxEventTime(entry)}
-      </span>
-    </span>
-  );
-}
-
-type InboxEntryProps = {
-  entry: InboxNotification;
-  onOpen: () => void;
-  onHolderChip: (entry: InboxNotification) => ReactNode;
-  onMarkRead: () => void;
-  onMarkUnread: () => void;
-  onSetAside: () => void;
-  onBringBack: () => void;
-};
-
-function InboxEntry({
-  entry,
-  onOpen,
-  onHolderChip,
-  onMarkRead,
-  onMarkUnread,
-  onSetAside,
-  onBringBack,
-}: InboxEntryProps) {
-  const copy = INBOX_COPY[entry.kind];
-  const presentation = inboxEventPresentation(entry);
-  const action = inboxAction(entry);
-  return (
-    <div className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
-      <button
-        onClick={onOpen}
-        className={
-          "flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left "
-          + "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        }
-      >
-        <span
-          aria-hidden
-          className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}
-        >
-          {copy.icon}
-        </span>
-        <InboxEntryBody
-          entry={entry}
-          presentation={presentation}
-          onHolderChip={onHolderChip}
-        />
-      </button>
-      <ItemActions
-        entry={entry}
-        action={action}
-        onMarkRead={onMarkRead}
-        onMarkUnread={onMarkUnread}
-        onSetAside={onSetAside}
-        onBringBack={onBringBack}
-      />
-    </div>
-  );
-}
-
 export function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -277,13 +188,18 @@ export function InboxPanel() {
     realtimeChannels: ["card-state", "inbox-changed"],
   });
   const entries = inboxVisibleEntries(notifications, filter, unreadOnly);
+  // The order is held while the reader is looking: a row that gains severity
+  // keeps its place instead of moving under a click meant for the row below it.
+  const { shown, held, show } = useStableInboxOrder(entries, `${filter}:${unreadOnly}`);
   const selected = FILTERS.find((entry) => entry.id === filter)!;
   const panelState = inboxPanelState(firstLoad, loadError, notifications);
   const emptyTitle = unreadOnly
     ? "No unread updates"
     : filter === "attention"
       ? "All clear"
-      : `No ${selected.label.toLowerCase()} updates`;
+      : filter === "archived"
+        ? "Nothing set aside"
+        : `No ${selected.label.toLowerCase()} updates`;
   const emptyDescription = unreadOnly
     ? "Everything in this view has been read."
     : filter === "attention"
@@ -292,9 +208,10 @@ export function InboxPanel() {
 
   const open = openNotification(rpc, navigate, load);
   const { markRead, markUnread, setAside, bringBack } = readToggles(rpc, load);
+  const openAsk = openAskDoor(rpc, navigate, load);
 
   return (
-    <div className="h-full overflow-auto bg-background p-4 md:p-6">
+    <div className="h-full overflow-auto bg-background p-3 sm:p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-5">
         <header>
           <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
@@ -303,28 +220,12 @@ export function InboxPanel() {
           </p>
         </header>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">
-            {FILTERS.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => setFilter(entry.id)}
-                aria-pressed={filter === entry.id}
-                title={entry.description}
-                className={[
-                  "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
-                  filter === entry.id ? FILTER_ACTIVE[entry.id] : "text-muted-foreground hover:bg-muted",
-                ].join(" ")}
-              >
-                <span aria-hidden className={`size-1.5 rounded-full ${FILTER_DOT[entry.id]}`} />
-                {entry.label}
-              </button>
-            ))}
-          </div>
-          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} className="size-4 accent-primary" />
-            Unread only
-          </label>
+          <InboxToolbar filter={filter} setFilter={setFilter} unreadOnly={unreadOnly} setUnreadOnly={setUnreadOnly} />
+          {held > 0 ? (
+            <Button variant="outline" className="min-h-11" onClick={show}>
+              {held === 1 ? "1 update" : `${held} updates`} · Show
+            </Button>
+          ) : null}
         </div>
         {panelState === "loading" ? <PanelSkeleton /> : panelState === "failure" ? (
           <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
@@ -333,15 +234,16 @@ export function InboxPanel() {
               Retry
             </button>
           </section>
-        ) : entries.length ? (
+        ) : shown.length ? (
           <section className="space-y-2" aria-label={selected.label}>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{selected.label}</h2>
             <div className="divide-y rounded-md border">
-              {entries.map((entry) => (
+              {shown.map((entry) => (
                 <InboxEntry
                   key={entry.id}
                   entry={entry}
                   onOpen={() => void open(entry)}
+                  onOpenAsk={openAsk}
                   onHolderChip={holderChipFor(navigate)}
                   onMarkRead={() => void markRead(entry)}
                   onMarkUnread={() => void markUnread(entry)}

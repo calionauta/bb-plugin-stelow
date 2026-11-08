@@ -2,24 +2,28 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   ensureInboxResolvedReasonColumn,
+  ensureInboxQuestionColumns,
   ensureInboxSeverityColumns,
   insertInboxEvent,
   listInboxEvents,
-  markQuestionsAnswered,
   resolveActionInboxEvents,
   resolveAllInboxEvents,
-  upsertPausedEvent,
-  syncQuestionInboxEvents,
   type InboxEventInput,
   type InboxResolutionReason,
 } from "../lib/inbox-events.mjs";
-import {
-  ensureInboxOccurrencesColumn,
-  recordErrorInboxEvent,
-} from "../lib/inbox-error-event.mjs";
+import { ensureInboxOccurrencesColumn } from "../lib/inbox-error-event.mjs";
 import { parseSeverityReasons } from "../lib/inbox-severity.mjs";
 import { ensureColumns } from "../lib/sqlite-columns.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
+import { createAnswerMarker, createAttentionRecorders, createQuestionSync } from "./inbox-recorders.js";
+import {
+  createArchiveHandler,
+  createCardReadHandler,
+  createReadHandler,
+  createRestoreHandler,
+  createUnreadHandler,
+} from "./inbox-notification-handlers.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Publish = (
@@ -93,6 +97,7 @@ export function runInboxMigrations(db: Db): void {
     ["holder_file", "TEXT"],
   ]);
   ensureInboxSeverityColumns(db);
+  ensureInboxQuestionColumns(db);
   ensureInboxOccurrencesColumn(db);
   db.prepare(`
     DELETE FROM inbox_events
@@ -130,9 +135,11 @@ export interface InboxServerDeps {
   randomId: (prefix: string) => string;
   publish: Publish;
   listProjects: () => Promise<Array<{ id: string; name: string }>>;
+  /** The flight recorder; absent means "no log", never "no inbox". */
+  actions?: ActionRecorder;
 }
 
-type InboxContext = Pick<InboxServerDeps, "db" | "now" | "randomId"> & {
+type InboxContext = Pick<InboxServerDeps, "db" | "now" | "randomId" | "actions"> & {
   changed: (payload: Record<string, unknown>) => void;
 };
 
@@ -163,7 +170,19 @@ function createRecorder(ctx: InboxContext) {
       occurredAt,
       holder,
     });
-    if (inserted) ctx.changed({ cardId: card.id });
+    // A row that was not inserted is a repeat of a standing condition, and the
+    // inbox already carries it. Recording only the insert keeps this log about
+    // what the inbox did, not about how often it was asked.
+    if (inserted) {
+      ctx.changed({ cardId: card.id });
+      ctx.actions?.record({
+        kind: "inbox.opened",
+        outcome: "ok",
+        cause: `inbox.${kind}`,
+        cardId: card.id,
+        detail: { kind, dedupeKey, holder: holder?.file ?? null },
+      });
+    }
   };
 }
 
@@ -174,8 +193,16 @@ function createResolver(ctx: InboxContext) {
     kinds: ActionKind[] = ["question", "error", "paused"],
     reason: InboxResolutionReason | null = null,
   ) => {
-    if (resolveActionInboxEvents(ctx.db, cardId, resolvedAt, kinds, reason) > 0) {
+    const resolved = resolveActionInboxEvents(ctx.db, cardId, resolvedAt, kinds, reason);
+    if (resolved > 0) {
       ctx.changed({ cardId });
+      ctx.actions?.record({
+        kind: "inbox.resolved",
+        outcome: "ok",
+        cause: `inbox.resolved.${reason ?? "unspecified"}`,
+        cardId,
+        detail: { kinds, rows: resolved },
+      });
     }
   };
 }
@@ -187,37 +214,24 @@ function createResolver(ctx: InboxContext) {
  */
 function createTerminalResolver(ctx: InboxContext) {
   return (cardId: string, resolvedAt: number, reason: InboxResolutionReason | null = null) => {
-    if (resolveAllInboxEvents(ctx.db, cardId, resolvedAt, reason) > 0) {
+    const resolved = resolveAllInboxEvents(ctx.db, cardId, resolvedAt, reason);
+    if (resolved > 0) {
       ctx.changed({ cardId });
+      ctx.actions?.record({
+        kind: "inbox.resolved",
+        outcome: "ok",
+        cause: `inbox.resolved.${reason ?? "unspecified"}`,
+        cardId,
+        detail: { kinds: "all", rows: resolved },
+      });
     }
   };
 }
 
-function createQuestionSync(ctx: InboxContext) {
-  return (cardId: string, interactionIds: string[], occurredAt = ctx.now()) => {
-    const result = syncQuestionInboxEvents(ctx.db, {
-      cardId,
-      interactionIds,
-      occurredAt,
-      createId: () => ctx.randomId("evt"),
-      summary: "The agent is waiting for your answer to continue.",
-    });
-    const fields = ["inserted", "resolved", "reopened", "pausedSuperseded"] as const;
-    if (fields.some((field) => result[field] > 0)) ctx.changed({ cardId });
-  };
-}
-
-function createAnswerMarker(ctx: InboxContext) {
-  return (cardId: string, interactionIds: string[]) =>
-    markQuestionsAnswered(ctx.db, {
-      cardId,
-      interactionIds,
-      occurredAt: ctx.now(),
-    });
-}
-
 function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {
-  return async ({ includeArchived }: { includeArchived: boolean }) => {
+  const input = z.object({ includeArchived: z.boolean() }).strict();
+  return async (raw: { includeArchived: boolean }) => {
+    const { includeArchived } = input.parse(raw);
     const rows = listInboxEvents(ctx.db, includeArchived) as Array<
       InboxEventRow & {
         display_name: string | null;
@@ -235,90 +249,25 @@ function createListHandler(ctx: InboxContext, deps: InboxServerDeps) {
         projectName: projectNames.get(row.project_id) ?? row.project_id,
         cardKind: normalizeKind(row.card_kind),
         readAt: row.read_at,
+        // The question this row is about, when it was captured at mint. Null on
+        // every legacy row and every non-question row; the client falls back to
+        // the generic summary, so nothing has to be migrated in place.
+        questionSummary: (row as { question_summary?: string | null }).question_summary ?? null,
+        questionCount: (row as { question_count?: number | null }).question_count ?? null,
+        // `as const` because this object is built inside a `.map` whose type is
+        // inferred before the outer RPC contract is checked, which widens the
+        // literal to `string` and makes the contract reject it.
+        questionKind: (row as { question_kind?: string | null }).question_kind === "split" ? ("split" as const) : null,
         ...snapshot(row),
       })),
     };
   };
 }
 
-function changedUpdate(
-  ctx: InboxContext,
-  sql: string,
-  values: unknown[],
-  payload: Record<string, unknown>,
-) {
-  const result = ctx.db.prepare(sql).run(...values);
-  if (result.changes > 0) ctx.changed(payload);
-  return result.changes > 0;
-}
-
-function createEventUpdateHandler(
-  ctx: InboxContext,
-  sql: string,
-  notificationIdFirst: boolean,
-) {
-  return async ({ notificationId }: { notificationId: string }) => {
-    const values = notificationIdFirst
-      ? [ctx.now(), notificationId]
-      : [notificationId];
-    const changed = changedUpdate(ctx, sql, values, { notificationId });
-    return { ok: changed };
-  };
-}
-
-function createReadHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL",
-    true,
-  );
-}
-
-// The other half of read state, and the reason the button on an item can be
-// reversible. Clearing `read_at` returns the update to attention — which
-// `archived_at` deliberately does not, because archive is how a person keeps
-// an item out of the way for good and `restoreNotification` is its only exit.
-function createUnreadHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET read_at = NULL WHERE id = ? AND read_at IS NOT NULL",
-    false,
-  );
-}
-
-function createCardReadHandler(ctx: InboxContext) {
-  return async ({ cardId, kind }: { cardId: string; kind: InboxKind }) => {
-    if (kind !== "completed") return { marked: false };
-    const changed = changedUpdate(
-      ctx,
-      `UPDATE inbox_events SET read_at = ?
-       WHERE card_id = ? AND kind = 'completed'
-         AND read_at IS NULL AND archived_at IS NULL`,
-      [ctx.now(), cardId],
-      { cardId },
-    );
-    return { marked: changed };
-  };
-}
-
-function createArchiveHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
-    true,
-  );
-}
-
-function createRestoreHandler(ctx: InboxContext) {
-  return createEventUpdateHandler(
-    ctx,
-    "UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
-    false,
-  );
-}
-
 function createGetHandler(ctx: InboxContext) {
-  return async ({ notificationId, cardId }: { notificationId: string; cardId: string }) => {
+  const input = z.object({ notificationId: z.string().min(1), cardId: z.string().min(1) }).strict();
+  return async (raw: { notificationId: string; cardId: string }) => {
+    const { notificationId, cardId } = input.parse(raw);
     const row = ctx.db.prepare(`
       SELECT id, kind, summary, occurred_at, resolved_at, resolved_reason,
         archived_at, severity, severity_reasons, holder_card_id, holder_file
@@ -350,36 +299,7 @@ export function createInboxServer(deps: InboxServerDeps) {
   return {
     handlers: createInboxHandlers(ctx, deps),
     record: createRecorder(ctx),
-    // One open paused row per card, refreshed rather than duplicated — see
-    // lib/inbox-events upsertPausedEvent for why a stream of identical rows
-    // for a single stuck card is inflation, not attention.
-    upsertPaused: (cardId: string, summary: string, idleAt: number) => {
-      const touched = upsertPausedEvent(ctx.db, {
-        cardId,
-        summary,
-        idleAt,
-        nowMs: ctx.now(),
-        createId: () => ctx.randomId("evt"),
-      });
-      if (touched) ctx.changed({ cardId });
-    },
-    // One open error row per card, for the same reason as upsertPaused: a
-    // worker that keeps failing is one thing to look at, not one thing per
-    // failure. Differs in the two ways the kind demands — it reopens a resolved
-    // row (a failure after someone dealt with the last one is a NEW need, and
-    // INSERT OR IGNORE would drop it), and it counts occurrences (the badge
-    // needs the repetition, and counting rows would only measure the bug).
-    recordError: (cardId: string, summary: string, occurredAt: number) => {
-      const result = recordErrorInboxEvent(ctx.db, {
-        id: ctx.randomId("evt"),
-        cardId,
-        kind: "error",
-        summary,
-        occurredAt,
-      });
-      ctx.changed({ cardId });
-      return result;
-    },
+    ...createAttentionRecorders(ctx),
     resolve: createResolver(ctx),
     resolveAll: createTerminalResolver(ctx),
     syncPendingQuestion: createQuestionSync(ctx),

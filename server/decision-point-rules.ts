@@ -8,10 +8,11 @@
  * valid redirect: a bad mode names the point's modes, a hot path names the
  * cost of preset judging, a missing judge names where presets are created.
  */
-import { isDecisionApiDisabled } from "../lib/decision-api.mjs";
+import { isDecisionApiDisabled, providerSchema } from "../lib/decision-api.mjs";
 import {
   DECISION_POINTS,
   getDecisionPoint,
+  needsSchemaForPoint,
   normalizePointRoute,
   normalizeThresholds,
   pointSupportsPresetJudge,
@@ -38,6 +39,29 @@ export interface PointWriteDeps {
 type ResolvedPoint =
   | { ok: true; write: PointWrite }
   | { ok: false; error: string };
+
+/** Refuse an api-mode save its provider cannot serve. Only explicit pins
+ * are checked: an unnamed provider resolves to the shared default at call
+ * time, which this write cannot see. The refusal names both exits. */
+function refuseSchemaMismatch(
+  input: PointWriteInput,
+  existing: PointRow | undefined,
+): { ok: false; error: string } | null {
+  if (input.mode !== "api") return null;
+  const pinned = typeof input.route?.provider === "string" && input.route.provider.trim().length > 0
+    ? input.route.provider.trim()
+    : typeof existing?.provider === "string" && existing.provider.trim().length > 0
+      ? existing.provider
+      : null;
+  if (!pinned || providerSchema(pinned) !== "labels") return null;
+  if (needsSchemaForPoint(input.point) === "any") return null;
+  return {
+    ok: false,
+    error: `"${input.point}" asks yes/no or scored questions in Decision API mode, `
+      + `but provider "${pinned}" answers Choice only — pin a Jev-schema provider `
+      + `on this point or keep mode "rules".`,
+  };
+}
 
 /** The registry entry an unknown point id falls back to for reads. */
 export function anonymousPointDef(point: string) {
@@ -81,6 +105,8 @@ export function resolvePointWrite(
       ok: false,
       error: "Decision API is disabled on this host (STELOW_DECISION_API=0).",
     };
+  const fitRefusal = refuseSchemaMismatch(input, existing);
+  if (fitRefusal) return fitRefusal;
   const preset = resolvePresetJudge(input, existing, deps);
   if (!preset.ok) return preset;
   return {

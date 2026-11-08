@@ -73,7 +73,7 @@ export function CardConversation({ comments, draft, onDraftChange, onSend, defau
         />
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-muted-foreground">Read on the agent&apos;s next turn · attachments and @mentions live in the thread</span>
+        <span className="text-xs text-muted-foreground">Read on the agent&apos;s next turn · attachments and @mentions live in the thread</span>
         <span className="ml-auto">
           <Button disabled={!draft.trim()} onClick={() => onSend()}>Leave note</Button>
         </span>

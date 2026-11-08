@@ -1,22 +1,35 @@
-import { decideAskGate } from "../../../lib/ask-gate.mjs";
+import { join } from "node:path";
+import { ERRORS } from "../card-errors.js";
+import { decideAskGate } from "../../../lib/question-gate.mjs";
 import {
   recordAskContracts,
   validateAskContracts,
-} from "../../../lib/ask-contracts.mjs";
+} from "../../../lib/question-contracts.mjs";
 import { parseAskGroups } from "../../../lib/question-batch.mjs";
+import { flagValue } from "../../../lib/cli-argv.mjs";
 import { englishQuestionContentError } from "../../../lib/question-presentation.mjs";
+import { retiredQuestionVocabularyError } from "../../../lib/retired-question-vocabulary.mjs";
 import {
   SPLIT_KEEP_LABEL,
   splitEligibility,
+  validateSplitAskOptions,
   validateSplitSlices,
   withStandardSplitDisclosure,
 } from "../../../lib/split-proposal.mjs";
-import { splitQuestionText } from "../../../lib/split-question-presentation.mjs";
+import { splitQuestionText } from "../../../lib/question-presentation.mjs";
+import { parseWorkflowConfig } from "../../../lib/workflow-config.mjs";
+import { SCOPE_ADJUST_TAG } from "../../../lib/question-gate.mjs";
 import { refuse, type Refusal } from "./cli-contract.js";
 import type { CliDeps, PendingAsk } from "./cli-deps.js";
+import type { WorkerCard } from "../../workers-types.js";
 
 export const ASK_USAGE =
-  "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]...";
+  "Usage: bb stelow ask --thread <thr_id> [--tag split|scope-adjust] --question <text> [--multiple] "
+  + "--option <label> [--selected] [--recommended] [--needs-note] [--desc <text>] [--preview <text>] [--artifact <path>]...";
+
+/** Machine tags a worker ask can carry. `split` owns split mechanics;
+ * `scope-adjust` marks scope IN/OUT confirms for the shape gate. */
+export type AskTag = "split" | typeof SCOPE_ADJUST_TAG | null;
 
 // The parsed group keeps the parser's exact option shape (description and
 // preview are strings, artifact is `{ path, display } | null`): the renderer
@@ -26,6 +39,16 @@ export type AskOption = {
   description: string;
   preview: string | null;
   artifact: { path: string; display?: string } | null;
+  // Opt-out preselection from --selected. Sparse like everywhere downstream:
+  // cleanOptions only forwards an explicit true, and the renderer reads
+  // absence as unchecked — so the intent must not invent a false either.
+  selected?: boolean;
+  // Conditional options (--needs-note): submit waits for the note box.
+  // Same sparseness as selected — explicit true travels, absence is off.
+  needsNote?: boolean;
+  // The AI's recommendation (--recommended) as a field rather than only as a
+  // phrase in the label, so the form can count, sort and preselect it.
+  recommended?: boolean;
 };
 
 export type AskGroup = {
@@ -38,13 +61,13 @@ export type AskGroup = {
 
 export type AskIntent = {
   threadId: string;
-  tag: "split" | null;
+  tag: AskTag;
   groups: AskGroup[];
   batched: boolean;
 };
 
-/** Parses the ask argv: `--tag` is machine-readable (the only worker tag is
- * `split`), `--locale` is refused because question content and the card UI are
+/** Parses the ask argv: `--tag` is machine-readable (worker tags are
+ * `split` and `scope-adjust`), `--locale` is refused because question content and the card UI are
  * English-only, and repeated `--question` groups become one blocking call. */
 export function parseAskIntent(
   argv: string[],
@@ -68,15 +91,18 @@ export function parseAskIntent(
       description: option.description,
       preview: option.preview,
       artifact: option.artifact,
+      ...(option.selected === true ? { selected: true as const } : {}),
+      ...(option.needsNote === true ? { needsNote: true as const } : {}),
+      ...(option.recommended === true ? { recommended: true as const } : {}),
     })),
     contract: group.contract ?? null,
   }));
   for (const group of groups) {
-    const languageError = englishQuestionContentError(
-      group.question,
-      group.options,
-    );
-    if (languageError) return refuse({ exitCode: 2, stderr: languageError });
+    // One door, two content rules: a question in a retired vocabulary is as
+    // unanswerable as one written in another language, so the first refusal wins.
+    const contentError = englishQuestionContentError(group.question, group.options)
+      ?? retiredQuestionVocabularyError(group.question, group.options);
+    if (contentError) return refuse({ exitCode: 2, stderr: contentError });
   }
   return {
     threadId,
@@ -86,18 +112,19 @@ export function parseAskIntent(
   };
 }
 
-type AskArgv = { askArgv: string[]; tag: "split" | "other" | null } | Refusal;
+type AskArgv = { askArgv: string[]; tag: "split" | typeof SCOPE_ADJUST_TAG | "other" | null } | Refusal;
 
-/** `--tag split` is the only worker tag: a split proposal ask. Any other value
- * refuses by name, so a typo never reaches the human as a silent standard
- * question. */
-function askTag(raw: "split" | "other" | null): { tag: "split" | null } | Refusal {
+/** Worker tags are machine-readable: `split` for card-split proposals at
+ * triage, `scope-adjust` for scope IN/OUT confirms. Any other value refuses
+ * by name, so a typo never reaches the human as a silent standard question. */
+function askTag(raw: "split" | typeof SCOPE_ADJUST_TAG | "other" | null): { tag: AskTag } | Refusal {
   if (raw === null) return { tag: null };
   if (raw === "split") return { tag: "split" };
+  if (raw === SCOPE_ADJUST_TAG) return { tag: SCOPE_ADJUST_TAG };
   return refuse({
     exitCode: 2,
     stderr:
-      "Unknown --tag. The only worker ask tag is --tag split (card-split proposals at triage).",
+      "Unknown --tag. Worker tags are --tag split (card-split proposals at triage) and --tag scope-adjust (scope IN/OUT confirms).",
   });
 }
 
@@ -124,14 +151,9 @@ function scanAskArgv(argv: string[]): AskArgv {
     askArgv,
     tag:
       tagValues.length > 0
-        ? (tagValues[tagValues.length - 1] as "split" | "other")
+        ? (tagValues[tagValues.length - 1] as "split" | typeof SCOPE_ADJUST_TAG | "other")
         : null,
   };
-}
-
-function flagValue(argv: string[], name: string): string | undefined {
-  const index = argv.indexOf(name);
-  return index >= 0 ? argv[index + 1] : undefined;
 }
 
 type AskCard = { id: string; status: string };
@@ -154,7 +176,7 @@ export function askOwningCard(
 never a provider session id nor a workflow dirHash (sw-*).`,
     });
   if (cardRow.status === "archived")
-    return refuse({ exitCode: 2, stderr: "This card is archived." });
+    return refuse({ exitCode: 2, stderr: ERRORS.cardArchived });
   return cardRow;
 }
 
@@ -176,14 +198,14 @@ export async function verifyAskSurface(
   return liveAsks;
 }
 
-/** One dispatcher owns ask-refusal precedence (lib/ask-gate): duplicate, then
+/** One dispatcher owns ask-refusal precedence (lib/question-gate): duplicate, then
  * intent, then evidence. Nothing is persisted before this call, so a refusal
  * never pings the human. */
 export async function gateAsk(
   deps: CliDeps,
   cardId: string,
   liveAsks: PendingAsk[],
-  tag: "split" | null,
+  tag: AskTag,
   groups: AskGroup[],
   argv: string[],
 ): Promise<Refusal | null> {
@@ -197,12 +219,40 @@ export async function gateAsk(
     tag,
     forced: argv.includes("--force"),
     groups,
+    reviewMode: gateCard ? await readCardReviewMode(deps, gateCard) : null,
   });
   if (decision.allowed) return null;
   return refuse({ exitCode: decision.code, stderr: decision.reason! });
 }
 
-/** Optional contract declaration (lib/ask-contracts): links this ask to a
+/**
+ * The workflow's own review-mode label, or null when it cannot be read.
+ *
+ * Null fails the scope gate open: an unreadable state.md must never silence
+ * a real ask. Uses the same seams and parser as every other state.md reader
+ * (question contracts, review records), so the label means the same thing
+ * everywhere it is read.
+ */
+export async function readCardReviewMode(
+  deps: Pick<CliDeps, "bb" | "cardWorkspace" | "workflowStateDir">,
+  card: WorkerCard,
+): Promise<string | null> {
+  if (!card.dir_hash) return null;
+  const workspace = await deps.cardWorkspace(card).catch(() => null);
+  if (!workspace?.path) return null;
+  const stateDir = await deps.workflowStateDir(workspace.path, card.id, card.dir_hash).catch(() => null);
+  if (!stateDir) return null;
+  const stateFile = await deps.bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null);
+  const text = typeof stateFile?.content === "string" ? stateFile.content : null;
+  if (!text) return null;
+  try {
+    return parseWorkflowConfig(text, { strict: true }).reviewMode ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Optional contract declaration (lib/question-contracts): links this ask to a
  * question contract for later matching. Validated, never enforced here —
  * unknown ids with a readable checklist refuse with the valid list; without
  * one the ask records raw (fail-open). Split asks carry none (their own
@@ -211,7 +261,7 @@ export async function declareAskContracts(
   deps: CliDeps,
   cardId: string,
   groups: AskGroup[],
-  tag: "split" | null,
+  tag: AskTag,
 ): Promise<Refusal | null> {
   const declared = groups.filter(
     (group) => typeof group.contract === "string" && group.contract,
@@ -297,14 +347,8 @@ function persistSplitProposal(
   group: AskGroup,
 ): Refusal | null {
   const options = group.options;
-  const keepCount = options.filter(
-    (option) => option.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase(),
-  ).length;
-  if (keepCount !== 1)
-    return refuse({
-      exitCode: 2,
-      stderr: `A split ask needs exactly one "${SPLIT_KEEP_LABEL}" option (exact label) so the user can veto.`,
-    });
+  const invalidOptions = validateSplitAskOptions(options);
+  if (invalidOptions) return refuse({ exitCode: 2, stderr: invalidOptions });
   const slices = proposedSlices(options);
   const invalid = validateSplitSlices(slices);
   if (invalid) return refuse({ exitCode: 2, stderr: invalid });
@@ -350,8 +394,4 @@ export async function discloseStandardSplit(
   if (!gate.ok) return;
   for (const group of groups)
     group.question = withStandardSplitDisclosure(group.question);
-}
-
-export function askTimeoutMs(): number {
-  return Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
 }

@@ -15,7 +15,7 @@ import {
   serverRecovery,
   app,
   buildProgress,
-  conversation,
+  questionHeading,
   detailTimeline,
   rpcMethod,
 } from "./card-lifecycle-contract.fixtures.mjs";
@@ -63,7 +63,7 @@ assert.doesNotMatch(
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(
   comment,
-  /if \(isArchivedCard\(card\)\)\s*return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/,
+  /if \(isArchivedCard\(card\)\)\s*\{\s*return \{[^}]*error: ERR_CARD_ARCHIVED/,
   "archived cards refuse new comments",
 );
 assert.match(
@@ -93,8 +93,13 @@ assert.match(
 );
 assert.match(
   cliDone,
-  /verificationReadiness\(verificationRun, evidence\.git\)/,
+  /verificationReadiness\(run, git\)/,
   "Build completion requires a host-recorded test result at the current Git identity",
+);
+assert.match(
+  cliDone,
+  /scanReadiness\(latestScanRun\(deps, card\.id\), git\)/,
+  "Build completion requires a host-recorded clean scan at the same Git identity — a scan that did not run is not a clean scan",
 );
 assert.match(
   server,
@@ -126,8 +131,11 @@ assert.match(
   /deps\.stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/,
   "card reads compare every open question against its baseline",
 );
+// The notice renders in the question's HEADING, beside the title and prompt it
+// is about — not in the stepper that owns selection and submission. The pin
+// reads the file the notice actually lives in.
 assert.match(
-  conversation,
+  questionHeading,
   /<StalenessNotice staleness=\{current\.staleness\} \/>/,
   "each open question carries its own notice",
 );
@@ -160,8 +168,8 @@ assert.match(
 );
 assert.match(
   cliAsk,
-  /if \(cardRow\.status === "archived"\)\s*return refuse\(\{ exitCode: 2, stderr: "This card is archived\." \}\);/,
-  "ask on an archived thread names the state",
+  /if \(cardRow\.status === "archived"\)\s*return refuse\(\{ exitCode: 2, stderr: ERRORS\.cardArchived \}\);/,
+  "ask on an archived thread refuses with the shared terminal copy, never a re-spelling",
 );
 // Stage truth is state.md: every sync converges the DB cache once, upfront,
 // so question-wait and idle polls never render the last manually-advanced
@@ -191,16 +199,29 @@ assert.match(
   /positioned \? "where this card is" : <>where this card is · <CurrentStagePill/,
   "only cards without a terminal or scoped position show the live checkpoint pill",
 );
-assert.match(
+// This pin used to require the identifier `isTerminalCheckpoint`, which was declared and
+// never read — so it asserted the NAME of a dead local rather than any behaviour, and it
+// stayed green while the variable did nothing. What the rule actually needs is that a
+// completed card's final stage is not presented as somewhere to go, and that is expressed
+// by the chip being inert: no handler exists to select anything.
+assert.doesNotMatch(
   detailTimeline,
   /isTerminalCheckpoint/,
-  "the terminal Audit checkpoint cannot be selected as a reopen target",
+  "no dead checkpoint flag survives; the rule is carried by the inert chip, not by an unused local",
 );
-assert.match(
+// Stronger than the pin it replaces. That one required `disabled={!clickable || isCurrent}`
+// on a BUTTON, so a stage could still be clicked to move the card; the timeline is inert
+// now, so there is no click target at all. Pinned as the absence of a handler, because
+// re-adding one is the regression: the agent advances, and a person asks it to.
+assert.doesNotMatch(
   detailTimeline,
-  /disabled=\{!clickable \|\| isCurrent\}/,
-  "every current workflow checkpoint is inert, not Audit alone",
+  /onClick=\{\(\) => onPick/,
+  "no workflow checkpoint is clickable — the whole timeline is inert, not just Audit",
 );
+// (The pin that stood here required `isTerminalCheckpoint` and claimed it "distinguished
+// the terminal checkpoint visually". It did not: the local was declared and never read.
+// Removed rather than kept, because a green assertion about a dead name is worse than no
+// assertion — it is what let the dead code sit there in the first place.)
 assert.match(
   server,
   /cardStatus: snapshot\.card\.status/,

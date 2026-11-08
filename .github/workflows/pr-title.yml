@@ -1,0 +1,20 @@
+name: pr-title
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+jobs:
+  lint-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Title must carry a conventional type
+        run: |
+          title="${{ github.event.pull_request.title }}"
+          pattern='^(feat|fix|perf|docs|test|chore|refactor|build|ci)(\(.+\))?(!)?: .+|^Revert .+'
+          if [[ "$title" =~ $pattern ]]; then
+            echo "conventional title: $title"
+          else
+            echo "::error::PR title must start with a conventional type (feat|fix|perf|docs|test|chore|refactor|build|ci, optional scope) or be a Revert — the squash commit inherits the title and release-please reads only that line. Got: $title"
+            exit 1
+          fi

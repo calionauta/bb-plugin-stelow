@@ -15,15 +15,17 @@ Ordered gates, first refusal wins:
    refuses when a live interaction or unanswered expired question already
    shows a form. Reads the provider (`fetchPendingAsks`); a failed read
    refuses too ("retry this same ask once"). `--force` does NOT bypass.
-3. Intent gate (`contextAskGate`, `lib/context-ask-gate.mjs`): kind/
-   intent/stage/tag/forced. Currently fail-open for everything except
-   force/split/kind routing (upstream `context:5` owns the discipline).
-4. Evidence gate (`gateEvidenceGate`, `lib/gate-ask-evidence.mjs`):
+3. Evidence gate (`gateEvidenceGate`, `lib/gate-ask-evidence.mjs`):
    per-option evidence at `selection`, single evidence elsewhere; `--force`
    bypasses.
-5. Split branch (`splitEligibility` + shape checks): validates AND persists
+4. Split branch (`splitEligibility` + shape checks): validates AND persists
    (`split_proposals` row, question rewrite). NOT part of the dispatcher —
    it executes, the dispatcher only decides.
+
+There is no intent gate: upstream `context:5` owns the discipline, and the host
+cannot read its predicate, so an intent refusal here would refuse a path it
+cannot distinguish from the permitted one. (The former `contextAskGate` stub
+always allowed and was deleted.)
 
 ## 2. Phase 1 — Dispatcher (implemented)
 
@@ -48,7 +50,7 @@ existing ask/gate tests untouched and green.
 - `--contract <id>` on `bb stelow ask` is parsed in
   `lib/question-batch.mjs` per group (alongside `--question`/`--option`).
 - Validation at ask time against `requiredForStage` for the card's
-  stage/mode/appetite: unknown id with a readable checklist refuses,
+  stage/mode/breadth: unknown id with a readable checklist refuses,
   naming the valid ids; without a readable checklist it allows and
   records raw (fail-open). Unknown modes fail open as today.
 - Storage: new `ask_contracts(interaction_id TEXT PRIMARY KEY, card_id,
@@ -83,5 +85,5 @@ warnings) + `git diff --check`; English copy; commits separated
 
 - No enforcement without a readable checklist (fail-open preserved).
 - No UI widgets; no changes to answer RPC shapes.
-- Unknown review modes/appetites fail open throughout.
+- Unknown review modes/breadths fail open throughout.
 - The dispatcher must not absorb split persistence or provider reads.

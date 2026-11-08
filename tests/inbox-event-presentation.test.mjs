@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { inboxEventDescription, inboxEventPresentation, inboxEventText, inboxEventTime, isOpenInboxAction, unreadInboxEntries } from "../lib/inbox-event-presentation.mjs";
+import {
+  inboxDisplayReasons,
+  inboxEventDescription,
+  inboxEventPresentation,
+  inboxEventText,
+  inboxEventTime,
+  inboxFilterEntries,
+  isOpenInboxAction,
+  unreadInboxEntries,
+} from "../lib/inbox-event-presentation.mjs";
 
 const openQuestion = { kind: "question", occurredAt: 10, resolvedAt: null, archivedAt: null };
 assert.deepEqual(inboxEventPresentation(openQuestion), { label: "Needs a decision", tone: null, stateAt: 10, stateLabel: null });
@@ -45,4 +54,59 @@ assert.equal(inboxEventText({ ...openQuestion, summary: "Needs a decision: pick 
 // Time: state time carries its label, open events read the relative clock.
 assert.match(inboxEventTime({ ...resolvedQuestion, summary: "x" }), /^Resolved /, "resolved time carries its state");
 assert.match(inboxEventTime({ ...openQuestion, summary: "x" }), /(Just now|\d+[mhd] ago|Yesterday)$/, "open time reads the relative clock");
+
+// Severity chips that restate the row's own label are noise, not signal:
+// "Needs a decision" beside "needs decision" is one fact printed twice.
+const noisyQuestion = { ...openQuestion, summary: "The agent is waiting for your answer to continue.", severityReasons: ["needs decision"] };
+assert.deepEqual(inboxDisplayReasons(noisyQuestion), [], "a reason that restates the label is dropped");
+const stalledQuestion = { ...openQuestion, summary: "Pick one", severityReasons: ["needs decision", "stalled 3d"] };
+assert.deepEqual(inboxDisplayReasons(stalledQuestion), ["stalled 3d"], "reasons that add information survive the filter");
+assert.deepEqual(inboxDisplayReasons({ ...noisyQuestion, resolvedAt: 20 }), [], "kept history never carries chips");
+assert.deepEqual(inboxDisplayReasons({ ...openQuestion, severityReasons: null }), [], "missing reasons read as none, never a throw");
+
+// Set-aside items live in their own filter and nowhere else: without it a
+// dismissal is a one-way door and "Bring back" is unreachable.
+const archivedQuestion = { ...openQuestion, archivedAt: 30, severityReasons: [] };
+assert.deepEqual(
+  inboxFilterEntries([openQuestion, archivedQuestion], "archived"),
+  [archivedQuestion],
+  "the archived filter shows exactly the dismissed items",
+);
+assert.deepEqual(inboxFilterEntries([openQuestion, archivedQuestion], "all"), [openQuestion], "All stays the active inbox");
+// The Inbox row must name the ASK, not just repeat that one exists.
+//
+// The generic summary is the same sentence on every question row, so a reader
+// scanning the Inbox could not tell which ask a row was about without opening
+// the card — and the description would not have helped, because the description
+// is the card's original request rather than the question the worker later
+// discovered. The row therefore prefers the question captured when it was
+// minted. The fallback below is what keeps legacy rows, errors, pauses and
+// completions reading exactly as they did before.
+const WAIT = "The agent is waiting for your answer to continue.";
+const ASK = "Which storage should the map be built from?";
+const questionRow = { ...openQuestion, summary: WAIT, questionSummary: ASK };
+assert.equal(inboxEventDescription(questionRow), ASK, "a question row shows the question, not the generic wait sentence");
+assert.match(inboxEventText(questionRow), /Which storage should the map be built from\?/, "and the full text carries it too");
+assert.doesNotMatch(inboxEventText(questionRow), /waiting for your answer/, "the generic sentence is gone once the ask is known");
+
+// The fallback is the safety property, so each row that has no question is
+// asserted against the EXACT string it showed before this change.
+const legacy = { ...openQuestion, summary: WAIT };
+assert.equal(inboxEventDescription(legacy), WAIT, "a legacy row without a captured question is unchanged, not blank");
+assert.equal(inboxEventDescription({ ...legacy, questionSummary: null }), WAIT, "an explicit null is the same as absent");
+assert.equal(
+  inboxEventDescription({ ...legacy, questionSummary: "   " }),
+  WAIT,
+  "whitespace is not a question: it falls back rather than rendering an empty row",
+);
+const errorRow = { kind: "error", occurredAt: 10, resolvedAt: null, archivedAt: null, summary: "Worker failed: ENOENT" };
+assert.equal(inboxEventDescription(errorRow), "Worker failed: ENOENT", "an error row is untouched: only question rows ever gain the field");
+
+// History outranks both: a resolved row is not an instruction to answer again,
+// so it must never resurface the question as if it were still open.
+const HISTORICAL = "This Inbox update is kept for history.";
+const resolvedWithQuestion = { ...questionRow, resolvedAt: 20 };
+assert.equal(inboxEventDescription(resolvedWithQuestion), HISTORICAL, "a resolved question row stays historical, question captured or not");
+assert.equal(inboxEventDescription({ ...questionRow, archivedAt: 30 }), HISTORICAL, "and so does a set-aside one");
+
 console.log("inbox event presentation test ok: active, resolved, archived, and informational states");

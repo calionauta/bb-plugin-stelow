@@ -13,23 +13,38 @@ export type InboxResolutionReason = "answered" | "superseded" | "resumed" | "com
 
 export declare const RESOLUTION_REASONS: InboxResolutionReason[];
 
+/** The one sentence every open-question notification carries. Single-sourced
+ * in lib/inbox-events.mjs so the mint path and the early post-ask kick
+ * promise the same wait. */
+export declare const QUESTION_WAITING_SUMMARY: string;
+
 export declare function ensureInboxResolvedReasonColumn(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
 
 export declare function ensureInboxSeverityColumns(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
+/** The question a question row is about, captured at mint; nullable on every legacy row. */
+export declare function ensureInboxQuestionColumns(db: { prepare(query: string): { all(): Array<{ name: string }> } }): void;
 
 export function insertInboxEvent(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, event: InboxEventInput): boolean;
 export function questionInboxDedupeKey(cardId: string, interactionId: string): string;
-export function markQuestionsAnswered(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, input: {
+/** Batch-aware sync identity: live ids stay per-id, one timed-out batch shares one key. */
+export function questionSyncKeys(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }> } }, cardId: string, interactionIds: string[]): string[];
+export function markQuestionsAnswered(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }>; run(...values: unknown[]): { changes: number } } }, input: {
   cardId: string;
   interactionIds: string[];
   occurredAt: number;
 }): number;
-export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, input: {
+export function syncQuestionInboxEvents(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; expired_at: number }>; run(...values: unknown[]): { changes: number } } }, input: {
   cardId: string;
   interactionIds: string[];
   occurredAt: number;
   createId: () => string;
   summary: string;
+  /** The question this row is about, plus how many it covers; null falls back to `summary`. */
+  questionSummary?: string | null;
+  questionCount?: number | null;
+  questionKind?: "split" | null;
+  /** Verified-empty opt-in: without it an empty key set throws instead of mass-resolving. */
+  explicitEmpty?: boolean;
 }): { inserted: number; resolved: number; reopened: number; pausedSuperseded: number };
 export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">, reason?: InboxResolutionReason | null): number;
 export declare function resolveAllInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, reason?: InboxResolutionReason | null): number;

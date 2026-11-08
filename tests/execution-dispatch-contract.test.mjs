@@ -53,4 +53,26 @@ assert.match(
   /argv\[0\] === "advance"[\s\S]*deps\.advanceCli\(argv, \{ threadId: ctx\.threadId, projectId: ctx\.projectId \}\)/,
   "the CLI dispatcher delegates advance to the module through the injected contract",
 );
+
+// Cardless parity: the board `advance` RPC and the CLI re-root through
+// the same discovery, and refuse an ambiguous tree with the same sentence — a
+// count named on one surface and a re-root on the other is how the wrong
+// workflow gets advanced.
+const rpcSurfaces = source("runtime/wiring/rpc-surfaces.ts");
+assert.match(
+  cli,
+  /findSingleLegacyStateDir/,
+  "the CLI re-roots a lone cardless workflow instead of reading the project root",
+);
+assert.match(
+  rpcSurfaces,
+  /findSingleLegacyStateDir/,
+  "the board advance re-roots through the same discovery as the CLI",
+);
+const rpcAmbiguous = rpcSurfaces.indexOf("cardless workflows under .stelow");
+const cliAmbiguous = cli.indexOf("cardless workflows under .stelow");
+assert.ok(
+  rpcAmbiguous >= 0 && cliAmbiguous >= 0,
+  "both surfaces refuse an ambiguous cardless tree with the same sentence",
+);
 console.log("execution dispatch contract ok: route, mutation, coordinator, native order");

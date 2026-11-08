@@ -1,8 +1,6 @@
 // Type declarations for lib/preview-detect.mjs
 export declare const PREVIEW_CONFIG_REL: string;
 export declare const PREVIEW_PROBE_FILES: readonly string[];
-export declare const PREVIEW_TIERS: readonly string[];
-export declare const PREVIEW_SKIP_DIRS: readonly string[];
 export declare function previewAppDirs(names: unknown): string[];
 export declare function pickAppDir(detecting: unknown, slug?: string | null): string | null;
 export interface PreviewSnapshot {

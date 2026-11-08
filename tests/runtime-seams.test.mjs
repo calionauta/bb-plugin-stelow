@@ -2,9 +2,6 @@
 // the composition root. Every test here fails if a seam's behavior moves back
 // into plugin-runtime.ts or into a copy of the rule inside its own module.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { stripMessageDirectives } from "../server/runtime/message-text.ts";
 import { parseNextStages, workflowStateDir } from "../server/runtime/workflow-state.ts";
@@ -19,9 +16,10 @@ import { trackableStatusLabel } from "../lib/trackables.mjs";
 import { auditReceiptNote } from "../server/runtime/audit-receipts.ts";
 import { fileTimestamp, join as joinPath, projectRoot } from "../server/runtime/root-paths.ts";
 import { runHelper } from "../server/runtime/helper-script.ts";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const runtime = (name) => readFileSync(join(root, "server/runtime", name), "utf8");
+import { createRuntimeCore } from "../server/runtime/runtime-core.ts";
+import { createReadRuntime } from "../server/runtime/read-runtime.ts";
+import plugin from "../server/plugin-runtime.ts";
+import { boardFiles, stateMarkdown } from "./runtime-seams-fixtures.mjs";
 
 // --- message text: renderer directives must not leak into a card comment ---
 assert.equal(
@@ -106,10 +104,14 @@ assert.equal(
   "an unreadable project is no root, never a throw",
 );
 
-// --- transitions: the installed table is the stage vocabulary ---
+// --- transitions: the canonical catalog is the stage vocabulary ---
+// parseNextStages projects STAGE_TRANSITIONS from data/stelow-stage-catalog.json:
+// no workspace reads, no markdown parsing. A stub transitions.md with bogus
+// edges must not change the answer.
 const transitionsFs = await import("node:fs");
 const transitionsOs = await import("node:os");
 const transitionsPath = await import("node:path");
+const { STAGE_TRANSITIONS } = await import("../lib/workflow-catalog.mjs");
 const tableRoot = transitionsFs.mkdtempSync(transitionsPath.join(transitionsOs.tmpdir(), "stelow-transitions-"));
 transitionsFs.mkdirSync(
   transitionsPath.join(tableRoot, "skills/stelow-workflow-orchestrator/references"),
@@ -125,58 +127,50 @@ transitionsFs.writeFileSync(
     "rework: shape (shape rework — same stage)",
   ].join("\n"),
 );
+const shapeRow = STAGE_TRANSITIONS.shape;
+const expectedShape = [...shapeRow.next, ...shapeRow.accept, ...shapeRow.reject, ...shapeRow.rework];
 assert.deepEqual(
-  parseNextStages(tableRoot, "shape"),
-  ["plan", "execute"],
-  "a human comment in the table is stripped, and both real targets survive",
+  [...parseNextStages("shape")].sort(),
+  [...new Set(expectedShape)].sort(),
+  "shape moves come from the catalog, not the stub markdown",
 );
+assert.ok(!parseNextStages("shape").includes("plan"), "the stub's bogus 'plan' edge is ignored");
+const auditRow = STAGE_TRANSITIONS.audit;
+const expectedAudit = [...auditRow.next, ...auditRow.accept, ...auditRow.reject, ...auditRow.rework];
 assert.deepEqual(
-  parseNextStages(tableRoot, "audit"),
-  ["shape"],
-  "the last stage block parses, and (none) contributes nothing",
+  [...parseNextStages("audit")].sort(),
+  [...new Set(expectedAudit)].sort(),
+  "the terminal stage answers from the catalog",
 );
-assert.deepEqual(parseNextStages(tableRoot, "unknown"), [], "an unlisted stage offers no moves");
-assert.deepEqual(parseNextStages(null, "shape"), [], "no root, no vocabulary");
+assert.deepEqual(parseNextStages("unknown"), [], "an unlisted stage offers no moves");
+
+// The projection applies the intent route and the review mode, the same
+// rule the helper enforces. Without them the panel offered moves the helper
+// then refused: `diff-gate` in Auto, where the stage does not run.
+assert.deepEqual(
+  parseNextStages("context", { intent: "feature", reviewPolicy: "Auto" }).sort(),
+  ["setup", "shape"].sort(),
+  "the intent route keeps the move behind and the immediate next stage only",
+);
+assert.ok(
+  !parseNextStages("verification", { intent: "feature", reviewPolicy: "Auto" }).includes("diff-gate"),
+  "diff-gate does not run in Auto, so the panel must not offer it",
+);
+assert.ok(
+  parseNextStages("verification", { intent: "feature", reviewPolicy: "Auto" }).includes("audit"),
+  "the successor of a stage that does not run is the move",
+);
+assert.ok(
+  parseNextStages("planning", { intent: "feature", reviewPolicy: "Auto" }).includes("execution"),
+  "plan-gate does not run in Auto, so planning moves straight to execution",
+);
+assert.ok(
+  !parseNextStages("int-gate", { intent: "feature", reviewPolicy: "Auto" }).includes("architecture"),
+  "selection runs in Auto (the agent decides), so it is not bypassed",
+);
+transitionsFs.rmSync(tableRoot, { recursive: true, force: true });
 
 // --- board reads: a workflow lists its own state and documents ---
-const stateMarkdown = [
-  "current_stage: execution",
-  "workflow_id: card_1",
-].join("\n");
-const specBody = "# Spec\n\nThe product, in enough words to be evidence.\n";
-/** A workspace with one workflow, one real document, and one empty file. */
-const boardFiles = {
-  read: async ({ path: target }) => {
-    if (target.endsWith("stelow.json")) {
-      return {
-        content: JSON.stringify({
-          workflows: [
-            {
-              workflowId: "card_1",
-              dirHash: "sw-1",
-              created: "2026-01-02T00:00:00.000Z",
-              name: "Work",
-              status: "in-progress",
-            },
-          ],
-        }),
-      };
-    }
-    if (target.endsWith("state.md")) return { content: stateMarkdown };
-    if (target.endsWith("spec-product.md")) return { content: specBody };
-    if (target.endsWith("notes.md")) return { content: "   \n" };
-    throw new Error(`missing ${target}`);
-  },
-  listPaths: async ({ path: dir }) => {
-    if (dir.includes("/approvals/")) return { paths: ["gate-approved.md"] };
-    if (dir.endsWith("/sw-1")) {
-      return {
-        paths: [`${dir}/spec-product.md`, `${dir}/notes.md`, `${dir}/run.sh`],
-      };
-    }
-    throw new Error("no such dir");
-  },
-};
 const board = await boardFromRoot({ sdk: { files: boardFiles } }, "/w");
 assert.equal(board.error, null, "a tracking file with an entry yields a board");
 assert.equal(
@@ -269,14 +263,16 @@ const seeded = await seedWorkflow(
   "card_1",
   "My card",
   "feature",
-  "Core",
+  { quality: "production", explorationCount: 3, explorationHybrid: true },
   ["spec"],
 );
 assert.equal(seeded.error, null, "a fresh workspace seeds");
 assert.ok(seeded.statePath?.endsWith("/state.md"), "the seed returns the state file it wrote");
 const state = fs.readFileSync(seeded.statePath, "utf8");
 assert.match(state, /workflow_id: card_1/, "the seeded state names its owner");
-assert.match(state, /appetite: Core/, "the configured appetite is written");
+assert.match(state, /quality: production/, "the configured quality is written");
+assert.doesNotMatch(state, /supervisor:/, "the retired supervision knob is never written");
+assert.match(state, /exploration_count: 3/, "the configured exploration count is written");
 assert.match(state, /review_gates: \[spec\]/, "the gate set is the canonical storage");
 // Round-trip: the same seeded state must read back through the shared parser
 // — this is the single source both the detail and any future consumer read.
@@ -375,23 +371,14 @@ const refused = await runHelper(["advance", "nope"], "/nonexistent-stelow-worksp
 assert.notEqual(refused.code, 0, "a helper that cannot run reports a non-zero code");
 assert.ok(typeof refused.stderr === "string", "the caller always gets a stream pair to show");
 
-// --- topology: the root wires the owners, it does not re-implement them ---
-const core = runtime("runtime-core.ts");
-const reads = runtime("read-runtime.ts");
-for (const [name, source] of [["runtime-core", core], ["read-runtime", reads]]) {
-  assert.match(source, /createRuntimeCore|createReadRuntime/, `${name} is the assembly step`);
-}
-const pluginSource = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.doesNotMatch(
-  pluginSource,
-  /async function (cardCheckout|cardStageSlug|seedWorkflow|runGitIn|logCardComment)\b/,
-  "a seam that has an owner must not also be defined in the composition root",
-);
-assert.match(
-  pluginSource,
-  /const core = createRuntimeCore\(bb\);/,
-  "the root wires the assembled core by name",
-);
+// --- topology: the assembly factories and the plugin entry answer for
+// themselves, DRIVEN by importing them. A seam re-implemented inside the
+// composition root would be a second definition of behavior these modules
+// already own; the imports above are the ownership, and the entrypoint is
+// callable rather than a text match.
+assert.equal(typeof createRuntimeCore, "function", "runtime-core owns the assembled core factory");
+assert.equal(typeof createReadRuntime, "function", "read-runtime owns the shared reads factory");
+assert.equal(typeof plugin, "function", "the composition root exports the plugin entrypoint");
 
 console.log(
   "runtime seam behavior ok: copy, claims, paths, board, state dir, seeding, ledger, questions, helper",

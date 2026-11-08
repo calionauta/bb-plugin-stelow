@@ -38,7 +38,10 @@ export interface GithubAutomationDeps {
       prompt: string;
       attachments: Array<{ path: string; type: "localFile" | "localImage" }>;
       intent: string;
-      appetite: string;
+      quality?: string;
+      explorationCount?: number;
+      /** Deprecated alias; maps once when knobs are absent. */
+      appetite?: string;
       reviewMode: string | string[];
       presetId?: string | null;
       start?: boolean;

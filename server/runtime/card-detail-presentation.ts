@@ -10,7 +10,7 @@ import { isDoneStatus } from "../../lib/trackables.mjs";
 import { normalizeKind } from "../../lib/tracks.mjs";
 import { stallCount } from "../../lib/worker-ledger.mjs";
 import { splitActionState } from "../../lib/split-proposal.mjs";
-import { skippedStages } from "../../lib/stage-skips.mjs";
+import { timelineSkips } from "../../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../../lib/workflow-vocabulary.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { BlockedFileWait } from "../../lib/lock-blocked.mjs";
@@ -23,7 +23,7 @@ import { liveClaimsForWorkspace } from "../../lib/card-claims.mjs";
 import { resolveClaimCheckout } from "../../lib/card-claim-key.mjs";
 import { latestSpecTech, loadCardScopes } from "../scopes.js";
 import { readCardStatus } from "../../lib/card-status.mjs";
-import type { ScopeXray } from "../scope-map-reader.js";
+import type { ScopeDraft, ScopeXray } from "../scope-map-reader.js";
 import type { WorkerCard } from "../workers-types.js";
 import type {
   Attachment,
@@ -31,7 +31,7 @@ import type {
   Preset,
   Question,
   Staleness,
-} from "./card-detail.js";
+} from "./card-detail-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Scope = ReturnType<typeof loadCardScopes>[number];
@@ -65,16 +65,28 @@ export type DetailParts = {
   fileEnvironmentId: string | null;
   scopes: unknown[];
   artifacts: unknown[];
+  /** "3 of 7 reviewed…", derived from the marks joined into `artifacts`. */
+  reviewLine: string | null;
   activity: "idle" | "running" | "awaiting-answer" | "error" | "held";
   preset: Preset;
   workerHistory: unknown[];
   questionStaleness: Map<string, Staleness>;
   stageSkips: {
-    appetite: string;
+    quality: string;
+    explorationCount: number;
+    explorationHybrid: boolean;
     reviewMode: string;
     reviewGates: string[];
   };
   scopeXray: ScopeXray | null;
+  scopeDraft: ScopeDraft | null;
+  /** The frozen technical acceptance the hero mirrors beside the human
+   * receipt. Null when there is no snapshot — the row renders nothing. */
+  frozen: {
+    frozenTestMap: Array<{ test: string; frozen: boolean; redProof: unknown }>;
+    freezeSha: string | null;
+    currentHeadSha: string | null;
+  } | null;
   /** The card-level file-claim wait, derived from `scopes`. Null when free. */
   fileLocks: BlockedFileWait | null;
   /** The host's hold on the card's next dispatch, with its derived sentence.
@@ -121,6 +133,18 @@ function detailFileOccupancy(
   return { isolated: answer.isolated, lines: answer.lines, shared: answer.shared };
 }
 
+/**
+ * The review policy the moves are computed under.
+ *
+ * The gate set wins when the card carries one: it is the finer policy, and
+ * the ladder rung is only its legacy spelling. A card with neither reads as
+ * Auto — the same default the seed writes.
+ */
+function reviewPolicyOf(stageSkips: DetailParts["stageSkips"]): string | string[] {
+  if (stageSkips.reviewGates !== undefined) return stageSkips.reviewGates;
+  return stageSkips.reviewMode ?? "Auto";
+}
+
 export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
   const { card, workspace } = parts;
   const openQuestions = parts.pending.length + parts.expired.length;
@@ -144,24 +168,30 @@ export function assembleDetail(deps: CardDetailDeps, parts: DetailParts) {
       openQuestions,
       hasWorker: card.worker_thread_id !== null,
     }),
-    stageSkips: skippedStages({
+    stageSkips: timelineSkips({
       kind: normalizeKind(card.kind),
       intent: card.intent,
-      reviewMode: parts.stageSkips.reviewMode,
-      reviewGates: parts.stageSkips.reviewGates,
+      stageSkips: parts.stageSkips,
       sequence: STAGE_SEQUENCE,
     }),
     scopeSync: detailScopeSync(card, workspace.path, parts.scopes.length),
     fileOccupancy: detailFileOccupancy(deps, card, workspace),
     scopeXray: parts.scopeXray,
+    scopeDraft: parts.scopeDraft,
     nativeRun: parts.nativeRun,
     blockingRun: parts.blockingRun,
     fileLocks: parts.fileLocks,
     artifacts: parts.artifacts,
+    reviewLine: parts.reviewLine,
     workerHistory: parts.workerHistory,
     executionRuns: deps.executionLifecycle.detailList(card.id),
     fileEnvironmentId: parts.fileEnvironmentId,
-    nextStages: deps.parseNextStages(workspace.path, card.stage),
+    nextStages: deps.parseNextStages(card.stage, {
+      intent: card.intent,
+      reviewPolicy: reviewPolicyOf(parts.stageSkips),
+      quality: parts.stageSkips.quality,
+      explorationCount: parts.stageSkips.explorationCount,
+    }),
     githubLink: readGithubLink(deps.db, card.id),
   };
 }
@@ -207,6 +237,11 @@ function detailCard(
     ...cardLifecycle(deps, card, parts),
     ...cardPreset(preset),
     ...cardProgress(deps, card, parts, flow),
+    // Flat because the hero reads them beside, never inside, the human
+    // receipt: frozenTestMap/freezeSha/currentHeadSha, nulls when no freeze.
+    frozenTestMap: parts.frozen?.frozenTestMap ?? null,
+    freezeSha: parts.frozen?.freezeSha ?? null,
+    currentHeadSha: parts.frozen?.currentHeadSha ?? null,
   };
 }
 
@@ -289,6 +324,9 @@ function cardProgress(
   return {
     presetOverridden: hasPresetOverride(deps.db, card.id),
     updatedAt: card.updated_at,
+    // The stall's own clock, beside the row's write time — the open card and
+    // the board tile now measure a wait from the same field.
+    lastIdleAt: card.last_idle_at ?? null,
     stallCount: stallCount(deps.db, card.id),
     scopeSummary: scopeSummary(parts.scopes),
     workerPresetId: card.worker_preset_id,

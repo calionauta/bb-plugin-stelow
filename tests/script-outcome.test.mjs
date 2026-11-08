@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { scriptOutcome } from "../server/bb-workflow-bridge.ts";
+import { renderInlineWorkflowScript, scriptOutcome } from "../server/bb-workflow-bridge.ts";
 
 // Context: the host read only the WORKFLOW's status. A recipe script that
 // finished without doing its work still completed the workflow, so BB said
@@ -24,6 +24,29 @@ assert.equal(failed.scriptError, "missing execution identity", "the script's own
 const errored = scriptOutcome(run({ state: "error" }));
 assert.equal(errored.status, "failed", "an errored script is a failed run");
 assert.match(errored.scriptError, /reported a failure/, "an errored script with no reason still names something honest");
+
+// A workflow that failed before its script returned carries the reason on the
+// RUN. card_rbkbfyqy's verification run had `result: null` and
+// `error: "Task produced no result: tests — agent call failed: Could not load
+// models for provider acp-opencode: timeout"`; the reconciler wrote "the host
+// reported a failure without a reason" because this branch was missing.
+const hostFailed = scriptOutcome({
+  runId: "wfr-host-failed",
+  status: "failed",
+  result: null,
+  error: "Task produced no result: tests — agent call failed: Could not load models for provider acp-opencode: timeout",
+});
+assert.equal(hostFailed.status, "failed", "a host-level failure is a failed run");
+assert.match(hostFailed.scriptError, /Could not load models/, "the host's reason reaches the card instead of a generic gap");
+
+// A script-level reason is more specific and wins over the run-level one.
+const scriptWins = scriptOutcome({
+  runId: "wfr-script-failed",
+  status: "failed",
+  result: { state: "failed", error: "missing execution identity" },
+  error: "Task produced no result",
+});
+assert.equal(scriptWins.scriptError, "missing execution identity", "the script's own reason is not overwritten by the run envelope");
 
 // A recipe that did its work passes through untouched.
 const worked = scriptOutcome(run({ state: "succeeded", recipe: "plan-critique", outputs: { "critique-review": { findings: [] } } }));
@@ -56,5 +79,178 @@ for (const [label, value] of [
 const untouched = { runId: "wfr-2", status: "succeeded" };
 assert.equal(scriptOutcome(untouched), untouched, "a run with no result is returned as-is, not rebuilt");
 assert.equal(scriptOutcome("succeeded"), "succeeded", "a non-object run is returned as-is");
+
+// A task that "produced" null produced no evidence: a swallowed host call
+// resolves nullish. Null-valued outputs fail; anything else present passes.
+const nulled = scriptOutcome(run({ state: "succeeded", recipe: "scope-map", outputs: { "scope-map": null } }));
+assert.equal(nulled.status, "failed", "a null task output is not a successful run");
+assert.match(nulled.scriptError, /no task outputs/);
+
+// Boundary pins, not gaps: only all-null fails. A batch where one task has
+// real evidence passes (per-task artifact validation owns the missing
+// piece), and unrecognized shapes never invent a failure.
+const partial = scriptOutcome(run({ state: "succeeded", recipe: "r", outputs: { a: null, b: { findings: [] } } }));
+assert.equal(partial.status, "succeeded", "one real output carries the batch");
+for (const [label, outputs] of [["null", null], ["missing", undefined], ["array", []], ["scalar", "done"]]) {
+  const out = scriptOutcome(run({ state: "succeeded", recipe: "r", outputs }));
+  assert.notEqual(out.status, "failed", `${label} outputs are unrecognized, not empty — no invented failure`);
+}
+for (const [label, value] of [["zero", 0], ["false", false], ["empty string", ""], ["empty object", {}], ["skip record", { skipped: true }]]) {
+  const out = scriptOutcome(run({ state: "succeeded", recipe: "r", outputs: { t: value } }));
+  assert.notEqual(out.status, "failed", `${label} is a present value, not missing evidence`);
+}
+
+// The engine rejects `pattern` in agent schemas outright (safe-subset guard
+// against catastrophic backtracking), so the renderer strips it at the
+// engine boundary. Local artifact validation keeps the full contract — only
+// the dispatched copy is sanitized. This is the exact shape that no-op'd
+// card_a9q5zhzd twice: scope-map's mapId pattern killed the call in 76ms
+// with zero agent dispatches.
+const patterned = renderInlineWorkflowScript(
+  {
+    id: "scope-map",
+    tasks: [{
+      id: "scope-map",
+      output_schema_contract: {
+        type: "object",
+        properties: { mapId: { type: "string", pattern: "^[A-Za-z0-9_.-]{1,80}$" } },
+      },
+    }],
+  },
+  {},
+);
+assert.doesNotMatch(patterned, /"pattern"/, "the dispatched schema carries no regular expressions");
+assert.match(patterned, /"mapId"/, "while the constrained field itself survives");
+
+// A property literally NAMED pattern is a field, not the keyword: its value
+// is an object, not a regex, and position plus value type tell them apart.
+const fieldNamed = renderInlineWorkflowScript(
+  {
+    id: "field-probe",
+    tasks: [{
+      id: "t",
+      output_schema_contract: {
+        type: "object",
+        properties: { pattern: { type: "string", description: "a sewing pattern name" } },
+      },
+    }],
+  },
+  {},
+);
+assert.match(fieldNamed, /"pattern":\{"type":"string"/, "a field named pattern survives with its shape");
+
+// The template refuses a swallowed call loudly instead of succeeding empty.
+// String presence is not behavior, so this executes the rendered loop with
+// stubbed host calls: parallel resolving undefined with no outputs entry
+// must throw naming the task; a condition-skipped task (outputs entry
+// written, undefined returned) must complete quietly with its skip record.
+async function runRendered(recipe, { agentImpl, parallelImpl, context = {} }) {
+  const source = renderInlineWorkflowScript(recipe, { localRunId: "exec_probe", ...context });
+  const body = source.replace(/^export const meta = .*$/m, "");
+  const run = new Function("agent", "parallel", "args", `return (async () => {${body}})();`);
+  const parallel = parallelImpl ?? (async (thunks) => {
+    const out = [];
+    for (const thunk of thunks) out.push(await thunk());
+    return out;
+  });
+  return run(agentImpl, parallel, { localRunId: "exec_probe", recipeId: recipe.id, ...context });
+}
+
+const stubTask = (overrides = {}) => ({
+  id: "t1",
+  output: "t1.json",
+  depends_on: [],
+  when: "always",
+  requirements: [],
+  failure_policy: "fail",
+  human_boundary: "none",
+  output_schema_contract: { type: "object" },
+  ...overrides,
+});
+
+await assert.rejects(
+  runRendered({ id: "r", tasks: [stubTask()] }, { agentImpl: async () => undefined }),
+  /Task produced no result: t1/,
+  "a swallowed host call throws naming the task instead of succeeding empty",
+);
+
+// card_g89gtmwt: three plan-critique runs died with the host's agent
+// dispatch resolving empty — twice instantly with zero calls recorded,
+// once after review succeeded. Same signature on setup-recon and
+// context-analysis across threads and days. The recipe and the spec were
+// never the cause; the dispatch is flaky. So an empty resolution gets one
+// bounded retry (a full re-run costs far more), and a recorded failure
+// travels in the error instead of the generic suffix.
+let emptyDispatches = 0;
+await assert.rejects(
+  runRendered({ id: "r", tasks: [stubTask()] }, {
+    agentImpl: async () => { emptyDispatches += 1; return undefined; },
+  }),
+  /Task produced no result: t1 — agent call failed: agent call resolved empty twice/,
+  "a persistently empty dispatch names the task and reports the exhausted retry",
+);
+assert.equal(emptyDispatches, 2, "exactly one retry fires before the empty dispatch fails");
+
+await assert.rejects(
+  runRendered({ id: "r", tasks: [stubTask()] }, {
+    agentImpl: async () => { throw new Error("engine refused the call"); },
+  }),
+  /Task produced no result: t1 — agent call failed: engine refused the call/,
+  "a rejected dispatch names the task and folds in the cause",
+);
+
+let flakyDispatches = 0;
+const recovered = await runRendered({ id: "r", tasks: [stubTask()] }, {
+  agentImpl: async () => {
+    flakyDispatches += 1;
+    return flakyDispatches === 1 ? undefined : { findings: [] };
+  },
+});
+assert.equal(flakyDispatches, 2, "the retry re-dispatches once");
+assert.deepEqual(
+  recovered.outputs,
+  { t1: { findings: [] } },
+  "a retry that resolves carries the batch instead of failing it",
+);
+
+// The live host settles per-call rejections into undefined results instead
+// of rejecting the batch — that is the card_g89gtmwt shape (zero calls
+// recorded, "produced no result"). An explicit task failure swallowed that
+// way carries no captured agent failure, so the established suffix survives
+// and the worker still gets the run-history pointer.
+const settling = async (thunks) => {
+  const out = [];
+  for (const thunk of thunks) {
+    try {
+      out.push(await thunk());
+    } catch {
+      out.push(undefined);
+    }
+  }
+  return out;
+};
+await assert.rejects(
+  runRendered({ id: "r", tasks: [stubTask()] }, {
+    agentImpl: async () => ({ state: "failed", error: "model refused" }),
+    parallelImpl: settling,
+  }),
+  /Task produced no result: t1 \(the host call returned nothing/,
+  "a settled task failure with no captured dispatch failure keeps the established suffix",
+);
+
+let dispatched = 0;
+const skipped = await runRendered(
+  { id: "r", tasks: [stubTask({ when: "partition_is_safe" })] },
+  {
+    agentImpl: async () => { dispatched += 1; return { evidence: true }; },
+    context: { context: {} },
+  },
+);
+assert.equal(dispatched, 0, "a condition-skipped task never dispatches");
+assert.deepEqual(
+  skipped.outputs,
+  { t1: { skipped: true, reason: "condition-false" } },
+  "and completes quietly carrying its skip record",
+);
 
 console.log("script outcome test ok: the script's own answer decides, an unread outcome is never invented");

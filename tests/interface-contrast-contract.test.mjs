@@ -23,13 +23,24 @@ const receipt = {
     { source: "fixture", reference: "accessibility-constraint", claim: "keyboard path must remain complete" },
   ],
   options: [
-    { id: "split-context", primaryValue: "split view", relatedValues: [], compatibility: "valid", wireframe: "+-- option --+" },
-    { id: "ghost-whole", primaryValue: "crop with ghost whole", relatedValues: [], compatibility: "valid", wireframe: "+-- option --+" },
+    { id: "split-context", primaryValue: "split view", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" },
+    { id: "ghost-whole", primaryValue: "crop with ghost whole", relatedValues: [], compatibility: "valid",
+      wireframe: "[ sketch ]" },
   ],
   nextAction: "Present both retained-context options at the Interface gate.",
 };
 
 assert.deepEqual(validateInterfaceContrastReceipt(receipt), [], "simulated Interface Contrast receipt is valid");
+
+// Per-scope coverage rides through validation untouched: options grounded
+// in delivery slices must never trip the eligibility trio.
+const covered = structuredClone(receipt);
+covered.options[0].scopeCoverage = [
+  { scopeId: "checkout", effect: "served", note: "split view keeps the flow in one scope" },
+  { scopeId: "offline", effect: "friction", note: "ghost whole needs a cache scope" },
+];
+assert.deepEqual(validateInterfaceContrastReceipt(covered), [], "options with scope coverage stay valid");
 assert.deepEqual(
   validateHumanBoundary({
     contractId: "reaction-queue-1",

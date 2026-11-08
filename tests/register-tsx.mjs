@@ -42,13 +42,16 @@ async function firstExisting(base, suffixes) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
-  // `@/*` is the tsconfig alias for the repo root, and components use it.
+  // `@/*` is the tsconfig alias for the repo root, and components use it. The
+  // same bundler rule as the relative branch below applies here: a `.js`
+  // specifier means the `.ts`/`.tsx` beside it, which is how
+  // `@/components/ui/hooks/use-compact-viewport.js` reaches its `.tsx`.
   if (specifier.startsWith("@/")) {
-    const found = await firstExisting(
-      new URL(specifier.slice(2), pathToFileURL(`${ROOT}${path.sep}`)).href,
-      ["", ".ts", ".tsx", ".js", ".mjs"],
-    );
-    if (found) return { url: found, shortCircuit: true };
+    const base = new URL(specifier.slice(2), pathToFileURL(`${ROOT}${path.sep}`)).href;
+    const aliased = specifier.endsWith(".js")
+      ? await firstExisting(base.slice(0, -3), [".ts", ".tsx"])
+      : await firstExisting(base, ["", ".ts", ".tsx", ".js", ".mjs"]);
+    if (aliased) return { url: aliased, shortCircuit: true };
   }
   if (specifier.startsWith(".") || specifier.startsWith("/")) {
     const base = new URL(specifier, context.parentURL ?? pathToFileURL(`${ROOT}${path.sep}`)).href;

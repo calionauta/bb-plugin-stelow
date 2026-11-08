@@ -33,9 +33,9 @@ import type { WorkerCard } from "../../workers-types.js";
 import { readCardStatus } from "../../../lib/card-status.mjs";
 import { cardLiveRuns } from "../card-live-runs.js";
 import { IDLE_ATTENTION_MS, AUDIT_DONE_NUDGE } from "../attention-window.js";
-import { createHostReadStreak } from "../../../lib/host-read-streak.mjs";
+import { createReadStreaks } from "../read-streak-wiring.js";
 import { INTERFACE_PICK } from "../plugin-protocols.js";
-import type { AnswerBoundaryPort } from "../question-answers.js";
+import type { AnswerBoundaryPort } from "../answer-resume.js";
 import type { RuntimeCore } from "../runtime-core.js";
 import type { GateSurfaces } from "./gate-surfaces.js";
 import type { Deferred } from "./deferred.js";
@@ -111,6 +111,7 @@ function buildNative(core: RuntimeCore) {
       core.workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
     logComment: (cardId, targetId, body) =>
       core.ledger.logCardComment(cardId, "card", targetId, "agent", body),
+    actions: core.actions,
   });
 }
 
@@ -161,10 +162,7 @@ function buildReconcile(
   });
   return createExecutionReconcile({
     reconcilePublications: publication.reconcilePublications,
-    db,
-    bb,
-    now,
-    randomId,
+    db, bb, now, randomId, actions: core.actions,
     getCard,
     cardWorkspace,
     fetchPendingQuestions: core.fetchPendingQuestions,
@@ -214,8 +212,8 @@ function buildAdvance(
       recordExecutionEntry(core.db, cardId, evidence, transition),
     getReliablePreset: presetServer.getReliablePresetForBand,
     getCardPresetId: (cardId) => presetServer.getPresetForCard(cardId).id,
-    respawn: (cardId, presetId) => workers.respawn(cardId, presetId),
     scheduleRespawn: (cardId, presetId) => workers.scheduleRespawn(cardId, presetId),
+    suggestTier: (card, stage) => core.decision.suggestTierShadow(card, stage),
     requestGatePreReview: core.requestGatePreReview,
     publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
     isArchivedCard,
@@ -236,14 +234,16 @@ function buildWorktreeCleanup(core: RuntimeCore) {
 }
 
 /**
- * The two synchronisations, and the lifecycle registration that drives them.
+ * The build thread's sync, and the research/explore sync it owns.
+ *
  * A track's completion contract differs from a build's (a valid index versus
  * a valid stage artifact), so each has its own projection and they agree only
- * on the lifecycle they share.
+ * on the lifecycle they share. The track sync is built ONCE and handed to the
+ * build sync: building it twice gave the two projections separate instances of
+ * the same readers.
  */
 function buildThreadSync(core: RuntimeCore) {
   return {
-    trackSync: buildTrackSync(core),
     syncThreadState: buildBuildSync(core, buildTrackSync(core)),
   };
 }
@@ -280,7 +280,7 @@ function buildTrackSync(core: RuntimeCore) {
  * list of collaborators rather than a wall of wiring. */
 function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTrackSync>) {
   const { bb, db, now, getCard, cardWorkspace, updateCard, workers } = core;
-  const readStreaks = createReadStreaks(bb);
+  const readStreaks = createReadStreaks(bb, core.actions);
   return createBuildThreadSync({
     bb,
     db,
@@ -313,32 +313,6 @@ function buildBuildSync(core: RuntimeCore, trackSync: ReturnType<typeof buildTra
   });
 }
 
-/**
- * The unreadable-read streak table for one wiring of the sync.
- *
- * Per-wiring and not on `core`: this is a counter behind a threshold, and
- * putting it on the shared runtime would make it look like a service every
- * other surface could reach for. It exists because the sync's other two
- * channels for a host fault are both wrong — `last_error` renders a Resume
- * button for a transport fault, and pure silence leaves the next occurrence
- * explained by theory instead of a measurement.
- *
- * The warn and the card latch come from this one table, so they cannot disagree:
- * both fire on the tick the streak reaches READ_STREAK_WARN_AT. The recovery
- * line is here rather than in the module because a module with no clock and no
- * logger cannot know that a host came back — and because the operator reading
- * a warn an hour later is owed the ending, not just the alarm.
- */
-function createReadStreaks(bb: RuntimeCore["bb"]) {
-  return createHostReadStreak((cardId, streak) =>
-    bb.log.warn(
-      `Stelow could not read card ${cardId}'s workflow state on ${streak} consecutive checks; `
-        + "its last verified projection is now stale and no verdict about the card was written. "
-        + "The card shows a 'Host not answering' marker from here. "
-        + "The host is not answering — no card action fixes this.",
-    ));
-}
-
 /** Register the boot reconcile and the interval that keeps it honest. */
 export function registerExecutionLifecycle(
   core: RuntimeCore,
@@ -357,6 +331,7 @@ export function registerExecutionLifecycle(
     maybeBumpSeverity: core.decision.maybeBumpSeverity,
     notifyClaimWaiters: core.notifyClaimWaiters,
     disposeWorkers: () => workers.dispose(),
+    actions: core.actions,
   });
 }
 

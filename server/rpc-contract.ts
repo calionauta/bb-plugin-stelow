@@ -6,14 +6,17 @@ import { publicationRpcContract } from "./artifacts-publication.js";
 import { workspaceRecoveryRpcContract } from "./workspaces-recovery.js";
 import { cardRpcContract } from "./card-rpc-contract.js";
 import { cardDetailRpcContract } from "./card-detail-rpc-contract.js";
+import { artifactReviewRpcContract } from "./artifact-review-rpc-contract.js";
 import { scopeMapApprovalContract } from "./scope-map-rpc-contract.js";
 import { lifecycleRpcContract } from "./lifecycle-rpc-contract.js";
 import { platformRpcContract } from "./platform-rpc-contract.js";
 import { executionRpcContract } from "./execution-contract.js";
+import { activityRpcContract } from "./activity-rpc-contract.js";
 
 export const RPC_FRAGMENTS = [
   cardRpcContract,
   cardDetailRpcContract,
+  artifactReviewRpcContract,
   scopeMapApprovalContract,
   githubRpcContract,
   decisionApiRpcContract,
@@ -23,6 +26,7 @@ export const RPC_FRAGMENTS = [
   workspaceRecoveryRpcContract,
   platformRpcContract,
   executionRpcContract,
+  activityRpcContract,
 ];
 
 type FragmentUnionToIntersection<Fragment> = (Fragment extends unknown ? (value: Fragment) => void : never) extends

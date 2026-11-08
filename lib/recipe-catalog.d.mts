@@ -2,3 +2,5 @@ export interface RecipeTask { id: string; skill?: string; output?: string; depen
 export interface Recipe { id: string; tasks?: RecipeTask[]; required_capabilities?: string[]; [key: string]: unknown; }
 export function recipeById(id: string): Recipe | null;
 export function recipeIds(): string[];
+/** A recipe's declared task outputs, relative to the run's artifact root. */
+export function recipeOutputs(id: string): string[];

@@ -183,7 +183,6 @@ const wiring = [
     ),
   )
   .join("\n");
-const scopeModule = readFileSync(new URL("../server/scopes.ts", import.meta.url), "utf8");
 const serverAndWiring = `${server}\n${wiring}`;
 assert.match(wiring, /from "\.\.\/\.\.\/scopes\.js"/, "the wiring layers delegate scope functionality to the extracted module");
 assert.doesNotMatch(
@@ -196,13 +195,11 @@ assert.doesNotMatch(
   /if \(argv\[0\] === "scope"\)[\s\S]*?runHelper\(\["scope"/,
   "the scope CLI wrapper is delegated instead of duplicated in server",
 );
-assert.match(
-  scopeModule,
-  /export async function runScopeCommand(?:<[^>]+>)?\(/,
-  "the extracted module owns the scope CLI entry point",
-);
-assert.match(scopeModule, /parseScopeArgs\(argv\.slice\(1\)\)/, "the extracted CLI parses the command arguments");
-assert.match(scopeModule, /runHelper\(\s*\["scope", \.\.\.parsed\.passthrough!/, "the extracted CLI forwards the parsed helper command");
+// The extracted module's own entry point needs no pin: `runScopeCommand` is
+// imported at the top of this file and driven by every command assertion above
+// (strict parsing, exact helper argument order, guards, publication order), so
+// a rename or a moved parser fails there, on behaviour, rather than here on a
+// regex.
 
 const guarded = commandHarness({ card: { id: "card-guard", dir_hash: "sw-guard" } });
 guarded.deps.ensureProjectArtifacts = async () => "state.md is missing for the Stelow workflow. Reseed the workflow.";

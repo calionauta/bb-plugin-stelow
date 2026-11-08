@@ -1,8 +1,6 @@
 export declare const DECISION_API_DEFAULT_ENDPOINT: string;
 export declare const DECISION_API_DEFAULT_MODEL: string;
 export declare const DECISION_API_TIMEOUT_MS: number;
-export declare const DECISION_STATE_MAX_CHARS: number;
-export declare const DECISION_API_KEY_ENV_VARS: string[];
 
 export interface DecisionProvider {
   id: string;
@@ -19,6 +17,8 @@ export declare const DECISION_PROVIDERS: DecisionProvider[];
 export declare function providerById(id: unknown): DecisionProvider | null;
 
 export declare function providerSchema(provider: unknown): "jev" | "labels";
+
+export declare function providerServesPoint(provider: unknown, questionKinds: unknown): boolean;
 export declare const CLASSIFIER_DEFAULT_ENDPOINT: string;
 
 export declare function normalizeDecisionProvider(value: unknown, fallback?: string): string;

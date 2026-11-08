@@ -1,0 +1,22 @@
+{
+  "$comment": "Versioned upstream-first allowlist. Every vendored path that differs from the pinned upstream commit must be named here with its reason, or scripts/check-upstream-drift.mjs (CI) fails. Behavioral entries document standing host policy divergences from upstream playbook defaults. A fork healed by an upstream sync goes stale (warned, then dropped) — never widened silently.",
+  "pin": "fdc412a076c5bb118f24f8fe909badf5a3231d5e",
+  "upstream_version": "0.86.0-alpha",
+  "forks": [
+    {
+      "area": "fail-observed-vs-tdd",
+      "reason": "Upstream testing guidance prescribes fail-observed guards and in-loop TDD red-green; the host forbids agent self-certification in-loop (measured harm: ProgramBench 2026 -3.6pp at +55% cost, DeepSWE 2026 zero gain). New-behavior tests are human-described or fresh-context authored/red-teamed instead. Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    },
+    {
+      "area": "blocked-terminal",
+      "reason": "Upstream terminality settles cards; the host keeps archiving terminal to every automated path (poll, event, drag) while reversible by exactly one human-initiated restore behind confirmation. Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    },
+    {
+      "area": "fail-open",
+      "reason": "Upstream ask gates read strict; the host fails open on unreadable sources and checklists, and every refusal names a valid redirect (a refusal without an exit is a deadlock). Standing policy, not a file diff.",
+      "status": "standing-divergence"
+    }
+  ]
+}

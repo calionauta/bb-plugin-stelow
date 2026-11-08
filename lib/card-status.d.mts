@@ -26,3 +26,6 @@ export declare function readCardStatus(status: unknown): CardStatus;
  * No-ops on `undefined` and `null`: most card writes do not touch the status.
  */
 export declare function assertCardStatus(status: unknown, where: string): void;
+
+/** Whether the card is past answering: completed or archived. */
+export declare function isTerminalCardStatus(status: unknown): boolean;

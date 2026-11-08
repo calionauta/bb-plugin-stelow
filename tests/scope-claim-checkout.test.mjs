@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { acquireScopeClaims, ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { resolveClaimCheckout, resolveClaimKey } from "../lib/card-claim-key.mjs";
 
 const db = new Database(":memory:");

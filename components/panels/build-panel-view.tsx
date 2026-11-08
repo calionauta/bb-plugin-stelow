@@ -6,39 +6,21 @@ import {
   BUILD_BOARD_COLUMN_LABELS,
   BUILD_BOARD_VISIBLE_COLUMNS,
 } from "../../lib/workflow-vocabulary.mjs";
-import { FiltersBar } from "../board/board-filters";
-import { ViewToggle } from "../board/board-view-toggle";
+import { BuildControlStrip } from "./build-control-strip";
+import { BoardScrollHint, PanelHeader } from "./panel-header";
 import { BuildList } from "../board/track-lists";
 import { BoardColumn } from "../board/board-column";
+import { BuildHeaderActions } from "./build-header-actions";
 import { archivedDeleteProps } from "../board/archived-delete-props";
 import { useDeleteArchivedCards } from "../board/use-delete-archived-cards";
 import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
 import { HillBoard } from "../board/hill-board";
-import { BucketGalleryButton } from "../board/card-gallery";
+import { BulkBarSlot } from "../board/build-bulk-bar";
+import { boardBottomPadding } from "../../lib/bulk-bar-placement.mjs";
 import { Button } from "../ui/button";
-import { Icon } from "../ui/icon";
-import { cn } from "../../lib/utils";
 import type { BuildPanelState } from "./build-panel-types";
 
-const INTENT_OPTIONS = [
-  { value: "all", label: "All types" },
-  ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label })),
-];
-const STATUS_OPTIONS = [
-  { value: "all", label: "Any status" },
-  ...BUILD_BOARD_VISIBLE_COLUMNS.map((column) => ({
-    value: column,
-    label: BUILD_BOARD_COLUMN_LABELS[column] ?? column,
-  })),
-];
-const ACTIVITY_OPTIONS = [
-  { value: "all", label: "Any activity" },
-  { value: "idle", label: "idle" },
-  { value: "running", label: "running" },
-  { value: "awaiting-answer", label: "awaiting-answer" },
-  { value: "error", label: "error" },
-];
 
 type Props = {
   state: BuildPanelState;
@@ -46,9 +28,11 @@ type Props = {
   onNewIssue: () => void;
   onOpenPresets: () => void;
   onOpenGithub: () => void;
-  onOpenCard: (card: { kind: "build" | "research" | "explore" }, cardId: string) => void;
+  onOpenCard: (
+    card: { kind: "build" | "research" | "explore" },
+    cardId: string,
+  ) => void;
   onOpenThread: (threadId: string) => void;
-  onMoveCard: (cardId: string, target: string) => void;
 };
 
 type BuildHeaderProps = {
@@ -62,74 +46,24 @@ type BuildHeaderProps = {
   onOpenGithub: () => void;
 };
 
-function BuildHeaderIntro({ attentionCount, onAttention }: Pick<BuildHeaderProps, "attentionCount" | "onAttention">) {
-  return (
-    <div className="min-w-0">
-      <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-        An AI agent carries each card through a structured workflow—from triage to
-        scope-by-scope execution—pausing for your decisions wherever your review
-        mode requires it.
-      </p>
-      {attentionCount > 0 ? (
-        <button
-          type="button"
-          onClick={onAttention}
-          className={cn(
-            "mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4",
-            "hover:underline focus-visible:outline focus-visible:outline-2",
-            "focus-visible:outline-primary dark:text-amber-300",
-          )}
-          aria-label={`Show the ${attentionCount} ${attentionCount === 1 ? "card" : "cards"} that need attention`}
-        >
-          {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function BuildHeaderActions(props: BuildHeaderProps) {
-  return (
-    <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={props.onNewIssue}>
-        <Icon name="Plus" className="h-4 w-4" aria-hidden />
-        New issue
-      </Button>
-      <BucketGalleryButton
-        cards={props.groupedInbox ?? []}
-        onOpenCard={(card) => props.onOpenCard(card, card.id)}
-      />
-      <Button
-        className="min-h-11 w-full sm:w-auto sm:flex-none"
-        variant="outline"
-        onClick={props.onOpenPresets}
-        title="Manage agent presets and per-phase routing"
-      >
-        <Icon name="Settings" className="h-4 w-4" aria-hidden />
-        Agent Presets
-      </Button>
-      {props.githubAutomationEnabled ? (
-        <Button
-          className="min-h-11 w-full sm:w-auto sm:flex-none"
-          variant="outline"
-          onClick={props.onOpenGithub}
-          title="Import GitHub issues now or watch labels automatically"
-        >
-          <Icon name="Github" className="h-4 w-4" aria-hidden />
-          GitHub issues
-        </Button>
-      ) : null}
-    </div>
-  );
-}
+/**
+ * The header's copy. The sentence is the track's own explanation, so it keeps
+ * the full width of a narrow panel instead of being folded beside the actions.
+ */
+const BUILD_BLURB =
+  "An AI agent carries each card through a structured workflow—from triage to "
+  + "scope-by-scope execution—pausing for your decisions wherever your review "
+  + "mode requires it.";
 
 function BuildHeader(props: BuildHeaderProps) {
   return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <BuildHeaderIntro attentionCount={props.attentionCount} onAttention={props.onAttention} />
-      <BuildHeaderActions {...props} />
-    </header>
+    <PanelHeader
+      title="Build"
+      blurb={BUILD_BLURB}
+      attentionCount={props.attentionCount}
+      onAttention={props.onAttention}
+      actions={<BuildHeaderActions {...props} />}
+    />
   );
 }
 
@@ -141,7 +75,12 @@ function GithubAuthNotice({ enabled }: { enabled: boolean }) {
         Import issues needs a GitHub account linked in the{" "}
         <span className="font-medium">github</span> plugin.
       </span>
-      <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
+      <a
+        className="text-primary underline underline-offset-2"
+        href="https://github.com/settings/tokens"
+        target="_blank"
+        rel="noreferrer"
+      >
         Set up GitHub auth
       </a>
     </div>
@@ -151,11 +90,13 @@ function GithubAuthNotice({ enabled }: { enabled: boolean }) {
 function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
   return (
     <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
-      <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
+      <h2 className="text-sm font-semibold text-foreground">
+        Product work, guided end to end
+      </h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-        Stelow is an opinionated product workflow for humans and AI agents. Start with
-        an outcome or problem; it guides the work through framing, critique, planning,
-        execution, and review.
+        Stelow is an opinionated product workflow for humans and AI agents.
+        Start with an outcome or problem; it guides the work through framing,
+        critique, planning, execution, and review.
       </p>
       <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
         <Button onClick={onNewIssue}>Start new issue</Button>
@@ -170,75 +111,116 @@ function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
   );
 }
 
-function BuildFilters({ state, onAttention }: { state: BuildPanelState; onAttention: () => void }) {
+function BuildBoardView({
+  state,
+  onOpenCard,
+  onOpenThread,
+}: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
   return (
-    <div className="flex items-start gap-2 border-b pb-3">
-      <div className="min-w-0 flex-1">
-        <FiltersBar
-          projects={state.projects}
-          stageOptions={[...state.stageOptions]}
-          filterProjectIds={state.projectIds}
-          filterStages={state.stages}
-          filterIntents={state.intents}
-          filterStatuses={state.statuses}
-          filterActivities={state.activities}
-          intentOptions={INTENT_OPTIONS}
-          statusOptions={STATUS_OPTIONS}
-          activityOptions={ACTIVITY_OPTIONS}
-          filterAttention={state.attention}
-          onProjectToggle={state.toggleProject}
-          onStageToggle={state.toggleStage}
-          onIntentToggle={state.toggleIntent}
-          onStatusToggle={state.toggleStatus}
-          onActivityToggle={state.toggleActivity}
-          onAttention={onAttention}
-          onReset={state.reset}
-        />
-      </div>
-      <ViewToggle view={state.viewMode} track="build" onChange={state.setViewMode} label="Build cards view" />
-    </div>
+    <>
+      {/* The bar lives HERE, not inside the kanban. The select mode reaches two
+          surfaces — the board and the list — and the bar is the only visible exit
+          from it. Rendered from inside `BuildBoardKanban`, selecting in list view
+          armed the mode with no bar, no `Done` and no `Select all`: the exit
+          existed only on the one view the reader had just left. */}
+      <BulkBarSlot state={state} />
+      <BuildSurface state={state} onOpenCard={onOpenCard} onOpenThread={onOpenThread} />
+    </>
   );
 }
 
-function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Props, "dialogs" | "attentionCount" | "onNewIssue">) {
-  const onConfirm = useDeleteArchivedCards(state.rpc);
+/** Which view renders, and what it needs to reserve for the bar above. */
+function BuildSurface({
+  state,
+  onOpenCard,
+  onOpenThread,
+}: {
+  state: BuildPanelState;
+  onOpenCard: Props["onOpenCard"];
+  onOpenThread: Props["onOpenThread"];
+}) {
   if (state.viewMode === "list") {
     return (
-      <BuildList
-        groups={state.grouped}
-        collapsed={state.collapsedListGroups}
-        onToggle={state.toggleListGroup}
-        onOpenCard={(card) => onOpenCard(card, card.id)}
-        onOpenThread={onOpenThread}
-      />
+      // The list reserves the same strip the kanban does. The bar floats over
+      // whatever is under it, and without this it covered the last rows of a list
+      // the reader had just selected from.
+      <div className={boardBottomPadding(state.selectMode)}>
+        <BuildList
+          groups={state.grouped}
+          collapsed={state.collapsedListGroups}
+          onToggle={state.toggleListGroup}
+          onOpenCard={(card) => onOpenCard(card, card.id)}
+          onOpenThread={onOpenThread}
+          selection={{
+            selectMode: state.selectMode,
+            selectedIds: state.selectedIds,
+            onToggleSelection: state.toggleSelection,
+          }}
+        />
+      </div>
     );
   }
   if (state.viewMode === "hill") {
-    const cards = Object.values(state.grouped).flat();
+    // The hill renders neither a checkbox nor the bar's verbs, so the mode is
+    // disarmed on arrival. The bar is still mounted above, so the two surfaces
+    // cannot disagree about whether an exit exists.
     return (
       <HillBoard
-        cards={cards}
+        cards={Object.values(state.grouped).flat()}
         onOpenCard={(card) => onOpenCard(card, card.id)}
       />
     );
   }
+  return <BuildBoardKanban state={state} onOpenCard={onOpenCard} />;
+}
+
+/**
+ * The kanban grid itself. View routing and the selection bar above it live in
+ * `BuildBoardView`, because the bar belongs to the MODE and the mode reaches more
+ * than this view.
+ */
+function BuildBoardKanban({ state, onOpenCard }: {
+  state: BuildPanelState;
+  onOpenCard: (card: { kind: "build" | "research" | "explore" }, cardId: string) => void;
+}) {
+  const onConfirm = useDeleteArchivedCards(state.rpc);
   return (
-    <div
-      data-testid="kanban-board"
-      className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
-      style={{ gridTemplateColumns: kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns) }}
-    >
-      {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
-        <BuildBoardColumn
-          key={column}
-          column={column}
-          state={state}
-          onOpenCard={onOpenCard}
-          onMoveCard={onMoveCard}
-          onConfirm={onConfirm}
-        />
-      ))}
-    </div>
+    <>
+      <div
+        data-testid="kanban-board"
+        // Two layouts, chosen by breakpoint — see lib/kanban-layout.mjs for why a phone
+        // needs a second one rather than a narrower first one.
+        className={[
+          // The bottom padding reserves the strip the floating bulk bar occupies, and only
+          // while it is present: an unselected board keeps its full height.
+          `flex snap-x snap-mandatory justify-start gap-3 overflow-x-auto overscroll-x-contain ${boardBottomPadding(state.selectMode)}`,
+          // A tablet gets the grid, but not the fixed height: the header above it
+          // is stacked until `lg`, so reserving a viewport height here would make
+          // the page scroll and the columns scroll at once. Natural height until
+          // `lg`, then the bounded column scroller the desktop board is.
+          "md:grid md:snap-none lg:h-[clamp(20rem,calc(100dvh-17rem),48rem)] lg:overflow-y-hidden",
+        ].join(" ")}
+        style={{
+          // The mobile tracks are applied as explicit widths on the children instead of a
+          // grid template, because a snap container needs its items to be the snap points
+          // and a grid template cannot express `scroll-snap-align`.
+          gridTemplateColumns: kanbanGridColumns(
+            BUILD_BOARD_VISIBLE_COLUMNS,
+            state.collapsedColumns,
+          ),
+        }}
+      >
+        {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
+          <BuildBoardColumn
+            key={column}
+            column={column}
+            state={state}
+            onOpenCard={onOpenCard}
+            onConfirm={onConfirm}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -253,19 +235,25 @@ function BuildBoardColumn(props: {
   column: string;
   state: BuildPanelState;
   onOpenCard: Props["onOpenCard"];
-  onMoveCard: (cardId: string, column: string) => void;
   onConfirm: (cardIds: string[]) => Promise<void>;
 }) {
-  const { column, state, onOpenCard, onMoveCard, onConfirm } = props;
+  const { column, state, onOpenCard, onConfirm } = props;
   return (
     <BoardColumn
       column={column}
       cards={state.grouped[column]}
       collapsed={Boolean(state.collapsedColumns[column])}
       onToggleCollapsed={() => state.toggleColumn(column)}
-      onDrop={(cardId) => onMoveCard(cardId, column)}
       labels={BUILD_BOARD_COLUMN_LABELS}
-      renderCard={(card) => <BoardCard card={card} onOpen={() => onOpenCard(card, card.id)} />}
+      renderCard={(card) => (
+        <BoardCard
+          card={card}
+          onOpen={() => onOpenCard(card, card.id)}
+          selected={state.selectedIds.has(card.id)}
+          selectMode={state.selectMode}
+          onToggleSelection={state.toggleSelection}
+        />
+      )}
       deleteAll={archivedDeleteProps({
         column,
         cards: state.grouped[column],
@@ -297,14 +285,11 @@ export function BuildPanelView(props: Props) {
         onAttention={() => state.setAttention(true)}
       />
       <GithubAuthNotice enabled={state.githubAuthMissing} />
-      <BuildFilters state={state} onAttention={() => state.setAttention(true)} />
-      {state.cards.length === 0 && !state.loading ? <EmptyBuildState onNewIssue={props.onNewIssue} /> : null}
-      {state.viewMode === "board" ? (
-        <p className="text-xs text-muted-foreground">
-          <span className="sm:hidden">Swipe sideways to view every stage.</span>
-          <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-        </p>
+      <BuildControlStrip state={state} onAttention={() => state.setAttention(true)} />
+      {state.cards.length === 0 && !state.loading ? (
+        <EmptyBuildState onNewIssue={props.onNewIssue} />
       ) : null}
+      {state.viewMode === "board" ? <BoardScrollHint /> : null}
       <FlowStrip
         rpc={state.rpc}
         projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}

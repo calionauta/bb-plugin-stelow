@@ -1,11 +1,12 @@
-import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../../../lib/ask-cancel.mjs";
+import { classifyAskCancel } from "../../../lib/question-gate.mjs";
+import { kickQuestionSync } from "../../../lib/question-store.mjs";
 import { askTimelineLabels, describeAskSubmission } from "../../../lib/question-presentation.mjs";
-import { askFinishedUpdates } from "../../../lib/card-question-state.mjs";
-import { splitEligibility } from "../../../lib/split-proposal.mjs";
+import { QUESTION_RENDERER_ID } from "../../../lib/question-batch.mjs";
+import { askFinishedUpdates } from "../../../lib/question-store.mjs";
+import { answerMentionsSplit, splitEligibility } from "../../../lib/split-proposal.mjs";
 import { array, record } from "../values.js";
 import {
   askOwningCard,
-  askTimeoutMs,
   declareAskContracts,
   discloseStandardSplit,
   gateAsk,
@@ -13,9 +14,11 @@ import {
   recordSplitProposal,
   verifyAskSurface,
   type AskGroup,
+  type AskTag,
 } from "./cli-ask-gate.js";
 import type { CliCommandFn, CliResult, Refusal } from "./cli-contract.js";
 import type { CliDeps, PendingAsk } from "./cli-deps.js";
+import { persistUnanswered } from "./cli-ask-persist.js";
 
 type AskOutcome = { outcome: string; reason: string | null; value?: unknown };
 
@@ -34,7 +37,7 @@ export function createAskCommand(deps: CliDeps): CliCommandFn {
     if ("refusal" in liveAsks) return liveAsks.refusal;
     const refusal = await askRefusals(deps, card.id, liveAsks, intent, argv);
     if (refusal) return refusal.refusal;
-    return blockOnAnswer(deps, card.id, intent, ctx.signal);
+    return blockOnAnswer(deps, card.id, intent, ctx.signal, await deps.askTimeoutMs());
   };
 }
 
@@ -44,7 +47,7 @@ async function askRefusals(
   deps: CliDeps,
   cardId: string,
   liveAsks: PendingAsk[],
-  intent: { tag: "split" | null; groups: AskGroup[] },
+  intent: { tag: AskTag; groups: AskGroup[] },
   argv: string[],
 ): Promise<Refusal | null> {
   const gated = await gateAsk(deps, cardId, liveAsks, intent.tag, intent.groups, argv);
@@ -65,8 +68,9 @@ async function askRefusals(
 async function blockOnAnswer(
   deps: CliDeps,
   cardId: string,
-  intent: { threadId: string; tag: "split" | null; groups: AskGroup[]; batched: boolean },
+  intent: { threadId: string; tag: AskTag; groups: AskGroup[]; batched: boolean },
   signal: AbortSignal | undefined,
+  timeoutMs: number,
 ): Promise<CliResult> {
   const { groups, threadId } = intent;
   deps.updateCard(cardId, { activity: "awaiting-answer" });
@@ -78,20 +82,117 @@ async function blockOnAnswer(
     groups.flatMap((group) => group.options),
   );
   const askedAt = deps.now();
-  const requested = await requestAnswer(deps, intent, signal);
+  deps.actions?.record({
+    kind: "question.asked",
+    outcome: "ok",
+    cardId,
+    threadId,
+    detail: { groups: groups.length, tag: intent.tag, batched: intent.batched },
+  });
+  // The pending interaction exists host-side only once requestInput runs,
+  // so the inbox row cannot be minted synchronously here. Kick one early
+  // sync that observes it: without this the row waits for the 45s tick
+  // while the card already shows the question. Idempotent, fire-and-forget.
+  const cancelSyncKick = kickQuestionSync(deps, { threadId, cardId });
+  const requested = await requestAnswer(deps, intent, signal, timeoutMs);
+  cancelSyncKick();
   // The ask call ended (answered, cancelled, or torn down): mark the worker
   // running again. Activity only — board position is owned by the sync poll,
   // the answer RPCs, and advance/moveCard, on both tracks.
-  // See lib/card-question-state.
+  // See lib/question-store.
   deps.updateCard(cardId, askFinishedUpdates());
+  return finishAsk(deps, { cardId, threadId, groups, askedAt, requested, intent, signal, timeoutMs });
+}
+
+/**
+ * Where the wait left things: answered, persisted onto the card, or ended for
+ * good. Split from the blocking section above because this half is a decision
+ * about four endings, and the half above is the mechanics of asking.
+ */
+function finishAsk(
+  deps: CliDeps,
+  args: {
+    cardId: string;
+    threadId: string;
+    groups: AskGroup[];
+    askedAt: number;
+    requested: Requested;
+    intent: { threadId: string; tag: AskTag; groups: AskGroup[]; batched: boolean };
+    signal: AbortSignal | undefined;
+    timeoutMs: number;
+  },
+): Promise<CliResult> {
+  const { cardId, threadId, groups, askedAt, requested } = args;
+  // Cancellation without an answer falls into two buckets. Transient
+  // infrastructure reasons (timeout, plugin reload/restart, aborted request)
+  // mean the user simply never answered: persist the question so it stays
+  // answerable on the card. Explicit end states (dismissed, thread
+  // stopped/deleted) are returned as-is for the worker to interpret.
   const cancelReason =
     requested.result.outcome === "cancelled" ? requested.result.reason : null;
   const transientCancel =
     requested.failed ||
     classifyAskCancel(requested.result.outcome, cancelReason) === "persist";
-  if (transientCancel)
-    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested);
-  return answerOutcome(deps, cardId, intent, requested);
+  if (transientCancel) {
+    // The interaction ended but the question did not: it moved onto the card,
+    // where it stays answerable. A separate kind keeps "the clock ran out" and
+    // "the user has not answered yet" from being counted as the same event.
+    deps.actions?.record({
+      kind: "question.persisted",
+      outcome: "skipped",
+      cause: requested.failed ? "question.request-failed" : "question.interrupted",
+      cardId,
+      threadId,
+      durationMs: deps.now() - askedAt,
+      detail: { groups: groups.length },
+    });
+    return persistUnanswered(deps, cardId, threadId, groups, askedAt, requested, args.timeoutMs);
+  }
+  recordQuestionOutcome(deps, {
+    cardId,
+    threadId,
+    askedAt,
+    outcome: requested.result.outcome,
+    failed: requested.failed,
+    groups: groups.length,
+  });
+  return answerOutcome(deps, cardId, args.intent, requested);
+}
+
+/**
+ * How the wait ended, in one row: answered, or gone without an answer.
+ *
+ * The dwell time is the number the card could never show — 32 questions had
+ * expired and nothing recorded how long each one waited, so "the user ignores
+ * questions" and "the wait was five seconds" read identically. A cause keeps
+ * the two apart: `question.dismissed` is a person saying no, `question.timeout`
+ * is the clock, and neither is a crash.
+ */
+function recordQuestionOutcome(
+  deps: CliDeps,
+  args: {
+    cardId: string;
+    threadId: string;
+    askedAt: number;
+    outcome: string;
+    failed: boolean;
+    groups: number;
+  },
+): void {
+  const answered = args.outcome === "submitted";
+  deps.actions?.record({
+    kind: answered ? "question.answered" : "question.expired",
+    outcome: answered ? "ok" : "skipped",
+    cause: answered
+      ? null
+      : args.failed
+        ? "question.request-failed"
+        : `question.${args.outcome.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`,
+    cardId: args.cardId,
+    threadId: args.threadId,
+    durationMs: deps.now() - args.askedAt,
+    detail: { groups: args.groups, outcome: args.outcome, failed: args.failed },
+  });
 }
 
 type Requested = { result: AskOutcome; failed: boolean };
@@ -100,14 +201,17 @@ type Requested = { result: AskOutcome; failed: boolean };
  * names the wait while the form is open (BB 0.43), and describeSubmission
  * decides what the transcript keeps — decisions only, never the payload or
  * the raw value. Hosts that predate the fields ignore them. */
-function askInputFor(intent: { threadId: string; groups: AskGroup[]; batched: boolean }) {
+function askInputFor(
+  intent: { threadId: string; groups: AskGroup[]; batched: boolean },
+  timeoutMs: number,
+) {
   return {
     threadId: intent.threadId,
-    rendererId: "stelow-question",
+    rendererId: QUESTION_RENDERER_ID,
     title: intent.batched
       ? `Stelow questions (${intent.groups.length})`
       : "Stelow question",
-    timeoutMs: askTimeoutMs(),
+    timeoutMs,
     presentation: {
       label: askTimelineLabels({
         batched: intent.batched,
@@ -122,9 +226,10 @@ async function requestAnswer(
   deps: CliDeps,
   intent: { threadId: string; groups: AskGroup[]; batched: boolean },
   signal: AbortSignal | undefined,
+  timeoutMs: number,
 ): Promise<Requested> {
   const { groups } = intent;
-  const askInput = askInputFor(intent);
+  const askInput = askInputFor(intent, timeoutMs);
   // Contract ids are host bookkeeping, not renderer input: strip them so the
   // interaction payload keeps its exact BB shape.
   const payloadGroups = groups.map((group) => ({
@@ -163,103 +268,13 @@ async function requestAnswer(
   }
 }
 
-/** Cancellation without an answer falls into two buckets. Transient
- * infrastructure reasons (timeout, plugin reload/restart, aborted request)
- * mean the user simply never answered: persist the question exactly like a
- * timeout so it stays answerable on the card and the worker stops to wait.
- * Explicit end states (user dismissed, thread stopped/deleted) are returned
- * as-is for the worker to interpret. */
-async function persistUnanswered(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  groups: AskGroup[],
-  askedAt: number,
-  requested: Requested,
-): Promise<CliResult> {
-  const cancelReason =
-    requested.result.outcome === "cancelled" ? requested.result.reason : null;
-  let persisted = false;
-  let persistError: string | null = null;
-  // Two attempts: a concurrent writer (reconcile timer, sync poll) can hold the
-  // lock briefly — SQLITE_BUSY is transient, not fatal.
-  for (let attempt = 1; attempt <= 2 && !persisted; attempt++) {
-    try {
-      writeExpiredRows(deps, cardId, threadId, groups, askedAt);
-      persisted = true;
-    } catch (err) {
-      persistError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-      deps.bb.log.warn(
-        `stelow ask persist attempt ${attempt}/2 failed (card ${cardId}, thread ${threadId}): ${persistError}`,
-      );
-      if (isRetryablePersistError(persistError) && attempt === 1) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      } else {
-        break;
-      }
-    }
-  }
-  const elapsed = Math.round((deps.now() - askedAt) / 1e3);
-  if (!persisted) {
-    const whyPersistFailed = requested.failed
-      ? "request failure"
-      : `cancel reason "${cancelReason ?? "unknown"}"`;
-    return {
-      exitCode: 1,
-      stdout: `The question could not be recorded (interrupted storage after ${whyPersistFailed}). STOP and wait: do NOT proceed with the workflow. \
-On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.`,
-    };
-  }
-  const why = interruptionWhy(cancelReason, requested.failed, elapsed);
-  return {
-    exitCode: 1,
-    stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (same column, marked as waiting \
-for your answer) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you \
-may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.`,
-  };
-}
-
-/** A timed-out batch persists as one expired row per sub-question so the card
- * can answer them individually or all at once. */
-function writeExpiredRows(
-  deps: CliDeps,
-  cardId: string,
-  threadId: string,
-  groups: AskGroup[],
-  askedAt: number,
-): void {
-  const expiredAt = askedAt + askTimeoutMs();
-  const insert = deps.db.prepare(
-    "INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, kind, locale, options, expired_at, answered) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  );
-  deps.db.transaction(() => {
-    for (const group of groups) {
-      insert.run(
-        deps.randomId("qexp"),
-        cardId,
-        threadId,
-        group.question,
-        group.multiple ? 1 : 0,
-        group.kind,
-        "en",
-        JSON.stringify(group.options),
-        expiredAt,
-        0,
-      );
-    }
-  })();
-  deps.updateCard(cardId, { activity: "awaiting-answer" });
-  deps.bb.realtime.publish("card-state", { cardId });
-}
-
 /** The host records what the human approved on a split proposal — right here
  * for the blocking call, and in the answer RPC for card-side answers. `bb
  * stelow split` trusts this row, never a worker claim. */
 async function answerOutcome(
   deps: CliDeps,
   cardId: string,
-  intent: { tag: "split" | null; groups: AskGroup[] },
+  intent: { tag: AskTag; groups: AskGroup[] },
   requested: Requested,
 ): Promise<CliResult> {
   const result = requested.result;
@@ -300,10 +315,21 @@ async function standardSplitReminder(
   if (!card) return null;
   const gate = splitEligibility({ kind: card.kind, stage });
   if (!gate.ok) return null;
+  // The user picked a split direction in freeform words: point the worker
+  // at the formal question now instead of letting it ask a second
+  // freeform question about the same split. A bare reminder already covers
+  // the general case below; this sentence fires only on the decision.
+  const direct = answerMentionsSplit(result.value)
+    ? " The user chose a split direction above — ask it formally NOW with"
+      + " --tag split --multiple (slices plus exactly one \"Keep as one card\"),"
+      + " then run bb stelow split after the answer. Open with Following your call"
+      + " to split and preselect the named slices with --selected (Keep stays"
+      + " unchecked). Do not ask another freeform question about this split first."
+    : "";
   return {
     exitCode: 0,
     stdout: `${JSON.stringify(result)}\nSplit check: recorded as STANDARD — its answer is text only and executes nothing. If this question \
 proposes splitting the card, re-ask it now with --tag split --multiple plus exactly one --option "Keep as one card", then run \
-bb stelow split after the answer (still at ${stage}, still in time).`,
+bb stelow split after the answer (still at ${stage}, still in time).${direct}`,
   };
 }

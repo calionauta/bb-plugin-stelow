@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import {
+  ensureInboxQuestionColumns,
   ensureInboxResolvedReasonColumn,
   ensureInboxSeverityColumns,
 } from "../../lib/inbox-events.mjs";
@@ -38,6 +39,9 @@ export const INBOX_EVENTS_SCHEMA = `
     occurrences INTEGER NOT NULL DEFAULT 1,
     holder_card_id TEXT,
     holder_file TEXT,
+    question_summary TEXT,
+    question_count INTEGER,
+    question_kind TEXT,
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
 `;
@@ -54,5 +58,6 @@ export function inboxDatabase(extraSchema = "") {
   ensureInboxResolvedReasonColumn(db);
   ensureInboxSeverityColumns(db);
   ensureInboxOccurrencesColumn(db);
+  ensureInboxQuestionColumns(db);
   return db;
 }

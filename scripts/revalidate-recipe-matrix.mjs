@@ -17,9 +17,10 @@
  *     rendered-source hashes, rows rebuilt from the catalog, fresh
  *     `validated_at`, and the host version the probe ran against.
  *
- * The test pins host version 0.43.3. If `bb --version` differs, this
- * script refuses to write — update the pin in
- * tests/recipe-pilot-matrix.test.mjs in the same commit as a revalidation.
+ * The test pins host version 0.45.0 (the host that produced the fixture in
+ * this commit). If `bb --version` differs, this script refuses to write —
+ * update the pin in tests/recipe-pilot-matrix.test.mjs in the same commit
+ * as a revalidation.
  *
  * Run as:
  *   node --experimental-strip-types --import ./tests/register-ts-source.mjs \
@@ -39,7 +40,7 @@ import { renderInlineWorkflowScript } from "../server/bb-workflow-bridge.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(root, "tests/fixtures/recipe-pilot-matrix.json");
-const PINNED_HOST_VERSION = "0.46.1";
+const PINNED_HOST_VERSION = "0.45.0";
 const EVIDENCE_PATHS = [
   "data/stelow-recipe-catalog.json",
   "skills/stelow-workflow-orchestrator/recipe-catalog.json",

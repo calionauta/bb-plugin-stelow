@@ -120,6 +120,47 @@ function useEscapeBack(onBack?: () => void) {
   return { closeRef };
 }
 
+/**
+ * The breadcrumb line: where this card sits, its status pills, and the phase rail.
+ *
+ * Extracted from `CardDetailHeader` when the wrap that makes the header work at 375px took
+ * the function past the repository's budget. It is also the member the wrap exists for: it
+ * is the `flex-1` one, so it is the piece that collapsed to nothing between six controls.
+ *
+ * Below `md` it takes a full-width line of its own (`order-last basis-full`) and the controls
+ * share the first row; at `md` and up it returns to the single row. The `md:order-none
+ * md:basis-auto` pair is what undoes the reordering — without it desktop would inherit the
+ * phone's layout rather than keeping its own.
+ *
+ * `order-last basis-full` below `md` is the mechanism: the controls take the first row and
+ * this gets a line of its own, instead of the flex-1 member collapsing to nothing between
+ * them.
+ */
+function HeaderBreadcrumb({ card, statusTone, intentLabel }: {
+  card: ManageCardState | null;
+  statusTone: (status: string) => string;
+  intentLabel: (intent: string) => string | undefined;
+}) {
+  return (
+    <nav
+        className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground md:order-none md:basis-auto md:flex-1"
+        aria-label="Breadcrumb"
+      >
+        <span>Stelow</span>
+        <span aria-hidden className="mx-1 text-border">/</span>
+        <span className="font-medium">{card?.projectName ?? "…"}</span>
+        <span aria-hidden className="mx-1 text-border">/</span>
+        <RenameControl cardId={card?.id ?? null} displayName={card?.displayName ?? null} name={card?.name ?? null} />
+        {card ? (
+          <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle">
+            <BuildStatusPills card={card} statusTone={statusTone} intentLabel={intentLabel} />
+          </span>
+        ) : null}
+        {card && card.kind === "build" ? <span className="ml-2 hidden align-middle md:inline-flex"><PhaseRail stage={card.stage} /></span> : null}
+    </nav>
+  );
+}
+
 export function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onRestore, onReclassify, statusTone, intentLabel }: {
   card: ManageCardState | null;
   onBack?: () => void;
@@ -134,20 +175,12 @@ export function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDi
 }) {
   const { closeRef } = useEscapeBack(onBack);
   return (
-    <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
+    <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-card/80 px-3 py-1.5">
       {onBack ? <button onClick={onBack} title="Back to board (Esc)" className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>←</span>
         <span>Board</span>
       </button> : null}
-      <nav className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-label="Breadcrumb">
-        <span>Stelow</span>
-        <span aria-hidden className="mx-1 text-border">/</span>
-        <span className="font-medium">{card?.projectName ?? "…"}</span>
-        <span aria-hidden className="mx-1 text-border">/</span>
-        <RenameControl cardId={card?.id ?? null} displayName={card?.displayName ?? null} name={card?.name ?? null} />
-        {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills card={card} statusTone={statusTone} intentLabel={intentLabel} /></span> : null}
-        {card && card.kind === "build" ? <span className="ml-2 hidden align-middle md:inline-flex"><PhaseRail stage={card.stage} /></span> : null}
-      </nav>
+      <HeaderBreadcrumb card={card} statusTone={statusTone} intentLabel={intentLabel} />
       {card ? <>
         {card.kind === "build" && canEditWorkflowIntent(card) ? (
         <IntentSelect cardId={card.id} intent={card.intent} intentLabel={intentLabel} />

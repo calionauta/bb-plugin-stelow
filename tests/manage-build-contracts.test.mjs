@@ -133,12 +133,14 @@ assert.match(
   detailRealtime,
   "the extracted shell keeps debounced card and inbox refreshes",
 );
-const closesAdvancePreview =
-  /const confirm = \(\) => \{\s*if \(!pendingAdvance\) return;\s*onOpenChange\(false\);\s*void onAdvance\(pendingAdvance\);/;
-assert.match(
+// The advance dialog and its preview are gone, and this pin now guards their absence.
+// A stage chip used to be a button that opened that dialog; the workflow is the agent's to
+// drive, so a person who wants a different stage asks it in the conversation. Re-adding a
+// click target on the chip is the regression — it makes the board read as a manual tool.
+assert.doesNotMatch(
   buildDetail,
-  closesAdvancePreview,
-  "confirming an advance closes the preview before the async transition starts",
+  /pendingAdvance|AdvanceDialog|useAdvanceCard/,
+  "no manual stage-change control survives in the detail: the agent advances, and a person asks it to",
 );
 const buildOrder = buildContent.slice(
   buildContent.indexOf("<BuildReviewHero"),

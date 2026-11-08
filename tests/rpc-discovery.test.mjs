@@ -1,41 +1,33 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { rpcContract } from "../server/rpc-contract.ts";
 
 // Every RPC method publishes a one-line description (BB 0.43
 // experimental_discoverRpc): `bb plugin rpc list` and other plugins read
 // these without executing code. A method without a description is invisible
 // to discovery, so the contract test fails when one is added bare.
 //
-// The composed contract is split across server/*.ts feature fragments (the
-// GitHub issue slice established contract + handlers + migrations + scheduler).
-// Discovery scans every server module that declares one.
-const contracts = readdirSync(join(root, "server"))
-  .filter((file) => file.endsWith(".ts"))
-  .map((file) => join("server", file))
-  .filter((file) => readFileSync(join(root, file), "utf8").includes("defineRpcContract({"))
-  .map((file) => ({ file, start: "defineRpcContract({", end: null }));
+// The check runs over the COMPOSED contract the composition root registers,
+// not over a text scan of the fragments that declare one: importing the real
+// object proves every method a caller can discover carries its description,
+// including methods contributed by a fragment that never spells
+// `defineRpcContract` inline.
 
-let total = 0;
-for (const { file, start, end } of contracts) {
-  const content = readFileSync(join(root, file), "utf8");
-  const from = content.indexOf(start);
-  assert.ok(from >= 0, `${file} holds its RPC contract`);
-  const scope = end ? content.slice(from, content.indexOf(end, from)) : content.slice(from);
-  const names = [...scope.matchAll(/^  ([A-Za-z]+): \{$/gm)].map((match) => match[1]);
-  assert.ok(names.length > 0, `${file} exposes contract methods`);
-  for (const name of names) {
-    total += 1;
-    const at = scope.indexOf(`  ${name}: {`);
-    const block = scope.slice(at, scope.indexOf("\n  },", at));
-    const described = block.match(/^\s+experimental_description: "([^"]+)",$/m);
-    assert.ok(described, `${file}#${name} publishes a discovery description`);
-    assert.ok(described[1].length <= 120, `${file}#${name} description fits discovery UI (${described[1].length} chars)`);
-  }
+const entries = Object.entries(rpcContract);
+assert.ok(entries.length > 0, "the composed contract exposes methods");
+
+for (const [name, entry] of entries) {
+  assert.equal(typeof entry, "object", `${name} is a contract entry`);
+  const description = entry.experimental_description;
+  assert.equal(
+    typeof description,
+    "string",
+    `${name} publishes a discovery description`,
+  );
+  assert.ok(description.length > 0, `${name} has a non-empty description`);
+  assert.ok(
+    description.length <= 120,
+    `${name} description fits discovery UI (${description.length} chars)`,
+  );
 }
 
-
-console.log(`rpc discovery test ok: ${total} methods publish descriptions`);
+console.log(`rpc discovery test ok: ${entries.length} methods publish descriptions`);

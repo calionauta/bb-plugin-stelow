@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { OWNERSHIP_UNVERIFIED } from "../../lib/ownership-refusal.mjs";
 import { holdUpdates, type HostHold } from "../../lib/host-hold.mjs";
 import { readMissUpdates, readRecoveredUpdates } from "../../lib/host-read-streak.mjs";
@@ -14,6 +14,7 @@ import { keepsCardRunning, runUpdates, type NativeRunRef } from "../../lib/nativ
 import { nextAutoContinue, shouldAutoContinue } from "../../lib/auto-continue.mjs";
 import { autoContinueFields, buildContinueInput, buildContinueNudge } from "../../lib/worker-continuation.mjs";
 import { healPresetStaleness } from "../../lib/worker-ledger.mjs";
+import { resetSpawnRetry } from "../../lib/spawn-retry.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import {
   isActiveStatus,
@@ -116,6 +117,13 @@ export function createBuildThreadSync(deps: BuildThreadSyncDeps) {
       const snapshot = await readBuildThread(deps, card);
       if (!snapshot) return;
       applyStateMetadata(deps, snapshot);
+      // Output is the proof a worker STARTED. Only then does the automatic
+      // spawn-retry episode end: a failed thread's error text is not output,
+      // and resetting the budget on a spawn call or on a replacement thread
+      // would let one permanent provider error spawn workers forever.
+      if (snapshot.lastOutput != null && !isFailed(snapshot.status)) {
+        resetSpawnRetry(deps.db, card.id);
+      }
       if (isActiveStatus(snapshot.status) && await syncActive(deps, snapshot)) return;
       if (isIdleStatus(snapshot.status) && await syncIdle(deps, snapshot)) return;
       if (isFailed(snapshot.status)) {
@@ -323,6 +331,7 @@ async function resumeWithProgress(
     progressed,
     autoCount: snapshot.card.auto_continue_count ?? 0,
     autoStage: snapshot.card.auto_continue_stage ?? null,
+    lastError: snapshot.card.last_error ?? null,
   });
   const vetoed = decision.proceed &&
     !(await deps.vetContinuation(snapshot.lastOutput == null
@@ -343,7 +352,11 @@ async function resumeWithProgress(
  * failure this repo keeps refusing.
  */
 function detectProgress(snapshot: ThreadSnapshot, calls: StelowCalls): boolean {
-  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_assistant_text) {
+  // Compared against the last IDLE edge, not against `last_assistant_text`:
+  // a running sync (which a card-detail read also triggers) rewrites that field
+  // with the live turn text, so comparing there made "new text" depend on
+  // whether the reader looked mid-turn.
+  if (snapshot.lastOutput != null && snapshot.lastOutput !== snapshot.card.last_idle_text) {
     return true;
   }
   return calls?.advanced ?? false;

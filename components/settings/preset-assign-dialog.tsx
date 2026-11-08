@@ -3,6 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import { runPresetAssignment } from "../../lib/preset-assignment.mjs";
+import { canApplyPresetSelection } from "../../lib/preset-selection.mjs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,7 +65,6 @@ function useCustomPreset(
   open: boolean,
   defaultPreset: PresetSummary | null,
 ): {
-  custom: typeof EMPTY_CUSTOM;
   value: PresetExecutionValue;
   setCustom: (value: typeof EMPTY_CUSTOM) => void;
 } {
@@ -83,7 +83,7 @@ function useCustomPreset(
     reasoningLevel: custom.reasoningLevel || defaultExecution.reasoningLevel,
     permissionMode: (custom.permissionMode || defaultExecution.permissionMode) as PermissionMode,
   };
-  return { custom, value, setCustom };
+  return { value, setCustom };
 }
 
 type PresetActionContext = {
@@ -206,7 +206,6 @@ type PresetAssignDialogViewProps = PresetAssignDialogProps & {
   catalog: ProviderCatalog;
   selected: string | null;
   customValue: PresetExecutionValue;
-  custom: typeof EMPTY_CUSTOM;
   busy: boolean;
   error: string | null;
   onCustomChange: (value: PresetExecutionValue) => void;
@@ -222,7 +221,6 @@ function PresetAssignDialogView(props: PresetAssignDialogViewProps) {
     catalog,
     selected,
     customValue,
-    custom,
     busy,
     error,
     onCustomChange,
@@ -248,10 +246,7 @@ function PresetAssignDialogView(props: PresetAssignDialogViewProps) {
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button
-            disabled={busy || !selected || (
-              selected === "custom" &&
-              (!custom.providerId || !custom.modelId.trim())
-            )}
+            disabled={busy || !canApplyPresetSelection(selected, customValue)}
             onClick={onApply}
           >
             {busy ? "Applying…" : "Apply"}
@@ -290,7 +285,6 @@ export function PresetAssignDialog(props: PresetAssignDialogProps) {
       catalog={catalog}
       selected={selected}
       customValue={custom.value}
-      custom={custom.custom}
       busy={actions.busy}
       error={actions.error}
       onCustomChange={(next) => {

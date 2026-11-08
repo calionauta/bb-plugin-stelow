@@ -34,6 +34,33 @@ assert.equal(shouldAutoContinue({ ...base, stage: "audit" }).proceed, false, "th
 assert.equal(shouldAutoContinue({ ...base, transitioningIntoIdle: false }).proceed, false, "only a fresh idle edge resumes (no per-poll loops)");
 assert.equal(shouldAutoContinue({ ...base, progressed: false }).proceed, false, "a silent stop stays paused (stuck, not chatty)");
 
+// A provider that refused the last turn is not a worker that stopped.
+//
+// Measured case: thread thr_3ai9we6jap failed its spawn turn on
+// `provider.quota`, idled 18 hours, and was nudged on its next idle edge with
+// "Continue the Stelow workflow now from the current stage" — into the same
+// refusal. The nudge counted the failure text as "progress" because it differed
+// from the last idle baseline, which is the hole this closes.
+const QUOTA_REFUSAL = 'Internal error: Rate limit exceeded. Please try again later.: '
+  + '{"service":"session","errorName":"provider.quota"}';
+const RATE_REFUSAL = "Server requested 21600s retry delay (max: 90s). 429 Rate limit exceeded.";
+
+for (const [label, lastError] of [["quota", QUOTA_REFUSAL], ["rate limit", RATE_REFUSAL]]) {
+  const decision = shouldAutoContinue({ ...base, lastError });
+  assert.equal(decision.proceed, false, `a ${label} refusal blocks the nudge`);
+  assert.match(decision.reason, /provider refused/, `and the reason names the provider, not the worker`);
+}
+assert.equal(
+  shouldAutoContinue({ ...base, lastError: "the worker threw a TypeError" }).proceed,
+  true,
+  "an ordinary failure is not a provider refusal and keeps the existing behaviour",
+);
+assert.equal(
+  shouldAutoContinue({ ...base, lastError: null }).proceed,
+  true,
+  "no recorded error changes nothing",
+);
+
 // Budget: consecutive nudges without a stage advance stop at the cap, then
 // the card falls through to the human-visible paused path.
 assert.equal(MAX_AUTO_CONTINUES >= 1, true, "the budget is a positive cap");
@@ -102,8 +129,9 @@ ensureAutoContinueColumns(db);
 const columns = db.prepare("PRAGMA table_info(cards)").all().map((column) => column.name);
 assert.ok(columns.includes("auto_continue_count"), "the count column is added");
 assert.ok(columns.includes("auto_continue_stage"), "the stage column is added");
+assert.ok(columns.includes("last_idle_text"), "the idle baseline column is added");
 ensureAutoContinueColumns(db);
-db.prepare("INSERT INTO cards VALUES (?, ?, 0, NULL)").run("card_1", "shape");
+db.prepare("INSERT INTO cards (id, stage, auto_continue_count, auto_continue_stage) VALUES (?, ?, 0, NULL)").run("card_1", "shape");
 assert.equal(db.prepare("SELECT auto_continue_count FROM cards WHERE id = ?").get("card_1").auto_continue_count, 0, "old rows default to zero budget used");
 db.close();
 
@@ -308,7 +336,7 @@ assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides throug
 assert.match(askGateSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
 assert.match(askGateSource, /expiredCount: deps\.openExpiredQuestionIds\(cardId\)\.length,/, "the dispatcher receives the recoverable expired count");
 const doneSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-track.ts"),
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-completion.ts"),
   "utf8",
 );
 const reseedSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed.ts"), "utf8");
@@ -317,7 +345,7 @@ assert.match(reseedSource, /const reset = deps\.resetAutoContinue\(\)/, "reseed 
 assert.equal(
   (doneSource.match(/resetAutoContinue\(\)/g) ?? []).length,
   1,
-  "every done track resets the budget through one shared completion writer",
+  "every done track resets the budget through one shared completion writer (server/runtime/card-completion.ts)",
 );
 assert.match(protocolsSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");

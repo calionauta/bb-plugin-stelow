@@ -2,16 +2,17 @@
  * The gate vocabulary: which artifact a gate reviews and which receipt file
  * proves it was approved.
  *
- * One table, because the board shows a workflow as "approved" and the gate
- * handler writes "approved" from the same pair of names. A copy in either
- * place would let the panel mark a gate approved from a receipt the handler
- * no longer writes.
+ * One table, because the board shows a workflow as "approved" and the worker
+ * writes "approved" from the same pair of names. A copy in either place would
+ * let the panel mark a gate approved from a receipt the worker never wrote.
  */
 export const GATES = {
   gate: { artifact: "product-spec", receipt: "gate-approved.md" },
   "int-gate": { artifact: "interfaces", receipt: "int-gate-approved.md" },
   "plan-gate": { artifact: "tech-plan", receipt: "plan-gate-approved.md" },
-  "diff-gate": { artifact: "other", receipt: "diff-gate-approved.md" },
+  // diff-gate reviews the working tree, not a registered document; its receipt
+  // is written by the stage, and no artifact row can carry the approved mark.
+  "diff-gate": { artifact: null, receipt: "diff-gate-approved.md" },
 } as const;
 
 export type Gate = keyof typeof GATES;

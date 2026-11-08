@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
 import { blockingFailedRun, failedRunRefusal } from "../lib/failed-run-gate.mjs";
-import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 
 /**
  * A failed run holds the stage, and the hold has a door.
@@ -20,16 +20,6 @@ import { createExecutionRun, ensureExecutionRunTable } from "../lib/execution-ru
  * "a failed run exists" would need a way to delete the failed row, and nothing
  * in this plugin does that.
  */
-
-function ledger() {
-  const db = new Database(":memory:");
-  // execution_runs carries a foreign key to cards, so the parent has to exist
-  // before a run can be written at all.
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
-  ensureExecutionRunTable(db);
-  return db;
-}
 
 const run = (db, { id, stage = "scope", status = "failed", recipe = "scope-map", error = "no task outputs", at }) => {
   createExecutionRun(db, {
@@ -59,14 +49,14 @@ const run = (db, { id, stage = "scope", status = "failed", recipe = "scope-map",
 };
 
 test("a failed run at the card's stage holds the advance", () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1" });
   const blocking = blockingFailedRun(db, "card_1", "scope");
   assert.equal(blocking?.id, "exec_1");
 });
 
 test("a run that succeeded does not hold anything", () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", status: "succeeded" });
   assert.equal(blockingFailedRun(db, "card_1", "scope"), null);
 });
@@ -75,7 +65,7 @@ test("a failure at ANOTHER stage does not hold this one", () => {
   // The regression that a card-scoped rule would have shipped: a card that
   // failed a run three stages ago and has moved on cleanly would be blocked
   // forever at the stage it reached next.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", stage: "critique" });
   assert.equal(blockingFailedRun(db, "card_1", "scope"), null, "the stage is what the gate is about");
 });
@@ -84,7 +74,7 @@ test("a newer successful run releases the hold — this is the door", () => {
   // The retry writes a NEWER run. The gate reads the newest run for the stage,
   // so the hold lifts the moment a retry lands, and there is no failed row to
   // delete for it to stay lifted.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_old", status: "failed" });
   assert.ok(blockingFailedRun(db, "card_1", "scope"), "the first failure holds");
 
@@ -103,7 +93,7 @@ test("a retry that fails again re-tightens the hold by itself", () => {
   // milliseconds, `created_at DESC` alone already orders them correctly, and the
   // mutation "drop the tiebreak" then passes four times out of five. A test that
   // catches a bug by luck is a test that will eventually ship it.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", status: "failed", at: 1_000 });
   run(db, { id: "exec_2", status: "failed", at: 1_000 });
   assert.equal(
@@ -117,7 +107,7 @@ test("the tiebreak is what resolves an equal-timestamp tie", () => {
   // Named separately so that dropping `rowid DESC` fails a test whose entire
   // subject IS the tiebreak, rather than one that also asserts things it would
   // pass anyway.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_first", status: "failed", at: 5_000 });
   run(db, { id: "exec_second", status: "failed", at: 5_000 });
   assert.equal(blockingFailedRun(db, "card_1", "scope")?.id, "exec_second");
@@ -126,7 +116,7 @@ test("the tiebreak is what resolves an equal-timestamp tie", () => {
 test("a live run at the stage is not a failed run", () => {
   // While a run is working the card is progressing, not stuck; refusing an
   // advance because work is IN FLIGHT would be a hold for the wrong reason.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", status: "running" });
   assert.equal(blockingFailedRun(db, "card_1", "scope"), null);
 });
@@ -135,7 +125,7 @@ test("the refusal names the door, and the row it points at", () => {
   // A refusal with no exit is a deadlock with a good error message, so this
   // sentence has to carry the action that releases it AND the run id, or the
   // reader is sent looking for a row they cannot identify.
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", error: "the recipe produced no task outputs" });
   const refusal = failedRunRefusal(blockingFailedRun(db, "card_1", "scope"));
   assert.match(refusal, /Retry run/, "the refusal names the action that releases the hold");
@@ -145,7 +135,7 @@ test("the refusal names the door, and the row it points at", () => {
 });
 
 test("a failure with no recorded reason is still a usable sentence", () => {
-  const db = ledger();
+  const db = executionRunDb("card_1");
   run(db, { id: "exec_1", error: null });
   const refusal = failedRunRefusal(blockingFailedRun(db, "card_1", "scope"));
   assert.match(refusal, /no reason/i, "an absent reason is stated, not invented");

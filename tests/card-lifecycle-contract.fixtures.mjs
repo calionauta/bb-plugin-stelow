@@ -21,6 +21,7 @@ export const server = [
   readFileSync(join(root, "server", "runtime", "card-operations.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-restore.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "research-track-sync.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-completion.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-sync-core.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-prompts.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-capabilities.ts"), "utf8"),
@@ -53,6 +54,7 @@ export const cliAskRun = readFileSync(
 export const cliDone = [
   readFileSync(join(root, "server", "runtime", "cli", "cli-done.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "cli", "cli-done-build.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "cli", "cli-scan-gate.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-audit-trail.ts"), "utf8"),
 ].join("\n");
 export const threadProjection = readFileSync(
@@ -84,6 +86,10 @@ export const serverRecovery = readFileSync(
   "utf8",
 );
 export const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
+export const answerResume = readFileSync(
+  join(root, "server/runtime/answer-resume.ts"),
+  "utf8",
+);
 export const answerExpired = readFileSync(
   join(root, "server/runtime/question-answers.ts"),
   "utf8",
@@ -222,6 +228,19 @@ export const conversation = readFileSync(
   join(root, "components", "conversation", "question-batch.tsx"),
   "utf8",
 );
+/**
+ * The question HEADING: the dots, the title, the prompt, and the two advisories
+ * that travel with a question.
+ *
+ * A pin that asked "does each open question carry its own staleness notice"
+ * used to read `question-batch`; the notice moved to this file when the heading
+ * was extracted, so the fixture follows the code. Reading the old file would
+ * have kept the pin green while asserting nothing about where the notice now is.
+ */
+export const questionHeading = readFileSync(
+  join(root, "components", "conversation", "batch-question-heading.tsx"),
+  "utf8",
+);
 export const answerBody = readFileSync(
   join(root, "components", "conversation", "batch-answer-body.tsx"),
   "utf8",
@@ -309,6 +328,10 @@ export const detailScopes = readFileSync(
 );
 export const detailViewer = readFileSync(
   join(root, "components", "detail", "artifact-viewer-dialog.tsx"),
+  "utf8",
+);
+export const detailContent = readFileSync(
+  join(root, "components", "detail", "artifact-content.tsx"),
   "utf8",
 );
 export const manageHeader = readFileSync(

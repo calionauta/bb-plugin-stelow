@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   captureEnvironmentSeed,
   isKnownEnvironmentKind,
   presetEnvironmentSeed,
   storableEnvironmentKind,
 } from "../lib/preset-environment-seed.mjs";
+import * as seedModule from "../lib/preset-environment-seed.mjs";
 import { savePreset } from "../components/settings/preset-manager-crud.ts";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { loadComponent } from "./helpers/render-component.mjs";
 
 // What a preset's stored environment kind becomes when a card starts.
 //
@@ -202,27 +199,41 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   );
 }
 
-// The hook holds the capture and DELEGATES the rule rather than restating it —
-// two rules for one behaviour is how the text pin and the code drifted apart.
+// The hook holds the capture and DELEGATES the rule rather than restating it.
+// EXECUTED, not read: `useRef` is a stub whose ref persists across calls, so
+// calling the hook repeatedly models re-renders of one mounted composer. A hook
+// that recomputed the seed per render, or that forgot the ref, would return a
+// different seed on the second call and fail here — which is the re-seed
+// defence AC 3 depends on, stated as a fact about a return value.
 {
-  const hook = readFileSync(
-    join(root, "components/creation/composer-environment-seed.ts"),
-    "utf8",
+  const box = { current: undefined, mounted: false };
+  const hook = loadComponent(
+    "components/creation/composer-environment-seed.ts",
+    "useSeededComposerEnvironment",
+    {
+      react: {
+        useRef: (initial) => {
+          if (!box.mounted) { box.current = initial; box.mounted = true; }
+          return box;
+        },
+      },
+      "../../lib/preset-environment-seed.mjs": seedModule,
+    },
   );
-  assert.match(
-    hook,
-    /useRef/,
-    "the capture survives re-renders, so a person who touched the picker keeps their pick",
+
+  const opened = hook("new-worktree", true);
+  assert.equal(opened?.workspace?.type, "managed-worktree", "opening captures the worktree seed");
+  const sameVisit = hook("project-default", true);
+  assert.equal(
+    sameVisit,
+    opened,
+    "a re-render while open keeps the captured seed, so a preset changing underneath cannot re-seed",
   );
-  assert.match(
-    hook,
-    /captureEnvironmentSeed\(captured\.current, open, environmentKind\)/,
-    "the hook delegates to the tested rule rather than restating it",
-  );
-  assert.doesNotMatch(
-    hook,
-    /presetEnvironmentSeed\(environmentKind\)/,
-    "the hook never recomputes the seed per render, which is the re-seed defence AC 3 depends on",
+  hook("new-worktree", false);
+  assert.equal(
+    hook("project-default", true),
+    undefined,
+    "reopening re-reads the preset rather than replaying the first one",
   );
 }
 

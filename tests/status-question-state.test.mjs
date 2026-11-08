@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { renderStatusLine } from "../lib/status-question-state.mjs";
+import { renderStatusLine } from "../lib/question-store.mjs";
 
 // Regression pin for card_48uuhus1: a worker had no read-only way to ask
 // "is a question already pending?", so it fired `--question "ping"` at a human

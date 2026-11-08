@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { stalenessOf } from "../../lib/question-staleness.mjs";
+import { stalenessOf } from "../../lib/question-store.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type EvidenceRow = {

@@ -5,11 +5,11 @@
 // below names the behaviour it would stop if the rule were inlined back, so a
 // reverted split cannot pass this file green.
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import { reconcileBoundary } from "../server/execution-reconcile-boundary.ts";
 import { reconcileArtifacts } from "../server/execution-reconcile-artifacts.ts";
 import { reconcileOne } from "../server/execution-reconcile-run.ts";
-import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, transitionExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun, getExecutionRun, transitionExecutionRun } from "../lib/execution-run-ledger.mjs";
+import { executionRunDb } from "./helpers/execution-run-harness.mjs";
 import { canonicalStage, requiredCapabilities } from "../server/execution-native-catalog.ts";
 import { stopOwned } from "../server/execution-lifecycle-stop.ts";
 import { routeAnswerContinuation } from "../server/execution-lifecycle-resume.ts";
@@ -18,11 +18,7 @@ import { STAGE_BY_ID } from "../lib/workflow-vocabulary.mjs";
 
 // A ledger with a card, so ownership and foreign keys behave as in production.
 function ledger(cardId = "card-1") {
-  const db = new Database(":memory:");
-  db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run(cardId);
-  ensureExecutionRunTable(db);
-  return db;
+  return executionRunDb(cardId);
 }
 
 const RUN = {
@@ -36,7 +32,7 @@ const RUN = {
   argsText: JSON.stringify({ context: {}, localRunId: "local-1", recipeId: "plan-critique" }),
   adapter: "bb-workflows",
   workspaceId: "workspace-1",
-  artifactRoot: "workspace-1/.stelow/run",
+  artifactRoot: "workspace-1/.stelow/runs/local-1",
   originThreadId: "thread-1",
 };
 
@@ -123,10 +119,14 @@ const BOUNDARY = {
   const files = new Map();
   const deps = {
     db,
-    bb: { sdk: { files: { read: async ({ path }) => {
-      if (!files.has(path)) throw new Error("no file");
-      return { content: files.get(path) };
-    } } } },
+    bb: { sdk: { files: {
+      read: async ({ path }) => {
+        if (!files.has(path)) throw new Error("no file");
+        return { content: files.get(path) };
+      },
+      // The host copies and registers, so the reconciler writes too.
+      write: async ({ path, content }) => files.set(path, content),
+    } } },
     logComment: (cardId, targetId, body) => files.set("comment", body),
     notify: { sendToCard: () => {} },
   };
@@ -137,34 +137,110 @@ const BOUNDARY = {
   assert.equal(getExecutionRun(db, "local-1").normalizedStatus, "failed");
   assert.match(files.get("comment"), /Missing: critiques\//);
 
-  // All artifacts present but no receipt: the run stays where it was and asks
-  // for the registration receipt exactly once.
+  // All artifacts present but no receipt: the HOST copies them to their
+  // canonical homes and writes the receipt itself.
+  //
+  // This used to delegate the copy to the model with a message naming the
+  // destinations. The host already had the validated files and both paths, so
+  // that asked the most expensive component in the system to perform a
+  // deterministic rename — and workers answered with `find <run> -type f` plus a
+  // `for f in ...; do cp ...; done` plus a `printf`: 184 of 225 run-dir commands
+  // across the live threads were exactly that enumeration.
   const fresh = ledger();
   createExecutionRun(fresh, { ...RUN, runId: "run-1", now: 100 });
   transitionExecutionRun(fresh, "local-1", "running", { nativeStatus: "running" });
   for (const path of paths) {
-    files.set(`workspace-1/.stelow/run/${path}`, path.endsWith(".json")
+    files.set(`workspace-1/.stelow/runs/local-1/${path}`, path.endsWith(".json")
       ? JSON.stringify({ findings: [], questions: [], verdict: "pass" })
       : "report");
   }
   const asked = [];
-  const staged = { ...deps, db: fresh, logComment: () => {}, notify: { sendToCard: (c, t) => asked.push(t) } };
+  const staged = {
+    ...deps,
+    db: fresh,
+    logComment: () => {},
+    notify: { sendToCard: (c, t) => asked.push(t) },
+  };
   await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
-  assert.equal(getExecutionRun(fresh, "local-1").normalizedStatus, "running", "an unregistered run is not finished");
-  assert.equal(asked.length, 1);
-  assert.match(asked[0], /\.registered\.json/);
-  // Negative control: the completion event already exists, so the receipt is
-  // not requested a second time — one request per run, not one per reconcile.
-  await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
-  assert.equal(asked.length, 1);
 
-  // A receipt naming another run is not this run's receipt.
-  files.set("workspace-1/.stelow/run/.registered.json", JSON.stringify({ runId: "other", outputs: paths }));
-  await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
-  assert.notEqual(getExecutionRun(fresh, "local-1").normalizedStatus, "succeeded");
-  files.set("workspace-1/.stelow/run/.registered.json", JSON.stringify({ runId: "local-1", outputs: paths }));
+  // The run completes in ONE reconcile: no request, no round trip, no model turn.
+  assert.equal(
+    getExecutionRun(fresh, "local-1").normalizedStatus,
+    "succeeded",
+    "the host registers the run without asking anyone",
+  );
+  assert.deepEqual(asked, [], "no message is sent when the host could do the work itself");
+
+  // Every required artifact landed at its canonical home, in recipe order.
+  for (const path of paths) {
+    assert.equal(
+      files.get(`workspace-1/.stelow/${path}`),
+      files.get(`workspace-1/.stelow/runs/local-1/${path}`),
+      `${path} is copied out of staging to its canonical path`,
+    );
+  }
+  // The receipt is written last and names this run and exactly these outputs,
+  // which is what makes its presence mean "registered".
+  const receipt = JSON.parse(files.get("workspace-1/.stelow/runs/local-1/.registered.json"));
+  assert.equal(receipt.runId, "local-1");
+  assert.deepEqual(receipt.outputs, paths, "the receipt lists exactly what was copied");
+
+  // Idempotent: a second reconcile of an already-registered run does not
+  // re-copy or complain.
   await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
   assert.equal(getExecutionRun(fresh, "local-1").normalizedStatus, "succeeded");
+  assert.deepEqual(asked, []);
+
+  // A receipt naming another run is not this run's receipt — the run is
+  // re-registered, and still ends succeeded rather than being trusted blindly.
+  files.set("workspace-1/.stelow/runs/local-1/.registered.json", JSON.stringify({ runId: "other", outputs: paths }));
+  await reconcileArtifacts(staged, CARD, getExecutionRun(fresh, "local-1"));
+  assert.equal(getExecutionRun(fresh, "local-1").normalizedStatus, "succeeded");
+  assert.equal(
+    JSON.parse(files.get("workspace-1/.stelow/runs/local-1/.registered.json")).runId,
+    "local-1",
+    "a foreign receipt is replaced by this run's own",
+  );
+}
+
+// A staging root that does not carry the `runs/<id>` shape cannot be mapped to
+// canonical homes, so the host refuses to guess: the run parks as needs_input
+// with the reason on the card, because that is a filesystem problem a human can
+// fix and an automated path cannot.
+{
+  const db = ledger();
+  createExecutionRun(db, { ...RUN, runId: "run-1", now: 100, artifactRoot: "workspace-1/.stelow/run" });
+  const files = new Map();
+  const asked = [];
+  const deps = {
+    db,
+    bb: { sdk: { files: {
+      read: async ({ path }) => {
+        if (!files.has(path)) throw new Error("no file");
+        return { content: files.get(path) };
+      },
+      write: async ({ path, content }) => files.set(path, content),
+    } } },
+    logComment: () => {},
+    notify: { sendToCard: (c, t) => asked.push(t) },
+  };
+  const recipe = recipeById("plan-critique");
+  for (const task of recipe.tasks) {
+    files.set(`workspace-1/.stelow/run/${task.output}`, task.output.endsWith(".json")
+      ? JSON.stringify({ findings: [], questions: [], verdict: "pass" })
+      : "report");
+  }
+  await reconcileArtifacts(deps, CARD, getExecutionRun(db, "local-1"));
+  const run = getExecutionRun(db, "local-1");
+  assert.equal(run.normalizedStatus, "needs_input", "an unmappable root parks the card instead of failing it");
+  assert.equal(run.errorCode, "artifact-registration-failed");
+  assert.equal(asked.length, 1, "the card is told, once");
+  assert.match(asked[0], /could not register|derive a canonical path/, "the reason is actionable");
+  assert.equal(
+    files.has("workspace-1/.stelow/run/.registered.json"),
+    false,
+    "no receipt is written for work that did not complete",
+  );
 }
 
 // --- one-run rule ----------------------------------------------------------

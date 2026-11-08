@@ -72,5 +72,3 @@ export function createClaimCoordination(deps: ClaimCoordinationDeps) {
     escalateIfStalled: escalateIfStalled.bind(null, deps),
   };
 }
-
-export type ClaimCoordination = ReturnType<typeof createClaimCoordination>;

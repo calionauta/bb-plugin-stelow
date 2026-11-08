@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { reconcilePublications } from "../server/publication-reconcile.ts";
+import {
+  createPublicationReconcile,
+  reconcilePublications,
+} from "../server/publication-reconcile.ts";
+import { createProbeBackoff } from "../lib/publication-probe-backoff.mjs";
 
 // Publication reconcile: work that landed outside the panel writes no event, so
 // the board keeps reporting it as owed after it landed.
@@ -40,13 +44,9 @@ const contentDiffers = (_cwd, args) => {
 /** A git runner that cannot resolve the base — every proof must fail closed. */
 const gitBroken = () => Promise.resolve({ ok: false, stdout: "" });
 
-function fakeCore({
-  cards = ["card_x"], events = {}, pullRequest = OPEN, checkoutPath = "/work/wt",
-  runGitIn = contentMatches, forgeThrows = false, getCardThrows = [],
-} = {}) {
-  const inserts = [];
-  const warns = [];
-  const db = {
+/** The ledger and board reads, over the arrays the test can inspect. */
+function fakeDb({ cards, events, inserts }) {
+  return {
     prepare(sql) {
       if (sql.includes("INSERT INTO publication_events")) {
         return { run: (...args) => inserts.push(args) };
@@ -60,30 +60,52 @@ function fakeCore({
       throw new Error(`unexpected SQL: ${sql}`);
     },
   };
+}
+
+function fakeCore({
+  cards = ["card_x"], events = {}, pullRequest = OPEN, checkoutPath = "/work/wt",
+  runGitIn = contentMatches, forgeThrows = false, getCardThrows = [],
+  startNow = 1790000000000,
+} = {}) {
+  const inserts = [];
+  const warns = [];
+  // The pass bounds itself with the clock and schedules a card's next ask with
+  // it, so the clock is the test's to move; `startNow` keeps every case written
+  // before the budget on the one fixed instant it was written against.
+  let clock = startNow;
+  let pullRequestCalls = 0;
+  const probedCards = [];
   return {
     inserts,
     warns,
+    advance: (ms) => { clock += ms; },
+    probeCalls: () => pullRequestCalls,
+    probed: () => probedCards.slice(),
     core: {
-      db,
+      db: fakeDb({ cards, events, inserts }),
       bb: {
         log: { warn: (message) => warns.push(message) },
         sdk: {
           environments: {
             pullRequest: async () => {
+              pullRequestCalls += 1;
               if (forgeThrows) throw new Error("forge down");
               return pullRequest;
             },
           },
         },
       },
-      now: () => 1790000000000,
+      now: () => clock,
       randomId: (prefix) => `${prefix}_test`,
       cardNotFound: "not found",
       getCard: (id) => {
         if (getCardThrows.includes(id)) throw new Error(`card store refused ${id}`);
         return { id, status: "completed", workspace_kind: "project" };
       },
-      checkout: async () => ({ environmentId: "env_1" }),
+      checkout: async (card) => {
+        probedCards.push(card.id);
+        return { environmentId: "env_1" };
+      },
       discardEvidence: async () => (checkoutPath === null ? null : { checkoutPath }),
       runGitIn,
     },
@@ -191,6 +213,112 @@ function fakeCore({
   assert.equal(warns.length, 0, "a clean pass says nothing");
 }
 
+// --- the pass is bounded: five cards per tick, then a per-card wait --------
+// Seven finished cards that will never land used to cost seven git calls and
+// seven forge calls every tick, measured at 59.7 s in one pass. Two rules bound
+// it at once: at most five cards asked per pass, and no card asked again until
+// its own wait expires. The pass takes its schedule as an argument, which is how
+// this test holds the one production holds across ticks.
+
+const SEVEN = ["card_1", "card_2", "card_3", "card_4", "card_5", "card_6", "card_7"];
+
+{
+  const { core, inserts, warns, advance, probeCalls, probed } = fakeCore({
+    cards: SEVEN,
+    pullRequest: OPEN,
+    runGitIn: contentDiffers,
+  });
+  const backoff = createProbeBackoff();
+
+  await reconcilePublications(core, backoff);
+  assert.equal(probeCalls(), 5, "one pass probes five of the seven cards");
+  assert.deepEqual(probed(), SEVEN.slice(0, 5), "oldest first, so a capped pass cannot starve a card");
+  assert.equal(inserts.length, 0, "an open pull request over a differing tree proves nothing");
+  assert.equal(warns.length, 0, "a card that is not proved yet is a wait, not an incident");
+
+  // At the same instant the five just asked sit inside their five-minute wait.
+  // The two the limit never reached were never asked, so they are still due —
+  // the bound is per pass, not a lock on the board.
+  await reconcilePublications(core, backoff);
+  assert.equal(probeCalls(), 7, "the next pass asks only the two the limit skipped");
+  assert.deepEqual(
+    probed().slice(5),
+    SEVEN.slice(5),
+    "and it does not re-ask any of the five it already asked",
+  );
+  assert.equal(inserts.length, 0, "still nothing proved, still nothing written");
+
+  advance(5 * 60 * 1000);
+  const before = probeCalls();
+  await reconcilePublications(core, backoff);
+  assert.equal(probeCalls() - before, 5, "five minutes later the pass probes five again");
+  assert.deepEqual(
+    probed().slice(7),
+    SEVEN.slice(0, 5),
+    "and the wait that expired first is the oldest cards', not the newest",
+  );
+}
+
+// --- the pass also yields after ten seconds -------------------------------
+// The count bounds how many cards a tick may ask; the budget bounds how long it
+// may spend asking. A clock that jumps six seconds per read spends the budget
+// before it can fill the count.
+
+{
+  const { core, probeCalls } = fakeCore({
+    cards: SEVEN,
+    pullRequest: OPEN,
+    runGitIn: contentDiffers,
+  });
+  let tick = 1790000000000;
+  core.now = () => {
+    tick += 6000;
+    return tick;
+  };
+  await reconcilePublications(core);
+  assert.ok(probeCalls() >= 1, "the pass still asks the card it already admitted");
+  assert.ok(
+    probeCalls() <= 2,
+    `a six-second clock keeps one pass inside the ten-second budget (probed ${probeCalls()} cards)`,
+  );
+}
+
+// --- a landing still lands, and clears the card's wait --------------------
+
+{
+  const { core, inserts, warns } = fakeCore({ pullRequest: MERGED });
+  const schedule = createProbeBackoff();
+  const asked = [];
+  const watched = {
+    due: (cardId, at) => schedule.due(cardId, at),
+    failed: (cardId, at) => {
+      asked.push(`failed:${cardId}`);
+      return schedule.failed(cardId, at);
+    },
+    succeeded: (cardId) => {
+      asked.push(`succeeded:${cardId}`);
+      schedule.succeeded(cardId);
+    },
+  };
+  await reconcilePublications(core, watched);
+  assert.equal(inserts.length, 1, "a bounded pass still records a merged pull request");
+  assert.deepEqual(asked, ["succeeded:card_x"], "and it forgets the card instead of scheduling a wait");
+  assert.equal(warns.length, 0, "a landing is not a failure");
+}
+
+// --- the schedule belongs to the reconciler, not to one pass ---------------
+// A backoff created inside the pass would be created and discarded in the same
+// tick, which is the outage this budget exists to remove.
+
+{
+  const { core, probeCalls } = fakeCore({ pullRequest: OPEN, runGitIn: contentDiffers });
+  const { reconcilePublications: tick } = createPublicationReconcile(core);
+  await tick();
+  assert.equal(probeCalls(), 1, "the first tick asks about the card");
+  await tick();
+  assert.equal(probeCalls(), 1, "the second tick knows the card is waiting");
+}
+
 // --- the pass must not fail the reconcile ----------------------------------
 
 {
@@ -211,5 +339,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "..", "server", "publication-reconcile.ts"), "utf8");
 assert.match(source, /integrationProof/, "the proof is the shared one, not a local restatement");
 assert.doesNotMatch(source, /unpushedCommits/, "\"no unpushed commits\" is not a proof and must not be read as one");
+assert.match(
+  source,
+  /ORDER BY updated_at ASC/,
+  "a capped pass reads oldest-first: with no order the five it takes could be the same five every tick",
+);
 
 console.log("publication-reconcile test ok: two proofs, nothing inferred, everything unproven left alone");

@@ -46,6 +46,9 @@ test("idle no-progress transition persists attention instead of resuming", async
       stage: "shape",
       activity: "running",
       last_assistant_text: "same output",
+      // The baseline the resume rule compares against: the text at the last
+      // idle edge. Both stops in this fixture spoke the same words.
+      last_idle_text: "same output",
     }),
     {
       status: "idle",
@@ -78,6 +81,9 @@ function silentTurnRunning(command) {
       stage: "shape",
       activity: "running",
       last_assistant_text: "same output",
+      // The baseline the resume rule compares against: the text at the last
+      // idle edge. Both stops in this fixture spoke the same words.
+      last_idle_text: "same output",
     }),
     {
       status: "idle",
@@ -100,7 +106,7 @@ test("the finished turn's verbs are progress even when the text is identical", a
   // The complement of the test above, and the reason that one is not enough.
   //
   // New text is the cheap progress signal, so the test above leaves `output` and
-  // `last_assistant_text` identical and gets "no progress" — which is right, and
+  // `last_idle_text` identical and gets "no progress" — which is right, and
   // which passes just as happily when the whole turn-reading branch is dead. A
   // worker that only ran a command produces NO new text, and its progress is
   // visible solely in the verbs of the turn it just finished. If the sync stops

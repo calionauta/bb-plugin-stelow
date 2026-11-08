@@ -1,10 +1,15 @@
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { STELOW_PANEL_ID, inboxCardSubPath } from "../panel/stelow-route.mjs";
+import { STELOW_PANEL_ID, inboxAskSubPath, inboxCardSubPath } from "../panel/stelow-route.mjs";
 
 type BbNavigate = ReturnType<typeof useBbNavigate>;
 
 export function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
+}
+
+/** The narrow door: the ask and its evidence, without the card's other sections. */
+export function goToInboxAsk(navigate: BbNavigate, cardId: string, eventId: string): void {
+  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxAskSubPath(cardId, eventId) });
 }
 
 /**

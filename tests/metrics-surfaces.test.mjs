@@ -9,7 +9,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => readFileSync(join(root, relative), "utf8");
 
 const card = read("components/detail/progress/build-gaps.tsx");
-const strip = read("components/board/flow-strip.tsx");
+// The flow surface this file pins is the drawer's contents: every assertion below is about
+// a number the drawer prints, and the strip keeps only the summary line.
+const details = read("components/board/flow-drawer-details.tsx");
 const flowWait = read("components/board/flow-wait.tsx");
 const metricsLines = read("components/metrics/metrics-lines.tsx");
 const coverage = read("server/runtime/flow-coverage.ts");
@@ -87,7 +89,7 @@ assert.match(
   /const lines = \[coverage\.reworkLine, coverage\.coverageLine\]\.filter\(\(line\) => line\.length > 0\)/,
   "both lines are printed verbatim, and an empty one is dropped rather than shown blank",
 );
-assert.match(strip, /<CoverageLines coverage=\{result\.coverage\} \/>/, "the timing tab renders them");
+assert.match(details, /<CoverageLines coverage=\{result\.coverage\} \/>/, "the timing tab renders them");
 assert.doesNotMatch(
   flowWait,
   /Math\.round\(.*\* 100\)|escalatedRate/,

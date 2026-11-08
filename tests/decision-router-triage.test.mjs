@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createDecisionSeed } from "../server/decision-seed.ts";
 import { isDecisionApiDisabled } from "../lib/decision-api.mjs";
 import {
   TRIAGE_INTENT_CRITERIA,
@@ -77,22 +78,68 @@ assert.equal(isDecisionApiDisabled({ STELOW_DECISION_API: "0" }), true, "STELOW_
 assert.equal(isDecisionApiDisabled({}), false, "an unset switch leaves the API enabled");
 assert.equal(isDecisionApiDisabled(undefined), false, "a missing env leaves the API enabled");
 
-// Seam wiring: the router gates mode before any call, requires a judge
-// preset for preset mode, and consults the kill switch first — removing
-// any of these gates fails here before a misconfigured point spends a
-// call or blocks a spawn.
+// Seam wiring: the router gates mode before any call and consults the kill
+// switch first — removing any of these gates fails here before a
+// misconfigured point spends a call. Preset mode has no judge thread: it
+// degrades to the built-in rules like a refused call, so its gate is asserted
+// by calling the seam below rather than by pinning its source shape.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The seed seam is its own module: the router has several, and the kill switch
 // guard belongs to the one that reads config first.
 const seams = readFileSync(join(root, "server", "decision-seed.ts"), "utf8");
 assert.match(seams, /if \(isDecisionApiDisabled\(process\.env\)\) return "unknown"/, "the kill switch short-circuits seeding before any config read");
 assert.match(seams, /if \(mode !== "api" && mode !== "preset"\) return "unknown"/, "rules/unconfigured points seed unknown without calling out");
-assert.match(seams, /if \(!presetId\) return "unknown"/, "preset mode without a configured judge seeds unknown (never an implicit preset)");
 assert.match(seams, /resolveSeedIntent\(\{/, "seeding resolves through the lib cascade, never inline");
 assert.ok(
   (seams.match(/return "unknown"/g) ?? []).length >= 6,
   "every failure path (kill switch, mode gate, missing key, call failure, bad shape, low confidence) lands on unknown",
 );
+
+// Preset mode is refused to the deterministic rules, never seeded by an
+// implicit judge thread. The source pin that used to live above encoded the
+// opposite (a `!presetId` short-circuit) and went stale the moment the path
+// was refactored to warn and degrade — exactly the drift a text pin cannot
+// catch. Calling the seam keeps the guard on the behavior: a preset point
+// with no configured judge must seed "unknown" AND say why.
+{
+  const savedDecisionApi = process.env.STELOW_DECISION_API;
+  delete process.env.STELOW_DECISION_API;
+  const logs = [];
+  try {
+    const seed = createDecisionSeed({
+      bb: {
+        log: {
+          info: () => {},
+          warn: (line) => logs.push(["warn", line]),
+          error: () => {},
+        },
+      },
+      route: {},
+      pointRow: () => ({ mode: "preset", preset_id: null }),
+      parsedThresholds: () => ({ routeAt: ROUTE_AT }),
+      evaluateCall: async () => {
+        throw new Error("preset mode must not call the Decision API route");
+      },
+      judgeViaPreset: async () => ({
+        ok: true,
+        text: '```json\n{"choice":"feature","confidence":0.9}\n```',
+        error: null,
+      }),
+    });
+    assert.equal(
+      await seed.seedBuildIntent("add dark mode", "project"),
+      "unknown",
+      "preset mode without a configured judge seeds unknown: it never opens an implicit judge",
+    );
+    assert.ok(
+      logs.some(([, line]) => line.includes("preset judge disabled")),
+      "the disabled preset path warns with the fallback it took",
+    );
+  } finally {
+    if (savedDecisionApi === undefined) delete process.env.STELOW_DECISION_API;
+    else process.env.STELOW_DECISION_API = savedDecisionApi;
+  }
+}
 
 // Start-phase fallback stays bounded: a 404/skill-tree race retries at
 // most MAX_SPAWN_RETRIES times, then the card parks with one inbox event

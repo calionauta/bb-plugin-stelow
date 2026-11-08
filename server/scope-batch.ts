@@ -1,8 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import {
-  acquireScopeClaims,
-  ensureCardClaimsTables,
-} from "../lib/card-claims.mjs";
+import { ensureCardClaimsTables } from "../lib/card-claims.mjs";
+import { acquireScopeClaims } from "../lib/scope-claims.mjs";
 import { checkScopeWrite } from "../lib/execution-route.mjs";
 import {
   NATIVE_SCOPE_BATCH_PILOT_ALLOWED,
@@ -62,6 +60,18 @@ export interface BatchScopeClaim {
 }
 
 /**
+ * A file this batch took out of a lapsed lease. It is reported, not applied
+ * silently: a takeover the previous holder never hears about is how two
+ * workers come to write one file.
+ */
+export interface BatchClaimSteal {
+  scopeId: string;
+  file: string;
+  previousHolder: string;
+  previousScope: string | null;
+}
+
+/**
  * Admission path: a scope-batch admits only when the transitive file sets
  * of all scopes are pairwise disjoint. Overlap refuses the whole batch
  * before any spawn — no partial dispatch. Coordinator-sequential only:
@@ -72,11 +82,6 @@ export function admitScopeBatchRun(scopes: BatchScope[]) {
 }
 
 export { NATIVE_SCOPE_BATCH_PILOT_ALLOWED, SCOPE_BATCH_PILOT_MAX_CONCURRENCY, SCOPE_BATCH_PILOT_TIMEOUT_MS };
-
-export interface ScopeBatchPilotScope {
-  scopeId: string;
-  files: string[];
-}
 
 export interface ScopeBatchPilotReceipt {
   scopeId: string;
@@ -155,9 +160,10 @@ export function collectScopeBatchPilotReceiptsRun(
 export function claimScopeBatchRun(
   db: ScopeBatchDb,
   args: { cardId: string; batchId: string; workspacePath: string; scopes: BatchScopeClaim[] },
-): { ok: true; acquired: Array<{ scopeId: string; files: string[] }> }
+): { ok: true; acquired: Array<{ scopeId: string; files: string[] }>; stolen: BatchClaimSteal[] }
   | { ok: false; code: "SCOPE_BATCH_CONFLICT"; conflicts: unknown[]; rolledBack: string[] } {
   const acquired: Array<{ scopeId: string; files: string[] }> = [];
+  const stolen: BatchClaimSteal[] = [];
   for (const scope of args.scopes) {
     const result = acquireScopeClaims(db, {
       cardId: args.cardId,
@@ -179,8 +185,9 @@ export function claimScopeBatchRun(
       return { ok: false, code: "SCOPE_BATCH_CONFLICT", conflicts: result.conflicts, rolledBack };
     }
     acquired.push({ scopeId: scope.scopeId, files: scope.files });
+    for (const steal of result.stolen) stolen.push({ scopeId: scope.scopeId, ...steal });
   }
-  return { ok: true, acquired };
+  return { ok: true, acquired, stolen };
 }
 
 /**
@@ -306,11 +313,6 @@ export function batchIdsForCard(db: ScopeBatchDb, cardId: string): string[] {
     if (batchId && !out.includes(batchId)) out.push(batchId);
   }
   return out;
-}
-
-/** True when the card holds any batch-namespaced claim: batch coordination is active. */
-export function isBatchCoordinated(db: ScopeBatchDb, cardId: string): boolean {
-  return batchIdsForCard(db, cardId).length > 0;
 }
 
 export function batchScopeFiles(scope: BatchScope): string[] {

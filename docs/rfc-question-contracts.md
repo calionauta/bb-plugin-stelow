@@ -1,6 +1,7 @@
 # RFC: Question Contracts (upstream + plugin)
 
-Status: partially implemented (P0 done, P1–P3 pending — see §10).
+Status: implemented for the contractable stages (P0–P3); `plan-gate` remains
+blocked by the upstream conflict in §5.
 Goal: make it mechanically knowable which questions must happen, in which
 skills/stages, under which situations and configs, so any LLM (or host)
 can implement and verify enforcement.
@@ -17,7 +18,13 @@ a plan-gate with zero answered gaps, advances today.
 
 ## 2. Governing insight: two orthogonal axes
 
-- **Appetite** scales *depth*: how many (1/3/5 interfaces, top-3 vs top-5
+> **Update (knobs refactor):** the breadth axis is now explicit knobs —
+> quality (verification rigor) and exploration breadth (direction counts +
+> hybrid) — instead of the Lean/Core/Complete appetite ladder. Legacy appetite
+> lines map once to knobs. The decider axis (review mode) is unchanged.
+
+- **Exploration breadth** scales *depth*: how many (1–5 interaction directions,
+  2–5 construction directions, top-3 vs top-5
   assumptions). Never who decides.
 - **Review mode** scales *decider*: human (structured ask, parks) vs agent.
 - **`Auto` ≠ "no question".** It means *agent-resolved with receipt*:
@@ -43,7 +50,7 @@ stages:
       - id: interface-pick
         kind: human-ask            # human-ask | agent-receipt | skip
         modes: ["Product Spec + Interface Gates", "Product Spec + Interface + Scopes", "Product Spec + Interface + Tech Review", "Product Spec + Interface + Tech Review + Code Diff"]
-        appetite: [Core, Complete] # Lean decides inline (single proposal)
+        exploration_min_count: 2  # count 1 decides inline (single proposal)
         evidence: per-option       # every option carries preview+artifact
         receipt: interfaces/selected-interface.md
       - id: interface-pick-auto
@@ -87,8 +94,9 @@ enforcement would invent methodology and can falsely park live workflows.
 New lib `lib/question-contracts.mjs` (pure, node-tested):
 - `loadQuestionContracts()` reads the vendored
   `skills/stelow-workflow-orchestrator/stages.yaml` (`questions:` blocks).
-- `requiredForStage({ stage, reviewMode, appetite, kind })` returns
-  `[{ id, kind, receipt }]` — the checklist for this transition.
+- `requiredForStage({ stage, reviewMode, explorationCount, kind })` returns
+  `[{ id, kind, receipt }]` — the checklist for this transition (a legacy
+  `appetite` string still maps once to its breadth).
 - Pin test: vendored contract ↔ lib expectations (same shape as
   `tests/stage-skips.test.mjs` stub routes + gate table).
 
@@ -123,7 +131,7 @@ Enforcement points (server/execution-advance.ts):
 
 ## 8. Verification per phase
 
-- `tests/question-contracts.test.mjs`: matrix stage × mode × appetite
+- `tests/question-contracts.test.mjs`: matrix stage × mode × exploration count
   against fixture `state.md` files (AGENTS.md transitions pattern:
   all paths live with fixtures before shipping guard changes).
 - Extend `tests/stage-skips.test.mjs` pinning if `MODE_SKIPS` grows.
@@ -151,11 +159,11 @@ Enforcement points (server/execution-advance.ts):
   `questions:` blocks for `shape`/`critique`/`scope`, `gap_verdict` and
   `scope_adjustment` frontmatter receipts, Code Diff coverage, `context:5`
   canonical in transitions, no plan-gate in Scopes. Plugin mirror
-  extended; `contextAskGate` relaxed to the permitted reduced ask;
-  `NON_AUTO_SKIPS` emptied (worker-side `context:5` decides).
-- Still pending: advance-time enforcement linkage (P1–P3) — the mirror
-  is read by nothing in `advanceCard` yet, deliberately. Wiring it is
-  the remaining work; see the handoff below.
+  extended; the host adds no intent gate of its own, so the permitted
+  reduced ask reaches the human (worker-side `context:5` decides).
+- Advance-time enforcement was the remaining work at that point; it is wired
+  below. The mirror was deliberately read by nothing in `advanceCard` until
+  the fixtures and refusal shapes existed.
 - Enforcement wired (eaaf062): pure `lib/advance-contracts.mjs` +
   fixtures under `tests/fixtures/question-contracts/`, checked
   pre-helper in both `advanceCard` RPC and CLI `bb stelow advance`
@@ -168,6 +176,12 @@ Enforcement points (server/execution-advance.ts):
   (`--contract` in `scripts/stelow` + `ask.md`). Enforcement using
   recorded ids stays parked pending real-data need (ad-hoc questions must
   keep working; exact matching needs protocol-level ids).
+- Selected plan/diff gates have a host-level guard even though the catalog
+  cannot contract them yet: `question-contracts-gate.ts` requires an answered
+  card question since stage entry when `tech`/`diff` is selected, and refuses
+  with the artifact ask that clears it. This is not a catalog contract; it
+  enforces the one rule the methodology already states and stays fail-open on
+  unreadable state. Pinned by `tests/gate-human-answer.test.mjs`.
 - Residual simplifications (accepted, harden later): a human-ask contract
   is satisfied by any question answered since stage entry (not matched
   per contract id); in-flight legacy cards may refuse once post-deploy

@@ -1,18 +1,66 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron } from "../disclosure";
+import { ExplorationArchetypes } from "./exploration-archetypes";
 
-// Shared creation-form controls: planning depth + review gates (every
+// Shared creation-form controls: run knobs + review gates (every
 // creation flow), the strategy/technique picker (research, explore,
 // follow-up rounds), the agent-config block, the project select, and the
 // persistent submit-failure alert. Third use before abstracting is met —
 // build, research, and explore creation read the same controls, so they
 // live in one home instead of three pasted copies.
 
-const APPETITE_OPTIONS = [
-  { value: "Lean", label: "Lean", description: "Smallest useful cycle: 1–2 scopes and one direct direction." },
-  { value: "Core", label: "Core", description: "Standard cycle: main job, obvious edge cases, and 3–5 scopes." },
-  { value: "Complete", label: "Complete", description: "Broad exploration and deeper validation across the whole request." },
+// Canonical Stelow terms next to the board labels: run knobs bound breadth
+// and rigor — never time — and review checkpoints are where the run stops
+// and waits for a decision. These are the board defaults — kept for every
+// new card until you change them.
+const WORKFLOW_PREFS_DESCRIPTION =
+  "Quality caps verification rigor, " +
+  "and exploration sets how many directions get compared (with a hybrid " +
+  "synthesis whenever more than one exists). " +
+  "Acceptance tests decide whether scopes must prove themselves with a " +
+  "failing test before implementation. " +
+  "Review checkpoints are where the run stops and waits for " +
+  "your decision. These are the board defaults — kept for every new " +
+  "card until you change them.";
+
+const QUALITY_HINT =
+  "Production verifies everything the same way every time. " +
+  "Experimental runs lighter and only for probes — never ship as-is.";
+
+const EXPLORATION_HINT =
+  "How many directions divergence compares, for interaction and for " +
+  "architecture. A hybrid synthesis is produced whenever more than one " +
+  "exists. Single (1) means one direct direction with no hybrid — " +
+  "trivial changes only, by explicit choice.";
+
+const RED_FIRST_HINT =
+  "Strict proves every scope with a failing test before implementation " +
+  "and blocks close without the proof. Advisory warns instead of blocking. " +
+  "Off skips the gate entirely — spikes and trivial work only.";
+
+const QUALITY_OPTIONS = [
+  { value: "production", label: "Production", description: "Full paths, edge cases, parallel reviewers, full test layers." },
+  { value: "experimental", label: "Experimental", description: "Reduced checks for probes. Never ship as-is." },
+] as const;
+
+const EXPLORATION_OPTIONS = [
+  { value: "2", label: "2 + hybrid", description: "Two most-differentiated directions plus a hybrid." },
+  { value: "3", label: "3 + hybrid", description: "Three directions plus a hybrid. Standard comparison." },
+  { value: "4", label: "4 + hybrid", description: "Four directions plus a hybrid." },
+  { value: "5", label: "5 + hybrid", description: "Five directions plus a hybrid. Heaviest preparation." },
+  { value: "1", label: "1 single", description: "One direct direction, no hybrid. Trivial changes only." },
+] as const;
+
+const REVIEW_HINT =
+  "The agent stops at each checkpoint you pick and waits — nothing " +
+  "advances until you answer. Nothing picked means Auto: the agent " +
+  "decides everything itself.";
+
+const RED_FIRST_OPTIONS = [
+  { value: "strict", label: "Strict", description: "Scope close blocks without red proof, freeze and baseline. Production default." },
+  { value: "advisory", label: "Advisory", description: "Warns on missing evidence but closes. Experimental default." },
+  { value: "off", label: "Off", description: "No acceptance-test gate. Spikes and trivial work only." },
 ] as const;
 
 const REVIEW_GATE_OPTIONS = [
@@ -39,7 +87,11 @@ const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }>
   { label: "Spec + tech plan", gates: ["spec", "tech"] },
 ];
 
-export type Appetite = (typeof APPETITE_OPTIONS)[number]["value"];
+export type Quality = (typeof QUALITY_OPTIONS)[number]["value"];
+export type ExplorationCount = (typeof EXPLORATION_OPTIONS)[number]["value"];
+export type RedFirst = (typeof RED_FIRST_OPTIONS)[number]["value"];
+/** @deprecated Alias only. Run knobs replaced the appetite ladder. */
+export type Appetite = "Lean" | "Core" | "Complete";
 export type ReviewGate = (typeof REVIEW_GATE_OPTIONS)[number]["value"];
 export type ReviewGates = ReviewGate[];
 
@@ -73,7 +125,7 @@ export function CreateCardAlert({ message }: { message: string }) {
   );
 }
 
-// Choice cards for planning depth + human review gates: every option visible
+// Choice cards for run knobs + human review gates: every option visible
 // with its description, real radio inputs (keyboard + screen-reader native),
 // min-h-11 touch targets. Replaces a cramped native select whose gray micro
 // copy failed lay users and low vision — same option values, new surface.
@@ -82,7 +134,7 @@ export function CreateCardAlert({ message }: { message: string }) {
 function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, labelHidden = false }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string; labelHidden?: boolean }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      {labelHidden ? null : <legend className="text-sm font-medium text-foreground">{label}</legend>}
+      {labelHidden ? <legend className="sr-only">{label}</legend> : <legend className="text-sm font-medium text-foreground">{label}</legend>}
       {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
       <div className="grid gap-2">
         {options.map((option) => {
@@ -124,7 +176,15 @@ function SettingsSection({ title, description, children }: { title: string; desc
 // as a wall of text; a native select would hide the options again. This
 // keeps both virtues: compact like a select, explicit like radio cards,
 // reusing the same ChoiceCards instead of a second option renderer.
-function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
+function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, below }: {
+  label: string;
+  hint?: string;
+  value: T;
+  options: readonly { value: T; label: string; description: string }[];
+  onChange: (value: T) => void;
+  groupName: string;
+  below?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value) ?? options[0];
   return (
@@ -146,23 +206,50 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
       {open ? (
         <div className="border-t px-3 pb-3 pt-2">
           <ChoiceCards label={label} labelHidden hint={hint} value={value} options={options} onChange={onChange} groupName={groupName} />
+          {below}
         </div>
       ) : null}
     </div>
   );
 }
 
-export function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onReviewGatesChange, groupNamePrefix }: {
-  appetite: Appetite;
+export type KnobPrefs = {
+  quality: Quality;
+  explorationCount: ExplorationCount;
+  redFirst: RedFirst;
+};
+
+/** Keep a prefs patch inside the option vocabularies; unknown values keep the current pick. */
+export function sanitizeKnobPrefs(value: unknown, current: KnobPrefs): KnobPrefs {
+  const record = (value && typeof value === "object" ? value : {}) as Partial<Record<keyof KnobPrefs, unknown>>;
+  const quality = QUALITY_OPTIONS.some((option) => option.value === record.quality) ? (record.quality as Quality) : current.quality;
+  const explorationCount = EXPLORATION_OPTIONS.some((option) => option.value === record.explorationCount)
+    ? (record.explorationCount as ExplorationCount)
+    : current.explorationCount;
+  const redFirst = RED_FIRST_OPTIONS.some((option) => option.value === record.redFirst)
+    ? (record.redFirst as RedFirst)
+    : current.redFirst;
+  return { quality, explorationCount, redFirst };
+}
+
+export function WorkflowSettings({ prefs, reviewGates, onPrefsChange, onReviewGatesChange, groupNamePrefix }: {
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
-  onAppetiteChange: (value: Appetite) => void;
+  onPrefsChange: (patch: Partial<KnobPrefs>) => void;
   onReviewGatesChange: (value: ReviewGates) => void;
   groupNamePrefix: string;
 }) {
   return (
-    <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
-      <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <ReviewGatePicker label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer. Nothing picked means Auto: the agent decides everything itself." value={reviewGates} onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
+    <SettingsSection title="Workflow preferences" description={WORKFLOW_PREFS_DESCRIPTION}>
+      <CollapsibleChoiceCards label="Quality" hint={QUALITY_HINT} value={prefs.quality} options={QUALITY_OPTIONS}
+        onChange={(quality) => onPrefsChange({ quality })} groupName={`${groupNamePrefix}-quality`} />
+      <CollapsibleChoiceCards label="Exploration" hint={EXPLORATION_HINT} value={prefs.explorationCount} options={EXPLORATION_OPTIONS}
+        onChange={(explorationCount) => onPrefsChange({ explorationCount })} groupName={`${groupNamePrefix}-exploration`}
+        below={<ExplorationArchetypes />} />
+      <CollapsibleChoiceCards label="Acceptance tests" hint={RED_FIRST_HINT} value={prefs.redFirst} options={RED_FIRST_OPTIONS}
+        onChange={(redFirst) => onPrefsChange({ redFirst })} groupName={`${groupNamePrefix}-red-first`} />
+      <ReviewGatePicker label="Pause for my review" hint={REVIEW_HINT} value={reviewGates}
+        onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
   );
 }

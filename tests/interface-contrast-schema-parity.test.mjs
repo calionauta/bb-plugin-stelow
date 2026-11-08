@@ -41,6 +41,26 @@ assert.equal(
   "valid",
   "the schema pins the only compatibility value the validator accepts",
 );
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.required,
+  ["scopeId", "effect"],
+  "scope coverage names scope and effect per entry",
+);
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.properties.effect.enum,
+  ["served", "friction"],
+  "coverage effects are closed to served/friction",
+);
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.required,
+  ["scopeId", "effect"],
+  "scope coverage names scope and effect per entry",
+);
+assert.deepEqual(
+  schema.properties.options.items.properties.scopeCoverage.items.properties.effect.enum,
+  ["served", "friction"],
+  "coverage effects are closed to served/friction",
+);
 
 // The drift that actually happened, pinned as a regression: a receipt shaped
 // like the loose schema used to validate cleanly at the schema layer and fail
@@ -57,7 +77,7 @@ const looseReceipt = {
   fixedConstraints: [{ id: "read-only", value: "no mutations" }],
   criteria: ["one", "two"],
   evidence: [{ description: "looked at the code" }],
-  options: [{ id: "A", primaryValue: "keep", compatibility: "valid" }],
+  options: [{ id: "A", primaryValue: "keep", compatibility: "valid", wireframe: "+------+\n| keep |\n+------+" }],
   nextAction: "proceed",
 };
 const issues = validateInterfaceContrastReceipt(looseReceipt);
@@ -85,6 +105,17 @@ const good = {
   options: [{ id: "A", primaryValue: "keep", compatibility: "valid", wireframe: "+-- keep --+" }],
 };
 assert.deepEqual(validateInterfaceContrastReceipt(good), [], "a receipt satisfying the schema also satisfies the validator");
+
+// The sketch is what the interface gate reviews. The schema has always been
+// able to require it; the runtime gate did not, so a card could reach the gate
+// with a blank preview and the human picked on labels alone.
+assert.ok(
+  validateInterfaceContrastReceipt({
+    ...good,
+    options: [{ id: "A", primaryValue: "keep", compatibility: "valid" }],
+  }).some((issue) => issue === "options[0] must carry a wireframe — the interface gate is a visual review"),
+  "an option without a wireframe is rejected by the runtime gate",
+);
 
 // The seven fields the schema declared that the validator used to accept
 // blind. Each assertion below is a field a reader acts on: a receipt that

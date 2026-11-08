@@ -22,12 +22,13 @@ import {
   isPublishableArtifactContent,
 } from "../../lib/artifact-manifest.mjs";
 import { normalizeReviewGates } from "../../lib/review-gates.mjs";
-import { DEFAULT_APPETITE, DEFAULT_REVIEW_MODE } from "../../lib/workflow-config.mjs";
+import { resolveKnobInput } from "../../lib/workflow-config.mjs";
 import { workflowSchema } from "../contracts.js";
 import { normalizeStatus, workflowScopes } from "../scopes.js";
 import { gateReceiptFor } from "./gate-vocabulary.js";
 import { array, record, text, type LooseRecord } from "./values.js";
 import { join, projectRoot, readJson } from "./root-paths.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 type Workflow = z.infer<typeof workflowSchema>;
 type FilesApi = BbPluginApi["sdk"]["files"];
@@ -237,7 +238,17 @@ async function stageFromState(
   const stateBlob = await bb.sdk.files
     .read({ path: join(rootPath, `.stelow/${created}/${dirHash}/state.md`) })
     .catch(() => null);
-  return text(stateBlob?.content.match(/current_stage:\s*(\S+)/)?.[1]);
+  return text(parseCurrentStage(stateBlob?.content) ?? undefined);
+}
+
+/** Run knobs for one board row: explicit knobs win, legacy appetite maps once. */
+function boardWorkflowKnobs(config: LooseRecord) {
+  return resolveKnobInput({
+    quality: typeof config.quality === "string" ? config.quality : undefined,
+    explorationCount: config.exploration_count,
+    explorationHybrid: config.exploration_hybrid,
+    appetite: typeof config.appetite === "string" ? config.appetite : undefined,
+  });
 }
 
 /** One board row: tracking metadata, the real stage, and its documents. */
@@ -256,6 +267,7 @@ async function boardWorkflow(
         (entry): entry is string => typeof entry === "string",
       )
     : config.review_mode;
+  const knobs = boardWorkflowKnobs(config);
   return {
     id: text(raw.dirHash, text(raw.name, `workflow-${index + 1}`)),
     name: text(raw.name, `Workflow ${index + 1}`),
@@ -268,8 +280,11 @@ async function boardWorkflow(
         phases.find((phase) => phase.status === "in-progress")?.name ??
           "Not started",
       ),
-    appetite: text(config.appetite, DEFAULT_APPETITE),
-    reviewMode: text(config.review_mode, DEFAULT_REVIEW_MODE),
+    quality: knobs.quality,
+    explorationCount: knobs.explorationCount,
+    explorationHybrid: knobs.explorationHybrid,
+    appetite: text(config.appetite, ""),
+    reviewMode: text(config.review_mode, "Auto"),
     reviewGates: normalizeReviewGates(
       Array.isArray(reviewGates)
         ? reviewGates.filter((entry): entry is string => typeof entry === "string")

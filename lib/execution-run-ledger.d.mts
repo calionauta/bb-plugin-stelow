@@ -27,7 +27,6 @@ export declare const BLOCKING_RUN_STATUS: "failed";
 export declare const RUN_STATUSES: ReadonlyArray<RunStatus>;
 export declare const RUN_STATUS_LABELS: Readonly<Record<RunStatus, string>>;
 export declare function runStatusLabel(status: unknown): string;
-export declare const RUN_STATUS_PHRASES: Readonly<Partial<Record<RunStatus, string>>>;
 export declare function runStatusPhrase(status: unknown): string;
 
 export interface ExecutionRun {
@@ -67,6 +66,14 @@ export interface ExecutionRun {
    * only make them compute whether it has passed.
    */
   reconcileFailedAt?: number | null;
+  /**
+   * Automatic retries already spent to produce this run. Zero for a first
+   * attempt or a manual retry; the transient-retry policy stamps count + 1 on
+   * each host-driven retry. Internal like `reconcileFailedAt`: the card reads
+   * the retry from the trail comment, not from a number it would have to
+   * interpret — so it stays out of the public projection below.
+   */
+  autoRetryCount: number;
 }
 export type PublicExecutionRun = Pick<ExecutionRun,
   "id" | "cardId" | "runId" | "recipeId" | "stage" | "sourceHash" | "adapter" | "workspaceId" |

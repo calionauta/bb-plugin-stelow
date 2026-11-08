@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ConfirmActionDialog } from "../confirm-action-dialog";
 import { StartImmediatelyCheck } from "../start-immediately-check";
 import { LabelChipsField, ProjectFilterSelect } from "../github-filter-fields";
 import { RULE_RUN_OUTCOME, RULE_SKIP_REASON, type GithubAutomationTabState } from "./github-dialog-state";
@@ -120,6 +122,8 @@ export function GithubAutomationTab({ tab, activeProjectName }: { tab: GithubAut
     ruleRuns, runsOpen,
     setAutomationRule, previewRule, toggleRuleRuns, deleteAutomationRule,
   } = tab;
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pendingRule = automationRules.find((rule) => rule.id === pendingDeleteId) ?? null;
   return (
     <div className="space-y-3 py-2">
       <AutomationProjectHeader tab={tab} activeProjectName={activeProjectName} />
@@ -130,11 +134,30 @@ export function GithubAutomationTab({ tab, activeProjectName }: { tab: GithubAut
           runsOpen={Boolean(runsOpen[rule.id])}
           ruleRuns={ruleRuns[rule.id]}
           onToggleEnabled={() => void setAutomationRule(rule, !rule.enabled)}
-          onDelete={() => void deleteAutomationRule(rule.id)}
+          onDelete={() => setPendingDeleteId(rule.id)}
           onPreview={() => void previewRule(rule.labels, rule.trustedAuthors)}
           onToggleRuns={() => void toggleRuleRuns(rule.id)}
         />
       ))}</div> : <p className="text-sm text-muted-foreground">No rules for this project yet.</p>}
+      <ConfirmActionDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDeleteId(null);
+        }}
+        title="Delete this automation rule?"
+        description={
+          pendingRule
+            ? `Removes the watcher for ${pendingRule.labels.join(" + ") || "this rule"}. Past runs stay readable as history; only future auto-imports stop.`
+            : "Removes this automation rule. Past runs stay readable as history; only future auto-imports stop."
+        }
+        confirmLabel="Delete rule"
+        confirmTone="destructive"
+        onConfirm={() => {
+          const target = pendingDeleteId;
+          setPendingDeleteId(null);
+          if (target) void deleteAutomationRule(target);
+        }}
+      />
       {rulePreview ? (
         <RulePreviewPanel preview={rulePreview} projects={tab.projects} onClear={() => tab.setRulePreview(null)} />
       ) : null}

@@ -79,7 +79,7 @@ function RecoveryConfirmDialog({ state }: { state: BuildLifecycleState }) {
   return (
     <ConfirmActionDialog
       open={state.recoveryAttachProjectId !== null}
-      onOpenChange={(open) => {
+      onOpenChange={(open: boolean) => {
         if (!open) state.setRecoveryAttachProjectId(null);
       }}
       title="Attach this reported checkout to the audit trail?"

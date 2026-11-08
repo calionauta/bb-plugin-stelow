@@ -25,6 +25,11 @@ import { requiredOutputPaths, validateExecutionArtifacts } from "../lib/executio
 import { humanStopMessage, humanStopRequest } from "../lib/execution-human-stop.mjs";
 import { describeInterfaceContrastRoute } from "../lib/interface-contrast.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
+import {
+  registrationPlan,
+  registrationReceipt,
+  registrationReceiptPath,
+} from "../lib/artifact-registration.mjs";
 import type { CardNotifier } from "./execution-reconcile-deps.js";
 import type { WorkerCard } from "./workers-types.js";
 
@@ -74,7 +79,13 @@ export async function reconcileArtifacts(
     completeRegistered(deps, card, run, paths);
     return;
   }
-  if (!run.completionEventId) requestRegistration(deps, card, run, paths, route.note);
+  // The host has the validated files and knows both paths, so it does the copy
+  // itself. Asking the model to `cp` was the most expensive component in the
+  // system doing a deterministic rename: workers answered it with `find <run>
+  // -type f` plus a `for` loop plus a `printf`, and 184 of 225 run-dir commands
+  // in the live threads were exactly that enumeration.
+  const registered = await registerArtifacts(deps, card, run, paths, route.note);
+  if (registered) completeRegistered(deps, card, run, paths);
 }
 
 /**
@@ -208,25 +219,6 @@ function failArtifacts(
   );
 }
 
-function requestRegistration(
-  deps: ArtifactDeps,
-  card: WorkerCard,
-  run: ExecutionRun,
-  paths: string[],
-  note = "",
-): void {
-  transitionExecutionRun(deps.db, run.id, run.normalizedStatus, {
-    nativeStatus: run.nativeStatus,
-    completionEventId: `registration-requested:${run.id}`,
-  });
-  deps.logComment(
-    card.id,
-    run.id,
-    `Native ${run.recipeId} artifacts validated in staging; registration receipt requested for ${paths.join(", ")}.`,
-  );
-  deps.notify.sendToCard(card, registrationRequest(run, paths, note));
-}
-
 function completeRegistered(
   deps: ArtifactDeps,
   card: WorkerCard,
@@ -262,16 +254,88 @@ function receiptNamesRun(content: string, runId: string, paths: string[]): boole
   }
 }
 
-function registrationRequest(run: ExecutionRun, paths: string[], note = ""): string {
-  return [
-    `The native ${run.recipeId} run produced validated staging artifacts under ${run.artifactRoot}.`,
-    "Register them at their canonical paths, then write",
-    `${join(run.artifactRoot, ".registered.json")} with `
-    + `{"runId":"${run.id}","outputs":${JSON.stringify(paths)}}.`,
-    "Do not advance the card before that receipt exists.",
-    note,
-  ].join(" ");
+/**
+ * Copy the validated staging artifacts to their canonical homes and write the
+ * receipt, host-side.
+ *
+ * Idempotent by construction: the receipt is written last, so a crash between
+ * copies leaves the run unregistered and the next reconcile redoes it. A copy
+ * that fails is reported on the card rather than swallowed — a silently
+ * half-registered run would claim artifacts the card cannot read.
+ *
+ * Returns whether the run is now registered. On failure it leaves the run in
+ * `needs_input` with the reason on the card, because a human can fix a
+ * filesystem problem and the automated path cannot.
+ */
+async function registerArtifacts(
+  deps: ArtifactDeps,
+  card: WorkerCard,
+  run: ExecutionRun,
+  paths: string[],
+  note: string,
+): Promise<boolean> {
+  const plan = registrationPlan(run.artifactRoot, paths);
+  const receiptPath = registrationReceiptPath(run.artifactRoot);
+  if (plan.unresolved.length > 0 || !receiptPath) {
+    await stallRegistration(deps, card, run, [
+      `cannot derive a canonical path for: ${plan.unresolved.join(", ") || run.artifactRoot}`,
+      note,
+    ]);
+    return false;
+  }
+  const failed: string[] = [];
+  for (const copy of plan.copies) {
+    const staged = await deps.bb.sdk.files.read({ path: copy.from }).catch(() => null);
+    if (!staged) {
+      failed.push(copy.relative);
+      continue;
+    }
+    try {
+      await deps.bb.sdk.files.write({ path: copy.to, content: staged.content });
+    } catch {
+      failed.push(copy.relative);
+    }
+  }
+  if (failed.length > 0) {
+    await stallRegistration(deps, card, run, [`could not copy: ${failed.join(", ")}`, note]);
+    return false;
+  }
+  try {
+    await deps.bb.sdk.files.write({
+      path: receiptPath,
+      content: registrationReceipt(run.id, plan.copies.map((copy) => copy.relative)),
+    });
+  } catch {
+    await stallRegistration(deps, card, run, ["copied, but the receipt could not be written", note]);
+    return false;
+  }
+  return true;
 }
+
+/**
+ * Registration could not be completed by the host. This is a filesystem problem
+ * a human can resolve and an automated path cannot, so it parks the card with
+ * the reason on it instead of failing the run outright.
+ */
+async function stallRegistration(
+  deps: ArtifactDeps,
+  card: WorkerCard,
+  run: ExecutionRun,
+  reasons: string[],
+): Promise<void> {
+  const detail = reasons.filter(Boolean).join("; ");
+  transitionExecutionRun(deps.db, run.id, "needs_input", {
+    nativeStatus: run.nativeStatus,
+    errorCode: "artifact-registration-failed",
+  });
+  deps.logComment(card.id, run.id, `Native ${run.recipeId} validated but could not be registered: ${detail}.`);
+  deps.notify.sendToCard(
+    card,
+    `The native ${run.recipeId} run produced valid artifacts but the host could not register them: ${detail}. `
+    + "Do not advance the card. Record what is needed, then resume.",
+  );
+}
+
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)

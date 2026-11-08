@@ -1,18 +1,21 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { failureCauseFromEvents } from "../lib/worker-failure.mjs";
-import { recordWorkerThread } from "../lib/worker-ledger.mjs";
+import { needsNaming } from "../lib/card-naming.mjs";
+import { clearPresetStaleness, recordWorkerThread } from "../lib/worker-ledger.mjs";
 import { resetSpawnRetry } from "../lib/spawn-retry.mjs";
 import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
-import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
+import { presetBandsForCardKindStage } from "../lib/preset-staleness.mjs";
 import { stageLabel } from "../lib/workflow-vocabulary.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
 import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
+import { recoverInterruptedRespawns } from "./workers-respawn-guard.js";
 import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
 import { respawn, type RespawnDeps } from "./workers-respawn.js";
 import {
   continuingEnvironment,
+  recordWorkerWorkspace,
   workerEnvironmentOf,
   type PresetParams,
   type ThreadEnvironment,
@@ -25,6 +28,7 @@ import type {
   WorkerScheduler,
   WorkerSpawnArgs,
 } from "./workers-types.js";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 
 export { runWorkerMigrations } from "./workers-migrations.js";
 // Re-exported so the callers that already imported these from here keep
@@ -45,7 +49,7 @@ export type WorkerDeps = {
   updateCard: (cardId: string, fields: Record<string, unknown>) => void;
   comment: (cardId: string, body: string) => void;
   getPreset: (presetId: string) => Preset | null;
-  getReliablePreset: (band: string, cardId: string) => Preset;
+  getReliablePreset: (band: string | string[], cardId: string) => Preset;
   presetParams: (preset: Preset) => PresetParams;
   prepareRespawn: (
     card: WorkerCard,
@@ -56,7 +60,16 @@ export type WorkerDeps = {
   resetAutoContinue: () => { count: number; stage: string | null };
   scheduler?: WorkerScheduler;
   retryDelayMs?: (attempt: number) => number;
+  /**
+   * Late-bound title-burst hook. The drafting server (which owns
+   * suggestCardName) is constructed after the workers, so the composition
+   * root passes a holder and fills `request` once drafting exists. Absent
+   * means naming stays creation-only — the pre-change behavior.
+   */
+  titleRefresh?: { request: ((cardId: string) => void) | null };
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
+  /** The flight recorder; absent means "no log", never "no spawn". */
+  actions?: ActionRecorder;
 };
 
 function recordThread(
@@ -66,7 +79,29 @@ function recordThread(
   presetId: string | null,
   reason: string,
 ): number {
-  return recordWorkerThread(deps.db, cardId, threadId, presetId, reason);
+  const closed = recordWorkerThread(deps.db, cardId, threadId, presetId, reason);
+  // One row per thread creation, with the reason as its cause. The cause is
+  // what turns the 26/10 spawn loop — 189 threads, 150 identical restarts —
+  // into ONE row with `occurrences: 150`, while a manual Start still reads as
+  // itself. No row is dropped here: the dedupe window is the recorder's, and
+  // the count is always preserved on the row that survives.
+  deps.actions?.record({
+    kind: "worker.spawn",
+    outcome: "ok",
+    cause: reason === "start" ? "worker.start" : "worker.restart",
+    cardId,
+    threadId,
+    detail: { preset: presetId, reason },
+  });
+  // A fresh spawn is the explicit clear for preset staleness: the new thread
+  // was born after every override, so a carried flag would offer a Restart
+  // for staleness that no longer exists.
+  try {
+    clearPresetStaleness(deps.db, cardId);
+  } catch {
+    /* the flag is advisory; the spawn already committed */
+  }
+  return closed;
 }
 
 type LineageInput = {
@@ -107,6 +142,7 @@ async function fresh(
   deps: WorkerDeps,
   cardId: string,
   reason: "start" | "restart",
+  options?: { automatic?: boolean },
 ): Promise<{ ok: boolean; error: string | null }> {
   const card = deps.getCard(cardId);
   if (!card) return { ok: false, error: deps.errors.cardNotFound };
@@ -114,7 +150,7 @@ async function fresh(
   if (reason === "start" && card.worker_thread_id) {
     return { ok: false, error: "This card already has a worker thread." };
   }
-  const effective = deps.getReliablePreset(bandForCardKindStage(card.kind, card.stage), cardId);
+  const effective = deps.getReliablePreset(presetBandsForCardKindStage(card.kind, card.stage), cardId);
   const previousThreadId = card.worker_thread_id;
   const result = await respawn(respawnDeps(deps), cardId, effective.id, reason);
   if (!result.ok) return { ok: false, error: result.error ?? null };
@@ -123,9 +159,19 @@ async function fresh(
     ? `Worker started on preset "${presetName}", ${continuationText(card)}.`
     : `Worker restarted on preset "${presetName}", ${continuationText(card)}. Previous worker thread: ${previousThreadId} (archived).`;
   deps.comment(cardId, trail);
+  if (reason === "start") refreshUnsettledTitle(deps, card);
   const reset = deps.resetAutoContinue();
   deps.updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
-  resetSpawnRetry(deps.db, cardId);
+  // A person starting or restarting a card opens a new failure episode. An
+  // automatic retry must NOT: its replacement can die before it starts, and
+  // clearing the budget there is what turned a permanent provider error into
+  // an endless spawn loop. The episode clears on the first worker output
+  // (`build-thread-sync`), which is the real proof that it started.
+  if (!options?.automatic) resetSpawnRetry(deps.db, cardId);
+  // The worker got a checkout, and the gates must bind to it. Fire-and-forget:
+  // a started worker must not become a failed start because the environment was
+  // still provisioning, and the record is retried on the next restart.
+  void recordWorkerWorkspace(deps, cardId).catch(() => undefined);
   deps.bb.realtime.publish("card-state", { cardId });
   return { ok: true, error: null };
 }
@@ -143,14 +189,30 @@ function respawnDeps(deps: WorkerDeps): RespawnDeps {
     recordThread: (cardId, threadId, presetId, reason) => recordThread(deps, cardId, threadId, presetId, reason),
     lineage: (input) => lineage(deps, input),
     continuingEnvironment: (card, fallback) => continuingEnvironment(deps, card, fallback),
+    noteLinkFailure: (cardId, body) => deps.comment(cardId, body),
   };
+}
+
+/**
+ * Start-time title reuse: a parked card whose title is still the unsettled
+ * heuristic gets the same suggestCardName burst creation fires. Human-set
+ * titles never reach the hook (needsNaming is false), and a failure here
+ * never breaks the Start itself — naming is advisory.
+ */
+function refreshUnsettledTitle(deps: WorkerDeps, card: WorkerCard): void {
+  try {
+    const request = deps.titleRefresh?.request;
+    if (!request) return;
+    if (!needsNaming({ displayName: card.display_name ?? card.name, name: card.name, prompt: card.prompt })) return;
+    request(card.id);
+  } catch { /* naming never breaks Start */ }
 }
 
 async function failedCause(deps: WorkerDeps, threadId: string): Promise<string | null> {
   try {
     const events = await deps.bb.sdk.threads.events.list({
       threadId,
-      types: ["provider/error"],
+      types: ["provider/error", "system/error"],
       order: "desc",
       limit: "5",
     });
@@ -181,7 +243,11 @@ function workerFacade(
       continuingEnvironment(deps, card, fallback),
     respawn: (cardId: string, presetId: string, reason?: string, options?: RespawnOptions) =>
       respawn(respawnDeps(deps), cardId, presetId, reason, options),
-    fresh: (cardId: string, reason: "start" | "restart") => fresh(deps, cardId, reason),
+    fresh: (
+      cardId: string,
+      reason: "start" | "restart",
+      options?: { automatic?: boolean },
+    ) => fresh(deps, cardId, reason, options),
     scheduleRespawn: respawnScheduler.schedule,
     applyFailed: retry.applyFailed,
     ...history,
@@ -194,13 +260,25 @@ function workerFacade(
 
 export function createWorkers(deps: WorkerDeps) {
   const scheduler = deps.scheduler ?? defaultWorkerScheduler;
+  // Boot sweep first: a kill -9 between claim and release leaves a pending
+  // row whose holder is gone. Reap it now so the card says so instead of
+  // refusing its next replacement against a dead claim.
+  try {
+    recoverInterruptedRespawns(deps.db, {
+      nowMs: deps.now(),
+      getCard: deps.getCard,
+      comment: deps.comment,
+    });
+  } catch {
+    /* recovery is owed, never load-bearing for startup */
+  }
   const retry = createWorkerRetry({
     db: deps.db,
     getCard: deps.getCard,
     updateCard: deps.updateCard,
     comment: deps.comment,
     publish: (cardId) => deps.bb.realtime.publish("card-state", { cardId }),
-    fresh: (cardId, reason) => fresh(deps, cardId, reason),
+    fresh: (cardId, reason, options) => fresh(deps, cardId, reason, options),
     failedCause: (threadId) => failedCause(deps, threadId),
     scheduler,
     retryDelayMs: deps.retryDelayMs,

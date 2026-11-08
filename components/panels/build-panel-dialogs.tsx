@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import {
   WorkflowSettings,
-  type Appetite,
+  type KnobPrefs,
   type ReviewGates,
 } from "../creation/creation-settings";
 import { CreateBuildDialog } from "../creation/create-build-dialog";
@@ -46,9 +46,9 @@ type Props = {
   projectId: string | null;
   data: BuildPanelData;
   analysisWorkerPreset: BuildPreset | null;
-  appetite: Appetite;
+  prefs: KnobPrefs;
   reviewGates: ReviewGates;
-  onAppetiteChange: (value: Appetite) => void;
+  onPrefsChange: (patch: Partial<KnobPrefs>) => void;
   onReviewGatesChange: (value: ReviewGates) => void;
   bucketGallery: { openBucketGallery: () => void; bucketGallery: ReactNode };
   rpc: BuildRpc;
@@ -61,7 +61,7 @@ function BuildOnboarding(props: Props) {
   return props.renderOnboarding({
     storageKey: STORAGE_KEYS.onboardBuild,
     title: "Choose your agent presets",
-    intro: "Set the preset each phase runs with. Planning depth and your review gates "
+    intro: "Set the preset each phase runs with. Run knobs and your review gates "
       + "are a separate choice — picked per card in New issue, under the description.",
     onOpenPresets: props.onOpenPresets,
     active: props.active,
@@ -71,9 +71,9 @@ function BuildOnboarding(props: Props) {
     secondTitle: "Defaults for new cards",
     secondBody: (
       <WorkflowSettings
-        appetite={props.appetite}
+        prefs={props.prefs}
         reviewGates={props.reviewGates}
-        onAppetiteChange={props.onAppetiteChange}
+        onPrefsChange={props.onPrefsChange}
         onReviewGatesChange={props.onReviewGatesChange}
         groupNamePrefix="board-default"
       />
@@ -91,12 +91,12 @@ export function BuildPanelDialogs(props: Props) {
         activeProjectId={props.projectId}
         validProjectIds={(props.data.projects ?? []).map((project) => project.id)}
         analysisPreset={props.analysisWorkerPreset}
-        appetite={props.appetite}
+        prefs={props.prefs}
         reviewGates={props.reviewGates}
         githubRepos={(props.data.githubStatus?.repos ?? [])
           .filter((entry) => entry.projectId === props.projectId)
           .map((entry) => entry.repo)}
-        onAppetiteChange={props.onAppetiteChange}
+        onPrefsChange={props.onPrefsChange}
         onReviewGatesChange={props.onReviewGatesChange}
         bucketGallery={props.bucketGallery}
         onOpenPresets={props.onOpenPresets}

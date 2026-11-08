@@ -136,10 +136,29 @@ const judged = await judgeArtifactCriteria({ provider: "jev", endpoint: "https:/
 assert.equal(judged.ok, true, "judging resolves");
 assert.equal(judged.evaluated, 2, "both semantic criteria evaluate");
 assert.deepEqual(judged.findings.map((finding) => finding.verdict), ["met", "unmet"], "confident extremes decide per criterion");
-assert.equal(seenBodies.length, 2, "one atomic call per criterion, never batched");
+assert.equal(seenBodies.length, 3, "evidence gate plus one atomic call per criterion, never batched");
 assert.ok(seenBodies.every((body) => Object.keys(body.questions).length === 1), "each call carries exactly one question");
+assert.deepEqual(Object.keys(seenBodies[0].questions), ["evidence:sufficiency"], "evidence is asked first and separately");
 assert.equal(CRITERIA_MET_SCORE, 1.5, "met floor is pinned");
 assert.equal(CRITERIA_UNMET_SCORE, 0.5, "unmet ceiling is pinned");
+
+// Confident absence of evidence short-circuits every criterion without
+// spending their calls; a non-Noul evidence answer proceeds like today.
+const thinFetch = async (url, opts) => {
+  const id = Object.keys(JSON.parse(opts.body).questions)[0];
+  if (id === "evidence:sufficiency") {
+    return { status: 200, json: async () => ({ answers: { [id]: { type: "noul", noul: 0.05 } } }) };
+  }
+  throw new Error("criterion calls must not run without evidence");
+};
+const thin = await judgeArtifactCriteria({
+  provider: "jev", endpoint: "https://x.test/v1", apiKey: "k", model: "m",
+  skillText: judgeSkill, artifactText: "trust me", routeAt: 0.6, fetchImpl: thinFetch,
+});
+assert.equal(thin.ok, true, "short-circuit still resolves");
+assert.equal(thin.evaluated, 0, "nothing evaluated without evidence");
+assert.ok(thin.findings.every((finding) => finding.verdict === "unverifiable"), "short-circuit marks all unverifiable");
+assert.ok(thin.findings.every((finding) => finding.error === "no checkable evidence"), "every criterion names the missing evidence");
 
 // Low confidence abstains even on extreme scores; provider failure degrades
 // the whole call; skills without semantic criteria resolve empty.

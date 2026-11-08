@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import { toast } from "sonner";
 import type { rpcContract } from "../../server";
 import { statusTone } from "../../lib/detail-presentation.mjs";
-import {
-  STAGE_SEQUENCE,
-  stageLabel,
-} from "../../lib/workflow-vocabulary.mjs";
-import { stageProduces } from "../../lib/stage-vocabulary-surfaces.mjs";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useDetailComment } from "../conversation/use-detail-comment";
 import { GithubCompletionDialog } from "../github/github-completion-dialog";
 import { GithubDoneDraftDialog } from "../github/github-done-draft-dialog";
@@ -71,25 +55,6 @@ function useBuildDetailData(cardId: string, inboxEventId: string | null) {
   return { card, detail, error, inboxEvent, inboxEventRef, load };
 }
 
-function useAdvanceCard(cardId: string, load: () => Promise<void>) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [advancing, setAdvancing] = useState<string | null>(null);
-  const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
-
-  async function advance(stage: string) {
-    setAdvancing(stage);
-    try {
-      const result = await rpc.call("advanceCard", { cardId, stage });
-      if (!result.ok) toast.error(result.error ?? "Advance failed");
-      else toast.success(`Advanced to ${stage}`);
-      await load();
-    } finally {
-      setAdvancing(null);
-    }
-  }
-
-  return { advancing, pendingAdvance, setPendingAdvance, advance };
-}
 
 function useBuildPresentationState(card: BuildCard | null) {
   const [githubPostOpen, setGithubPostOpen] = useState(false);
@@ -166,100 +131,15 @@ export function BuildDetailBody(props: BuildDetailBodyProps) {
   const { cardId, inboxEventId, renderPresetDialog } = props;
   const data = useBuildDetailData(cardId, inboxEventId);
   const interactions = useBuildInteractions(props, data.card, data.load);
-  const advance = useAdvanceCard(cardId, data.load);
   const execution = useExecutionRuns(cardId, props.executionRunId);
   const view: BuildDetailView = {
     ...data,
     ...interactions,
-    ...advance,
     execution,
     focusRunId: props.executionRunId,
     renderPresetDialog,
   };
   return <BuildDetailLayout {...props} view={view} />;
-}
-
-type AdvanceDialogProps = {
-  card: BuildCard | null;
-  pendingAdvance: string | null;
-  advancing: string | null;
-  onOpenChange: (open: boolean) => void;
-  onAdvance: (stage: string) => Promise<void>;
-};
-
-function AdvanceDialog({
-  card,
-  pendingAdvance,
-  advancing,
-  onOpenChange,
-  onAdvance,
-}: AdvanceDialogProps) {
-  const forward = Boolean(
-    pendingAdvance &&
-    card &&
-    STAGE_SEQUENCE.indexOf(pendingAdvance) > STAGE_SEQUENCE.indexOf(card.stage),
-  );
-  const confirm = () => {
-    if (!pendingAdvance) return;
-    onOpenChange(false);
-    void onAdvance(pendingAdvance);
-  };
-  return (
-    <Dialog
-      open={pendingAdvance !== null}
-      onOpenChange={(open) => { if (!open) onOpenChange(false); }}
-    >
-      <DialogContent>
-        <AdvanceDialogCopy card={card} pendingAdvance={pendingAdvance} forward={forward} />
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={advancing !== null}>
-              Cancel
-            </Button>
-          </DialogClose>
-          <Button disabled={advancing !== null || !pendingAdvance} onClick={confirm}>
-            {advancing ? "Applying…" : forward ? "Advance" : "Return"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AdvanceDialogCopy({
-  card,
-  pendingAdvance,
-  forward,
-}: {
-  card: BuildCard | null;
-  pendingAdvance: string | null;
-  forward: boolean;
-}) {
-  const targetLabel = pendingAdvance ? stageLabel(pendingAdvance) : "";
-  return (
-    <DialogHeader>
-      <DialogTitle>
-        {forward ? "Advance to" : "Return to"} {targetLabel}?
-      </DialogTitle>
-      <DialogDescription className="space-y-2">
-        <p>
-          Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to{" "}
-          <strong>{targetLabel}</strong>.
-        </p>
-        <p className="rounded-md bg-muted p-2 text-xs">
-          {pendingAdvance
-            ? stageProduces(pendingAdvance) ??
-              "The agent works on this stage and advances on its own once done."
-            : ""}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {forward
-            ? "This is a manual override. The agent usually advances on its own. Stage gates (product, interface, plan, diff) still apply on the next advance."
-            : "Going back is safe and reversible. The workflow will re-run earlier stages as needed."}
-        </p>
-      </DialogDescription>
-    </DialogHeader>
-  );
 }
 
 function BuildDetailLayout({
@@ -331,13 +211,6 @@ function PresetDialogs({ cardId, view }: { cardId: string; view: BuildDetailView
         mode={view.viewerFile?.mode}
         optionLabel={view.viewerFile?.optionLabel}
         onCommented={() => void load()}
-      />
-      <AdvanceDialog
-        card={view.card}
-        pendingAdvance={view.pendingAdvance}
-        advancing={view.advancing}
-        onOpenChange={(open) => { if (!open) view.setPendingAdvance(null); }}
-        onAdvance={view.advance}
       />
     </>
   );

@@ -3,9 +3,12 @@ import { Button } from "@/components/ui/button";
 import { SECTION_SURFACE } from "../disclosure";
 import { fileLinkTarget } from "../artifacts/artifact-inventory";
 import { AcceptanceRow } from "./acceptance-row";
+import { FrozenAcceptanceRow, type FrozenTestMapEntry } from "./frozen-acceptance-row";
 import type { BuildDetailView } from "./build-detail-view";
 import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
+import { VerifyBlockageNotice } from "./verify-blockage-notice";
+import { PromptEdit } from "./prompt-edit-control";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 
 const SPLIT_PROPOSAL_TITLE = [
@@ -46,6 +49,7 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
   const { hero, heroStyle, target } = heroModel(view);
   if (!card || !hero || !heroStyle) return null;
   return (
+    <>
     <section
       aria-label="Card status"
       {...(heroStyle.alert ? { role: "alert" } : {})}
@@ -63,7 +67,7 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
             {hero.title}
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-          <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+          <PromptEdit cardId={card.id} prompt={card.prompt} workerThreadId={card.workerThreadId} status={card.status} onSaved={() => void view.load()} />
           <RecoveryPrompt card={card} view={view} />
           <BuildHeroActions
             card={card}
@@ -75,19 +79,33 @@ export function BuildReviewHero({ view, presetStale }: BuildReviewHeroProps) {
           />
         </div>
       </div>
-      <BuildHeroBelow card={card} detail={detail} view={view} />
+      <AcceptanceRow
+        cardId={card.id}
+        status={card.status}
+        acceptanceLine={detail?.card.acceptanceLine}
+        onChanged={view.load}
+      />
     </section>
+    {detail ? <QuestionsAndSplit card={card} detail={detail} view={view} /> : null}
+    </>
   );
 }
 
 /**
- * What sits under the status reading: the questions the card is waiting on, the
- * human disposition of a finished result, and the split proposal when one is
- * open. Cut by subject — everything here is "something else on this card"
- * rather than the one status line above — because the hero was carrying all of
- * it inline and crossing its function budget.
+ * What sits below the status reading: the questions the card is waiting on and
+ * the split proposal when one is open.
+ *
+ * This is a SIBLING of the hero section, not a child of it, and that placement
+ * is the whole point. The question used to render inside the hero's own
+ * `SECTION_SURFACE` box, so a bordered box sat inside a bordered box and the
+ * hairline between them separated nothing — a reader could not tell where the
+ * status ended and the answerable question began. As a sibling the boundary is
+ * real: one box is the neutral status, the next is the amber decision section
+ * (detail-question-sections), and the gap between them is the card's own
+ * section rhythm. The gold moved down with the questions on 2026-10-27; the
+ * hero no longer competes with the thing it points at.
  */
-function BuildHeroBelow({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
+function QuestionsAndSplit({ card, detail, view }: { card: BuildCard; detail: BuildDetailView["detail"]; view: BuildDetailView }) {
   return (
     <>
       {detail
@@ -106,6 +124,16 @@ function BuildHeroBelow({ card, detail, view }: { card: BuildCard; detail: Build
         status={card.status}
         acceptanceLine={detail?.card.acceptanceLine}
         onChanged={view.load}
+      />
+      {/* Frozen technical acceptance beside the human receipt, never inside
+          it: one row per fact. Null-safe — renders nothing until a gate
+          (Fase 4) supplies test_map/freeze data. The cast is the seam: the
+          server card type gains these fields in Fase 4, and until then the
+          row receives null and renders nothing. */}
+      <FrozenAcceptanceRow
+        entries={(detail?.card as unknown as { frozenTestMap?: FrozenTestMapEntry[] | null } | null | undefined)?.frozenTestMap ?? null}
+        freezeSha={(detail?.card as unknown as { freezeSha?: string | null } | null | undefined)?.freezeSha ?? null}
+        currentHeadSha={(detail?.card as unknown as { currentHeadSha?: string | null } | null | undefined)?.currentHeadSha ?? null}
       />
       <HeroSplitAction detail={detail} view={view} />
     </>
@@ -147,9 +175,14 @@ function BuildHeroActions({
       }}
       continuation="continuing from the current stage"
       retryTail=" from the current stage"
-      extra={hero.kind === "decision" && target
-        ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} />
-        : null}
+      extra={hero.kind === "decision" ? (
+        <>
+          {target ? <ReviewButton card={card} detail={detail} target={target} setViewerFile={view.setViewerFile} /> : null}
+          {detail?.pendingQuestions?.[0] ? (
+            <VerifyBlockageNotice cardId={card.id} onResume={lifecycle.doRetry} retrying={lifecycle.retrying} />
+          ) : null}
+        </>
+      ) : null}
       onStart={lifecycle.doStart}
       onRetry={lifecycle.doRetry}
       onRestart={() => lifecycle.setRestartWorkerOpen(true)}

@@ -16,14 +16,54 @@
 // commands, but bb workspaces have no such binary — the plugin wraps the
 // same operations. One sentence everywhere so workers discover the
 // sync-scopes/lock/config equivalents instead of failing on the path.
-export const CLI_EQUIVALENTS =
-  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, and stage playbook paths — never discover them with `bb skill list \
-| awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the \
-`bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never \
-run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers \
-a workspace-level claim so sibling cards on this checkout see your files. A `BB-LOCK-BLOCKED` stderr means another live card holds the file — \
-do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when \
-the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.";
+export const CLI_EQUIVALENTS = [
+  "Run `bb stelow playbook` first: it prints your state.md, transitions.md, ",
+  "your state dir's receipts (audit.md, audit-trail.md, ",
+  "invariants.json, scope-map.json, recon-receipt.json) and stage paths ",
+  "— never discover them with shell pipelines. Scope sync is automatic on advance into execution. ",
+  "`scripts/stelow <verb>` → `bb stelow <verb>` when `bb stelow help` lists it; otherwise it does not exist. Never invent `bb stelow <verb>`. Never ",
+  "run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers ",
+  "a workspace-level claim so sibling cards on this checkout see your files. A `BB-LOCK-BLOCKED` stderr means another live card holds the file — ",
+  "do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when ",
+  "the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.",
+].join("");
+
+// The ask contract: how a worker puts a question to the person.
+//
+// This lived as a literal block pasted into five builders, which is how it
+// drifted: two of the five lost the "never write waiting text" guard and the
+// restart path — the one that runs at every band boundary — lost the timeout
+// rule. Telling a model to stop and wait is the difference between a question
+// that gets answered and a card that sits in a column looking busy, so the
+// block is one const and every spawn path renders it.
+//
+// It deliberately does not include INTERFACE_PICK: the gate discipline is its
+// own clause that callers interpolate beside this one, because the router and
+// the continue nudge quote it alone.
+//
+
+export const USER_INPUT_CONTRACT =
+  "CRITICAL — User input contract:\n" +
+  'ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":\n' +
+  "\n" +
+  '    bb stelow ask --thread "$BB_THREAD_ID" \\\n' +
+  '      --question "<a single clear question>" \\\n' +
+  '      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]\n' +
+  "\n" +
+  "Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them " +
+  "together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When comparing artifacts " +
+  "(interface, plan), attach each option's evidence: --desc for the trade-off (under 500 characters), --preview for the glance " +
+  "(a ```mermaid diagram when the choice is about flow, else a wireframe — never a copy of the description), --artifact for the file. " +
+  "Write every question for the decider: short, plain words, no stage slugs, counts, file handles, or " +
+  "methodology brand names — name a document only to open or approve it. Mark an option that needs the human's which or what with --needs-note " +
+  "right after its --option: each question carries one note box that travels with the pick, and submit waits until it is filled.\n" +
+  "\n" +
+  "Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file " +
+  "list as the only content of a question.\n" +
+  "Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer.\n" +
+  'If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card ' +
+  "and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never " +
+  "re-ask the same question — wait for the card answer.";
 
 // Prompt clauses that every build spawn path must carry.
 export const NEVER_SEED =
@@ -50,18 +90,39 @@ block, or CHANGELOG.md plus v* tags). If the repo releases from commits, write `
 // continue nudge: one const so a wording fix lands everywhere (the
 // prompt-contracts test pins single definition + all references).
 export const INTERFACE_PICK =
-  "Interface-pick discipline: check review_gates in state.md first (review_mode is the legacy ladder label — normalize it to gates when review_gates \
-is absent). For each selected gate the workflow waits for a human decision with a live structured ask; unselected gates never park: the LLM decides \
-itself, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Gate-tool fallback: if visual_review is \
-unavailable in this host, do NOT park in chat waiting.";
+  "Interface-pick discipline: read review_gates in state.md first (review_mode is the legacy label — normalize it). For a selected \
+gate, put its document in `bb stelow ask` with --artifact and stop; use another review tool only if registered. Attach \
+`alternatives.md`, not `interfaces.md`. Unselected \
+gates never park: the LLM decides, writes the receipt (assumptions_resolved, selected_by: llm), and advances. Ask the first reaction before synthesis. Never \
+approve a selected gate silently.";
 
 // Explicit completion: done-ness was inferred from `audit` + idle, so a
 // narrate-and-stop at audit looked identical to stuck-at-audit. The
 // worker commits with `bb stelow done`; the host verifies in code.
-export const DONE_PROTOCOL =
-  "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at \
-the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` \
-from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. \
+//
+// Split in three because the tracks were paying for machinery they cannot
+// reach: 2,084 of this clause's 2,479 characters are the BUILD completion
+// path (the `audit` stage, the rework loop, `audit.md`, the run bundle), and
+// a research or explore prompt rendered all of it on every spawn while the one
+// sentence it owed — finish only once `verify` passes — sat buried in the
+// middle. `DONE_PROTOCOL_CORE` is the part every worker obeys; the tracks
+// render `DONE_PROTOCOL_TRACK`, and a build path renders `DONE_PROTOCOL`, which
+// is the core plus the build payload. The split is asserted byte-for-byte in
+// `tests/prompt-budget.test.mjs`, so the build prompt cannot change by accident.
+export const DONE_PROTOCOL_CORE =
+  "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop.";
+
+/** The track half: no stages, no gates, no audit — `verify` passing is what
+ * finishes a research or explore card. */
+export const DONE_PROTOCOL_TRACK =
+  `${DONE_PROTOCOL_CORE} Research/explore cards complete only after \`bb stelow verify\` passes.`;
+
+/** The build half: what `done` means on a build card, and the evidence it
+ * demands. Nothing here applies to a track, and no track prompt renders it. */
+export const DONE_PROTOCOL_BUILD =
+  "Build cards complete only at the `audit` stage. Before Build `done`, run `bb stelow verify --tests` \
+and `bb stelow scan --report` from the final checkout; both record at this Git root and HEAD, \
+and `done` refuses without a clean scan. \
 Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. Run `bb stelow gap-triage` \
 and, if it dismisses any escalated gap, say so honestly in audit.md (advisory only; the routing below never changes). If the execution critique \
 escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in \
@@ -77,6 +138,10 @@ plus `manifest.md` (SHA pins, gap counts) automatically on every completion and 
 that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit \
 cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, \
 unreadable, newly registered, and uncommitted sources without writing anything.";
+
+/** The build paths' clause: the core rule plus the build-only payload. One
+ * const, so the two halves the tracks were split from stay assembled here. */
+export const DONE_PROTOCOL = `${DONE_PROTOCOL_CORE} ${DONE_PROTOCOL_BUILD}`;
 
 export const RECON_PROTOCOL =
   "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow \
@@ -101,8 +166,11 @@ OR the Keep as one card option — never both. Then STOP and wait for the answer
 question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same \
 ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point \
 until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived \
-parent means stop. Never hedge with a standard question that merely validates a grouping (“looks good?”) — either the bar above is met (ask --tag \
-split) or it isn\'t (keep one card and advance). A standard answer executes nothing and can never become a split later.';
+parent means stop. When the human already chose split, open the formal question with Following your call to split and preselect the named slices \
+with --selected (split is --multiple, so this is legal; Keep stays unchecked): the human confirms instead of re-picking. Keep as one card stays \
+as the exclusive veto even then — with concrete slices in front of them, keeping together is a reversal, never a contradiction. \
+Never hedge with a standard question that merely validates a grouping (“looks good?”) — either the bar above is met \
+(ask --tag split) or it isn\'t (keep one card and advance). A standard answer executes nothing and can never become a split later.';
 
 // One-shot trigger for the human "Propose split" action. A pointer, not a
 // second protocol copy: the full syntax lives once in SPLIT_PROTOCOL above
@@ -110,7 +178,8 @@ split) or it isn\'t (keep one card and advance). A standard answer executes noth
 export const SPLIT_REQUEST_NUDGE =
   'Split requested: the user explicitly asked for a split proposal. Follow SPLIT_PROTOCOL in your system prompt: ask with --tag split --multiple \
 (one --option per delivery plus exactly one --option \\"Keep as one card\\"), then STOP and wait; after the answer, execute the recorded approval \
-with `bb stelow split`. Do not ask a standard question about splitting instead — only a --tag split proposal is executable.';
+with `bb stelow split`. Open with Following your call to split and preselect slices the human already named with --selected (Keep stays unchecked). \
+Do not ask a standard question about splitting instead — only a --tag split proposal is executable.';
 
 // Optional paid review, always explicit: after `bb stelow verify` PASSes you
 // may OFFER `bb stelow review` through `bb stelow ask` — never run it
@@ -133,3 +202,53 @@ marker: never edit it, copy another workflow's state, or use a project-root stat
 into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate \
 structured questions, card state changes, lifecycle commands, or the canonical result. Delegate fresh: package the full task in the call itself \
 (brief plus every file path and fact the delegate needs) — never fork a thread, inherit history, or let siblings talk to each other.";
+
+/**
+ * The opening every build spawn path shares, byte for byte.
+ *
+ * A const rather than a literal per template, because the opening is the most
+ * valuable part of a prompt for caching: a provider reuses the longest common
+ * prefix, so an intro that differs between paths — or carries a per-card value —
+ * forfeits everything after it. Three hand-written intros is how they came to differ
+ * by a sentence, and the difference cost the cache the whole clause block behind it.
+ *
+ * It says nothing about being re-seeded: a first worker and a re-seeded one both
+ * need the same opening, and a sentence true only for one of them is the difference
+ * that breaks the prefix.
+ */
+export const WORKFLOW_INTRO =
+  "You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir, "
+  + "and the host keeps your state.md, transitions.md, and stelow.json in it.";
+
+/**
+ * The skill pointer, stated once.
+ *
+ * A pointer and not a discovery instruction: it used to name the
+ * `stelow-workflow-*` glob and tell the worker to find the skills with
+ * `bb skill list`, which is both the thing `bb stelow playbook` was built to replace
+ * (its docstring records that workers "burned whole turns on discovery") and a
+ * contradiction of the CLI_EQUIVALENTS clause that forbids that discovery. The glob
+ * is 17 skills whose entry documents total 215,756 bytes against a 12,100-character
+ * prompt, so following the older instruction loads an order of magnitude more than
+ * the prompt that asked for it.
+ */
+export const WORKFLOW_SKILLS =
+  "Skills load lazily: run `bb stelow playbook` to list your state.md, transitions.md, and stage paths. "
+  + "Load stelow-workflow-entry and stelow-workflow-router now — they are the lazy front. "
+  + "Do not load the stage skill or the orchestrator until you advance; the router hands the next stage skill "
+  + "over on advance. Do not search for skills, do not load a stage skill you have not reached, and do not fetch anything via "
+  + "`npx skills add` unless the playbook reports a path missing. That report means a broken install: say so "
+  + "instead of working around it.";
+
+/**
+ * What to do when a Stelow command fails, stated once.
+ *
+ * This lived in three templates with three wordings — "continue the workflow" in the
+ * spawn path, "continue" in the restart path, and a third in reseed — which is the
+ * same drift shape this file already pays for elsewhere. It is a rule about the CLI,
+ * not a fact about any one path, so it belongs here where the coverage test can hold
+ * every path to the same sentence.
+ */
+export const COMMAND_FAILURE_RULE =
+  "If a `bb stelow` command fails, read its stderr once and continue — do NOT spend the turn "
+  + "debugging the CLI; report the exact error and move on.";

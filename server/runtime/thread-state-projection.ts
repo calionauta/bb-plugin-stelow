@@ -1,7 +1,8 @@
-import { questionWaitUpdates } from "../../lib/card-question-state.mjs";
+import { questionWaitUpdates } from "../../lib/question-store.mjs";
 import { statusForNewCardWork } from "../../lib/card-work-resume.mjs";
 import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
+import { parseCurrentStage } from "../../lib/current-stage.mjs";
 
 const INTENT_VALUES = [
   "new-product",
@@ -32,7 +33,7 @@ export function projectStateMetadata(
   card: WorkerCard,
   stateBlob: string | null,
 ): { intent: string | null; stage: string } {
-  const stage = clean(stateBlob?.match(/^current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+  const stage = clean(parseCurrentStage(stateBlob) ?? undefined) || card.stage;
   const stateName = clean(stateBlob?.match(/^name:\s*(\S+)/m)?.[1]);
   const stateIntent = clean(stateBlob?.match(/^intent:\s*(\S+)/m)?.[1]);
   const intent = card.intent === "unknown" &&
@@ -71,11 +72,32 @@ export function projectRunningState(
   return updates;
 }
 
+/**
+ * A worker thread the host says does not exist.
+ *
+ * The id is a promise the card keeps failing to honour: every poll answers 404,
+ * `last_error` is rewritten with the raw host string, and every Retry re-reads
+ * the same dead id — two cards were sitting that way, one of them still
+ * advertising "The agent is waiting for your answer to continue" over a thread
+ * that had been deleted. Nothing in `server/**` or `lib/**` named the string, so
+ * no path could ever tell "the thread is gone" from "the host hiccuped".
+ *
+ * Clearing `worker_thread_id` is the honest repair: the card then has no worker,
+ * which is true, and Restart spawns one instead of re-asking the void. The
+ * message says what the reader can do rather than quoting a transport error.
+ */
+const THREAD_GONE = /thread[_ ]not[_ ]found|HTTP 404: Thread not found/i;
+
 export function projectThreadError(error: unknown): Record<string, unknown> {
-  return {
-    activity: "error",
-    last_error: error instanceof Error ? error.message : "Unable to read worker thread.",
-  };
+  const message = error instanceof Error ? error.message : "Unable to read worker thread.";
+  if (THREAD_GONE.test(message)) {
+    return {
+      activity: "error",
+      worker_thread_id: null,
+      last_error: "This card's worker thread no longer exists. Start a new worker to continue.",
+    };
+  }
+  return { activity: "error", last_error: message };
 }
 
 export function projectIdleTimestamp(
@@ -97,9 +119,9 @@ export function projectNoProgress(
 ): boolean {
   return Boolean(
     transitioningIntoIdle &&
-    card.last_assistant_text != null &&
+    card.last_idle_text != null &&
     lastOutput != null &&
-    lastOutput === card.last_assistant_text,
+    lastOutput === card.last_idle_text,
   );
 }
 

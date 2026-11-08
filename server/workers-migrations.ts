@@ -3,6 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
 const WORKER_COLUMNS = [
+  ["worker_thread_id", "TEXT"],
   ["worker_preset_id", "TEXT"],
   ["preset_restart_pending", "INTEGER NOT NULL DEFAULT 0"],
   ["spawn_retry_count", "INTEGER NOT NULL DEFAULT 0"],
@@ -27,4 +28,11 @@ export function runWorkerMigrations(db: Db): void {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
+  // Crash-safe respawn guard: a kill -9 between claim and release leaves no
+  // memory behind, so the claim lives here and the boot sweep reaps it.
+  db.exec(`CREATE TABLE IF NOT EXISTS respawn_inflight (
+    card_id TEXT PRIMARY KEY,
+    reason TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL
+  )`);
 }

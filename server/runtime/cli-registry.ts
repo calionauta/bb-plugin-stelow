@@ -40,6 +40,24 @@ export const stelowCliCommands: CliCommand[] = [
     "bb stelow preview [status|start|stop] [--card <card_id>] [--json]",
   ),
   command("advance", "Advance to the next Stelow stage", "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>"),
+  command("next", "Print the next stage the workflow allows (read-only)", "bb stelow next [--json] [--project <proj_id>]"),
+  command(
+    "audit-trail",
+    "Build, check or print the portable audit trail (read-only unless build)",
+    "bb stelow audit-trail build|check|path [--strict] [--json] [--project <proj_id>]",
+  ),
+  command(
+    "check",
+    "Check a breadboard map against the interface rule (read-only)",
+    "bb stelow check breadboard <map.json> [--json] [--strict] [--project <proj_id>]",
+  ),
+  command(
+    "decide",
+    "Record a decided selection, or open a challenge against a receipt",
+    "bb stelow decide --selected <option> [--rejected a,b] [--scopes s1,s2]",
+    "[--reason <text>] [--supersedes r-old] [--challenge ch-id] [--card <id>]",
+    "| bb stelow decide --open-challenge --against <receipt> --reason <text>",
+  ),
   command("done", "Commit workflow completion (verified in code)", "bb stelow done [--card <card_id>]"),
   command("split", "Execute the approved card-split proposal (no content args)", "bb stelow split [--card <card_id>]"),
   command("playbook", "Print this card's exact state and playbook paths", "bb stelow playbook [--card <card_id>]"),
@@ -79,6 +97,12 @@ export const stelowCliCommands: CliCommand[] = [
     "Verify artifacts, or run the Build card's host-recorded tests",
     "bb stelow verify [--card <card_id>] [--tests] [--json]",
   ),
+  command(
+    "scan",
+    "Record a security report as clean / failed / did-not-run (Build checkout)",
+    "bb stelow scan --report <path> [--format auto|sarif|neutral]",
+    "[--fail-on <severity>] [--require-scanners <a,b>] [--card <card_id>] [--json]",
+  ),
   command("gap-scopes", "Convert escalated gaps into rework scopes (idempotent)", "bb stelow gap-scopes [--card <card_id>]"),
   command(
     "metrics",
@@ -86,6 +110,17 @@ export const stelowCliCommands: CliCommand[] = [
     "bb stelow metrics [--json] [--card <card_id>]",
   ),
   command("storage", "Worktree disk usage attributed to cards, heaviest first (read-only)", "bb stelow storage [--json] [--card <card_id>]"),
+  command(
+    "prune",
+    "Remove workflow tracking entries whose card no longer exists (dry run unless --apply)",
+    "bb stelow prune [--json] [--apply]",
+  ),
+  command(
+    "log",
+    "What the plugin recorded doing: RPCs, CLI verbs, decisions and effects (read-only)",
+    "bb stelow log [--json] [--card <card_id>] [--kind <kind>] [--cause <code>]",
+    "[--outcome <o>] [--layer <l>] [--since 6h|7d|6w] [--limit <n>] [--replay]",
+  ),
   command(
     "manifest",
     "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)",
@@ -119,6 +154,17 @@ export const stelowCliCommands: CliCommand[] = [
     "bb stelow verify-delegation [--card <card_id>] [--json]",
   ),
   command("gap-triage", "Second-opinion escalated critique gaps via the judge (advisory, read-only)", "bb stelow gap-triage [--card <card_id>] [--json]"),
+  command(
+    "gaps",
+    "What has already been flagged, grouped by area, across the fleet (read-only)",
+    "bb stelow gaps [--card <card_id>] [--area <glob>] [--status documented|escalated] [--json]",
+  ),
+  command(
+    "wake",
+    "Whether a scheduled visit should spend a model turn on this card (read-only, free)",
+    "bb stelow wake [--card <card_id>] [--json]",
+    "(prints {\"wakeAgent\": false} when the tick should be skipped, else the reason it should not)",
+  ),
   command("preset", "Manage agent presets", "bb stelow preset list|add|remove|assign"),
   command("help", "Show help for a subcommand", "bb stelow help [command]"),
 ];

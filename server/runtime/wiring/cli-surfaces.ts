@@ -45,11 +45,39 @@ export function registerStelowCommand(deps: CliSurfaceDeps): void {
       answerExpiredQuestions: deps.gates.answerExpiredQuestions,
     },
   );
-  registerStelowCli(deps.bb, (argv, context) => run(argv, context));
+  registerStelowCli(deps.bb, (argv, context) => run(argv, context), {
+    actions: deps.core.actions,
+    now: deps.core.now,
+  });
 }
 
 /** The inspection command: reads, never writes, and refuses what it cannot. */
 type InspectionConfig = Parameters<typeof createInspectionCommand>[0];
+
+/**
+ * The files inside one run directory, relative to it.
+ *
+ * The host owns the directory, so it enumerates: the declared outputs say what a
+ * run SHOULD write, this says what it DID. `.registered.json` is filtered out
+ * because it is the host's own receipt, not a run artifact the worker reads.
+ */
+async function listRunFiles(
+  bb: CliSurfaceDeps["bb"],
+  artifactRoot: string,
+): Promise<string[]> {
+  const listed = await bb.sdk.files.listPaths({
+    path: artifactRoot,
+    includeFiles: true,
+    includeDirectories: false,
+  });
+  const prefix = `${artifactRoot.replace(/[/\\]+$/, "")}/`;
+  return (Array.isArray(listed?.paths) ? listed.paths : [])
+    .map((entry: string | { path?: string }) =>
+      typeof entry === "string" ? entry : String(entry?.path ?? ""))
+    .map((path: string) => (path.startsWith(prefix) ? path.slice(prefix.length) : path))
+    .filter((path: string) => path.length > 0 && path !== ".registered.json")
+    .sort();
+}
 
 function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
   const { bb, core } = deps;
@@ -84,6 +112,33 @@ function inspectionDeps(deps: CliSurfaceDeps): InspectionConfig {
         .catch(() => null),
     researchStrategySkill: core.trackCapabilities.researchStrategySkill,
     exploreTechnique: core.trackCapabilities.exploreTechnique,
+    ...runSeams(core),
+  };
+}
+
+/**
+ * The two run seams the playbook reads: the card's latest run for one stage, and
+ * the files inside a run directory.
+ *
+ * Stage-scoped on purpose. The root and the declared outputs are printed as one
+ * answer, so pairing a `verification` directory with `audit` filenames would be
+ * the archaeology this replaces, wearing a confident label.
+ */
+function runSeams(core: CliSurfaceDeps["core"]) {
+  return {
+    // The host lists the run directory so the worker does not `find` it.
+    listRunFiles: (artifactRoot: string) => listRunFiles(core.bb, artifactRoot),
+    latestRunForStage: (cardId: string, stage: string) => {
+      const latest = core.db
+        .prepare(
+          "SELECT artifact_root, recipe_id FROM execution_runs"
+          + " WHERE card_id = ? AND stage = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(cardId, stage) as { artifact_root?: string; recipe_id?: string } | undefined;
+      return latest?.artifact_root
+        ? { artifactRoot: latest.artifact_root, recipeId: latest.recipe_id ?? "" }
+        : null;
+    },
   };
 }
 
@@ -101,6 +156,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     bb,
     now: core.now,
     randomId: core.randomId,
+    actions: core.actions,
     getCard: core.getCard,
     cardWorkspace: core.cardWorkspace,
     updateCard: core.updateCard,
@@ -123,6 +179,7 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     passingReviewCovers: seams.passingReviewCovers,
     reviewFilesFor: seams.reviewFilesFor,
     pendingQuestions: core.fetchPendingQuestions,
+    askTimeoutMs: core.askTimeoutMs,
     ...questionReads(core),
     ...researchReads(core),
     gapState: gates.critiqueGapState,
@@ -131,13 +188,10 @@ function cliDeps(deps: CliSurfaceDeps): CliRunConfig {
     workers,
     presets: core.presetServer,
     ...decisionSeams(core),
-    preview: {
-      view: cardPreview.view,
-      start: cardPreview.start,
-      stop: cardPreview.stop,
-    },
+    ...previewSeams(cardPreview),
     draftingCommand: (argv, threadId) => core.drafting.command(argv, threadId),
     advanceCli: (argv, context) => execution.executionAdvance.cli(argv, context),
+    retryExecutionRun: (args) => execution.executionLifecycle.handlers.retryExecutionRun(args),
     scopeMapApproval: (cardId) => execution.approval.approveScopeMap({ cardId }),
     skillsDir: PLUGIN_SKILLS_DIR,
   };
@@ -208,6 +262,20 @@ function claimSeams(core: RuntimeCore) {
 }
 
 /**
+ * The preview seams: the same three reads the panel and the CLI share, named
+ * once so the CLI bag does not grow a second inline copy of the shape.
+ */
+function previewSeams(cardPreview: RuntimeCore["cardPreview"]) {
+  return {
+    preview: {
+      view: cardPreview.view,
+      start: cardPreview.start,
+      stop: cardPreview.stop,
+    },
+  };
+}
+
+/**
  * The decision seams: the review policy, the route a decision point resolves
  * through, and the two preset judges. A CLI verdict and an RPC verdict about
  * the same artifact must come from the same judge.
@@ -271,6 +339,7 @@ function scopeCommand(deps: CliSurfaceDeps): ScopeCommand {
     recordTrackableEvent: (event) => {
       recordTrackableEvent(core.db, event);
     },
+    logCardComment: core.ledger.logCardComment,
     // The scope-batch gates are dormant without a database: unit harnesses and
     // any caller that has no batch ledger pass through untouched.
     db: core.db,

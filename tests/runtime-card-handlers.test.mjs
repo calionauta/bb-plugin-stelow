@@ -1,150 +1,113 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGateHandlers, createCardAdvance } from "../server/runtime/card-gates.ts";
+import { createCardAdvance } from "../server/execution-advance-card.ts";
 import { createCardDiff } from "../server/runtime/card-diff.ts";
 import { createAuditTrailStatus } from "../server/runtime/card-audit-trail.ts";
 import { createCardReseed } from "../server/runtime/card-reseed.ts";
-
-function card(overrides = {}) {
-  return {
-    id: "card_1",
-    project_id: "proj_1",
-    name: "Card",
-    display_name: "Card",
-    prompt: "Build it",
-    intent: "feature",
-    status: "in-progress",
-    stage: "planning",
-    activity: "running",
-    kind: "build",
-    dir_hash: "hash_1",
-    worker_thread_id: "thread_1",
-    worker_preset_id: "preset_old",
-    workspace_kind: "exploratory",
-    workspace_path: "/project",
-    workspace_host_id: "host_1",
-    attachments: "[]",
-    last_error: null,
-    ...overrides,
-  };
-}
-
-function preset(id = "preset_1") {
-  return {
-    id,
-    name: id,
-    provider_id: "pi",
-    model_id: "model",
-    reasoning_level: "high",
-    permission_mode: "auto",
-    environment_kind: "host",
-    base_branch: null,
-    machine_id: null,
-    instructions: "",
-  };
-}
-
-const reseedProtocols = {
-  cardOwnerRules: "owner", neverSeed: "never seed", cliEquivalents: "cli",
-  reconProtocol: "recon", draftProtocol: "draft", turnDiscipline: "turn",
-  commitStyle: "commit", interfacePick: "pick", doneProtocol: "done", splitProtocol: "split",
-};
-const reseedErrors = {
-  cardNotFound: "missing", cardArchived: "archived",
-  workspaceUnavailable: "workspace", presetNotFound: "preset missing",
-};
-
-test("gate approval keeps artifact refusal and conflict publication behavior", async () => {
-  const calls = [];
-  let hasArtifact = false;
-  let conflict = false;
-  const handlers = createGateHandlers({
-    db: { prepare: () => ({ get: () => undefined }) },
-    bb: {
-      sdk: { files: {
-        mkdir: async (input) => calls.push(["mkdir", input]),
-        write: async (input) => {
-          calls.push(["write", input]);
-          return { outcome: conflict ? "conflict" : "written" };
-        },
-      } },
-      realtime: { publish: (...args) => calls.push(["publish", ...args]) },
-    },
-    getCard: () => undefined,
-    cardWorkspace: async () => null,
-    boardFromRoot: async () => ({ rootPath: null, workflows: [], error: null }),
-    loadBoard: async () => ({
-      rootPath: "/project",
-      workflows: [{
-        id: "sw_1",
-        name: "Card",
-        dirHash: "hash_1",
-        artifacts: hasArtifact ? [{ kind: "product-spec" }] : [],
-      }],
-      error: null,
-    }),
-  });
-  assert.equal((await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" })).error,
-    "The gate artifact does not exist yet.");
-  assert.equal(calls.length, 0);
-
-  hasArtifact = true;
-  conflict = true;
-  assert.equal((await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" })).approved,
-    true);
-  assert.equal(calls.some(([name]) => name === "publish"), false);
-
-  conflict = false;
-  await handlers.approveGate({ projectId: "p", workflowId: "sw_1", gate: "gate" });
-  assert.deepEqual(calls.at(-1), ["publish", "board-changed", { workflowId: "sw_1", gate: "gate" }]);
-});
+import { auditDeps, card, reseedDeps } from "./card-handler-fixtures.mjs";
 
 test("card advance preserves refusal, helper, respawn, update, publish order", async () => {
   const calls = [];
+  const services = {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async (card, stage, deferred) => {
+      calls.push(["respawn-via-band", card.id, stage, deferred]);
+    },
+  };
   const advance = createCardAdvance({
     getCard: () => card(),
+    isArchivedCard: (value) => value.status === "archived",
     cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
+    stateDir: async () => "/project/state",
     ensureArtifacts: async () => null,
     questionGate: async () => null,
     runHelper: async (args) => {
       calls.push(["helper", args]);
       return { code: 0, stdout: "advanced", stderr: "" };
     },
-    getReliablePreset: () => preset("preset_2"),
-    getCardPreset: () => preset("preset_old"),
-    respawn: async (...args) => calls.push(["respawn", ...args]),
     updateCard: (...args) => calls.push(["update", ...args]),
+    recordStageEvent: (...args) => calls.push(["stage", ...args]),
     publishCard: (cardId) => calls.push(["publish", cardId]),
+    requestGatePreReview: async () => undefined,
     errors: { cardNotFound: "missing", cardArchived: "archived", workspaceUnavailable: "workspace" },
-  });
+  }, services).advanceCard;
   assert.deepEqual(await advance({ cardId: "card_1", stage: "execution" }), {
     ok: true,
     stdout: "advanced",
     error: null,
   });
-  assert.deepEqual(calls.map(([name]) => name), ["helper", "respawn", "update", "publish"]);
+  assert.deepEqual(calls.map(([name]) => name), ["helper", "respawn-via-band", "update", "stage", "publish"]);
+});
+
+test("card advance refuses an archived card before any workspace or helper work", async () => {
+  // The vendored helper has no terminal guard — run by hand, `stelow advance`
+  // moves an archived card to the next stage (recorded in .auto/prompt.md). The
+  // host is the guard, so this test pins the ORDER, not just the answer: an
+  // archived card must be refused before the workspace is resolved, before the
+  // artifact/question gates run, and before `runHelper` is ever called. A guard
+  // that fires after the helper has already mutated state is not a guard.
+  const reached = [];
+  const guard = (name) => async () => {
+    reached.push(name);
+    return null;
+  };
+  const advance = createCardAdvance({
+    getCard: () => ({ ...card(), status: "archived" }),
+    isArchivedCard: (value) => value.status === "archived",
+    cardWorkspace: async () => {
+      reached.push("workspace");
+      return { path: "/project", hostId: "host_1" };
+    },
+    stateDir: async () => "/project/state",
+    ensureArtifacts: guard("artifacts"),
+    questionGate: guard("question"),
+    runHelper: async () => {
+      reached.push("helper");
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    updateCard: () => reached.push("update"),
+    recordStageEvent: () => reached.push("stage"),
+    publishCard: () => reached.push("publish"),
+    requestGatePreReview: async () => undefined,
+    errors: { cardNotFound: "missing", cardArchived: "This card is archived.", workspaceUnavailable: "workspace" },
+  }, {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async () => undefined,
+  }).advanceCard;
+  assert.deepEqual(await advance({ cardId: "card_1", stage: "execution" }), {
+    ok: false,
+    stdout: "",
+    error: "This card is archived.",
+  });
+  assert.deepEqual(reached, [], "an archived card touches no workspace, gate, helper, or row");
 });
 
 test("card advance question refusal is a negative control", async () => {
   let helperRan = false;
+  const services = {
+    prepareAdvance: async () => ({ route: null, note: "", evidence: "" }),
+    dispatchAdvance: async () => ({ stdout: "", error: null }),
+    applyBand: async () => undefined,
+  };
   const advance = createCardAdvance({
     getCard: () => card(),
+    isArchivedCard: (value) => value.status === "archived",
     cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
+    stateDir: async () => "/project/state",
     ensureArtifacts: async () => null,
     questionGate: async () => "Answer the open question first.",
     runHelper: async () => {
       helperRan = true;
       return { code: 0, stdout: "", stderr: "" };
     },
-    getReliablePreset: () => null,
-    getCardPreset: () => preset(),
-    respawn: async () => undefined,
     updateCard: () => undefined,
+    recordStageEvent: () => undefined,
     publishCard: () => undefined,
+    requestGatePreReview: async () => undefined,
     errors: { cardNotFound: "missing", cardArchived: "archived", workspaceUnavailable: "workspace" },
-  });
+  }, services).advanceCard;
   assert.equal((await advance({ cardId: "card_1", stage: "execution" })).error,
     "Answer the open question first.");
   assert.equal(helperRan, false);
@@ -272,17 +235,6 @@ test("audit trail status delegates classification and refuses unowned state", as
   assert.match((await unowned({ cardId: "card_1" })).detail, /ownership cannot be verified/);
 });
 
-function auditDeps() {
-  return {
-    bb: { sdk: { files: { read: async () => ({ content: "" }) } } },
-    getCard: () => card(),
-    cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/project/state",
-    runHelper: async () => ({ code: 1, stdout: "", stderr: "failed" }),
-    errors: { cardNotFound: "missing", workspaceUnavailable: "workspace" },
-  };
-}
-
 test("reseed preserves archived refusal and reclassified intent ordering", async () => {
   let seeded = false;
   const reseed = createCardReseed(reseedDeps({
@@ -333,50 +285,3 @@ test("reseed preserves archived refusal and reclassified intent ordering", async
   assert.match(calls[3][1].input[0].text, /each with its own --option labels/);
   assert.equal(calls[4][2], "bugfix");
 });
-
-function reseedDeps(overrides = {}) {
-  const noSql = { prepare: () => ({ run: () => undefined }) };
-  return {
-    db: noSql,
-    bb: { sdk: { files: {} }, realtime: { publish: () => undefined } },
-    now: () => 10,
-    getCard: () => card(),
-    cardWorkspace: async () => ({ path: "/project", hostId: "host_1" }),
-    workflowStateDir: async () => "/state",
-    readStateConfig: async () => ({ appetite: "Lean", reviewGates: ["diff"] }),
-    seedWorkflow: async () => ({ error: null, dirHash: "new", stateDir: "/state" }),
-    getPresetById: () => preset(),
-    pinCardPreset: () => true,
-    getReliablePreset: () => preset(),
-    presetParams: (value) => ({
-      providerId: value.provider_id,
-      modelId: value.model_id,
-      reasoningLevel: value.reasoning_level,
-      permissionMode: value.permission_mode,
-      environmentKind: value.environment_kind,
-      baseBranch: value.base_branch,
-      machineId: value.machine_id,
-      instructions: value.instructions,
-    }),
-    strategyList: () => [],
-    strategyRounds: () => [],
-    roundFile: () => "round.md",
-    roundStamp: () => "stamp",
-    roundRelativePath: (_state, _root, file) => file,
-    ensureArtifactParent: async () => undefined,
-    researchPrompt: () => "research",
-    explorePrompt: () => "explore",
-    attachments: () => [],
-    continuingEnvironment: async (_value, environment) => environment,
-    workerEnvironment: () => ({ type: "host" }),
-    replacePrepared: async () => ({ id: "thread_2" }),
-    resetAutoContinue: () => ({ count: 0, stage: null }),
-    updateCard: () => undefined,
-    recordThread: () => undefined,
-    lineage: async () => undefined,
-    publishCard: () => undefined,
-    protocols: reseedProtocols,
-    errors: reseedErrors,
-    ...overrides,
-  };
-}

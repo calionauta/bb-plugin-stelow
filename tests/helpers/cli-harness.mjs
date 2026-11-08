@@ -220,6 +220,7 @@ function hostDeps(calls, options) {
     reviewFilesFor: async () => options.reviewFiles ?? [],
     pendingQuestions: async () => options.pendingQuestions ?? [],
     pendingAsks: async () => options.pendingAsks ?? [],
+    askTimeoutMs: async () => options.askTimeoutMs ?? 60 * 60 * 1000,
     openExpiredQuestionIds: () => options.expiredQuestionIds ?? [],
     askContractChecklist: async () => options.contractChecklist ?? null,
     snapshotQuestionEvidence: async () => {
@@ -346,12 +347,8 @@ export function auditableBuildDone(overrides = {}) {
       [`${WORKSPACE}/docs/audit.md`]: "# Audit\n\nThe receipt body lives in the state dir.\n",
     },
     rows: {
-      verification_runs: {
-        command: TEST_COMMAND,
-        git_root: WORKSPACE,
-        head_sha: HEAD,
-        exit_code: 0,
-      },
+      verification_runs: { command: TEST_COMMAND, git_root: WORKSPACE, head_sha: HEAD, exit_code: 0 },
+      scan_runs: { scanners: '[{"name":"semgrep","ran":true}]', git_root: WORKSPACE, head_sha: HEAD, exit_code: 0 },
     },
     helper: {
       code: 0,

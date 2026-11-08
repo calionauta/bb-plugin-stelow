@@ -7,13 +7,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 1. Capture
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
-- **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
-  attachments, intent, planning depth, your review gates, agent preset from
-  the analysis band. Planning depth and review gates render as compact
+- **New card composer** (CreateBuildDialog, `createCard`). Prompt + file/image
+  attachments, intent, run knobs (quality, exploration count,
+  acceptance tests), your review gates, agent preset from
+  the analysis band. Knobs and review gates render as compact
   rows under the composer — title plus current value always visible, so
   consequential choices stay discoverable without a wall of option cards
   pushing content below the fold. One tap expands a row into the
   full controls (real inputs, min-h-11 targets) — no hidden select.
+  Quality defaults to production, exploration to 3 +
+  hybrid, acceptance tests to Strict (Advisory on experimental cards);
+  a legacy appetite default maps once (rigor always strongest), while a
+  newly seeded state file carries the knobs only — the deprecated appetite
+  alias is no longer written, and old state files still read it once. The
+  exploration row discloses which design archetypes each count runs
+  (2→A,D · 3→A,D,E · 4→A,B,D,E · 5→all, plus hybrid; 1 stays
+  model-chosen) behind a closed "Which archetypes" toggle with one-line
+  philosophies per letter.
   Review gates are a pure multi-select (product spec, interface
   direction, build scopes, technical plan, code diff) with Select all /
   Clear and one-click preset templates; nothing picked means Auto and the
@@ -153,9 +163,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   publication: the panel offers it precisely because it cannot fetch or push.
   The reading comes from the `publication_events` ledger and never from a live
   `git` call, because the board lists every card and a per-card git invocation
-  would turn a scroll into a spawn. The chip is amber, matching
-  `AttentionChip`: both mean this card wants a person, and a reader who learned
-  one tone should not have to learn a second for the same call to action.
+  would turn a scroll into a spawn. The chip is amber: it means this card wants
+  a person, the same tone the pause chip and the host-read marker use, so a
+  reader who learned one tone does not have to learn a second for the same call
+  to action.
 - **A stopped card says it stopped** (`errorActivityLabel`, `liveBorderClass`).
   A card whose worker halts recorded `activity: "error"` and put its reason in
   a comment the board never renders, so the board showed the amber attention
@@ -269,6 +280,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   points nowhere. The runtime validator now covers every field the published
   schema declares — including `nextAction`, which a receipt must fill, since a
   receipt with no next move is not evidence.
+- **Decision enforcement (receipts as permission).** Past decisions ride into
+  new work instead of waiting to be found: native execution start carries a
+  `decisionReads` context field listing the receipts covering the run's scopes
+  (capped at 5 with omitted ids named, empty when nothing covers). Contradicting
+  a live receipt requires a challenge naming it (`requiresChallenge`); stale
+  (version-moved) or superseded receipts route to reconfirmation, never to
+  challenge. Freshness is version-bound (`freshnessOf`: same versions and
+  untouched scopes is `current`, any bump or touched scope is `stale`, missing
+  versions is `unknown` — never invented). Supersession is an explicit chain
+  (`resolveLive`); two live receipts contradicting on overlapping scopes surface
+  as conflicts instead of letting the next agent pick arbitrarily. Legacy
+  receipts without the new fields fail closed: always served, always live.
+- **`bb stelow decide` (host-minted decision receipts).** The worker proposes,
+  the host records: `--selected` (required), `--rejected`, `--scopes`,
+  `--reason`, `--supersedes`, `--challenge`. The gate fires at write time —
+  reviving a rejected option or overturning a live pick without `--challenge`
+  naming the receipt refuses with the exact re-run flag. Each receipt stamps the
+  card's current `shape_version` as what it authorizes and leaves a trail
+  comment naming winner, losers, and receipt id. Receipts persist in
+  `<stateDir>/decision-receipts.json`, which native start loads fail-soft to
+  feed `decisionReads`. A fresh contradiction between two live receipts warns
+  on the spot (stdout plus trail comment naming both sides) instead of waiting
+  to be found, and the Scope X-ray header carries one decisions sentence
+  (live/stale counts plus any contradiction) — never a badge per scope.
 - **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
   `stelow-product-scope-mapping` method as one focused technique. It writes the
   readable `explore-scope-map.md` artifact first and may include validated
@@ -296,8 +331,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   document set on one card) rather than one spelling: requiring the word
   "Option" failed a faithful contrast that used "Proposal".
 - **One deliverable filename per technique, read by everything.** The Explore
-  deliverable is named once in the catalog (`primaryArtifact`) and resolved by
-  one function, because four surfaces used to disagree about it: the prompt that
+  deliverable is named once in the catalog (`primaryArtifact`) and resolved by one function (`lib/research-artifacts.mjs`), because four surfaces used to disagree about it: the prompt that
   tells the worker what to write honoured the declared name, while the card's
   declared capability, the review CLI's subject and the quality seal all assumed
   `explore-<id>.md`. For `scope-mapping`, which declares
@@ -306,6 +340,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   dead, and declaring a `primaryArtifact` was exactly what killed it. The prompt
   now asks the same resolver the checks ask, so a technique cannot switch its own
   verification off by naming its own file.
+- **The first reaction comes before the interface synthesis**
+  (`INTERFACE_PICK`). On card_g89gtmwt the alternatives were generated in one
+  pass and the gate question — the pick among A/B/C/H — was the first human
+  contact with them. `contrast.json` records that honestly (`firstReaction:
+  null`, with the note that the method asks for it before synthesis), but the
+  card had already spent the synthesis. The worker prompt now says "Ask the
+  first reaction before synthesis": the gate pick is a decision after the
+  comparison, never a substitute for the reaction the comparison was supposed
+  to answer. The native `interface-contrast` recipe still owns the full
+  sequence; this clause is the guard for the coordinator fallback.
 - **An option's letter never routes it to a different option's section.** The
   letter fallback exists for a brief that names its options by letter alone
   (`## Proposal A`), and it must not fire on a heading that *describes* an
@@ -374,7 +418,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are the workflow phases
+- **Board** (`BuildPanel`, `moveCard`). Columns are the workflow phases
   named by the synced catalog (analysis/planning/execution/review) +
   Done/Archived — the Bucket is not rendered as a column (its header button +
   gallery own it); cards sit in their stage's phase. Column headings are
@@ -398,14 +442,28 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   to what actually protects state — nothing takes a card *out* of `archived`,
   while a card already there accepts a drop on its own column without stopping
   a worker for nothing. A genuine move into another phase is untouched.
-- **One state language.** Build Kanban tiles and the open-card header use the
+- **One state language** (`components/board/board-cards.tsx`). Build Kanban tiles and the open-card header use the
   same ordered pills: board location, lifecycle state, worker state, then
   workflow type. The components and tones are shared; a generic “Status”
   label and the stage-as-status variant are not shown on the board, so a
-  card reads the same way before and after opening it. Tiles and the
-  breadcrumb name the card's project in one muted line — context without
-  clutter; list rows already carried it.
-- **Bucket** (one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
+  card reads the same way before and after opening it. One state, one chip:
+  a stalled card wears exactly one — a paused card is never `Paused` *and*
+  `Paused. Resume it.` on the same tile, which is what happened while two
+  components each read the same stall predicate and neither knew the other had
+  already said it. The predicate itself lives in `lib/card-stall.mjs`
+  (`cardIsStalled`) and is read by the chip, the amber border and the Resume
+  button alike, so a chip can never appear without its button behind it — a
+  chip with no action is a dead end, and a button nobody was told about is a
+  click nobody makes. Tiles and the breadcrumb name the card's project in one
+  muted line — context without clutter; list rows already carried it. A stalled
+  card's line also carries how long it has been waiting, as a compact duration
+  (`2d 4h`, `idleDurationLabel`) measured from `last_idle_at` — the clock the
+  host already uses to decide the card needs attention, not `updated_at`, which
+  a sync poll bumps without the card having moved. The exact timestamp is on the
+  element's own title: `Idle since 10/19/2026, 3:01:31 AM` in a `shrink-0` span
+  was wider than the 240px column's content box, so it could not shrink, could
+  not wrap, and took the project name out of the tile with it.
+- **Bucket** (`components/board/card-gallery.tsx`; one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
   leaving it is what starts the card. The Bucket renders nowhere as a column — each track header offers it
   as a button (count included) opening an expanded gallery modal — fixed
   dimensions (70vw wide, 85dvh tall, internal scroll), the same board tiles at the board's own column bounds
@@ -415,6 +473,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the board label map, never a pasted string. Moving a card that already has a
   worker into the Bucket is refused with a named exit (parking it would
   orphan the worker) — archive it or move it to a phase instead.
+- **The header explains the board at any width** (`PanelHeader`). Build,
+  Explore and Research each carried their own copy of one header, and the copy
+  turned from a column into a row at `sm` — 640px — which is the width where
+  the explanation and the action grid stopped fitting beside each other rather
+  than started. The explanation is the member that gives up its width, so on a
+  tablet the sentence that teaches the track wrapped into a tall narrow column
+  of text. The same defect reached a WIDE screen: the four action buttons
+  squeezed the explanation into a three-line funnel between the title and the
+  buttons ("o texto fica espremido e disputando espaço com os botões"). The
+  three copies became one component with one rule: **the explanation never
+  shares a row with a button, at any width.** Below `lg` it is a column in the
+  order title, explanation, actions; from `lg` it is a two-row grid — title and
+  a capped, wrapping action row on top, the explanation spanning both columns
+  in row 2 at `max-w-prose` with balanced wrapping. The actions are a
+  two-column thumb grid on a phone and a wrapping row above it. The scroll hint
+  stopped switching at `sm` too — a 768px tablet was told "Use Shift + scroll",
+  an instruction only a keyboard can follow, so the touch hint now runs to
+  `lg`. The loading skeleton reserves the same shape, so content landing does
+  not move the page. Pinned by `tests/panel-header-responsive.test.mjs`; the
+  header is shared, never re-spelled per track.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). Board filters are multi-select facets shared by
@@ -457,7 +535,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `prefers-reduced-motion` guards. Scope strips
   (`ScopeStrip`, shared by tiles and rows) and the build detail phase
   rail reuse the same counts, so progress reads as shape everywhere.
-- **Card keyboard.** Enter/Space on a focused card opens its detail;
+- **Card keyboard** (`components/board/board-cards.tsx`). Enter/Space on a focused card opens its detail;
   W opens its worker thread. The handler is bound to the card surface
   only, so typing in nested controls never navigates. Esc (or Back)
   returns to the board with that card focused.
@@ -467,10 +545,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on the needs-attention filter. One shared bar: project + attention are the
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-visit setup, not tours.** No stepper onboarding: Build, Research,
+- **First-visit setup, not tours** (`components/settings/preset-onboarding.tsx`). No stepper onboarding: Build, Research,
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
-  second step for Planning depth + your review gates as board defaults.
+  second step for run knobs + your review gates as board defaults.
   Every track ends on a Stay in touch step: report a bug or idea through
   the plugin repo, optionally follow along on X and LinkedIn.
   Preset setup counts across tracks: configuring on one tab silences the
@@ -479,7 +557,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Each track owns its preset band (build phases, research, explore),
   so changing one default never leaks into another. Manage agent
   presets groups bands by track (Research, Explore, Build) instead of a
-  flat phase list. Planning depth + your review gates stay where they
+  flat phase list. **Model tiers are bands of their own.** Upstream marks
+  every stage with a `model_hint` (`economy`/`standard`/`best`) and the
+  router grouped by *phase*, so one preset served `planning` — which holds
+  both `architecture` (best) and `gate` (economy). The hint is now a band
+  consulted ahead of the phase band, under its own "Model tiers" group;
+  a pinned tier wins for the stages declaring it and an unset tier falls
+  through to the phase preset, so leaving the group empty preserves the
+  previous routing exactly. Measured on this host, 23% of stage time sat
+  in `economy` stages on the default preset. See
+  [docs/model-tier-economics.md](./docs/model-tier-economics.md).
+  Run knobs + your review gates stay where they
   belong (per card in New issue → Settings, mirrored in the Build setup
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
@@ -490,7 +578,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and offers an explicit install or enable action without hiding the
   sequential fallback. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
-- **Sidebar badge.** Unresolved actions and unread completions; it always
+- **Sidebar badge** (`lib/plugin-update.mjs`). Unresolved actions and unread completions; it always
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
@@ -517,7 +605,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   team pointer (experimental): single-user bb, one bb per teammate,
   GitHub as the team room, linking the site team section and
   `docs/team-playbook.md`.
-- **BB Workflows status.** The About tab and first-visit setup identify the
+- **BB Workflows status** (`components/settings/about-panel.tsx`). The About tab and first-visit setup identify the
   built-in Workflows plugin as installed, disabled, starting, or ready. The
   English explanation names durable native execution, resume, cancellation,
   structured outputs, and safe fan-out; explicit install or enable actions
@@ -527,12 +615,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   running, starting, installed but disabled, or not installed, decided by one
   `bb plugin list --json` probe (`agentGraphStatus`, read-only: the panel
   detects and points to BB Extensions but never installs or enables anything).
-  While it runs, each card hero shows a benefit-worded "See live graph" action
-  beside "Open thread" that opens the card's own worker thread, where the
-  thread header holds the live graph — there is no cross-plugin thread-panel
-  seam (`openThreadPanel` is same-plugin-only) and no thread-addressed graph
-  route, so a deep link does not exist and the card never jumps to the generic
-  graph page. While it is absent, the card shows a one-line dismissable mention
+  There is deliberately no card-level "see live graph" button: no cross-plugin
+  thread-panel seam exists (`openThreadPanel` and `toPluginPanel` are
+  same-plugin-only) and Agent Graph exposes no thread-addressed route, so such
+  a button could only duplicate "Open thread" under a misleading label — and
+  did, until it was removed. Each hero keeps the single honest "Open thread"
+  action; the live graph itself opens from the thread header's own Agent Graph
+  button. While the capability is absent, the card shows a one-line dismissable mention
   pointing at About instead of a permanent badge.
 - **Open on an execution run lands where you can see it.** Each run's **Open**
   deep-links into the card at that run, and the link now has an observable
@@ -566,15 +655,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   as the page ages. The section header reports outcomes ("1 failed · 2
   succeeded") rather than an active count that reads "0 active" on a card whose
   four runs all finished.
+- **Empty agent dispatches get one retry, then a named cause.** card_g89gtmwt
+  lost three plan-critique runs with the host's agent call resolving empty
+  — twice instantly with zero calls recorded, once after review succeeded —
+  and the same signature appears on other recipes across threads and days:
+  flaky dispatch, not recipe content. An empty resolution now re-dispatches
+  once (a full re-run costs far more); a rejection is recorded per task and
+  folded into the thrown error, so the worker reads the cause instead of
+  the generic suffix. The established suffix survives only when no failure
+  was captured (a settled explicit failure), keeping the run-history
+  pointer.
 - **Every fact on the card has exactly one home.** A summary strip was added to
   the top of the open card and then removed again, and the reason is the rule
   worth keeping. Its four fields were the blocker, the stage, the file count and
   the scope tally — and all four were already on the card in a better place: the
-  hero's title is the authoritative state line ("Needs your decision — 2
-  questions", "Working — Execution"), the progress disclosure's hint is the
-  scope tally and its action button is the file count, both visible with those
-  sections closed. So the strip added a fifteenth bordered box and a ninth
-  border treatment to restate the card four times. The rule the hierarchy test
+  hero's title is the authoritative state line ("At Critique — your answer is pending",
+  "Working — Execution"), the question section owns the count of decisions it
+  holds ("Needs your decision — 2 questions"), and the progress disclosure's
+  hint is the scope tally with its action button as the file count, both
+  visible with those sections closed. So the strip added a fifteenth bordered
+  box and a ninth border treatment to restate the card four times. The rule the hierarchy test
   pins: a fact stated at the top of the card must be stated where it is DECIDED,
   not where it is convenient, and nothing above a section may repeat what that
   section's own hint will already say.
@@ -595,7 +695,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   contents, so the same "show more" rendered as a link in one place and as body
   text in another — the most expensive kind of duplication, because nothing in
   review catches a copy whose name says shared. Meanwhile `text-[11px]` appeared
-  111 times: the card had a real type scale, invented by whoever needed a small
+  107 times: the card had a real type scale, invented by whoever needed a small
   section heading first, and therefore invisible to review, because a reviewer
   cannot check a rule that was never stated. There are three disclosure families
   now — SECTION, ROW, LINK — and five named type steps, each with the job that
@@ -608,7 +708,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A `DESIGN.md` was written as the index, and its own rule is that a design
   rule with no test does not belong in it — a sentence in markdown does not
   intercept a commit, and `AGENTS.md` has said "min-h-11, cursor-pointer" for a
-  long time next to 81 raw buttons. A test does. The index itself then failed
+  long time next to 83 raw buttons. A test does. The index itself then failed
   that rule: nothing loaded it, three of its five distinctive claims were
   already in the test docstrings, and it could name a test that no longer
   existed without failing. Its six lines of unique content live in `AGENTS.md`
@@ -629,7 +729,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   implementation of the same pattern is correct only until one of them changes.
 - **History does not get the first screen.** Progressive disclosure only works
   when the default is closed and the reader earns the opening, and half the
-  sections were opening unconditionally. `startsOpen({ live, blocking })` names
+  sections were opening unconditionally. `startsOpen({ live, blocking })` (`components/disclosure.tsx`) names
   the only two exemptions — something happening right now, and something the
   reader is blocked on — and everything else is history that has to be asked
   for: the files the request NAMED, settled before the worker started; the
@@ -639,12 +739,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   surface, and closes once it is up — its URL is in the header either way. Every
   count stays in the hint, so closing a section costs the reader the list and
   not the number.
-- **Review tools lead a finished card.** The diff and the publication panel used
+- **Review tools lead a finished card** (`components/detail/build-detail-body.tsx`). The diff and the publication panel used
   to sit below Artifacts and the workflow map — six sections down, past the diff's
   own visibility gate — on the one card kind where they are the entire reason to
   open it. A completed card now leads with them; an in-flight card keeps them
   below, where there is nothing yet to review.
-- **A failure reaches the card as the reason the host gave.** Found in
+- **A failure reaches the card as the reason the host gave** (`server/workers.ts`, via `failureCauseFromEvents`). Found in
   production: card_k9gei1jy's own comment log read "Native scope-map failed with
   native status queued" and "Native interface-contrast failed with native status
   running" — two sentences that contradict themselves, from the same five lines.
@@ -710,8 +810,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   resolved history last, read; per-item **Mark as read** / **Show again**
   (the reversible pair, driven by read state); deep-links into card+event.
   The vocabulary is a notification's, never a card's: an item says
-  **Set aside**, not *Archived*, and its filter is **Read**, not *Archived* —
-  "archive" is a card's fate, and a button on a notice that reads as an
+  **Set aside**, not *Archived*, with its own **Set aside** filter, so Bring
+  back is reachable from the panel — without it a dismissal is a one-way
+  door. "Archive" stays a card's fate, and a button on a notice that reads as an
   action on the card it names is a wrong affordance. An item carries BOTH
   reversible actions, because **read and handled are different facts**: a read
   question that has not been answered still needs an answer, so it stays in
@@ -726,6 +827,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same action and review requests shown by **Needs attention**;
+  one timed-out question batch counts once, not once per sub-question: rows
+  from the same timeout share one notification keyed by the batch, while a
+  genuinely new batch (or a live interaction beside it) keeps its own row —
+  one card is one decision moment, not N identical pings.
   an unopened completion reads **Ready for review** — the request it actually is —
   until the Done card is opened, which is also what clears the card's Review
   check. Archiving a card closes EVERY open row, completions included, and
@@ -740,16 +845,49 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `resolved_at` as well as `read_at`, since only a card's death ends a review,
   not an unread row — this is the card's own attention
   marker on the board.
-  The toolbar is one row: four tabs with semantic status dots (amber waits,
-  emerald resolved, zinc archived, primary all) and a single Unread-only
-  checkbox — no detached Show label.
+  The toolbar is one row: five tabs with semantic status dots (amber waits,
+  emerald resolved, zinc read, zinc set-aside, primary all) and a single Unread-only
+  checkbox — no detached Show label. Severity chips that merely restate the
+  row's own label are suppressed (one signal, not two); chips that add
+  information — stall age, error counts — always survive.
+- **The list holds still while you read it** (`lib/inbox-stable-order.mjs`,
+  `components/panels/use-stable-inbox-order.ts`). Severity tiers order the list,
+  and the panel reloads on `card-state` / `inbox-changed`, so a severity bump —
+  an error repeating, a stall crossing 72h, a model judgement promoting an item —
+  used to move a row while somebody was reading the row below it. Every row
+  carries actions, so that is a click waiting to land on the wrong one. The order
+  is frozen for as long as the reader is looking: a row that gains severity keeps
+  its place and changes only its own content, a row that did not exist yet joins
+  at the end, and an **N updates · Show** control puts everything where it
+  belongs. Nothing is hidden — a held list that hid an arriving wait would be the
+  phantom-wait bug wearing a stability argument — and changing a filter adopts
+  that list's own order at once, because it is a list the reader asked for.
 - **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
   escalating first: stalls past 72h, repeated errors, and week-old actions
   outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
-  and an escalating mark. Tiers reorder only — the badge still counts
+  and an escalating mark. Tiers reorder only — while a reader is looking the
+  drawn order is held (see above), and Show re-applies them — the badge still counts
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Early question sync** (`kickQuestionSync`, `lib/question-sync-kick.mjs`).
+  `bb stelow ask` blocks inside the host call, so the inbox row used to wait
+  for the 45s reconcile tick while the card already showed the question —
+  Build read 0 behind a visible wait and the notification arrived a tick
+  late. The ask now kicks one sync ~1.5s after it starts (same kick when a
+  timed-out ask persists its rows): idempotent, fire-and-forget, skipped on
+  empty observations so it never resolves open rows as superseded, and the
+  tick stays the backstop. Answering publishes `inbox-changed` when rows
+  actually resolve, so clearance is visible immediately instead of at the
+  next tick — a silent answer (unknown ids) stays silent.
+- **Verify blockage** (`VerifyBlockageNotice`, `verifyBlockage` RPC,
+  `lib/verify-blockage.mjs`). A card parked on open questions after a failed
+  verify names whether the failure is still the one to act on: the last test
+  run's HEAD versus the checkout's HEAD now. `stale` (tree moved — resume to
+  re-verify), `confirmed` (failed on this exact checkout — re-running changes
+  nothing), `clear`/`unknown` (renders nothing). The decision stays human;
+  the notice only says which action is worth taking. Asked lazily on the
+  decision hero, never on the open-card path.
 - **Severity bump** (`maybeBumpSeverity`, Inbox severity router). With the
   router in Decision API mode, the reconcile sweep judges up to 3
   unjudged routine items per tick (older than 5 minutes) with one yes/no
@@ -826,7 +964,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
     running `git reset --hard`, or any other command that rewrites a shared tree.
   - It is a **report, not a guard**: it refuses nothing, resolves nothing, and
     changes no decision.
-- **Question recovery.** A worker may wait only for a real card form: a live
+- **Question recovery** (`components/conversation/question-batch.tsx`). A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
   once when no form is visible, while the host rejects actual duplicates.
@@ -842,8 +980,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   retry loop) and gets a paused Inbox event naming the holder and the
   automatic unlock (release or lease expiry), and the host resumes exactly
   the waiting cards with an agent-only nudge when the files free. Done,
-  archive, cancel, and delete release every claim; expired leases are
-  reaped on the reconcile sweep.
+  archive, cancel, and delete release every claim; a lease held by a card the
+  host still supervises is renewed on the reconcile sweep (a scope that runs
+  past the 30-minute TTL keeps its files), so expiry and therefore the
+  automatic unlock reaches only a holder nobody is watching: a card whose
+  thread is gone, whose retries are exhausted, or that reached a terminal
+  status. A lapsed lease that is taken over is recorded — the acquirer names
+  the previous holder in `stolen[]` and the card gets a trail comment.
 - **A lock is visible on the card, not only in the Inbox.** The open card
   says which files a scope holds, by name, and which file another live card
   is holding from it. It used to say "files claimed" and never say which
@@ -860,7 +1003,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the muted grey that "files claimed" and "no live file claim" once shared,
   which made a defect read as a footnote. A scope with no state dir has an
   unknown claim, and unknown is never a fault.
-- **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
+- **Split choices are unambiguous** (`components/conversation/batch-answer-body.tsx`). Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
   answer even if it did not come from the panel. The split summary states
@@ -870,16 +1013,65 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   forms, so recovery never changes the decision. As choices change, a live
   outcome notice names whether the parent stays, or whether selecting every
   delivery will archive it after creating the child cards.
-- **Question presentation is semantic and language-consistent.** Every
+- **Question presentation is semantic and language-consistent** (`lib/question-presentation.mjs`). Every
   question carries a `standard` or `split` kind from the host interaction
   through durable recovery (with a safe legacy fallback). Shared presentation
   copy is English-only. Workers author question text, option labels, and
   descriptions in English; the host rejects Portuguese structured content
   before it reaches a card. Controls, recovery status, and split consequences
   therefore never guess a locale or mix languages.
-- **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
+- **Unread is a view, not a work state** (`components/panels/inbox-panel.tsx`). Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.
+- **The answer and its wake are two facts** (`lib/answer-delivery.mjs`,
+  `server/runtime/answer-resume.ts`). Both doors commit the answers first and
+  wake the worker second, and the host answers a dispatch three ways: it sent
+  it, it queued it behind a hold, or it refused with its own words. The door
+  used to await a raw `threads.send` and throw that away, so a queued dispatch
+  read as a resume — the card claimed `running` for a turn nobody had started,
+  and the row resolved whether or not anything was woken. The recovery door was
+  worse: it swallowed a failed send with `.catch(() => undefined)`. Now one
+  verdict travels. `sent` adds no line, because the card's own activity is the
+  receipt. `queued` puts the card on `held` and shows the host's hold sentence,
+  which already names what releases it and that the reader is not the one who
+  has to. `refused` leaves the card `idle` and shows the host's reason plus the
+  exit — *Resume the card; the answers do not need re-entering* — because a
+  refusal without an exit is a deadlock with a good error message. The verdict
+  rides the RPC result (`delivery`, `deliveryLine`) and the CLI's stdout and
+  `--json`, because both doors reach the same handler and a fact only one of
+  them knows is a fact the other breaks. A dispatch nobody could read renders
+  as "the host did not say", never as delivered: the answers are certain, the
+  wake is not.
+- **A comment written while answering rides the answer** (`lib/answer-feedback.mjs`,
+  `server/runtime/answer-feedback.ts`). The comment box on an artifact is how a
+  reviewer says *why* before saying *what*: "approve, but rewrite this
+  paragraph". Sending it on its own woke the worker mid-read, so the picks
+  arrived as a second turn and the first turn acted on half a thought — two
+  resumes for one decision moment. Now a comment written while the card waits on
+  an answer (activity `awaiting-answer`, or an open recovery question) is written
+  to the card as always and left uncarried; the answer's resume prompt carries it
+  under **Feedback written while answering**, before the worker acts, and only a
+  dispatch that actually landed marks it carried. An answer that resumes a native
+  run instead of the thread carries the same block as `context.resumeFeedback`,
+  beside the `resumeAnswers` a resume already sends — the run takes decisions,
+  not prose, so the field is the protocol surface for it, and the port's own
+  "resumed" report is what marks the comments carried there. Nothing is lost when no answer
+  comes: the comment is on the card, and it rides the next answer instead. The
+  composer stops saying "sent to the agent" when it was only saved — it says the
+  comment will go with the answer, that the host is holding it, or that nothing
+  was sent at all (a scope/task comment, or a card with no live worker). The store is one
+  additive column (`comments.delivered_at`), so a held comment survives a crash,
+  a restart, and a card archived by mistake.
+- **A refused resume still settles what was answered** (`server/runtime/answer-resume.ts`,
+  `answerQuestions`). An answer that resumes a native run can be refused by the
+  run's own contract — the boundary moved on while the person was deciding. The
+  answers were recorded before that attempt, so returning early left a phantom
+  wait: the card kept `awaiting-answer` and its Inbox row could not be answered
+  again (a second attempt hits "no question was answered"). The door now settles
+  the questions, the row and the card, and carries the refusal as the delivery
+  verdict — the line quotes the run's words and names the exit, **Resume the
+  card**. The same rule as a refused thread dispatch: the answer is a fact, the
+  wake is a separate one.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with
@@ -888,17 +1080,28 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Other on ordinary questions, and explicit Skip (AI uses its
   recommendation). One atomic
   submit answers everything — one worker resume, one inbox resolution. The
-  final submit action appears only on the last step and remains unavailable
-  until every question has a decision (answer or explicit Skip); timed-out
-  batches follow the same all-or-nothing rule, so recovery never resumes work
-  from partial context.
+  submit action appears on the last step and, once every question has a
+  decision, on any step the reader navigated back to; it stays unavailable
+  until the whole batch is done (answer or explicit Skip). Timed-out batches
+  follow the same all-or-nothing rule, so recovery never resumes work from
+  partial context.
   Workers batch independent questions into one `bb stelow ask` call
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
-  Timed-out asks stay answerable on the card, batched the same way.
+  Timed-out asks stay answerable on the card, batched the same way — inside the
+  **open "Waiting for you" decision section**, because the card is still waiting
+  on those decisions even though the worker already moved on: the section says
+  so in its own words (every option you picked is kept, and a later answer
+  cannot revise work already resumed) and the funnel inside is Submit-only, with
+  no skip —
+  except on terminal cards: a completed or archived card serves no expired
+  questions (`isTerminalCardStatus`), because its open asks closed with it and
+  submitting would wake nothing the card can still use. Answered ones stay
+  readable through the trail comments.
   **Answering is also programmatic**: `bb stelow answer --card <card_id>
   --question <question_id> --answer <text>` (repeat pairs; one
-  `--question` may take several `--answer` values for a multi-select)
+  `--question` may take several `--answer` values for a multi-select;
+  `--answer ""` on a multiple-choice question answers none)
   applies the card form's exact rules — atomic per door, contract consumed,
   outcome written to the trail, worker resumed — so a scripted run or a test
   can clear a wait without a browser. A recovery question is addressed as
@@ -909,6 +1112,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   against the stage checklist, recorded raw when unreadable); answers
   matching a declaration name it in the trail, undeclared flows behave
   exactly as before.
+  **Opt-out confirms preselect**: `--selected` after an `--option` starts it
+  checked (multi-select groups only — single-select refuses it, and stray
+  flags read as unchecked, so nothing confirms silently). The card renders
+  preselected rows checked; unchecking removes, and the submit carries what
+  remains. Empty means none on multiple-choice: submitting a checkbox list
+  with nothing checked records an explicit none (trail reads "skipped — use
+  your recommendation"), so no confirm ever forces a pick nobody wants; a
+  single-select radio with nothing picked stays unanswered. Scope and IN/OUT confirms use this form: every mapped scope (or
+  IN item) starts checked with its outcome as preview, unchecking removes.
+  Scope confirms carry the machine tag `--tag scope-adjust`, and the host
+  enforces the shape instead of trusting prose: every group must be
+  `--multiple`, at most six options each, at least one `--selected`
+  somewhere — and in review mode Auto the ask is refused outright, because
+  there the worker adjusts scope itself and never parks waiting. An unreadable
+  state never blocks: unknown modes fail open.
   **Asking whether something is pending needs no question.** A worker on
   card_48uuhus1 checked by firing `--question "ping" --option "a"` at a human,
   because no read-only verb reported the answer. `bb stelow status` now
@@ -916,8 +1134,26 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   probe's real answer. A card whose live read fails omits the column entirely
   rather than printing `0`: an unknown is not a zero, and a zero is the claim
   that stops a worker from asking the one question it needed to ask.
-  A short preview renders INLINE with no click: on a real card the previews were 27-104 characters and every one sat behind a disclosure, so clicking revealed two lines that said no more than the label beside it — two clicks for less information. A preview exists so a reader can judge an option without opening anything, and a long brief still collapses. The staleness notice leads with what it MEANS ("a document this relies on was revised — check it before answering") and collapses the touched file paths behind a "N files touched" summary, so a seven-path list no longer pushes the question off the screen. Options carry descriptions plus optional detail: `preview` (inline
-  glance, expandable) and `artifact` (workspace-relative path opening in
+  A preview is CLOSED by default, and closed means the control and nothing
+  else: no peek, no faded fragment, no "What this looks like" label above it.
+  One labelled "Show preview" button (the shared chevron, `aria-expanded`)
+  opens the panel; the label and the full evidence appear inside it, and the
+  same control becomes "Hide preview". A fenced ```mermaid preview uses "Show
+  diagram" and draws whole when opened — a partial diagram is not a useful
+  glance, and four diagrams open at once made the question taller than the
+  screen. A text wireframe keeps its whitespace in a monospace block; the
+  mermaid block uses the same bundled pele renderer as the brief. **The option
+  description is rendered whole.** The card no longer cuts it at 140 characters
+  and repeats the remainder behind "Full detail": the worker is told at
+  generation time to keep it under 500 characters, and the row shows all of it.
+  `splitProseSummary` remains the rule for the surfaces that still summarize —
+  the inbox row and the card's own request description — and no longer applies
+  to an option. The staleness notice leads with what it MEANS ("a document this
+  relies on was revised — check it before answering") and collapses the touched
+  file paths behind a "N files touched" summary, so a seven-path list no longer
+  pushes the question off the screen. Options carry descriptions plus optional
+  detail: `preview` (inline evidence, never a second copy of the description)
+  and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
   to no affordance and never block answering. Within one question, an
@@ -925,8 +1161,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   sibling, so the approval option is never the only one blind to the
   document under decision (`inheritAskArtifact`, unit-tested); options
   with their own documents — competing proposals — keep them. An inherited
-  document is LABELLED as such: the control reads "Shared brief: <file>"
-  rather than "Open document", because a filename hidden in a hover-only
+  document carries a small Shared chip beside the uniform "Open: <file>"
+  control (one verb everywhere — two verbs for one action read as two
+  different actions), because a filename hidden in a hover-only
   tooltip is not a label, and the same brief on four rows reads as four
   pieces of evidence about four different options. Options that brought their
   own document say so instead. The same marking covers BOTH ways a document
@@ -935,7 +1172,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Marking only the first fixed nothing: on a real card the worker attached no
   document, the host injected the stage's own `interfaces.md` into all four
   options, and every row claimed it as its own evidence.
-- **An option opens at its own section.** A combined brief holds every
+- **A card question is this plugin's own** (`pendingAsks`, `lib/ask-timeout.mjs`).
+  The host returns every pending interaction on a worker thread, including the
+  built-in `ask-user-question` tool's, and both are `origin.kind: "plugin"`. The
+  Inbox now selects this plugin's id and the `stelow-question` renderer, so a
+  native question can never be rendered with Stelow's shape or answered with
+  Stelow's value shape; `bb stelow ask` remains the card question command. The
+  question timeout is a plugin setting (**Question
+  timeout**, 30 minutes–7 days; default **1 hour**) instead of an undeclared
+  daemon environment variable; `STELOW_ASK_TIMEOUT_MS` remains a test/ops
+  override and a malformed value falls back to the setting instead of becoming
+  `NaN` and stamping an unreadable recovery row.
+- **An option opens at its own section** (`components/detail/option-section.tsx`). A combined brief holds every
   proposal in one file, so opening it from an option landed on the first line
   — which is precisely not that option. On a real card a reader opened the
   brief from "Hybrid A+C" and found proposals A and B: the hybrid is the last
@@ -953,20 +1201,130 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the rendered DOM — a non-markdown file, a renderer that flattens headings, a
   partial load — the option's section is lifted and shown above the document
   instead, so the reader gets their option by either route.
+- **Conditional options declare themselves** (`--needs-note`). A pick that
+  needs elaboration ("trim the scope — tell me which") marks the option,
+  and submit waits until the note box carries the missing piece — one
+  shared rule (`submitBlockReason`) for the footer gate and the per-note
+  hint, so they can never disagree. The flag travels explicit-true-only
+  like preselection; pick and note compose in the submitted answers
+  (except split proposals). The note box is per question — each
+  sub-question in a batch carries its own — while `--needs-note` is per
+  option, so only the picks that need elaboration block submit. The row
+  itself carries a "Needs a note" chip, so the requirement is visible
+  before picking and never depends on worker-authored descriptions.
   Option
   shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
-- **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
-  with receipt files; review entry surfaces the artifact under decision. The
-  check walks the workflow's whole state dir, so the spec the layout wrote to
+- **One brief, open in the viewer** (`EmbeddedBrief`, `sharedQuestionArtifact`).
+  Gate approvals attach the same document to every option, so per-row Open
+  buttons repeated one file N times — friction for zero information. When
+  every option carries the same document (resolved path wins, so two
+  spellings still match), the question shows one button above the rows —
+  "Read the brief · <file> · Open ↗" — and the rows hide their buttons;
+  genuinely different documents keep per-row buttons. It is a button, not a
+  disclosure: the old accordion rendered the same document inside the
+  conversation, with its own scroll box, no diagrams, no links between the
+  stage's files, and an underlined "Show brief" summary that read as
+  decoration. The shared viewer is the only surface that can render a diagram,
+  follow a relative link to `alternatives.md`, and quote a passage back to the
+  agent, so the row names what the click does. **When the attached document
+  names none of the options and a stage document names some, the host opens the
+  latter** (`artifactCoverage` in `server/runtime/ask-artifacts.ts`): on
+  card_g89gtmwt the worker attached `interfaces.md`, the contrast receipt,
+  while `alternatives.md` held every wireframe the question offered. A
+  documented approval ("Approve"/"Request changes") names neither, and no
+  sibling names it either, so that attachment survives unchanged. One decision
+  point renders both halves, so they can never disagree. Threads (no viewer)
+  keep the filename span.
+- **Human titles on question copy** (`applyScopeLabels`,
+  `lib/scope-labels.mjs`). Scope IDs are worker vocabulary; questions used
+  to address them at humans ("A5 — checkout", "Serves A5"). Templates now
+  lead with outcomes and titles while IDs stay in artifacts and receipts,
+  and the card maps any straggler at render from the approved map, the
+  draft, and the tracking scopes (first title wins, unknown IDs pass
+  through untouched). Display only: receipts, contracts, staleness, and
+  the answer doors all keep the exact worker text.
+- **Decider language on questions** (ask-patterns rule 11, `decider-language`
+  test). card_g89gtmwt asked a strategy question that read like a recon
+  log: no recommendation, a three-sentence Context dump, and the
+  methodology brand quoted from the template. Question text is now short
+  plain words (who gains what) — no stage slugs, file handles, recon
+  counts, or brand names; documents are named only to open or approve,
+  and evidence travels in preview/artifact. Pattern 1 requires a
+  recommendation and two sentences of context max. The user-facing
+  vocabulary is stelow's own (`shaping`, not the method's brand); skill
+  names, track prompts, and the Explore picker keep theirs (a migration,
+  not a wording fix).
+- **Pick composes with note** (`toggleSinglePick`). Option and custom text
+  used to clear each other on single-select, so conditional options
+  ("trim the scope — tell me which") submitted bare were wasted rounds and
+  the note had nowhere to ride. Now the pick toggles without touching the
+  text and both travel in the submitted answers (resume text and trail
+  record them together); split proposals keep their exclusivity, where a
+  keep choice contradicts deliveries. The "Other" box is now a note box:
+  "Note — or your own answer instead".
+- **One choice means one** (`lib/question-single-pick.mjs`). The note/pick fix
+  above took single-select exclusivity with it: the renderer announced
+  "choose one" (`role="radiogroup"`) while the handler appended every pick, so
+  two mutually exclusive options could be submitted together and reached the
+  worker as two separate decisions. Choosing a second option now replaces the
+  first (and re-picking the current one clears it), and the server refuses a
+  batch that arrives with two declared picks — so a stale bundle or a retried
+  request cannot slip past the UI. A pick plus a note still passes, which is
+  the composability the earlier fix was for; the guard counts declared option
+  labels, so free text can never trip it.
+- **A radio stays a menu, not a questionnaire** (`lib/ask-shape.mjs`). The
+  option ceiling and the recommendation rule used to apply only to tagged
+  scope confirms, so any other question could carry an unbounded list — one
+  critique card compressed eight findings into a single-select with seven rows,
+  five of them marked "(Recommended)". Now every ask is checked: a radio over
+  six options is refused (with the multi-select redirect named), and a
+  single-select question may recommend only one of its own options, because a
+  marker that appears on most rows tells the reader nothing. Multi-select
+  confirms are untouched — seven or twelve rows is normal for "keep these IN?".
+- **A disabled submit says why** (`lib/question-progress.mjs`). The submit
+  button is disabled by two independent conditions, but only the needs-note
+  refusal had copy: an unanswered batch showed a dead button with no stated
+  cause, and the progress counters that used to carry "N questions remain"
+  were removed with the panel frame. The footer now names how many questions
+  are still open, and names the door the reader actually has: answering, and
+  skipping only where the skip control is rendered (the recovery form shows
+  none, so it never promises one).
+- **Gate receipts, one writer** (`server/runtime/gate-vocabulary.ts`). A gate is
+  approved by its receipt file under `.stelow/approvals/<dirHash>/`
+  (`gate-approved.md`, `int-gate-approved.md`, `plan-gate-approved.md`,
+  `diff-gate-approved.md`), and the host marks the gate approved from that
+  file's presence — it reads the directory, it does not write to it. The
+  worker writes the receipt, the same way it writes its findings, so the fact
+  has exactly one author and one home. The vocabulary — which artifact a gate
+  reviews and which receipt it carries — lives once, here. The read walks the
+  workflow's whole state dir, so the spec the layout wrote to
   `plans/spec-product_<v>.md` is found: “the gate artifact does not exist
   yet” now means the document really is missing.
-- **Workflow classification.** Correct the type freely while a Build card
+- **Workflow classification** (`server/runtime/card-mutations.ts`). Correct the type freely while a Build card
   is in triage (`updateCardIntent`). After triage, **Card actions →
   Reclassify workflow…** starts a fresh worker from triage on the new route;
   it never changes only the label beneath an existing plan.
+- **A question can name the cell it came from** (`lib/contrast-artifact.mjs`,
+  `lib/premise-staleness.mjs`). The scope stage writes `contrast-matrix.md`
+  into its state directory: places crossed with the states they can be in, each
+  cell listing the affordances a reader can act on there, in one
+  `stelow-contrast` fence. The playbook names the file (the state-dir registry
+  lists it beside `scope-map.json`), and the host parses it back to the exact
+  matrix — a filled matrix asks nothing, a blank cell asks one question, and a
+  shared affordance asks whether it is one feature or two. Every derived
+  question carries two facts it cannot lose on the way to the store: its
+  `premise` (the cell, `cart|paid`, or an artifact line,
+  `artifact:plans/spec-tech.md:118`) and its `reversal_cost` (low/medium/high
+  plus one sentence). A derived question without a premise is refused by name,
+  because a question nobody can locate is a complaint with options. An answer
+  whose premise a rewind removed is still recorded — it was a human decision —
+  but it claims no contract and the answer trail says which cell is gone
+  ("Stale decision: its premise no longer exists (cart|paid)"). Questions
+  recorded before the premise existed keep working untouched; they simply have
+  no ground that a rewind can take away.
 
 ## 4. Follow one card
 *When I open a card, I want the full picture without reading the thread.*
@@ -979,8 +1337,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   reads Not started instead. The same stage/type summary is reused in the open card. A blue
   live border means a worker is executing; an amber attention border means the
   card is waiting on the user, so neither state needs another tag. Idle
-  recovery is a separate Resume action. Tiles signal failures with the Failed
-  chip only — the reason stays one hover away on the chip, while the full error
+  recovery is a separate Resume action. Tiles signal failures with one failure
+  chip in two sources: `Stopped with an error` when the worker thread stopped,
+  `Run failed` when the card's newest host run failed — the worker wins when
+  both coincide, and the run failure then lives only in Execution runs. The
+  reason rides the chip's hover tooltip, a tap-or-keyboard panel anchored to
+  the chip, and the card's accessible description, while the full error
   text and its retry live in the open card. The same compact hierarchy is reused
   in Build, Research, and Explore, so narrow columns do not turn a title or a
   workflow state into an ambiguous, clipped chip.
@@ -1006,13 +1368,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   render sites and no owner, so the timeline chip once told readers to find the
   definition in another component. A test fails on a second reader, which is the
   only way the absence of an owner can be caught.
+  The chip states carry words and glyphs, never colour alone, and they stay
+  readable: skipped/off-route chips use full muted text (70% opacity measured
+  3.07:1), the current chip keeps its purple ring and pulse with foreground text
+  (the old purple text measured 3.80:1), and the phase labels use the named
+  section step instead of a 10px label.
 - **Workflow progress** (`ScopeProgress`, `ScopesList`) sits beside the stage
   section, never pretending to be the same thing: progress is where this card
   is, the stage section is which stage it is on and what that stage produces.
   Its regions — checks, file claims, the approved scope map, scopes, and the
-  files named in the request — each carry their own heading
+  files named in your request — each carry their own heading
   (`ProgressRegion`), because one label over six unrelated things described
-  none of them. Regions are named, not boxed: `SECTION_SURFACE` is reserved for
+  none of them. A **scope draft preview** renders in the same place while no
+  approved map exists: same graph, draft tone, "not approved" said out loud,
+  never competing with the real map once it lands. Regions are named, not boxed: `SECTION_SURFACE` is reserved for
   card-level sections, and a nested surface is the "eight different shapes"
   defect one level down.
   Before scopes exist the live checkpoint pill rides the subtitle line
@@ -1041,8 +1410,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Before scopes exist the live checkpoint pill rides the subtitle line
   (what the target stage produces). Entering execution with zero synced
   scopes while spec-tech carries scope blocks refuses loud instead of
-  running untracked (`executionScopeRefusal`, `doneScopeSyncRefusal` in
-  `lib/spec-scope-reader.mjs` + `lib/completion.mjs`): a spec written with
+  running untracked (refusals built by `diagnoseScopeSync` in `lib/spec-scope-reader.mjs` + `doneEligibility` in `lib/completion.mjs`): a spec written with
   human headings (`### SCOPE-N:`) instead of machine blocks (`[SCOPE-N]`)
   is refused with the rewrite + `bb stelow sync-scopes` redirect, and
   `blockedBy` cycles refuse naming the loop instead of stalling. Scopes
@@ -1076,7 +1444,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `DanglingDependency`, `UnclaimedExecution`, `ClaimLapsed`) derived generically per kind
   (`trackable-evidence` over a flattened id registry, sidecar paths resolved
   from the contracts table) — a scope done with an unverified Record blocks `done`
-  with the checklist redirect. All derived paths (plans, scopes, context)
+  with the checklist redirect. Whether it blocks or only warns is the card's
+  Acceptance-tests knob (Strict / Advisory / Off, picked at creation):
+  Strict refuses the close without red proof, freeze, and baseline;
+  Advisory warns and closes; Off skips the gate. All derived paths (plans, scopes, context)
   resolve through one layout rule (state-dir areas), so `state.md`,
   `stelow.json`, and every other artifact share the same naming strategy
   instead of per-callsite joins. The timeline never paints everything
@@ -1097,19 +1468,53 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
    timed-out questions inline.
 - **Files named in your request.** The card lists only the paths the
   request spells out that actually exist in the workspace (never a basename
-  guess, which used to surface an unrelated file): six at most, and nothing
+  guess, which used to surface an unrelated file): six at most (`server/runtime/mentioned-files.ts`), and nothing
   at all when the request names none.
-- **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
+- **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`, `listCardFiles`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
-  to the agent, gate question answerable inline. A generated interface
+  to the agent, gate question answerable inline. **The viewer reads the
+  stage, not only one file.** It lists the viewable documents in the current
+  file's directory as chips (the current one marked `aria-current="page"`),
+  and a relative Markdown link opens that file in the same dialog; Back
+  returns to the document the reader came from. This is what makes a gate
+  brief usable: `interfaces.md` is the receipt of the contrast, and
+  `alternatives.md` is where every wireframe lives. Reads and listings share
+  one workspace jail (`server/card-files.ts`), so a link cannot reach outside
+  the checkout, and dotfiles and images never appear in the picker. A generated interface
   mockup (`.html`/`.htm`) renders as the PAGE, not its source: an option
   under decision is a layout, and source text is the one thing that cannot
   answer it. The decision is the path alone (`artifactRenderKind` in
-  `lib/artifact-render.mjs`), and a mockup is framed under
+  `lib/artifact-render.mjs`), and the row's manifest label is never consulted —
+  a real card registers `label: spec tech v1` beside its path, and a title has
+  no extension to read, so asking it rendered a document as raw text. A mockup
+  is framed under
   `allow-scripts` without `allow-same-origin`, so a worker-authored page
   runs without reaching the reader's bb session. A truncated file is
   shown as source instead, because a partial page is a broken layout
   presented as evidence — and it says so rather than failing silently.
+  A derived diagram source (`.mmd` — breadboard projections) renders inline
+  with the bundled pele renderer (exact pin v1.8.0 in `dependencies`, so bb
+  installs it together with the plugin — no user install step) with pan-and-zoom
+  at view time (buttons, Ctrl/Cmd+wheel at the pointer, drag while zoomed; the
+  plain wheel keeps scrolling the page) and the source kept beside it; `scope-map.json` (and drafts) derives its flowchart the same
+  way at view time (`scopeMapToFlowchart` in `lib/scope-map-diagram.mjs` — the
+  map is the source of truth, dangling dependencies, id collisions and
+  dependency cycles refuse into source): each node carries its outcome as a
+  second line and scopes group into Wave subgraphs by topological depth, so
+  the picture reads as execution order without inventing anything the
+  contract does not say; and diagrammable Markdown (spec-tech, architecture, interface)
+  renders its first fenced ```mermaid block only when the renderer accepts it
+  (`extractFencedMermaid`, `supports()`-gated at view time;
+  `derivedDiagram` in `lib/artifact-diagram.mjs` owns the decision).
+  `breadboard.json` deliberately derives nothing client-side: its canonical
+  `.mmd`/`.html` views already exist beside it. The sibling `.html` page stays
+  the durable view (`diagramRendererStatus` RPC reports bundled-vs-absent in the
+  About tab's Diagram renderer card). There is no SVG artifact: the source is
+  the file and the picture is a view, so a renderer that is absent or refuses the
+  source falls back to the source text plus a playground link instead of a blank
+  box. Dependencies, the two install symptoms that look like code bugs, and this
+  rendering contract are in
+  [`docs/dependencies-and-diagrams.md`](./docs/dependencies-and-diagrams.md).
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
@@ -1130,6 +1535,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   serve as the review document, and carry the `evidence` role
   (`artifactRole`, `splitArtifactsByRole` in `lib/artifact-roles.mjs`) —
   the host's `audit.md` stays a deliverable beside them.
+- **A reviewed mark is bound to the version you read** (`markArtifactReviewed`,
+  `unmarkArtifactReviewed`, `artifact_reviews`, `reviewState` in
+  `lib/artifact-review.mjs`). Each artifact row can be marked reviewed, and the
+  mark stores the artifact's `generatedAt` — the timestamp the row already
+  displays — rather than a boolean. A file that changed after the mark reads
+  **Reviewed before the file changed**, leaves the reviewed count, and asks to
+  be reviewed again; the section summarizes `3 of 7 reviewed`. A stale row
+  also offers **Clear**, so the reversible pair is reachable where it matters
+  most. The server
+  resolves the fingerprint from its own artifact list, so a client cannot make
+  an old mark read as current, and a mark whose file is gone is ignored rather
+  than resurrected. A research card's fraction counts only the rows its
+  Artifacts section actually renders — a round can outlive the artifact list it
+  was indexed from — and an archived card shows the marks as facts without
+  offering a control every click would have refused. The mark refuses nothing,
+  answers no inbox event, and moves no stage: it is a claim about a file, and
+  clearing it is the person's door back.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
   diff-gate and audit stages, plus completed cards whose tree went dirty
@@ -1162,12 +1584,25 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   sharing hints are real buttons (pairing dashboard, port-share retry),
   never highlighted dead text.
 - **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
-  for the host binaries the workflow can use (sem, cymbal, ripwire,
-  ast-grep) with per-tool purpose and install command —
+  for the host binaries the workflow can use (ast-grep, cymbal, ripwire, sem,
+  xerj) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
-  also offers one-click install (explicit consent, SHA-256 verified versioned installers,
-  pinned npm/Go versions, an isolated installer environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
-  one-click reinstall-as-update for installed tools. A separate "Ready via
+  also offers one-click install (explicit consent, an isolated installer
+  environment, `~/.local/bin`, verified by re-probe) with per-row error + log, plus
+  one-click reinstall-as-update for installed tools, plus "Install all missing"
+  behind an inline confirm (explicit consent again; sequential in panel order,
+  one failure never hides the tools behind it — `installAllTools` in
+  `lib/host-tools.mjs`). Every install path is pinned
+  by the plugin and the pin is enforced: a versioned script URL plus the script's
+  own SHA-256 (sem, ripwire), a named npm or Go version (ast-grep, cymbal), or —
+  where upstream publishes no checksum for the script — the script's SHA-256 with
+  the release it resolves pinned in the environment (xerj, which also verifies
+  its binary against the checksum published beside the asset). `tests/runtime-platform.test.mjs`
+  requires every installable tool to declare how it installs, so a new tool
+  cannot ship unprovenanced. A tool the methodology does not name anywhere is
+  not advertised here (`tests/host-tool-consumers.test.mjs` walks the vendored
+  skills and fails on a row with no consumer), and the pin itself is checked
+  against upstream `main` before a release ships. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
   no commands shown, no buttons. When `sem` is installed on the host, a one-line
@@ -1187,7 +1622,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one); completed
   cards instead show the preset recorded for their completed worker, real
-  "Change preset…" outline button, stale-preset warning with restart
+  "Change preset…" outline button (board presets, Board default, the live
+  provider/model catalog, and Custom; providers with no listed models are
+  not offered as choices, and Apply is enabled by the same effective value
+  the dialog shows), stale-preset warning with restart
   action, then a divider with recovery/danger actions — restart fresh,
   archive, delete archived cards behind confirms — all real outline
   buttons, archive/delete in destructive tone. Worker history collapses
@@ -1203,7 +1641,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   composer records `worktree`, while a card started by GitHub import,
   the CLI or a restart records `managed` for the same preset — both are
   correct for the shape they were given.
-- **Conversation.** Card/agent comment thread + composer that routes to
+- **Conversation** (`components/conversation/card-conversation.tsx`). Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
   (`stelow-card-detail`), "Open Stelow" header action,
@@ -1217,6 +1655,41 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 5. Recover
 *When the worker stalls or fails, I want one obvious fix.*
 
+- **Activity log** (`action_log`, `bb stelow log`, `cardActivity`). The plugin
+  records its own decisions and failures, not only the agent's turns: every RPC
+  invocation and every CLI verb (with duration and a closed refusal `reason`),
+  every card field change, stage entry, worker spawn, run retry and terminal
+  run, question asked/answered/persisted/expired with dwell time from both the
+  CLI wait and an answer given on the card, inbox rows opened and resolved,
+  plus a 45 s heartbeat for both reconcilers — the card tick names the phases
+  that threw when it comes back partial. A repeated
+  condition is ONE row with `occurrences` inside a 10-minute window, which is
+  what a 150-restart spawn loop and a 26-comment reconcile loop collapse to;
+  the row keeps the **worst and the last** duration, and a card tick carries
+  per-phase milliseconds, so a slow pass names its cost. Refusals are named by
+  reason (`rpc.refused.thread-archived`, `.host-hold`, …), stage rows say
+  advance vs back, and `card.updated` records only fields classified as state
+  (new columns must be classified or the schema test fails).
+  Read it with `bb stelow log [--card] [--kind] [--cause] [--outcome]
+  [--layer] [--since 6h|7d|6w] [--limit] [--json]`; `--replay` merges the log
+  with the card's stage events, runs, verifications, publications and comments
+  into one chronological story. The card's Activity section loads the same rows
+  on request (closed by default). A failed run records the host's raw payload,
+  so "the host reported a failure without a reason" is now countable as
+  `run.no-reason` instead of lost — and a workflow that failed **before its script returned** (an agent call that
+  could not load the provider catalog) carries the run-level `error` into `scriptError` instead of being recorded as
+  `run.no-reason`: on card_rbkbfyqy the verification run's `result` was null and its `error` named the
+  `acp-opencode` model-catalog timeout, which the card previously discarded. Browser-side failures are recorded too:
+  an error boundary around the panel, the card drawer and the message
+  directives reports uncaught render errors, and window/promise errors while a
+  Stelow surface is mounted are reported through `reportClientError` — each
+  with a message fingerprint as its cause, so a repeating render error is one
+  row with `occurrences` and two different failures stay two causes. A host
+  that stops answering a card's state read writes `host.read-miss` once per
+  outage, at the same 6-tick threshold that prints the warning and latches the
+  card. Details are capped at 2 KB and never carry prompts or file contents;
+  `STELOW_ACTION_LOG=0` disables writes, and `bb stelow gc --apply` prunes to
+  30 days / 50k rows. Design and gaps: `docs/observability.md`.
 - **Retry** (`retryWorker`). Nudges the same worker in place; nothing
   resets. Refused on archived cards — and on completed/blocked ones, where
   reopening happens through a card comment or a fresh restart.
@@ -1250,7 +1723,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   output or stage progress, no question is pending, and the per-stage
   budget (10 consecutive resumes without a stage advance) remains, the
   host resumes the worker in place with the same nudge a manual Retry
-  sends — no human click per stage. A silent stop or an exhausted budget
+  sends — no human click per stage. *Fresh* is measured against the text
+  recorded at the last idle edge (`last_idle_text`), never against the live
+  text: a card-detail read runs the same sync, so a reader could otherwise
+  decide whether the worker resumes. A silent stop or an exhausted budget
   still surfaces as paused with exactly one inbox event per idle period;
   manual Retry/Restart reseeds the budget. With the Auto-continue router
   in Decision API mode, a confident "no real progress" judgment vetoes the
@@ -1333,6 +1809,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preflight both entry points share now refuses to leave a stage whose **newest**
   run failed, and the refusal names the door: `Retry run to try it again —
   the card cannot leave the stage until a run of it succeeds.`
+  The door has two hands: the UI button and `bb stelow retry-run --run
+  <exec_id>`, which runs the same lifecycle retrier through the same refusals
+  plus one the button never needs — a worker retries only its own card's
+  runs. Before the verb existed, a worker told "retry" could only yield and
+  wait for a host retry that does not exist.
   "Newest for the **stage**" is the whole design, and it is what makes the hold
   survivable. A retry writes a newer run, so the hold releases the moment the
   retry starts and re-tightens by itself if the retry fails too — nothing to
@@ -1354,6 +1835,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card could no longer show what actually happened. A refusal from the launch is
   shown to the reader rather than swallowed, because a retry that is declined
   leaves the card exactly where it was.
+  One failure never reaches the hold at all: a run the host **proved did
+  nothing** (*"the recipe produced no task outputs"* — the workflow finished
+  with zero task outputs, as on card_a9q5zhzd where the scope-map run ended in
+  0.3s with no agent calls) is retried **automatically, once**, by the
+  reconciler through that same launch rule, with the spent budget stamped on
+  the new row (`auto_retry_count`) and a trail comment saying the host retried
+  it. A **provider catalog timeout before the first agent call** is the other
+  proof: the run names the provider's model list as the precondition that
+  failed (card_rbkbfyqy's `Could not load models for provider acp-opencode:
+  timeout`, zero calls), so no work ran and the same one automatic retry is
+  safe (`PROVIDER_CATALOG_TIMEOUT` in `lib/transient-run-retry.mjs`). Only a
+  failure the run actually performed — or a second consecutive no-op/timeout,
+  which means dispatch itself is sick — parks the card and asks a person.
+  Unreachable runs, launch failures, and start timeouts are excluded on
+  purpose: there the host has no proof nothing ran, and a blind retry could
+  fork two workers on one stage.
   The card is **told** which run blocks (`detail.card.blockingRun`) rather than
   re-deriving the rule in the UI, so the button and the gate cannot disagree.
   That one fact decides two affordances: the Execution runs section **opens**
@@ -1403,22 +1900,30 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   settles. Separately, a deferred band swap no longer stacks a second armed
   timer on one card: it overwrote the handle without cancelling the one it
   replaced, so the orphan timer fired 10ms later and spawned a **third** thread.
-- **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
+- **Automatic spawn retry** (`claimSpawnRetry`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
   lost host session) is respawned automatically — up to 3 attempts with
   1–2s / 2–4s / 4–8s jittered backoff — instead of paging the human.
-  Retries are idempotent (one in flight per card, attempts claimed in the
-  DB per failed thread, fresh-state revalidation before each spawn); only
-  the final exhaustion writes Failed with its single inbox event.
-  Mid-workflow failures and refusals never auto-retry.
+  The budget belongs to the failure **episode**, not to one dead thread: an
+  automatic replacement that fails before starting spends the next attempt
+  instead of reopening a fresh 3-attempt budget, and the episode clears only
+  when a worker actually produces output or a person starts/restarts the
+  card. The cause is read from the thread's own `system/error` detail, so a
+  permanent provider refusal such as `"Method not found": session/set_model`
+  (or a preset naming a model the provider no longer lists) fails fast to the
+  card with that sentence instead of being read as a transient
+  `thread.start` failure and respawned forever. Retries stay idempotent (one
+  in flight per card, attempts claimed in the DB, fresh-state revalidation
+  before each spawn); only the final exhaustion writes Failed with its single
+  inbox event. Mid-workflow failures and refusals never auto-retry.
 - **Restart worker** (`restartWorker`). Fresh thread on the current
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.
 - **Restart fresh** (`reseedCard`). New worker from triage; scopes and
   comments kept. Resolves the reliable-tier preset like any fresh start
   (card pin, reliable override, band, default). A reseed restarts the
-  workflow, not the human's review choices: the card's current appetite
+  workflow, not the human's review choices: the card's current run knobs
   and gate set carry over. It is also what an unverified-ownership card is
   told to use, and a refused `done` now leaves the gate's own stderr as a
   card comment for a reader deciding between this and a retry.
@@ -1479,6 +1984,41 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `.stelow` run files (no orphaned artifacts on disk); Git checkouts are
   never touched, so code changes survive the delete — the confirm dialog
   states exactly that.
+- **Multi-select is a mode, not a checkbox on every tile**
+  (`hooks/use-selection-mode.ts`, `components/board/select-mode-toggle.tsx`).
+  Build cards carry no selection control until someone asks for one. The
+  control used to be painted on every tile: `size-8` plus a `gap-2` inside a
+  `p-3` tile in a `minmax(240px, 320px)` track, which is 40px out of a 196–276px
+  content box — 20.4% of a narrow card, 14.5% of a wide one, all the time — and
+  it shifted every line under it to the right
+  (`scripts/selection-metrics.mjs` derives that range from the classes; the
+  figure this used to quote was the space *left* after the control, printed as
+  the space available). Its 32px box also set the first line of the
+  title — on cards with no status pills, where the heading was the title line
+  alone; cards with pills were already taller. And it was not "always available"
+  either: it rendered on the Build kanban only, while the list, the hill,
+  Research, Explore and the Bucket gallery had no multi-select at all. One quiet
+  control in the header (`ListTodo`, 44px, `aria-pressed`) enters the mode; in
+  it, the whole tile is the target and clicking toggles instead of opening,
+  which removes the collision that made the old control `stopPropagation` on
+  every click. Inside the mode the tile grows one 20px line at the top carrying a
+  decorative **selection mark** — not a checkbox: it is `aria-hidden`, carries no
+  `<input>`, and the state reaches assistive tech through the tile's own
+  `aria-pressed`, which keeps a column of tiles at one tab stop each instead of
+  two. The line costs no content width, and its height — 26px per card — is
+  measured from the classes rather than asserted; the old box cost none, because
+  every tile's column is already taller than it was. Three exits and three
+  invariants:
+  **Done** on the floating bar (which now renders while the mode is on rather
+  than while the count is non-zero, because it carries the only visible exit),
+  `Esc`, and switching view — each clears the selection, so a bulk bar and its
+  reserved 96px of board padding cannot outlive the surface that drew them. The
+  selection is also pruned against the cards the board is actually rendering: a
+  card archived, deleted or filtered away used to keep its id, leaving a bar
+  that read "3 selected" with every verb disabled. **Select all** names its reach
+  — the cards the filters left on the board — the same blast radius the delete
+  confirm dialog states. Research and Explore pass no selection, so a track with
+  no bulk action reserves no space for one.
 - **Delete all archived, scoped to the filter**
   (`deleteArchivedCards`, `lib/board-filter-label.mjs`,
   `lib/bulk-delete-outcome.mjs`). The Archived column of every board carries a
@@ -1541,7 +2081,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on a `.backup` snapshot of `~/.bb/plugins/stelow/data.db`, inside a
   transaction that is rolled back; the second, real-RPC run and the invariant
   that could not hold are in [`docs/restore-dogfood.md`](docs/restore-dogfood.md)).
-  Before: `status=archived`,
+  Before (one dated dogfood run): `status=archived`,
   `stage=triage`, 13 events — 11 errors and 2 questions, all resolved,
   reasons `{superseded ×12, archived ×1}`; globals 66 cards / 65 archived /
   341 events / 9 unresolved. `restoreTargetStatus("triage")` → `draft`, and
@@ -1578,7 +2118,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the guarantee is pinned from the components and asserts its own premise (the
   card detail is fetched from the detail body alone — a new prefetch or peek
   would be a second way for a card to lose its review without you choosing it).
-- **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
+- **Failure cause** (`failureCauseFromEvents`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
   `provider/error` detail is resolved once and stored as the card's
@@ -1629,7 +2169,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pair would promise a checkout the card does not get. The field is disabled
   on built-in presets (flipping the built-in default's kind re-routes every
   auto-started worker and is inherited by every preset created afterwards);
-  duplicate one to change it. A preset row shows a `worktree` pill, and New
+  duplicate via New preset above — it starts from the built-in's settings —
+  flip the worktree option there, then Set default to make it board-wide. The
+  built-in environment lock is enforced at the save boundary, not just in the
+  dialog, so RPC and CLI writers meet the same refusal. Deleting a preset asks
+  for confirmation naming what the delete takes with it: band and role pins
+  are removed with the row (cascade), while deleting the board default or a
+  preset assigned to cards is refused until another default is set or the
+  cards are unassigned. A preset row shows a `worktree` pill, and New
   preset inherits the current default's setting. An environment value the
   schema never produced is named in the field's own sentence and refused on
   save rather than sent to the server. Built-ins protected.
@@ -1689,7 +2236,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   alone and the boot is still refused**, because a genuine mismatch is a real
   signal and silencing it is worse than the defect; the same applies to a
   statement that has itself drifted, which the repair declines out loud. A
-  healthy install is not written to at all.
+  healthy install is not written to at all. The repair sits behind its own
+  flag: `STELOW_HEAL_LEDGER=0` on the host disables it, leaving the host's
+  refusal (and its message) standing for the operator to handle manually.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
   scrolls instead of overflowing the viewport. Creation sits with the
@@ -1723,18 +2272,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   drafts): card pins still win, a set override replaces the band preset,
   empty means the band preset. Same singleton discipline as the generation
   and reviewer designations; the draft-burst band fallback stays pure band.
-- **Board defaults** (`boardWorkflowDefaults`). Planning depth and
+- **Board defaults** (`boardWorkflowDefaults`). Run knobs (quality,
+  exploration count) and
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
+  Legacy appetite defaults map once to knobs (production, breadth 2/3/5).
+  Rows written by an older build are read tolerantly: a key this version
+  no longer has is dropped, while every value the schema still declares is
+  validated as strictly as before. That is a property of the reader, not a
+  list of retired keys, so the next retirement needs no migration code.
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
   `testDecisionApi`, `decision_api_config` table). One decision endpoint
   for every decision router, configured once in Manage agent presets.
   Four providers, two wire schemas: `jev` (TypeSafe, state + questions,
   key required, the most capable), `simplejev`, `openjev` and `classifier`
   (keyless). The default is `simplejev` — keyless AND deterministic, which is
-  what a gate needs: classifier.dev returned 0.89-0.93 on a clear case and
-  0.27-0.53 on an ambiguous one (spread 0.850 on the case that surfaced this),
-  while simplejev returns the same value every time. It is not unbiased — it
+  what a gate needs: classifier.dev spread 0.040 (clear) → 0.260 (ambiguous) against simplejev 0.000 → 0.000 (`lib/decision-api.mjs`). It is not unbiased — it
   called a plainly generic hint "especifica" once — so an operator with a
   TypeSafe key should configure `jev`.
   Reads report key presence and source, never
@@ -1750,19 +2303,38 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (no extra calls, default), Decision
-  API with a confidence floor, or Preset judge — plus the shared typed client
+  API with a confidence floor, or Preset (refused to built-in rules —
+  no hidden judge thread; decisions resolve via the deterministic
+  Decision API or the point's built-in rules) — plus the shared typed client
   (`lib/decision-api.mjs`, fail-soft result objects, never throws). The
   endpoint, key, and model live once in the Decision API section above;
-  routers only pick a mode, a confidence floor, or a judge preset — any
-  provider preset, including one no stage uses — via one hidden thread with
-  a strict-JSON verdict contract (`lib/preset-judge.mjs`); failures fall
-  back to built-in rules. Preset judging is offered only on low-frequency
-  points (triage intent, artifact criteria); hot paths stay on rules/api
-  so judgments never burn worker turns. Mode selection stages locally and
+  routers only pick a mode, a confidence floor, or a preset. The preset
+  mode is offered only on low-frequency points (triage intent, artifact
+  criteria) and resolves through the deterministic preset-judge stub
+  (`server/decisions/preset-judge-runner.ts`) against the strict-JSON verdict
+  contract (`lib/preset-judge.mjs`) — no thread is spawned for a judgment,
+  so a preset never burns a worker turn; hot paths stay on rules/api. Mode selection stages locally and
   saves explicitly; saves refresh only the routers section, never the
   board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.
-  Unknown modes degrade to rules; refusals name the valid set.
+  Retry-transient rescues unclassified spawn failures a confident judge
+  calls transient, within the same bounded budget — classified errors never
+  consult it, and every miss keeps fail-fast. Preset-tier reviews the stage
+  model hint in shadow only: agreement is logged, presets never change.
+  **The hint is not routed on.** Bands group stages by phase, so one preset
+  serves `planning` — which contains `architecture` (`best`) and `gate`
+  (`economy`) at once. Measured on a live host that put 23% of stage time in
+  `economy` stages on the default preset. The cost case, the Prewalk
+  comparison it was measured against, and the repair order are in
+  [docs/model-tier-economics.md](./docs/model-tier-economics.md).
+  Artifact criteria ask evidence sufficiency separately from outcomes: a
+  confident absence of checkable evidence marks every criterion
+  unverifiable without spending their calls. Point saves refuse an
+  explicit api-mode provider pin the point's question types cannot serve
+  (labels-schema on yes/no or scored judgments), naming both exits; the
+  provider picker names which points each schema serves, derived from the
+  same registry metadata. Unknown modes degrade to
+  rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
   closed, rotates down when open); native details/summary keeps the
@@ -1772,16 +2344,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
 
-- **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management,
-  fan-out, verify, review. `help [command]` prints one command's contract
-  from the same table that registers it, and an unknown command suggests
-  the nearest name instead of a bare usage dump. Advance mechanics delegate to the upstream `stelow`
+- **`bb stelow` CLI.** status, ask, seed, advance, next, audit-trail, check,
+  decide, doctor, preset management, fan-out, verify, review. `help [command]`
+  (also `--help` / `-h`) prints one command's contract from the same table that
+  registers it, and an unknown command suggests the nearest name instead of a
+  bare usage dump. A refusal's cause names the known verb
+  (`cli.refused.verify`, `cli.usage.done`) so refusals are countable per
+  command, while a typo keeps the generic cause. Advance mechanics delegate to the upstream `stelow`
   helper and skills pinned together at plugin release (no fork and no runtime
   mutation); transitions always resolve from
   the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —
-  the refusal redirects to the card's own state dir.
+  the refusal redirects to the card's own state dir. Cardless `advance`
+  re-roots to the single seeded workflow under `.stelow/<date>/<dir>/`
+  (`findSingleLegacyStateDir`); zero keeps project-root behavior, several
+  refuse instead of advancing the wrong one.
 - **Board document read** (`findArtifacts`, `bb stelow status --json`). A
   workflow's documents come from a walk of its whole state dir, not of the
   top level: the layout puts the machine artifacts one level down
@@ -1817,12 +2395,25 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Commits cannot carry file attachments, so the durable audit link is a
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered
   artifact paths, gap counts). The worker protocol requires pasting it
-  below the commit subject.
+  below the commit subject. The count has one owner: the `artifacts:` list
+  in `state.md`. `manifest`, `export`, `done`, and the trailer embedded in
+  the bundle's `manifest.md` all derive it from that list, so a card's
+  commit cannot say `Stelow-Artifacts: 0` while its own bundle lists the
+  artifacts it could not copy — an unreadable artifact was still produced.
 - **Run-bundle export** (`bb stelow export [--json] [--check] [--card] [--dir]`, `lib/run-bundle.mjs`).
   Copies the registered artifacts into flat `docs/runs/<card>/` plus a
   `manifest.md` (SHA-8 per file, gap counts, embedded trailer, missing
-  entries listed). Idempotent, path-confined to the workspace, stable
-  basenames (a repeated name gets a stage prefix, never an overwrite). The
+  entries listed). The `## Files` table is what this export copied; the
+  embedded trailer counts the registration, and the table says both numbers
+  (`N registered in state.md (M copied)`) so neither can be read as the
+  other. Idempotent, path-confined to the workspace, stable
+  basenames (a repeated name gets a stage prefix, never an overwrite). A
+  registration is read for its PATH, not its stage: an entry appended
+  without a `stage:` is still a document the card produced, so it is copied
+  (its row shows `?`) instead of vanishing from the bundle's record. The
+  host writes a `## Stage trail` table (stage, entered, left) from the state
+  file's own history, so a reopened run can be replayed against the route its
+  intent declares instead of only showing what it produced. The
   host refreshes the bundle automatically on every `done` and prints the
   trailer in the completion output — a reopened card that completes again
   refreshes it again — so the directory converges instead of rotting. The
@@ -1847,7 +2438,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Delegation registry** (`lib/delegation-map.mjs`). Every LLM/thread
   contact point registered once (site, tier, preset source, spawn path,
   writes, judge): draft bursts and card titles on Generation, reviews on
-  the reviewer preset, preset judges direct, worker spawns documented on
+  the reviewer preset, worker spawns documented on
   their own cascade. Disposable spawns validate before any SDK call
   (known site, hidden, never full permission); a new spawn site without
   a `delegation-site` marker fails the topology pin.
@@ -1867,6 +2458,25 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   is never overwritten by a retry. An archived card is never renamed and never
   receives a record. The open-card breadcrumb edits inline with explicit
   Save/Cancel; blank restores the heuristic.
+- **Parked prompt editing + Start-time title reuse** (`updateCardPrompt`,
+  `needsNaming`). A parked Bucket card's description edits inline in the
+  detail hero through one shared component (build/research/explore), gated
+  to worker-less pre-start statuses with named refusals
+  (`ERR_CARD_STARTED` / `ERR_CARD_COMPLETED` / `ERR_CARD_ARCHIVED` /
+  `ERR_PROMPT_EMPTY` / `ERR_PROMPT_TOO_LONG`); the gate re-checks before
+  the write so a Start landing mid-edit wins and the draft is preserved.
+  **The description renders COLLAPSED on a card that has a worker** (a parked
+  card keeps its prompt fully open, because editing it is the job there, and
+  the pencil stays reachable in both cases — editing is never behind an
+  expansion). The open card shows the request's first sentence at prose size
+  with a `Show full description` disclosure beneath it that reveals the rest;
+  a description with nothing hidden renders no disclosure at all. Opening it
+  does not change the text's size, so the disclosure reads as "there is more of
+  this request", not as "this is a different, more important passage".
+  Starting a parked card whose title is still the heuristic re-fires the
+  same title burst creation uses (at most once per Start, human titles
+  never overwritten); prompt saves refresh still-heuristic titles
+  synchronously and never spawn a burst.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an
@@ -1916,8 +2526,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   hidden read-only reviewer thread on the designated preset, polls
   bounded (10 min), validates the verdict shape, drops findings with
   unverifiable quotes, persists `reviews/review-<stamp>.md`, and leaves
-  a card comment with the summary. v1 covers research + explore; build
-  document review is refused as unsupported. Workers may only offer
+  a card comment with the summary. v1 covers research + explore; whole-card build review is refused — pass `--artifact <registered path>` for one build document. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
   The excerpt the reviewer receives is chosen by the **artifact contract**, not
   by offset (`lib/review-excerpt.mjs`): the sections the contract names are sent
@@ -1962,8 +2571,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   separately. Read-only, never a gate. Tasks carrying their own `verify`
   command run deterministically first (exit 0 reads met) and skip the
   judge entirely; scopes roll up deterministically from task verdicts at
-  zero extra cost (met iff every task met). Scopes roll up deterministically from
-  task verdicts at zero extra cost (met iff every task met); taskless done
+  zero extra cost (met iff every task met); taskless done
   scopes read unverifiable, pending scopes read open.
 - **`bb stelow verify-delegation` (advisory, `lib/delegation-evidence.mjs`).**
   Freshness of worker-spawned subagents is unobservable — but whether any
@@ -1982,6 +2590,36 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   report instead of silently weakening the verdict. The impact×effort
   matrix and gap→scope conversion stay deterministic; `DONE_PROTOCOL`
   points the worker here before `done`. Read-only, never a gate.
+- **`bb stelow wake` (the scheduled-visit gate, `lib/wake-gate.mjs`).**
+  Whether a scheduled visit should spend a model turn on this card, answered
+  from the card's own row — no host round trip beyond what the caller already
+  holds, no model, no network. Built for the pair that filed
+  bb-plugin-stelow#385: a `bb automation` in `agent` mode costs a full turn
+  (~70k tokens, 30–54 tool calls, measured) even when the visit concludes
+  "nothing changed", and the only cheap half available was `script` mode, which
+  knows nothing about a card. A script-mode sentinel now runs
+  `bb stelow wake --card <id>` for free and wakes the agent-mode worker only on
+  a wake verdict. The pair carries one schedule, not two: the worker automation
+  is created with `--disabled` and the sentinel's `bb automation run` is the only
+  thing that starts it — left on its own cadence the worker still pays a turn per
+  tick and the gate changes nothing. Refusals print exactly
+  `{"wakeAgent": false}`, which the host records as a silent skipped tick; a wake prints its reason so the run history
+  says why the turn was worth spending. A missing or unknown card is a loud
+  exit 2 — a gate that skipped on a misconfiguration would hide the automation
+  forever. Refusal order is the design: a terminal card, then a card parked
+  waiting on a human (the measured case, and the one where every other signal
+  reads "idle and ready"), then an unreadable host, then the shared
+  auto-continue budget — past it an idle park or an error means the worker is
+  stuck, not chatty, and another visit is the loop itself. Last of all comes the
+  changed-since guard: the gate remembers the state it last woke a visit for
+  (status, stage, activity, failure) and refuses a repeat on an unchanged card,
+  so an idle worker that keeps parking without advancing is visited once per
+  state instead of once per tick. The idle timestamp is deliberately not part
+  of that fingerprint — the end of a visit is what moves it. Read-only, never a
+  gate on real work.
+  Not to be confused with the retired supervision knob: that asked the worker
+  to re-read its own work on a cadence, and was removed in 0.83.0. This asks
+  whether anyone should visit a card at all.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
@@ -1996,6 +2634,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the current fingerprint (`reviewCoversFingerprint`). Mechanism only:
   enable solely with a reviewer you trust on adversarial spot-checks —
   the refusal says so.
+- **Contradictory approvals are discarded in code**
+  (`isContradictoryApproval`, `parseReviewOutput`). A `pass` carrying its
+  own `FAIL` findings degrades to `human-review` in the shared parser both
+  review paths call, so the record reads `Status: human-review` and never
+  covers the fingerprint gate. Recorded output:
+  `Review verdict: human-review — 1 finding(s), 1 failing. Contradictory pass discarded.`
 - **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
   stricter checkout-bound `audit.md` gate passes, Build completion invokes the
   upstream helper to build and check the deterministic cross-host lineage
@@ -2042,7 +2686,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   function, so the two surfaces cannot drift. The same row renders both places,
   so a file cannot look like two different things depending on which section it
   landed in.
-- **Checks rollup** (`CardChecksSection`, `lib/card-checks.mjs`). Every
+- **Checks rollup** (`CardChecks`, `groupCardChecks` in `components/detail/build-progress.tsx` + `lib/card-checks.mjs`). Every
   pending thing grouped by type — questions (live + expired asks),
   scopes, tasks, gaps, review — with done/pending counts from the same
   sources the heroes read, never a second truth. A pending-only filter
@@ -2098,7 +2742,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   belongs to a project or a preset), so a name field would be free text wearing
   attribution's clothes. Only a `completed` card can be accepted; an unfinished
   one is refused naming Done, and an archived one naming restore. The row shows
-  on all three card kinds, because Research and Explore finish too.
+  on all three card kinds, because Research and Explore finish too. A Done card
+  can also carry an unmerged pull request with nothing linking the two halves,
+  so while the button is still offered the row names it (`PR #N still needs
+  merging in Publication below — this only records your review`, via
+  `unmergedPrNumber`): approving otherwise reads as finishing.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
@@ -2132,6 +2780,48 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   ordered reading list for its current stage as exact paths — workers
   read what they are given instead of discovering skills through shell
   pipelines. Missing files fail loud, never silently dropped.
+  **It also names the run and the card's receipts.** The current stage's
+  artifact root and every file its recipe declares (`tasks[].output`) are
+  printed as full paths, so a worker never resolves them itself. Verified
+  against the 87 runs on disk: 149 of the 150 files actually written are
+  declared. The fixed-name files in the state dir are named from one
+  registry (`lib/state-dir-files.mjs`): `state.md`, `session.log`,
+  `audit.md`, `audit-trail.md`, `invariants.json`, `scope-map.json`,
+  `context/recon-receipt.json` (the one file a recipe writes but does not
+  declare), the four gate receipts from `gate-vocabulary.ts`, the state
+  dir's subdirectory layout, and the workspace-root `stelow.json`.
+  Validated against the live threads: 215 of 216 state-dir path
+  references (99.5%) are now named. It also lists a run directory's real
+  contents (`run-file` rows, 150 files across the 71 run dirs here), so a
+  worker never enumerates one. Conditional receipts carry no missing-file
+  verdict, and without a verified state dir the rows are omitted rather
+  than guessed, because a confidently wrong path is worse than a search.
+- **Workflow verbs, one table** (`lib/workflow-verbs.mjs`). Every verb the
+  upstream skills name is classified exactly once as `helper` (the host wraps
+  the pinned helper), `host` (the host implements it with card integration), or
+  `internal` (no worker-facing command). `scripts/stelow <verb>` maps to
+  `bb stelow <verb>` when help lists it, and the prompt says a verb outside that
+  list does not exist. This is why `bb stelow next`, `bb stelow audit-trail`
+  and `bb stelow check breadboard` exist: card workspaces do not ship
+  `scripts/stelow`, so a skill naming that path needs a host verb or it sends a
+  worker to a dead path. `bb stelow decide` was implemented and missing from
+  help; it is listed now. `ask`, `decide`, `seed` and `status` are host-owned
+  (not helper passthroughs); `guard-judge` has no worker command because the
+  host decides through its Decision API. A test parses the pinned helper's
+  usage and fails when an upstream verb is unclassified, and the declared helper
+  set is proved against the pinned binary by `tests/helper-verbs.test.mjs`, so a
+  verb the helper stopped answering fails there, not at a worker's turn.
+- **Host-side artifact registration** (`lib/artifact-registration.mjs`).
+  A validated native run's staged artifacts are copied to their canonical
+  homes and their receipt written by the host, in one pass, instead of
+  asking the model to `cp` them — 27 worker commands copied out of a run
+  dir and 16 were the full find/cp/printf dance. The receipt is written
+  last, so its presence still means "registered"; a root that cannot be
+  mapped parks the card as `needs_input` with the reason on it, because a
+  filesystem problem is one a human can fix and an automated path cannot.
+  The native reconciliation message names each staging → canonical copy
+  the same way, instead of the old "register them at their canonical
+  paths" that never wrote the paths down.
 - **Exceptional card split** (`bb stelow ask --tag split`, `bb stelow split`,
   `lib/split-proposal.mjs`). The default is one focused card with scopes;
   triage (or Prioritization, before its choice is committed) may propose a
@@ -2146,18 +2836,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   parent, partial approval keeps it narrowed to the remainder. Never
   unilateral, never by worker claim. A standard ask answered at the split
   point warns that its answer executes nothing, with the exact re-ask
-  repair. The open card offers Propose split at triage/select once a worker
+  repair — including the acknowledgment opening and slice preselection
+  that make the formal question read as confirmation. The open card offers
+  Propose split at triage/select once a worker
   exists to propose from — parked Inbox cards show no trigger, and the
   trigger RPC refuses threadless cards outright. One click
   drives the worker into the --tag split protocol (refused past the split
-  point or while a proposal awaits an answer). One shared gate
+  point or while a proposal awaits an answer). The protocol refuses
+  unsatisfiable shapes up front: --needs-note on slices (proposals render
+  no note box) and a preselected Keep (the veto starts unchecked). One shared gate
   (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,
   `recordSplitAnswer`) decides for the worker ask, the executor, the
   trigger, and the card flag on state.md truth — the UI reads the flag,
   never local stage rules. Standard questions at the split point carry a
   host-appended consequence disclosure (scope-only, creates no cards,
   Propose split stays available), so a scope pick never reads like a
-  split decision. Children inherit the parent's appetite and review mode
+  split decision. Children inherit the parent's run knobs and review mode
   (parsed whole from the indented state.md config block — never
   truncated). An archived card's thread keeps its way back: the thread
   header still links to its card. Refactor/bugfix cards skip
@@ -2171,9 +2865,98 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else. Per-option evidence opens inside the option row as the shared
+  else. A placeholder ask — an empty question, a probe token like "ping", or
+  a one-letter option label — is refused by `lib/question-gate.mjs`, and
+  `--force` does not override that floor: only the context and evidence gates
+  are forceable, because a probe that can be forced through is a probe that
+  will be, and the person it interrupts cannot tell it was forced. **A selected
+  gate with no host review tool asks; it never approves itself.** The worker copy
+  used to say only "do not park" while the vendored `visual_review` reference
+  said to silently approve; it now names the fallback explicitly (the gate's
+  document in a `bb stelow ask`), and unselected gates keep the LLM receipt.
+  Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
-  beside the amber panel); the inline glance expands below.
+  beside the decision section); the full description sits in the pick control
+  and the preview renders at the END of the same option as inline evidence —
+  text in a monospace block, a fenced ```mermaid preview through the brief's
+  own renderer, and never a second disclosure. **The decision itself owns the
+  amber.** The hero names the card's state and stays neutral ("At Critique — your
+  answer is pending"); below it one "Waiting for you" section holds the live and recovered
+  questions, opens itself, carries the count as its subtitle ("Needs your
+  decision — 9 questions") and wears the decision tone. Two amber boxes two
+  lines apart made the gold look decorative; one amber box around the answerable
+  decision is a place the reader can act. The step dots keep their position for
+  assistive tech (their label still reads "Question i of N (answered)"), and the
+  note box, explicit skip, split keep-vs-deliver exclusivity and one atomic
+  submit are unchanged. The batch has no private keyboard map: every control is
+  a button, input or native disclosure summary, so Tab/Enter/Space work. The
+  "show more" families use foreground text with a dotted underline rather than
+  the primary link token, which measured 4.33:1 on the card — below AA for the
+  12px labels the disclosures use.
+- **A question cannot compare work against a setting the config retired**
+  (`lib/retired-question-vocabulary.mjs`, `cli-ask-gate.ts`). A real card asked
+  "is this bigger than the appetite?" months after `appetite` was replaced by
+  `quality` and the exploration knobs, so the human was asked to weigh the work
+  against a setting the config no longer exposes. The ask gate now refuses the
+  retired word in the question, the option labels and the descriptions, names
+  the replacement ("the declared quality and exploration knobs") and asks for
+  one retry — the same door, and the same one-retry contract, as the English-only
+  guard. The parser still accepts a legacy `appetite:` line once, because old
+  state files must keep working; only the human-facing vocabulary is retired.
+- **A selected plan or diff gate cannot approve itself**
+  (`question-contracts-gate.ts`). `plan-gate` and `diff-gate` have no upstream
+  question contract yet, so the host enforces the one rule the methodology
+  states: when `tech`/`diff` is selected, advancing from that stage needs a
+  human answer recorded since stage entry. The refusal names the artifact ask
+  and the answer that clears it; unselected gates and unreadable state stay
+  automatic or fail open. The review itself is the existing artifact viewer plus
+  excerpt comments, which ride the answer — no separate visual-review UI is
+  required.
+- **A question's own refusal, at the field** (`BatchCustomInput`). The
+  needs-note refusal used to arrive only as a line under the footer, while the
+  reader was looking at the note they had just filled. The note now carries
+  `aria-invalid` plus a `role="alert"` description naming what is wrong, and
+  focus stays in the field with the text intact. The batch-level refusal still
+  names its own cause under the footer, so the two never become two homes for
+  one fact. The question batch has no private keyboard shortcuts: every control
+  is a button, input or native disclosure summary, so Tab/Enter/Space work
+  without teaching a second key map.
+- **The Inbox row names the ask, and can open it alone**
+  (`lib/inbox-question-route.mjs`, `components/detail/card-ask-body.tsx`). Two
+  related fixes to one defect: a question row is a door onto a decision, and it
+  said neither which decision nor how to reach it quickly. The row's second line
+  is now the QUESTION itself — captured when the row was minted, cut by the same
+  `splitProseSummary` the card uses, with the full text in `title` and the count
+  when a batch has more than one — instead of the generic "The agent is waiting
+  for your answer to continue." that every question row shared. A legacy row
+  with no captured question, an error, a pause, a completion and a resolved
+  entry all read exactly as before. The row also offers a narrow second door:
+  `Answer` (or `Enter` from the row) opens the ask, the request's collapsed
+  line, the status line and the option rows, and NOTHING else — no receipt, no
+  stage and runs, no files and diffs, no comments — so answering one question
+  does not mean loading nine sections. The CLICK keeps meaning one thing (the
+  card) at every viewport; the gate refuses the narrow door, with a named exit,
+  on any non-question row, on a host that cannot open an option's document, and
+  for any batch containing a split question, whose answer creates child cards
+  and belongs on the card.
+- **The Inbox row keeps its text a measure instead of feeding it to the
+  buttons** (`components/panels/inbox-row.tsx`). At a phone width the row's
+  text used to be the leftover: the actions were `shrink-0` and the click target
+  was `flex-1` — `flex-basis: 0` — so a 360 px viewport left the body about
+  20 px, one character per line, and a row ten times taller than it reads. The
+  row now wraps: the click target keeps a 16 rem measure
+  (`grow basis-[16rem]`, never `flex-1`) and the actions are a single cluster
+  (`ml-auto`, `min-w-0`, `flex-wrap`) that takes its own line when the row
+  cannot hold both, and whose own buttons wrap rather than overflow when even
+  that line is too narrow. The reflow follows the PANEL's width, not the device — a
+  narrow docked panel on a desktop wraps the same way — because the host passes
+  no width to the panel and the plugin has no container queries. `Answer` keeps
+  its narrow `sm` shape and gains the same `min-h-11` floor as its neighbours,
+  and the ask line's two-line clamp works for the first time: it shared a class
+  list with `block`, whose `display:block` beat the clamp at equal specificity,
+  so a line documented to cap at two lines rendered uncapped. The `+N more`
+  counter for a batch sits outside the clamped span, because a count inside it
+  is the first thing a working cap cuts.
 - **Stale-question notices** (`bb stelow ask` snapshots, `lib/question-staleness.mjs`).
   Asking records what each questioned document contained and where its
   checkout stood (doc hash + Git HEAD, latest wins per card and path).
@@ -2377,7 +3160,7 @@ one input, one artifact.*
   default, else board default) with a Configure presets entry; the
   provider/model picked in BB's composer is forwarded to the spawn and
   pinned as the card's preset override when it differs.
-- **Stage catalog** (`STAGE_CATALOG`, `lib/stage-catalog.mjs`). One entry
+- **Technique catalog** (`TECHNIQUE_CATALOG`, `lib/technique-catalog.mjs`). One entry
   per single-runnable workflow stage (Shape Up, interface alternatives,
   plan critiques, tech planning, codebase/UX critiques, testing
   strategy, execution critique) mapping to its bundled skill. Single
@@ -2399,7 +3182,12 @@ one input, one artifact.*
   a medium gap must not resolve as an inline fix (`gap-underfixed`) —
   effort checks are fail-open when absent so legacy registries never
   retro-fail. A misclassified gap fails
-  deterministically instead of passing silently.
+  deterministically instead of passing silently. Field values are read as
+  YAML, comments included: the inline annotations the skill's template
+  teaches (`impact: medium  # low | medium | high | critical`) are
+  annotations, not values, and `tests/gap-registry.test.mjs` parses the
+  skill's own fenced template through the parser — documentation and guard
+  hold one schema, so a worker who copies the template verbatim passes.
 - **Gap-to-scope loop** (`bb stelow gap-scopes`, `critiqueGapState`).
   Escalated gaps become `audit-gap` rework scopes in the card's own
   `stelow.json` entry — created by code (idempotent, trail comment),
@@ -2481,7 +3269,7 @@ one input, one artifact.*
   never another round.
   Documented debt rides a date (`expires: YYYY-MM-DD` + `owner:` on the
   row — `parseGapDate`, `isDebtExpired`, `expiredDebts` in
-  `lib/gap-registry.mjs`): settled until the date, open after it. Past-date
+  `lib/gap-debt.mjs`): settled until the date, open after it. Past-date
   debt rejoins the loop — `verify` warns (`EXPIRED …`), `done` refuses —
   with three exits: fix inline, re-scope as escalated, or re-date with an
   owner. A malformed date fails the row where it is written; expiry on any
@@ -2542,6 +3330,25 @@ one input, one artifact.*
   rework it picks up. Re-critique overwrites the same file: every
   matched critique is validated (a lingering superseded file still
   claims), and every refusal names file + expected-vs-found.
+- **Gap areas across the fleet** (`bb stelow gaps [--card <id>]
+  [--area <glob>] [--status documented|escalated] [--json]`, read-only).
+  The one question a single card cannot answer — "what has already been
+  flagged in this area?" — asked through the artifacts the host already
+  reads (`lib/gap-registry.mjs`, via `createCritiqueGapState`), so there is
+  no second parser, no new table and no write. Findings group by the
+  registry's own `area`, one line per finding with the card that raised it;
+  `--status` narrows what is shown and never what was read, and the header
+  states both (`Areas: 1 · 1 of 4 shown (--status escalated)`). A card with
+  no execution critique is reported as such rather than as "no gaps", and a
+  state directory whose card no longer exists is never read — the fleet is
+  enumerated from cards, never from directories. Exit is 0 whenever the
+  read succeeded, including zero rows: a view that fails because it found
+  nothing cannot be used in a script. The commit trailer's `Stelow-Gaps:`
+  line is this same tally (`tallyGaps` over the deduped finding list), so a
+  card's commit, its run bundle and `bb stelow gaps --card` report one
+  number, and an unaudited card says `no execution critique registered`
+  instead of printing a zero it never measured.
+  (`tests/runtime-cli-gaps.test.mjs`.)
 - **Worktree storage** (`bb stelow storage [--json]`,
   `lib/worktree-storage.mjs`). Worktree disk usage attributed to cards
   (heaviest first, unattributed rows listed instead of hidden), read-only
@@ -2553,10 +3360,23 @@ one input, one artifact.*
   reports) are validated against the same stage contracts; audit.md,
   receipts, and unknown files never block. Only a matched document
   that fails depth refuses `done`, with file + expected-vs-found.
+- **Tri-state security scan** (`bb stelow scan --report <path>`,
+  `lib/scan-contract.mjs`). A scan that did not run is not a clean scan:
+  SARIF 2.1.0 or the neutral `{scanners, findings}` format reads as
+  **clean** (exit 0), **failed** (exit 1, findings at `--fail-on`,
+  default high), or **did-not-run** (exit 2 — report missing,
+  unreadable, unknown format, or `--require-scanners` coverage
+  incomplete). The verdict records against the exact Git root + HEAD
+  (`scan_runs`, same shape as `verification_runs`); `done` refuses
+  without a recorded clean scan at this HEAD, with a different next
+  action per state (run the missing scanners vs fix the findings vs
+  re-scan after the audit). `verify --tests` warns the scan state
+  early so it never ambushes at `done`. Operator guide:
+  [docs/security-scans.md](./docs/security-scans.md).
 - **Shared machinery.** Board column components, list view, status
   pill, hero, questions, presets, retry/restart/reseed, worker
   history, inbox, and realtime reuse the Research definitions
-  (`LightweightTrackCard`, `LightweightTrackList`,
+  (`LightweightTrackCard`,
   `markThreadRunning`, `noteAgentOutput`) — Explore adds only its
   catalog, prompt, and artifact path, never a forked copy.
 - **Quality panel (Research + Explore).** Research cards show per-substep
@@ -2573,7 +3393,7 @@ dependent-thread ownership (`lifecycleOwnerThreadId` with strict-schema retry
 fallback), `experimental_description` on all RPCs, palette command via
 `app.commands.register` with `commandPaletteAction` fallback, and local squash
 merge in the card shell (`lib/squash-merge.mjs`) — BB exposes no local squash
-action. Dev types come from `@get-bb/plugin-sdk` 0.4.106.
+action. Dev types come from `@get-bb/plugin-sdk` 0.4.108.
 
 Deliberately NOT adopted: preview core unchanged (native open-in-tab + iframe
 already cover the Browser-control overlap; detect/spawn/port/log/share stays),
@@ -2582,21 +3402,58 @@ no project env vars for doctor (singleton design + audit trail), no full
 
 Engines policy: the runtime floor stays `bbPluginSdk >=0.4.6` because the host
 bundle (0.4.84) must accept the plugin — every new API use is feature-detected
-with a fallback, so 0.4.106 is build-time types only.
+with a fallback, so 0.4.108 is build-time types only.
 
-Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0.35.2, verified live: all 96 RPC methods are discoverable via bb plugin rpc list, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
+Host-version note: the 0.43.3 APIs above went live with host 0.43.3 (historical note — current version in `package.json`), verified live: RPC methods are discoverable via `bb plugin rpc list`, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
 
 ## Canonical stages and host-native execution
 
 - **Shared stage catalog.** The board, state template, artifact ordering, playbooks, question contracts, and route projections read the generated upstream `stage-catalog.json`; the plugin no longer keeps a hand-maintained list of the 17 Build stages. A pinned sync preserves the last good catalog when an older upstream pin does not contain it.
 - **Capability-negotiated execution.** Host-neutral execution adapters normalize run state and negotiate required capabilities before starting a recipe. Missing capabilities produce a named refusal or an explicit coordinator-owned sequential route; permission requirements are never silently weakened. The coordinator route is not presented as a native run and has no fabricated run ID, resume handle, or cancel semantics. The optional BB Workflows binding reports its real capability limits, including no per-call permission control, while the card remains the owner of human input and resume.
-- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. A run that deliberately STOPS to name a decision is `needs_input`, not `failed`: the card shows "Waiting for you" and quotes the run's own question, so a wait is never a spinner with nothing behind it. Artifact rejections name the fields that failed, not just the file — "malformed: contrast.json" costs a run and tells the worker nothing it can act on. The host also reads the recipe script's OWN return value: a workflow finishing successfully only means the script ran, and a script that produced no task outputs is a failure rather than a pass — otherwise a recipe that did nothing surfaced three layers down as a missing file. Scope-map approval is a host decision, not agent prose: `bb stelow scope-approve` (or the `approveScopeMap` RPC) stamps `status: approved` with a host-minted receipt and an approver, refusing a map that violates its contract, one already approved, or an approval nobody can attribute — and it is the only writer of an approved map, so the X-ray is reachable from the real workflow instead of a hand-edited artifact. The approved map's Shape version is mirrored into `state.md` so X-ray freshness is a live signal instead of a permanent `unknown`. Every `bb stelow answer` refusal names its exit: which id space a recovery question lives in, and exactly which questions are still open in an incomplete batch. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential except for the approved native pilot: disjoint scopes with satisfied claims fan out only when file-claims and isolated-workspace capabilities both report true, the batch fits the concurrency bound, every child returns a per-scope receipt (claim verification, files touched, artifact manifest), and the parent merge passes post-merge verification — any gate failure falls back sequentially with no partial fan-out, overlapping scopes never fan out, and `native_pilot_allowed=false` rolls everything back (see [docs/native-workflows.md](./docs/native-workflows.md)).
+- **Context-aware native routing.** The router checks free facts first (write policy, missing capabilities, coordinator thread) before paying for the two-call availability probe, caches probe results per thread for 60s, and skips cards that already own a run for their stage in the reconcile sweep. A native decision then passes a context overlay: zero runnable tasks under the current context, or a coordinator human boundary while the live needs-input cycle is unproven, fall back with "Effective width: 0." / "Human boundary: coordinator." in the card trail. Width 1 stays native until live latency/success evidence says otherwise. The coordinator note and trail also carry the expected-output checklist so the worker sees every required artifact up front.
+- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. A run that deliberately STOPS to name a decision is `needs_input`, not `failed`: the card shows "Waiting for you" and quotes the run's own question, so a wait is never a spinner with nothing behind it. Artifact rejections name the fields that failed, not just the file — "malformed: contrast.json" costs a run and tells the worker nothing it can act on. The host also reads the recipe script's OWN return value: a workflow finishing successfully only means the script ran, and a script that produced no task outputs is a failure rather than a pass — otherwise a recipe that did nothing surfaced three layers down as a missing file. Null-valued outputs read the same as missing ones, a completed task with no result entry fails loudly instead of succeeding empty, and dispatched schemas are sanitized for the engine safe subset (`pattern` is refused outright by host agent validation, so it is stripped from the dispatched copy while local validation keeps the full contract). Scope-map approval is a host decision, not agent prose: `bb stelow scope-approve` (or the `approveScopeMap` RPC) stamps `status: approved` with a host-minted receipt and an approver, refusing a map that violates its contract, one already approved, or an approval nobody can attribute — and it is the only writer of an approved map, so the X-ray is reachable from the real workflow instead of a hand-edited artifact. The approved map's Shape version is mirrored into `state.md` so X-ray freshness is a live signal instead of a permanent `unknown`. Every `bb stelow answer` refusal names its exit: which id space a recovery question lives in, and exactly which questions are still open in an incomplete batch. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential except for the approved native pilot: disjoint scopes with satisfied claims fan out only when file-claims and isolated-workspace capabilities both report true, the batch fits the concurrency bound, every child returns a per-scope receipt (claim verification, files touched, artifact manifest), and the parent merge passes post-merge verification — any gate failure falls back sequentially with no partial fan-out, overlapping scopes never fan out, and `native_pilot_allowed=false` rolls everything back (see [docs/native-workflows.md](./docs/native-workflows.md)).
 
 ## Cross-cutting rules (apply to every feature above)
 
 From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
 resolution, one primary action per card state, destructives behind
 confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.
+
+**"No phantom waits" is enforced at the read, not at the render.** Four
+corrections landed as one rule, because each was a surface inventing an answer
+it did not have:
+
+- A card that has finished (`completed` or `archived`) projects no open
+  questions at all — the rule the recovery rows already applied. The hero used
+  to render "Needs your decision to continue / Answer below and the agent
+  resumes on its own" over a finished card, because only the expired-question
+  reader filtered terminality and the live-ask projection did not.
+- A failed live question read is `unknown`, never "0 open". The card detail
+  keeps the activity it already had instead of claiming the wait ended, the
+  board keeps its last verified activity, the execution reconciler does not
+  mark a boundary question as sent, and `bb stelow done` refuses with a
+  retryable exit rather than closing a card over a question it could not see.
+- **A successful read of zero questions ENDS an await.** The stored `activity`
+  column is a projection, and nothing rewrites it when the question it named is
+  answered, expires, or leaves with the thread that carried it — so
+  `awaiting-answer` was a one-way door: the rule was
+  `openQuestions > 0 ? "awaiting-answer" : stored`, which treats a resolved
+  question and an unreadable source as the same input. Three cards sat amber
+  with nothing to answer (card_hce4tykn, card_qimjr9z4, card_g89gtmwt), and one
+  worker was refused with "the card won't take a second question while one is
+  pending" by the card it had already answered. The rule now has the three
+  states it always needed, in `lib/card-activity.mjs`: unknown keeps the
+  projection, a live question re-asserts the wait, and zero ends it. `error`
+  and `held` describe the worker and outrank the count. Pinned by
+  `tests/card-activity.test.mjs` for both projections separately, because the
+  board and the detail are two readers of one column and they drifted.
+- A research/explore worker that is verifiably running clears the previous
+  `last_error`, as the build projection always did. Only the resume paths used
+  to clear it, so a card that failed once kept telling the reader to reseed,
+  next to a worker that was running and never needed reseeding.
+- A quiet poll completion writes through the same completion writer as
+  `bb stelow done` (`server/runtime/card-completion.ts`), so it cannot keep a
+  stale error or skip the auto-continue reset the explicit path performs.
 
 **A stage is named by its label, on every surface, or not at all.**
 `stageLabel()` is the single source: the stored slug (`int-gate`, `plan-gate`)
@@ -2800,3 +3657,529 @@ that lies about working, a budget spent on turns that never started, and a
 notification asking a person to fix something the system is already fixing.
 When the host names a wait, read it (`threads.queuedMessages.list`), project
 it, and offer no action.
+
+**One thing the cache measurement exposed and did not fix: the skill pointer is a
+glob.** Every build path tells the worker to load `stelow-workflow-*` — seventeen
+skills whose entry documents total 215,756 bytes (~54k tokens) if a worker takes
+the instruction literally, against a 12,100-character prompt it was just handed.
+The prompt is not the expensive part of a spawn; the eager-load instruction is, by
+an order of magnitude. The pointer is left as it is because narrowing it changes
+which methodology a worker sees, and that is a workflow-authoring decision rather
+than a test finding. `tests/prompt-cache-order.test.mjs` prints the numbers.
+
+**The run bundle's token evidence reads both families, and states which kind of figure
+it is printing.** The bundle writer asked only for `thread/tokenUsage/updated`, so on a
+card whose workers are ACP-backed it wrote "Unknown — no token reports at export time"
+while a context-window reading was available — the same blind spot the panel had. It now
+reads both families, one query each, and the manifest's wording follows the figure: a
+provider total says "provider-reported", a context reading says "estimated from the
+providers' context-window readings", and a figure with no recorded provenance says so
+rather than claiming one. A sum of measurements and estimates is not itself a
+measurement, so the total carries the weakest provenance among its parts — which is the
+same rule as printing no total rather than a zero for unknown.
+
+**A rule that was drifting across three templates is now one clause, and a clause
+that renders the word `undefined` fails a test.** The command-failure rule — read a
+`bb stelow` command's stderr once and continue rather than spending the turn debugging
+the CLI — lived in three templates with three wordings: "continue the workflow" in the
+spawn path, "continue" in the restart path, and a third in the reseed path. That is the
+drift shape this work started from, caught mid-divergence rather than after a worker
+was spawned with the weaker version. It is now `COMMAND_FAILURE_RULE` in the bag, so
+every build path renders the same sentence.
+
+Moving it exposed a failure mode nothing was watching for: a clause wired from a value
+the fixture does not carry renders the literal word `undefined` in the clause's place,
+and the prompt still reads as a prompt — the worker is told "undefined" and nothing
+fails. `tests/prompt-path-contract.test.mjs` now rejects any path whose rendered prompt
+contains `undefined` or `null`, which is the subtler sibling of the empty-render check
+it already had: an empty string leaves a blank line nobody notices, and `undefined`
+leaves a word that looks like content. Cross-card cacheable prefix improved to
+90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
+characters.
+
+**Two failure causes stopped being advised as if answering would fix them.** A provider
+rate limit and an unowned card both closed their error note with "Answering below resumes
+the worker", which is false for both: nothing is pending, and the reader was pointed at a
+box whose answer goes nowhere. The unowned case already had `isOwnershipRefusal`; a rate
+limit now has `isRateLimitFailure`, matched on the provider's **status code** rather than
+the word "limit" — a card's own exploration limit and a file-claim limit both contain that
+word, and telling a reader to switch providers for one of those is the wrong door. The
+advice names the action that clears it (switch this card's provider or model, or wait the
+window the provider stated) and warns that retrying now re-hits the same limit.
+
+**A result crossing the RPC wire no longer carries a key holding `undefined`.** The board
+failed with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board
+whose stored defaults predate red-first, because `resolveKnobInput` returns `undefined`
+for "absent, derive me downstream" by contract and the handler echoed that straight into
+its result. `JSON.stringify` would have dropped the key, but the host validates the object
+before serialising, so it refused the whole call. Fixed at the three call sites that built
+such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
+reintroduce it.
+
+**A quota refusal stopped being advised as a rate limit.** The provider wraps
+*"Insufficient account funds"* inside a message that also reads *"Rate limit exceeded"*, so
+the rate-limit branch matched first and the hero told the reader to wait — advice that never
+clears an unfunded account. `isQuotaFailure` now names that cause, `rateLimitAdvice` refuses
+to claim it, and `quotaAdvice` states the only card-side fix (top up, or switch this card's
+provider or model). A genuine 429 keeps exactly the advice it had.
+`tests/rate-limit-refusal.test.mjs` pins both directions.
+
+**A card archived by a drag stopped wearing a live worker state.** Five cards archived
+within three seconds of each other by a bulk drag kept `activity` at `error` (three),
+`running` (one) and `awaiting-answer` (one), so the hero rendered a live-looking state on a
+card the reader had just put away. `cancelCard` always wrote `status: archived` **and**
+`activity: idle`; the drag reached the same terminal place by a path that wrote only
+`status`. A terminal card now projects no worker state from any path.
+
+**A deleted worker thread stopped being re-reported as missing.** Two cards sat on
+`HTTP 404: Thread not found` with the dead id still recorded: every poll rewrote the same raw
+host string, every Retry re-read the same missing thread, and one still advertised "The agent
+is waiting for your answer to continue" over a thread that had been deleted. The string
+appeared nowhere in `server/**` or `lib/**`, so nothing could tell a gone thread from a host
+hiccup. The projection now clears the dead id and names the action (start a new worker),
+while an ordinary read failure keeps both the raw message and the worker id — a transport
+fault must not orphan a worker that is still there.
+
+**A provider refusal stopped earning an automatic nudge.** A thread whose turn failed on
+`provider.quota` idled for 18 hours and was then told "Continue the Stelow workflow now from
+the current stage" on its next idle edge — into the same refusal, which counted as progress
+because the output differed from the last idle baseline. Auto-continue now refuses when the
+card's last error is a quota or rate-limit refusal, and says so; an ordinary failure keeps
+the existing behaviour. In the same pass, a file claim can no longer outlive its own TTL: six
+claims for one parked card held `AGENTS.md`, `package.json` and `FEATURES.md` for 67 hours
+against a 30-minute TTL, blocking every other card on the shared checkout.
+
+**A worker's orientation cost is measured and shown, not assumed.** A worker's first
+turn is the most expensive and least informed: it has just been handed a
+12,000-character prompt naming its stage, and the skill family it used to be told to
+read is seventeen skills whose entry documents total 215,756 bytes (~54k tokens)
+against that prompt. Nothing stopped it reading them before doing anything. It is
+observable now because a skill load is a `toolCall` item whose arguments name a
+`SKILL.md`, so `lib/first-turn-contract.mjs` derives the verdict from what the worker
+DID: reads before the first `bb stelow advance` are orientation spent before work,
+reads after it are the legitimate case, and reading the repository never counts.
+Violations are reported on the card and never blocked — the plugin cannot stop a tool
+call in flight, and a rule enforced by refusing work is a deadlock with a good error
+message. Measured on this checkout: exactly one skill read across ten workers, which
+is why this is a report rather than a gate.
+
+**A prompt's own prefix is now shared between cards, and the provider serves it from
+cache — measured on live workers, not on fixtures.** Provider caching is prefix matching,
+so the reusable region ends at the first byte that differs, and the state dir sat at
+character ~106 ahead of the entire 10 KB clause block every build path renders
+identically. All three build paths now open with the same `WORKFLOW_INTRO`, state the
+shared clauses in one canonical order, and put every per-card value (state dir, intent,
+knobs, request) last.
+
+Validated end to end. A worker spawned through the RPC carried the reordered prompt: the
+intro at character 0, the clause block ending at 10,896, the first per-card value at
+10,994 — **90.5% of the 12,332-character prompt is a prefix two cards share**, against
+1.3% with the state dir first, so the reorder multiplies the reusable region by 70x. The
+provider confirms it: three live workers on the `pi` provider each reported a first
+snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,470 /
+50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
+threads the cache read 60,386,501 tokens against 54,840,152 fresh.
+
+**The two tracks were the paths that reorder did not reach, and they were the worst
+offenders.** Research and explore interpolated the strategy and the stage in the
+opening sentence of Step 1 — character 823 and 824 — so two cards on different tracks
+shared 7.2% and 9.6% of their prompt while the whole shared contract sat behind the
+value. Their steps now name `<strategy>`, `<stage>`, `<artifact>`, `<round-file>` and
+the other per-card values, and one "Your card values" block at the end defines each
+one once. Measured on two different cards: research 7.2% → **93.0%** of 9,689
+characters (9,015 cacheable, ~169 re-paid tokens of ~2,423) and explore 9.6% →
+**91.8%** of 6,702 (6,152 cacheable, ~149 of ~1,687). The prompts also shrank:
+research 11,414 → 9,690 characters, explore 8,603 → 6,702.
+
+**The completion rule is split per track, so a research worker stops reading about an
+`audit` stage it cannot reach.** `DONE_PROTOCOL` was 2,479 characters, ~2,300 of them
+the build path — the `audit` stage, `verify --tests`, the gap loop, `audit.md`, the run
+bundle — and research and explore read all of it on every spawn while the one sentence
+they owed was buried in the middle. It is three consts now: `DONE_PROTOCOL_CORE`
+(finish with `bb stelow done`, never announce), `DONE_PROTOCOL_TRACK` (178 characters,
+core plus the verify sentence, rendered by both tracks) and `DONE_PROTOCOL` (2,409
+characters, core plus the build payload, rendered by the three build paths). No track
+lost its completion rule and no build path lost one of its own; the assembly is
+asserted in `tests/prompt-budget.test.mjs`, and the cache floor per path in
+`tests/prompt-cache-order.test.mjs` (75% for the tracks, 85% for the builds).
+
+Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
+workers run on) emit no usage event of any kind — 88 events on one such worker, none of
+them a token or context reading — so their cost is unmeasurable from the host and the
+history row shows a dash rather than a number. And the reusable region includes the
+harness's own system prompt and tool definitions, which are shared across every thread
+regardless of this change; what the reorder does is put the stelow prompt's own prefix
+inside that region instead of leaving it behind a per-card value.
+
+`tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
+pair, so a per-card value drifting back into the prefix fails rather than printing a
+smaller number nobody reads.
+
+**The prompt-duplication metric was measuring the bag doing its job, and it is
+replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
+five spawn paths, and block by block 21,883 of them — 39 of 44 blocks — came from
+the shared clause consts that the bag exists to render into every path that owes
+them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number was
+largest exactly where the architecture was working, and an optimization loop given
+it would have earned the reduction by deleting protocols from the paths that need
+them, fighting every guard added in this session. `composedDuplicationChars`
+subtracts the clauses first and counts only prose a template authored itself: 2,118
+characters, 13.0% of the 16,233 the templates write, against a naive 40.8% of all
+rendered text. The naive figure is still reported, labelled `_naive`, because the
+gap between them is the fact worth keeping.
+
+**One planned optimization was refuted by reading the text it proposed to
+delete.** A detector was written for "a clause rendered into a path that cannot act
+on it" and it accused 5,786 characters: `doneProtocol` and `draftProtocol` in the
+research and explore paths. Reading the clause showed the opposite — `DONE_PROTOCOL`
+routes by card kind in its own prose ("Build cards complete only at the `audit`
+stage; research/explore cards complete only after `bb stelow verify` passes"), so the
+text the detector called irrelevant was a rule written specifically for those paths,
+and deleting it would have removed the completion rule from every research card. The
+lesson is recorded with the finding: applicability needs the text read, not a marker
+matched — and the later split honours it: the routing sentence now lives in
+`DONE_PROTOCOL_TRACK`, which both tracks render, rather than being deleted from them.
+
+**An adversarial review of that fix found two holes it had left, and both are
+closed.** The first: a single request for both usage families with a small limit is
+not equivalent to asking per family, because the families interleave — on 2 of the
+148 threads that report both, the newest two events are both context readings, so a
+two-event page discarded a real provider total (1,125,141) in favour of an estimate
+(329,821). Each family is now asked for on its own, so its newest event is
+guaranteed rather than probable. The second: the collapsed summary summed every
+worker — nine of the ten real ones being estimates — and still called the result
+"provider-reported tokens across all workers", which on that fleet is 2,490,239 of
+which 81% is estimated. `totalUsageProvenance` in `lib/token-usage.mjs` now reports
+what the sum is made of, unattributed figures count as estimates rather than being
+assumed reported, and the always-visible summary line carries an `(est.)` badge and
+a tooltip that matches what it actually summed.
+
+The review also proved two of the new assertions worthless, and they are fixed
+rather than kept: the "measurement wins" fixture used the SAME number in both
+families, so a mutation returning the estimate while labelling it `provider` stayed
+green — the two values are now distinct, so the assertion discriminates between the
+label and the value. And the reader's family list had no assertion at all, so
+reverting it to the token family alone — the exact bug — passed every suite; a
+topology pin now requires both families, counted per call site, because a
+"found anywhere" check is satisfied by a different reader's call.
+
+**A refused retry says so on the card, and every card can have a token budget.**
+The auto-retry declined to retry five real runs and recorded none of them: each
+reached `attemptAutoRetry`'s stage guard with the card already advanced past the
+failed stage (`scope` → `audit`), and the guard was a bare `return idle`, so
+`auto_retry_count` read 0 on all 54 rows — indistinguishable, from outside, from
+"no retry was ever applicable". That is the phantom wait the project's rules
+forbid, and the reason it was invisible is that the rule lived in three separate
+`if` statements instead of one function. It lives in `lib/retry-decision.mjs` now:
+one decision, every refusal naming a reason and an exit, recorded on the card as an
+openable trail comment. Only a refusal that leaves a person a decision pages them —
+a card that moved on resolves itself and must not become inbox noise. A card that
+failed for a reason outside this path is not re-recorded here, because the caller
+already wrote that line and one fact belongs in one place.
+
+**A card has no spend ceiling, and that is now stated as the open gap it is.** Measured:
+87,296 to 477,684 tokens per worker thread on this checkout, with nothing anywhere
+comparing that to a limit. A budget module was written and tested — two thresholds, an
+80% warning that records without blocking and a 100% stop that asks a structured
+question with both numbers and three named paths — and then **removed**, because nothing
+called it: no UI set a limit, no column stored one, and no pass checked one. A tested
+module with no consumer is worse than no module, because it reads as a shipped feature.
+The rule it encoded is worth building later, deliberately: a limit nobody chose is worse
+than no limit, an unreadable spend is unlimited for a different reason than an unset one,
+and a budget of zero or less must be unset rather than an instant stop.
+
+**The run bundle's token evidence reads both families, and states which kind of figure
+it is printing.** The bundle writer asked only for `thread/tokenUsage/updated`, so on a
+card whose workers are ACP-backed it wrote "Unknown — no token reports at export time"
+while a context-window reading was available — the same blind spot the panel had. It now
+reads both families, one query each, and the manifest's wording follows the figure: a
+provider total says "provider-reported", a context reading says "estimated from the
+providers' context-window readings", and a figure with no recorded provenance says so
+rather than claiming one. A sum of measurements and estimates is not itself a
+measurement, so the total carries the weakest provenance among its parts — which is the
+same rule as printing no total rather than a zero for unknown.
+
+**A rule that was drifting across three templates is now one clause, and a clause
+that renders the word `undefined` fails a test.** The command-failure rule — read a
+`bb stelow` command's stderr once and continue rather than spending the turn debugging
+the CLI — lived in three templates with three wordings: "continue the workflow" in the
+spawn path, "continue" in the restart path, and a third in the reseed path. That is the
+drift shape this work started from, caught mid-divergence rather than after a worker
+was spawned with the weaker version. It is now `COMMAND_FAILURE_RULE` in the bag, so
+every build path renders the same sentence.
+
+Moving it exposed a failure mode nothing was watching for: a clause wired from a value
+the fixture does not carry renders the literal word `undefined` in the clause's place,
+and the prompt still reads as a prompt — the worker is told "undefined" and nothing
+fails. `tests/prompt-path-contract.test.mjs` now rejects any path whose rendered prompt
+contains `undefined` or `null`, which is the subtler sibling of the empty-render check
+it already had: an empty string leaves a blank line nobody notices, and `undefined`
+leaves a word that looks like content. Cross-card cacheable prefix improved to
+90.7%–97.1% in the process, and the authored duplication fell from 2,236 to 2,092
+characters.
+
+**Two failure causes stopped being advised as if answering would fix them.** A provider
+rate limit and an unowned card both closed their error note with "Answering below resumes
+the worker", which is false for both: nothing is pending, and the reader was pointed at a
+box whose answer goes nowhere. The unowned case already had `isOwnershipRefusal`; a rate
+limit now has `isRateLimitFailure`, matched on the provider's **status code** rather than
+the word "limit" — a card's own exploration limit and a file-claim limit both contain that
+word, and telling a reader to switch providers for one of those is the wrong door. The
+advice names the action that clears it (switch this card's provider or model, or wait the
+window the provider stated) and warns that retrying now re-hits the same limit.
+
+**A result crossing the RPC wire no longer carries a key holding `undefined`.** The board
+failed with `rpc result at $result.redFirst is not a JSON value (undefined)` on any board
+whose stored defaults predate red-first, because `resolveKnobInput` returns `undefined`
+for "absent, derive me downstream" by contract and the handler echoed that straight into
+its result. `JSON.stringify` would have dropped the key, but the host validates the object
+before serialising, so it refused the whole call. Fixed at the three call sites that built
+such a key, and guarded at the boundary with `withoutUndefined` so a fourth cannot
+reintroduce it.
+
+**A worker's orientation cost is measured and shown, not assumed.** A worker's first
+turn is the most expensive and least informed: it has just been handed a
+12,000-character prompt naming its stage, and the skill family it used to be told to
+read is seventeen skills whose entry documents total 215,756 bytes (~54k tokens)
+against that prompt. Nothing stopped it reading them before doing anything. It is
+observable now because a skill load is a `toolCall` item whose arguments name a
+`SKILL.md`, so `lib/first-turn-contract.mjs` derives the verdict from what the worker
+DID: reads before the first `bb stelow advance` are orientation spent before work,
+reads after it are the legitimate case, and reading the repository never counts.
+Violations are reported on the card and never blocked — the plugin cannot stop a tool
+call in flight, and a rule enforced by refusing work is a deadlock with a good error
+message. Measured on this checkout: exactly one skill read across ten workers, which
+is why this is a report rather than a gate.
+
+**A prompt's own prefix is now shared between cards, and the provider serves it from
+cache — measured on live workers, not on fixtures.** Provider caching is prefix matching,
+so the reusable region ends at the first byte that differs, and the state dir sat at
+character ~106 ahead of the entire 10 KB clause block every build path renders
+identically. All three build paths now open with the same `WORKFLOW_INTRO`, state the
+shared clauses in one canonical order, and put every per-card value (state dir, intent,
+knobs, request) last.
+
+Validated end to end. A worker spawned through the RPC carried the reordered prompt: the
+intro at character 0, the clause block ending at 10,896, the first per-card value at
+10,994 — **90.5% of the 12,332-character prompt is a prefix two cards share**, against
+1.3% with the state dir first, so the reorder multiplies the reusable region by 70x. The
+provider confirms it: three live workers on the `pi` provider each reported a first
+snapshot with **99.3%, 99.1% and 89.3% of their input served from cache** (61,470 /
+50,944 / 51,032 cached tokens against 446 / 487 / 6,118 fresh). Fleet-wide across 74
+threads the cache read 60,386,501 tokens against 54,840,152 fresh.
+
+Two limits worth stating. The ACP-backed providers (`acp-opencode`, which 8 of 10
+workers run on) emit no usage event of any kind — 88 events on one such worker, none of
+them a token or context reading — so their cost is unmeasurable from the host and the
+history row shows a dash rather than a number. And the reusable region includes the
+harness's own system prompt and tool definitions, which are shared across every thread
+regardless of this change; what the reorder does is put the stelow prompt's own prefix
+inside that region instead of leaving it behind a per-card value.
+
+`tests/prompt-cache-order.test.mjs` holds the ordering rule and an 85% floor on every
+pair, so a per-card value drifting back into the prefix fails rather than printing a
+smaller number nobody reads.
+
+**The prompt-duplication metric was measuring the bag doing its job, and it is
+replaced.** `duplicatedChars` reported 22,805 characters of duplication across the
+five spawn paths, and block by block 21,883 of them — 39 of 44 blocks — came from
+the shared clause consts that the bag exists to render into every path that owes
+them (`USER_INPUT_CONTRACT`, `DONE_PROTOCOL`, `SPLIT_PROTOCOL`). So the number was
+largest exactly where the architecture was working, and an optimization loop given
+it would have earned the reduction by deleting protocols from the paths that need
+them, fighting every guard added in this session. `composedDuplicationChars`
+subtracts the clauses first and counts only prose a template authored itself: 2,118
+characters, 13.0% of the 16,233 the templates write, against a naive 40.8% of all
+rendered text. The naive figure is still reported, labelled `_naive`, because the
+gap between them is the fact worth keeping.
+
+**One planned optimization was refuted by reading the text it proposed to
+delete.** A detector was written for "a clause rendered into a path that cannot act
+on it" and it accused 5,786 characters: `doneProtocol` and `draftProtocol` in the
+research and explore paths. Reading the clause showed the opposite — `DONE_PROTOCOL`
+routes by card kind in its own prose ("Build cards complete only at the `audit`
+stage; research/explore cards complete only after `bb stelow verify` passes"), so the
+text the detector called irrelevant was a rule written specifically for those paths,
+and deleting it would have removed the completion rule from every research card. The
+lesson is recorded with the finding: applicability needs the text read, not a marker
+matched — and the later split honours it: the routing sentence now lives in
+`DONE_PROTOCOL_TRACK`, which both tracks render, rather than being deleted from them.
+
+**An adversarial review of that fix found two holes it had left, and both are
+closed.** The first: a single request for both usage families with a small limit is
+not equivalent to asking per family, because the families interleave — on 2 of the
+148 threads that report both, the newest two events are both context readings, so a
+two-event page discarded a real provider total (1,125,141) in favour of an estimate
+(329,821). Each family is now asked for on its own, so its newest event is
+guaranteed rather than probable. The second: the collapsed summary summed every
+worker — nine of the ten real ones being estimates — and still called the result
+"provider-reported tokens across all workers", which on that fleet is 2,490,239 of
+which 81% is estimated. `totalUsageProvenance` in `lib/token-usage.mjs` now reports
+what the sum is made of, unattributed figures count as estimates rather than being
+assumed reported, and the always-visible summary line carries an `(est.)` badge and
+a tooltip that matches what it actually summed.
+
+The review also proved two of the new assertions worthless, and they are fixed
+rather than kept: the "measurement wins" fixture used the SAME number in both
+families, so a mutation returning the estimate while labelling it `provider` stayed
+green — the two values are now distinct, so the assertion discriminates between the
+label and the value. And the reader's family list had no assertion at all, so
+reverting it to the token family alone — the exact bug — passed every suite; a
+topology pin now requires both families, counted per call site, because a
+"found anywhere" check is satisfied by a different reader's call.
+
+**A refused retry says so on the card, and every card can have a token budget.**
+The auto-retry declined to retry five real runs and recorded none of them: each
+reached `attemptAutoRetry`'s stage guard with the card already advanced past the
+failed stage (`scope` → `audit`), and the guard was a bare `return idle`, so
+`auto_retry_count` read 0 on all 54 rows — indistinguishable, from outside, from
+"no retry was ever applicable". That is the phantom wait the project's rules
+forbid, and the reason it was invisible is that the rule lived in three separate
+`if` statements instead of one function. It lives in `lib/retry-decision.mjs` now:
+one decision, every refusal naming a reason and an exit, recorded on the card as an
+openable trail comment. Only a refusal that leaves a person a decision pages them —
+a card that moved on resolves itself and must not become inbox noise. A card that
+failed for a reason outside this path is not re-recorded here, because the caller
+already wrote that line and one fact belongs in one place.
+
+**Budget.** No card had a spend ceiling at all, against a measured cost of 87,296 to
+477,684 tokens per worker thread on this checkout. `lib/card-budget.mjs` adds two
+thresholds and two different movements: at 80% of a budget the card keeps working
+and leaves a trail line, and at 100% it stops and asks a structured question
+carrying both numbers and three named paths (raise the ceiling, continue unchanged,
+or stop the card here — stating explicitly that nothing is deleted). A limit nobody
+chose is worse than no limit, so no budget is the default and stays unlimited; a
+spend that cannot be READ is also unlimited, but reports a different reason, because
+"this card has no budget" and "this card's spend could not be read" are different
+facts and an unreadable figure is unknown rather than zero. A budget of zero or less
+is treated as unset rather than as an instant stop, so a bad config cannot brick
+every card.
+
+**A worker's token figure is shown for nearly every worker now, and it says whether
+it is a measurement or an estimate.** The plugin read exactly one event family,
+`thread/tokenUsage/updated`, and asked only for that one. Measured on the live
+database: 837 threads emit `thread/contextWindowUsage/updated` against 148 that emit
+a token total, and all ten of this plugin's worker threads emit a context reading
+while exactly ONE emits a reported total — because the providers that send only a
+context reading are the ACP ones, which most cards run on. So the history row showed
+nothing for eight of ten workers, and the one figure it did show was labelled
+"provider-reported tokens" in a line that could not tell the two apart. Both families
+are now read, `usageFromEvents` returns the reported total when it exists and labels
+the context-window reading as an estimate when it does not, and the label travels
+through the history entry and the RPC contract to the row, which prints
+`tokens (est.)` for an estimate and says so in its tooltip. The provenance field is
+declared in the zod contract deliberately: an undeclared key is stripped at the
+boundary, which is how the value crossed three files and vanished. Measured effect
+on the ten real workers: **1 of 10 reporting → 10 of 10**, nine of them estimates.
+
+**Every prompt resolves its reading list from `bb stelow playbook`, instead of
+naming a family of skills to go and find.** All six spawn paths used to tell the
+worker to load `stelow-workflow-*` — seventeen skills — while the `CLI_EQUIVALENTS`
+clause rendered into the very same prompt said *"run `bb stelow playbook` first ...
+never discover them with `bb skill list | awk` pipelines."* Two instructions, one
+prompt, opposite orders. The glob is worse than redundant: the family's entry
+documents total 215,756 bytes (~54k tokens) against the 12,100-character prompt
+that asked for them, so a worker following the older instruction loads an order of
+magnitude more than the prompt it was handed. `bb stelow playbook` was built to
+replace exactly that discovery — its own docstring records that workers "burned
+whole turns on discovery" — so the templates now point at it and name no skills.
+`tests/spawn-path-registry.test.mjs` fails when any prompt reintroduces glob
+discovery or loses the playbook pointer, and `start-workflow-prompt` moved out of
+the exception list and into coverage, because it renders a real spawn instruction
+and carried the glob unexamined.
+
+**One ask contract, rendered by every spawn path, pinned by equality.** The
+protocol clauses a worker is spawned with are constants in
+`server/runtime/plugin-protocols.ts`, and the bag every build path receives is
+`WORKER_PROTOCOL_CLAUSES`. The ask contract — a question goes through the
+structured form, and a timed-out ask means stop and wait rather than carry on —
+used to be a literal block pasted into the five builders, and it had already
+drifted: two of the five lacked the "never write waiting text" guard and the
+restart path, which takes over at every band boundary, lacked the timeout rule.
+The five pasted copies are now one interpolated constant, so a wording fix lands
+on every path or on none, and three wiring sites that each re-spelled the same
+ten clauses bind the one bag instead.
+
+Two tests keep it that way, and both read rendered output rather than source
+text. `tests/prompt-path-contract.test.mjs` renders all five paths and asserts
+every clause each owes reaches it, that no clause renders twice, and that the
+contract's rule sentences are stated **exactly** — an equality pin, not a list of
+forbidden words. That distinction was earned: four successive wordings inverted
+the timeout rule and defeated four successive blacklists, including "STOP and
+wait is advisory only: feel free to resume the workflow", which the suite did not
+see. An equality pin cannot be defeated by a novel wording, because a novel
+wording is a different sentence. **Where a prompt stops being reusable is measured, and it is the largest cost
+finding on this page.** Provider caching is prefix matching: the reusable region
+ends at the first byte that differs, so a builder is cache-hostile in proportion to
+how early it interpolates something card-specific. Two workers spawned for two
+different cards share **129 of 12,082 characters — 1.1%** — because the state dir
+is interpolated at character ~106, and the entire 10,075-character clause block the
+two workers genuinely share sits after it. Reordering so shared clauses precede
+per-card values makes the same prompt **99% cacheable** with the same rules stated
+and the same token count. `tests/prompt-cache-order.test.mjs` measures the
+shared-first region of each build path on every run and holds the ordering rule as
+a skipped test, because hoisting 10 KB of protocols above the request changes what
+the model reads first and that is a deliberate change, not a test fix.
+
+The same measurement shows the band-boundary handoff re-pays nearly the whole
+prompt: `spawn` and `restart` on the same card share 69 of 12,100 characters
+(0.6%), because the handoff starts a new thread. Cache reuse across
+`spawn → restart` requires the new thread's prompt to keep the old one's prefix,
+which today it does not.
+
+`tests/prompt-budget.test.mjs` reports the cost of each path (~54.8k characters
+across the five, ~13.7k estimated tokens) and the boilerplate rendered by more than
+one path (42%), so prompt growth is something a reviewer sees rather than something
+the bill reveals.
+
+`tests/transition-totality.test.mjs` applies the same idea to the state machine:every stage has a forward exit, every exit leads somewhere that exists, no stage
+routes only to itself, every forward edge moves forward, and the audit parses the
+table the way the shipped `parseNextStages` parses it — which matters, because a
+parser that read only the fenced block disagreed with production about an edge
+placed after the closing fence. `tests/spawn-path-registry.test.mjs` makes a new
+build path fail a test rather than quietly skip the protocols, and
+`tests/metrics-contract.test.mjs` pins each reported metric's direction, unit, and
+null-versus-zero rule so an optimization target cannot be redefined instead of
+improved.
+
+**A prompt clause is budgeted, so a growth names the clause and not the path.**
+The per-path ceilings above catch a prompt growing, but they cannot say WHICH
+clause grew, and the smallest path always fails first: measured on this commit,
+11,700 of the reseed prompt's 12,490 characters are verbatim shared clause
+text, so a sentence added to `doneProtocol` reported "reseed exceeds the
+ceiling by 1" — true, and useless, because it named a path instead of a cause.
+`lib/prompt-clause-budgets.mjs` is the missing half: a character ceiling per
+clause, keyed on the bag's own protocol key, so the table and the bag cannot
+drift into two vocabularies. The ceilings ratchet the way `scripts/source-debt.json`
+does — a clause that shrinks must have its ceiling tightened in the same commit,
+because a ceiling nobody lowers is a ceiling that quietly becomes a budget.
+
+The render order moved out of the builder and into `CLAUSE_ORDER` beside the
+bag, so "what a prompt contains" and "what a prompt costs" are one list
+instead of two. The rendered prompt is byte-identical to before: the order
+was already correct, it was just written in a place that could not be
+checked against anything.
+
+The fast loop is `npm run test:fast` (~0.7s, five pure test files in one process),
+for when the full suite's ~400 separate node processes are not what you want to
+wait for. `scripts/check-test-boot-cost.mjs` reports how much of a full run is
+pure process boot and fails when that share grows.
+
+## Known limitations (decision enforcement)
+
+Assumed deliberately; each names the tripwire that would invalidate it:
+
+- **Concurrent writes race.** Two `decide` writes to the same card can
+  last-write-win (atomic replace, no lock). Tripwire: parallel dispatch
+  deciding on one card — then this needs the `locks/` machinery, not hope.
+- **Staleness is version-only.** Code can move under a decision without a
+  shape bump and the receipt stays `current`. Tripwire: a real incident of
+  silent invalidation — then receipts need baseline HEADs (schema v2).
+- **`--by` is self-asserted.** The host has no caller identity; attribution
+  is decorative. Tripwire: any multi-human install — then approvals need
+  real identity.
+- **Served reads ride inside the task context JSON**, not as a prompt
+  prefix. Tripwire: evidence a worker skipped them — then promote to prefix.
+- **Conflicts warn, they do not block.** A warned contradiction still
+  records. Tripwire: a warned-then-ignored contradiction causing rework —
+  then contradictions refuse pending supersession.

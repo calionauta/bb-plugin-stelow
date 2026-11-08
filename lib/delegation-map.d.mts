@@ -1,4 +1,3 @@
-export declare const DELEGATION_TIERS: string[];
 
 export interface DelegationSite {
   site: string;
@@ -8,8 +7,6 @@ export interface DelegationSite {
   writes: boolean | string;
   judgedBy: string;
 }
-
-export declare const DELEGATION_SITES: DelegationSite[];
 
 export declare function getDelegationSite(site: unknown): DelegationSite;
 

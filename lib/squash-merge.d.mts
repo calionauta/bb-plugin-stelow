@@ -3,7 +3,6 @@ export declare const SQUASH_SHA_MARKER: string;
 export declare const SQUASH_DONE_MARKER: string;
 export declare const SQUASH_EXIT_CONFLICT: number;
 export declare const SQUASH_EXIT_COMMIT_FAILED: number;
-export declare const SQUASH_EXIT_BASE_CHECKOUT_FAILED: number;
 
 export declare function shellQuote(value: string): string;
 

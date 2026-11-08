@@ -231,3 +231,31 @@ details.stelow-border-running {
 @media (prefers-reduced-motion: reduce) {
   .stelow-stage-pulse { animation: none; }
 }
+
+/* Bundled pele diagrams. Upstream renders with literal light/dark palettes
+   (scripts/render-diagram.mjs THEMES), and this panel does the same: light
+   defaults, `.dark` overrides following the app's own convention. A diagram
+   without these inherits the renderer's unthemed fallbacks — dark lines on
+   a dark surface — which reads as an empty box. */
+.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1f1f1f;
+  --pele-muted: #61616b;
+  --pele-line: #1f1f1f;
+  --pele-surface: #ffffff;
+  --pele-surface-alt: #ececf1;
+  --pele-border: #8a8a94;
+  --pele-accent: #3f5fbf;
+  --pele-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.dark .pele {
+  --pele-bg: #16161a;
+  --pele-fg: #e8e8ea;
+  --pele-muted: #a0a0a8;
+  --pele-line: #e8e8ea;
+  --pele-surface: #1f1f26;
+  --pele-surface-alt: #2c2c36;
+  --pele-border: #5a5a68;
+  --pele-accent: #8ab0ff;
+}

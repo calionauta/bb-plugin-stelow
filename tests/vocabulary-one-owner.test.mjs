@@ -38,6 +38,7 @@ const OWNERS = {
   TRACKABLE_STATUS_LABELS: "lib/trackables.mjs",
   RUN_STATUS_LABELS: "lib/execution-run-ledger.mjs",
   CARD_STATUS_LABELS: "lib/card-status.mjs",
+  RUN_FAILURE_REASON_LABELS: "lib/run-failure.mjs",
 };
 
 const ownedFiles = () => execFileSync(

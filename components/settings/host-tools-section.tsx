@@ -1,53 +1,11 @@
+import { useState } from "react";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
-import type { HostToolId, HostToolStatus } from "../../lib/host-tools.mjs";
+import { HOST_TOOLS, missingToolIds } from "../../lib/host-tools.mjs";
+import type { HostToolId, HostToolMeta, HostToolStatus } from "../../lib/host-tools.mjs";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { DisclosureChevron, SECTION_SURFACE, SUMMARY_ROW } from "../disclosure";
 import { Icon } from "../ui/icon";
-
-type HostToolMeta = {
-  id: HostToolId;
-  name: string;
-  repo: string;
-  plain: string;
-  tech: string;
-  install: string;
-};
-
-const HOST_TOOLS: HostToolMeta[] = [
-  {
-    id: "ast-grep",
-    name: "ast-grep",
-    repo: "https://github.com/ast-grep/ast-grep",
-    plain: "Find code patterns and rename across files without touching text inside strings — when refactoring.",
-    tech: "Structural AST search with safe rewrite; used for refactors that change signatures.",
-    install: "npm install -g @ast-grep/cli",
-  },
-  {
-    id: "cymbal",
-    name: "cymbal",
-    repo: "https://github.com/1broseidon/cymbal",
-    plain: "See who calls each function and what breaks if you change it — before touching code.",
-    tech: "Symbol graph (refs, impact, trace); used in Tech Preview, Feature Recon and Alignment Check.",
-    install: "brew install 1broseidon/tap/cymbal",
-  },
-  {
-    id: "ripwire",
-    name: "ripwire",
-    repo: "https://github.com/redhat-et/ripwire",
-    plain: "First read of an unfamiliar codebase: what matters, where to enter, what to test.",
-    tech: "Token-budgeted symbol map (symbols, callers, blast radius).",
-    install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"",
-  },
-  {
-    id: "sem",
-    name: "sem",
-    repo: "https://github.com/Ataraxy-Labs/sem",
-    plain: "Tell which functions and types changed — not just which lines — including renames.",
-    tech: "Entity-level diff via tree-sitter; powers the Diff summary and agent audits.",
-    install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh",
-  },
-];
 
 const NPX_TOOLS = [
   {
@@ -81,7 +39,7 @@ const NPX_TOOLS = [
   {
     name: "thermo-nuclear",
     repo: "https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review",
-    plain: "Optional ultra-strict final code review, gated by appetite and risk.",
+    plain: "Optional ultra-strict final code review, gated by quality and risk.",
     tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent.",
   },
 ];
@@ -229,13 +187,53 @@ function NpxTools() {
   );
 }
 
-export function HostToolsSection({ tools, onInstall, installingId, errors }: {
+function InstallAllRow({ missing, busy, onInstallAll }: {
+  missing: HostToolId[];
+  busy: boolean;
+  onInstallAll: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {confirming ? (
+        <>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => { setConfirming(false); onInstallAll(); }}
+            title={`Install ${missing.length} missing tool${missing.length === 1 ? "" : "s"} now`}
+          >
+            {busy ? "Installing…" : `Confirm install (${missing.length})`}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => setConfirming(true)}
+          title="Install every missing tool in panel order"
+        >
+          Install all missing ({missing.length})
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export function HostToolsSection({ tools, onInstall, onInstallAll, installingId, errors }: {
   tools: HostToolStatus[] | null;
   onInstall: (id: HostToolId) => void;
+  onInstallAll?: () => void;
   installingId: string | null;
   errors: Record<string, string>;
 }) {
   const byId = new Map((tools ?? []).map((tool) => [tool.id, tool]));
+  const missing = tools ? missingToolIds(tools) : [];
+  const busy = installingId !== null;
   return (
     <section className="space-y-2">
       <h2 className="text-base font-semibold text-foreground">Optional tools</h2>
@@ -254,6 +252,9 @@ export function HostToolsSection({ tools, onInstall, installingId, errors }: {
         <p className="text-xs text-muted-foreground">Checking host tools…</p>
       ) : (
         <div className="space-y-2">
+          {onInstallAll && missing.length > 0 ? (
+            <InstallAllRow missing={missing} busy={busy} onInstallAll={onInstallAll} />
+          ) : null}
           {HOST_TOOLS.map((meta) => (
             <HostToolCard
               key={meta.id}

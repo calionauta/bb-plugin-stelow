@@ -5,6 +5,7 @@
  * file is the single place a shape is named.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ActionRecorder } from "./runtime/action-log-runtime.js";
 import type { Recipe } from "../lib/recipe-catalog.mjs";
 import type { ExecutionRoute } from "../lib/execution-route.mjs";
 import type { ExecutionRun } from "../lib/execution-run-ledger.mjs";
@@ -27,6 +28,10 @@ export type StartContext = {
   intent?: string;
   stage?: string;
   reviewMode?: string;
+  /** Scope ids the run touches; served decision receipts are filtered by these. */
+  scopeIds?: string[];
+  /** Already-loaded decision receipts (approvals-dir reader owns loading). */
+  decisionReceipts?: Array<{ id: string; kind?: string; scopeIds?: string[] }>;
 };
 
 export type StartResult = {
@@ -67,7 +72,6 @@ export type NativeDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   stateDir: (card: WorkerCard, rootPath: string) => Promise<string | null>;
   logComment: (cardId: string, targetId: string, body: string) => void;
+  /** The flight recorder; absent means "no log", never "no launch". */
+  actions?: ActionRecorder;
 };
-
-/** A start request that did not, or did not yet, produce a run. */
-export type StartFailure = { ok: false; run: null; error: string };

@@ -24,6 +24,14 @@ export type BuildPanelState = {
   collapsedListGroups: Record<string, boolean>;
   githubAuthMissing: boolean;
   githubAutomationEnabled: boolean;
+  /** True when the board is in multi-select mode; tiles render no selection mark without it. */
+  selectMode: boolean;
+  enterSelectMode: () => void;
+  exitSelectMode: () => void;
+  /** Only the ids the current filters leave on the board. */
+  selectedIds: Set<string>;
+  toggleSelection: (cardId: string) => void;
+  clearSelection: () => void;
   toggleProject: (value: string) => void;
   toggleStage: (value: string) => void;
   toggleIntent: (value: string) => void;

@@ -1,15 +1,14 @@
-export declare const QUESTION_ID_SEP: string;
 export declare const QUESTION_KINDS: string[];
+export declare const QUESTION_RENDERER_ID: string;
 export declare function questionKind(raw: unknown): "standard" | "split";
-export declare const MAX_DESC_CHARS: number;
-export declare const MAX_PREVIEW_CHARS: number;
-export declare const MAX_ARTIFACT_CHARS: number;
-export declare const CONTRACT_ID_PATTERN: RegExp;
 export declare interface AskOption {
   label: string;
   description: string;
   preview: string | null;
   artifact: { path: string; display?: string } | null;
+  selected?: boolean;
+  needsNote?: boolean;
+  recommended?: boolean;
 }
 export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[]; contract: string | null }>; error?: undefined } | { groups?: undefined; error: string };
 export declare function cleanOptions(raw: unknown): AskOption[];
@@ -18,5 +17,10 @@ export declare function inheritAskArtifact(options: unknown): Array<{ path: stri
 export declare function isBatchPayload(data: unknown): boolean;
 export declare function expandInteractionQuestions(interaction: { id: string; title?: string; payload?: unknown }): Array<{ questionId: string; interactionId: string; index: number; title: string; question: string; multiple: boolean; kind: "standard" | "split"; options: AskOption[] }>;
 export declare function splitQuestionId(questionId: string): { interactionId: string; index: number };
+export declare function preselectedAnswers(questions: unknown): Record<string, string[]>;
+export declare function toggleSinglePick(selected: unknown, label: string): string[];
+export declare function pickedLabels(answers: unknown, optionLabels: unknown): string[];
+export declare function exclusivePickRefusal(input: { question?: string; multiple?: unknown; answers: unknown; optionLabels: unknown }): string | null;
+export declare function attachOptionFlag(groups: unknown, arg: string): string | null;
 export declare function groupBatchAnswers(items: Array<{ questionId: string; answers: string[] }>): Map<string, { kind: "single"; answers: string[] } | { kind: "batch"; answers: string[][] }>;
 export declare function formatBatchContinuation(decisions: Array<{ question: string; answers: string[] }>): string;

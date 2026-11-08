@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TEXT_META, TEXT_SECTION, TYPE_EXCEPTIONS, TYPE_SCALE } from "../lib/design-tokens.ts";
 import { codeLinesOf as stripComments, codeOf } from "./helpers/source-code.mjs";
+import { scanForClampDisplayConflicts } from "./helpers/line-clamp-scan.mjs";
 
 /**
  * The card's vocabulary must be named, or it cannot be checked.
@@ -171,9 +172,9 @@ test("a disclosure does not re-spell a family it could name", () => {
 test("no local copy of a shared constant hides under a shared name", () => {
   // The most expensive kind of duplication: a constant whose NAME says shared,
   // duplicated, with different contents. Nothing in review catches that.
-  const shared = /\b(SECTION_SURFACE|SUMMARY_ROW|SUMMARY_LINK|SUMMARY_BASE|TEXT_STATE|TEXT_SECTION|TEXT_BODY|TEXT_META)\b/;
+  const shared = /\b(SECTION_SURFACE|SUMMARY_ROW|SUMMARY_LINK|SUMMARY_BASE|TEXT_STATE|TEXT_SECTION|TEXT_BODY|TEXT_META|SELECTION_MARK_CLASS)\b/;
   const offenders = ALL
-    .filter((file) => !file.includes("disclosure") && !file.includes("design-tokens"))
+    .filter((file) => !file.includes("disclosure") && !file.includes("design-tokens") && !file.includes("selection-mark"))
     .flatMap((file) => codeLinesOf(file)
       .filter((line) => new RegExp(`^(const|let)\\s+${shared.source}`).test(line.trim()))
       .map((line) => `${file}: ${line.trim().slice(0, 70)}`));
@@ -203,6 +204,7 @@ test("a type size is on the scale, or listed as a deliberate exception", () => {
     "a type size outside the scale. Use one of the named steps, or add the size to TYPE_EXCEPTIONS with the reason "
     + "it earns its place — a scale is only real if its exceptions are listed",
   );
+
 });
 
 /**
@@ -211,12 +213,17 @@ test("a type size is on the scale, or listed as a deliberate exception", () => {
  * leave this test blessing the old one.
  *
  * This is deliberately a GROWTH gate, not a migration gate. `text-[11px]`
- * appears in 102 places, all of it the same size doing the same job; rewriting
- * 124 files in the same commit as a disclosure fix would bury the change under
- * noise, and a rule nobody can adopt in one sitting is a rule nobody adopts.
- * So the size is allowed, the SCALE names it, and a size that was not already
- * here cannot join. The 102 sites are owed a migration and are now counted
- * rather than invisible — which is the only honest status for a debt this size.
+ * appeared in 95 places, all of it the same size doing the same job; rewriting
+ * every file that carries it in the same commit as a disclosure fix would bury
+ * the change under noise, and a rule nobody can adopt in one sitting is a rule
+ * nobody adopts. So the size is allowed, the SCALE names it, and the sites are
+ * COUNTED against a ceiling that only ratchets down.
+ *
+ * The count was added after this docstring was found to be describing a gate that did not
+ * exist. It said "a size that was not already here cannot join" and "the 102 sites are owed
+ * a migration and are now counted"; neither was true, and a 98th site passed green. The
+ * number was also wrong (102 was the figure when written; 97 raw, 95 in code). A rule whose
+ * enforcement is prose is a preference, and this file is where that lesson keeps landing.
  */
 function sizesBehindTheScale() {
   return TYPE_SCALE.flatMap((step) => step.match(/text-\[\d+px\]/g) ?? []);
@@ -316,3 +323,74 @@ test("the legacy 11px size is a recorded exception, never a step", () => {
  * deliberately: that is a touch-target decision, recorded in-file, and not this
  * guard's business.
  */
+
+/**
+ * A disclosure's arrow must move, and the list that tracks the clause bag must be derived.
+ *
+ * Two shapes found by reading the live card. Both are mechanically detectable and both
+ * were invisible in review, because each site looks locally reasonable on its own.
+ */
+test("a chevron rotates: it is given open, or its details carries group", () => {
+  // A chevron rendered without `open` rotates only from the `group-open:` variant, which
+  // needs the surrounding <details> to carry the `group` class. One without it renders a
+  // disclosure whose arrow never moves. Reported from the live card as "the Machine
+  // receipts toggle is not correct. it needs to rotate when clicked", and found again in
+  // question-batch, which had `<details className="mt-1">`.
+  //
+  // The stronger shape is the one DetailsDisclosure has always used — track the state and
+  // pass `open` — so this accepts either and rejects only the case that does nothing.
+  const blind = [];
+  for (const file of componentFiles()) {
+    const source = codeOf(readFileSync(file, "utf8"));
+    if (!source.includes("<DisclosureChevron")) continue;
+    const lines = source.split("\n");
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!lines[i].includes("<DisclosureChevron")) continue;
+      // `open` may be on a following line for a long attribute list, so the check spans
+      // to the end of the element rather than one line.
+      const element = lines.slice(i, i + 4).join(" ").split(">")[0];
+      if (/\bopen=/.test(element)) continue;
+      // Only a <details> can be driven by the `group-open:` variant; a button-controlled
+      // disclosure always passes `open` and is not this guard's business.
+      const above = lines.slice(0, i).reverse().find((line) => line.includes("<details"));
+      if (!above) continue;
+      if (/className=[^>]*\bgroup\b/.test(above)) continue;
+      blind.push(`${file.replace(`${repoRoot}/`, "")}:${i + 1}`);
+    }
+  }
+  assert.deepEqual(
+    blind,
+    [],
+    "a chevron with no `open` prop rotates only inside a <details> whose className includes `group`; "
+      + `outside one its arrow never moves. Pass open from state, or add group. Blind: ${blind.join(", ")}`,
+  );
+});
+
+test("the owed-clause list is derived from the bag, never written out", () => {
+  // The hand-written version went stale the moment a clause was added: three clauses were
+  // never asserted owed, and removing one from the template left the coverage test green.
+  // Pinned as a shape rather than a general rule, because "no array of strings" would be
+  // noise and would be turned off within a week.
+  const helper = read("tests/helpers/prompt-paths.mjs");
+  assert.match(
+    helper,
+    /export const BUILD_PATH_CLAUSES = Object\.keys\(/,
+    "the owed-clause list is derived from the clause bag",
+  );
+  assert.doesNotMatch(
+    helper,
+    /export const BUILD_PATH_CLAUSES = \[/,
+    "and never a hand-written array again, which is what went stale",
+  );
+});
+
+test("no class group clamps a line and resets its display at the same time", () => {
+  // `.line-clamp-N` works by declaring `display:-webkit-box`; `.block` declares
+  // `display:block`. Equal specificity, so source order decides — and `.block`
+  // came later, so the Inbox ask line's documented two-line cap never applied.
+  // The scan lives in `tests/helpers/line-clamp-scan.mjs`; this file owns the
+  // assertion because it already reads `components/` as text (pin ratchet).
+  const { clamped, offenders } = scanForClampDisplayConflicts(repoRoot);
+  assert.ok(clamped.has("/components/panels/inbox-row.tsx"), "the Inbox ask line must be scanned; a scan that sees nothing fails nothing");
+  assert.deepEqual(offenders, [], `a clamp sharing a class list with \`block\` never caps: ${offenders.join("; ")}`);
+});

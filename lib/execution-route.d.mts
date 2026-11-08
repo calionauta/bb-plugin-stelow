@@ -7,6 +7,8 @@ export interface ExecutionRoute {
   redirect?: string;
   missingCapabilities?: string[];
   preserves?: string[];
+  effectiveWidth?: number;
+  humanBoundary?: string;
 }
 export function missingNativeCapabilities(required: readonly string[] | undefined, available: Record<string, boolean> | undefined): string[];
 export function resolveExecutionRoute(input: { recipe: unknown; requiredCapabilities?: string[]; nativeCapabilities?: Record<string, boolean>; nativeAvailable?: boolean }): ExecutionRoute;
@@ -27,7 +29,6 @@ export function isScopeWriteAllowed(input: ScopeWriteInput, heldClaims?: readonl
 export const NATIVE_SCOPE_BATCH_PILOT_ALLOWED: boolean;
 export const SCOPE_BATCH_PILOT_MAX_CONCURRENCY: number;
 export const SCOPE_BATCH_PILOT_TIMEOUT_MS: number;
-export const SCOPE_BATCH_PILOT_REQUIRES: readonly string[];
 export interface ScopeBatchPilotGates {
   pilot: boolean;
   capability: boolean;

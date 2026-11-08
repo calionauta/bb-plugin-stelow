@@ -28,10 +28,6 @@ export function unknownCard(cardId: string): CliResult {
   return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
 }
 
-export function archivedCard(): CliResult {
-  return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-}
-
 export function usage(stderr: string): CliResult {
   return { exitCode: 2, stderr };
 }
