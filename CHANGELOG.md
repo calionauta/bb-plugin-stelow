@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.103.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.9...v0.103.0) (2026-11-08)
+
+
+### Features
+
+* revalidate recipe pilot matrix against host 0.46.1 ([#512](https://github.com/calionauta/bb-plugin-stelow/issues/512)) ([c18b0f9](https://github.com/calionauta/bb-plugin-stelow/commit/c18b0f933538c9c0493095d0fe4a541fb4adc27f))
+
 ## [0.102.9](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.8...v0.102.9) (2026-10-29)
 
 
