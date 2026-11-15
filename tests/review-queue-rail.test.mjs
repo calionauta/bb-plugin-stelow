@@ -14,6 +14,8 @@ import {
   DESIGN_GATE,
   PRODUCT_GATE,
   TECH_GATE,
+  mixedCards,
+  mixedLedger,
   openCards,
   openLedger,
   reset,
@@ -77,21 +79,20 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   fireEvent.click(trigger());
   const legend = document.querySelector("[data-review-queue-legend]");
   assert.ok(legend, "the legend renders with the rail");
-  assert.match(legend.textContent, /6h/, "the exact cell is explained in the hour unit the cells use");
+  assert.match(legend.textContent, /6h/, "the measured cell is explained in the hour unit the cells use");
   assert.match(legend.textContent, /3d/, "and in the day unit, so both shapes are taught");
-  assert.ok(legend.textContent.includes("~6h"), "the bound is explained with its marker");
-  assert.ok(legend.textContent.includes("\u2014"), "the unknown cell is explained");
-  // F9: a bound must say that it starts at the card's own record, because that
-  // is what makes it a bound rather than a creation date it cannot see.
-  assert.match(
-    legend.textContent,
-    /card's own record/i,
-    "the bound's explanation names the record it is read from",
-  );
+  // The two cells that are words, and the one that is a blank. A legend that
+  // explains only numbers leaves the reader to guess what `in gate` means.
+  assert.ok(legend.textContent.includes("in gate"), "the no-entry cell is explained");
+  assert.ok(legend.textContent.includes("no owner named"), "and so is the row whose wait nobody owns");
+  assert.ok(legend.textContent.includes("\u2014"), "and the blank a failed read leaves");
+  // The age is the stage entry, and the legend must not re-introduce the two
+  // clocks this change removed: the bound marker and the creation-time claim.
+  assert.doesNotMatch(legend.textContent, /~/, "no derived marker is taught any more: the age is exact or it is a word");
   assert.doesNotMatch(
     legend.textContent,
-    /creation|created/i,
-    "and does not claim a creation time the projection cannot see",
+    /since creation|at least that long/i,
+    "and nothing claims a bound read off an old record",
   );
   assert.ok(
     document.querySelector("[data-review-queue-empty]"),
@@ -107,7 +108,7 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
   await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
   fireEvent.click(trigger());
-  assert.equal(rows().length, 4, "every gate card is reported, including the one with no record");
+  assert.equal(rows().length, 4, "every gate card is reported");
   assert.deepEqual(
     rows().map((row) => row.querySelector("span").textContent),
     ["Card old_card", "Card stalled_card", "Card read_card", "Card new_card"],
@@ -115,8 +116,8 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   );
   assert.deepEqual(
     rows().map((_, index) => rowCell(index)),
-    ["6d", "~3d", "2d", "\u2014"],
-    "the exact age, the derived age and two blanks — the three age states, all rendered",
+    ["6d", "3d", "2d", "1h"],
+    "each age is that card's own gate entry, in the unit the wait is read in",
   );
   assert.equal(rows()[0].querySelectorAll("span").length, 3, "name, gate and age: the whole row");
   assert.ok(rows()[0].getAttribute("aria-label").includes("Product Review"), "the row names its gate for a screen reader");
@@ -126,8 +127,13 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   );
   assert.deepEqual(
     rows().map((row) => row.getAttribute("data-waiting-on")),
-    ["human", "unattributed", "human", "unattributed"],
+    ["human", "human", "human", "human"],
     "every row carries the attribution it was counted by, so the diff can be read",
+  );
+  assert.deepEqual(
+    rows().map((row) => row.getAttribute("data-age-source")),
+    ["stage", "stage", "stage", "stage"],
+    "and the clock it was dated by: the stage entry, never an inbox event",
   );
   reset();
 }
@@ -165,7 +171,7 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   assert.equal(document.querySelectorAll("[data-review-queue-failure]").length, 0, "and the failures clear");
   assert.deepEqual(
     rows().map((_, index) => rowCell(index)),
-    ["6d", "~3d", "2d", "\u2014"],
+    ["6d", "3d", "2d", "1h"],
     "the ages come back with the read",
   );
   reset();
@@ -287,6 +293,51 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
     trigger().textContent,
     /waiting on you/,
     "and it does not say a card is waiting while the badge is a dash",
+  );
+  reset();
+}
+// --- 15. A card nobody owns: listed, named, and not counted --------------
+// The ruling on the unattributed cards: the list shows them (hiding a card in a
+// gate takes it off the only surface that lists gates) and the badge does not
+// count them (counting them makes the number mean "cards in gates"). The row
+// says `no owner named` where the age would be, and one line says how many such
+// cards there are, so the list and the number cannot silently disagree.
+{
+  const rpc = stubRpc(mixedLedger);
+  render(h(ReviewQueue, { rpc, cards: mixedCards, onOpenCard: () => {} }));
+  // Two cards are the reader's: `mine` (5h in the gate) and `no_entry`, which has
+  // no recorded entry and therefore no number to add to the oldest.
+  await waitFor(() => assert.match(trigger().textContent, /2 \u00b7 5h/));
+  assert.equal(rows().length, 0, "the rows live in the rail, which is shut");
+  fireEvent.click(trigger());
+  assert.deepEqual(
+    rows().map((row) => row.getAttribute("data-waiting-on")),
+    ["unattributed", "human", "human"],
+    "the orphan is in the list beside the reader's own cards, oldest first",
+  );
+  assert.deepEqual(
+    rows().map((_, index) => rowCell(index)),
+    ["no owner named", "in gate", "5h"],
+    "and its cell names the problem; the card with no entry says `in gate` instead of inventing a wait",
+  );
+  const unowned = document.querySelector("[data-review-queue-unowned]");
+  assert.ok(unowned, "one line accounts for the cards the count excludes");
+  assert.equal(unowned.textContent.trim(), "+1 without an owner", "and it says how many, in words");
+  const count = document.querySelector("[data-review-queue-count]");
+  assert.match(count.textContent, /3 cards in gates/, "the list line still counts every row");
+  assert.match(count.textContent, /oldest 5h/, "while the oldest is the oldest of the reader's own");
+  reset();
+
+  // With nothing unowned the line is absent: a permanent "+0" is noise that
+  // teaches the reader to stop reading it.
+  const tidy = stubRpc(openLedger);
+  render(h(ReviewQueue, { rpc: tidy, cards: openCards, onOpenCard: () => {} }));
+  await waitFor(() => assert.match(trigger().textContent, /4 \u00b7 6d/));
+  fireEvent.click(trigger());
+  assert.equal(
+    document.querySelector("[data-review-queue-unowned]"),
+    null,
+    "no unowned cards, no line: the absence is the reading",
   );
   reset();
 }

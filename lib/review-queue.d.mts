@@ -26,19 +26,29 @@ export interface ReviewQueueCard {
   name?: string | null;
   activity?: string | null;
   updatedAt?: number | null;
+  /** When the card entered the stage it is in now; the age's source. */
+  stageEnteredAt?: number | null;
+  /** The fallback clock for a card with no stage entry: it can be in a gate for
+   * at most its whole life. */
+  createdAt?: number | null;
 }
 
-export type ReviewQueueAgeSource = "entered" | "since_created" | "unknown";
+export type ReviewQueueAgeSource = "stage" | "created" | "unknown";
 
-export type ReviewQueueWaitingOn = "human" | "system" | "unattributed";
+/** `unknown` is a failed ownership read, not a card nobody owns. */
+export type ReviewQueueWaitingOn = "human" | "system" | "unattributed" | "unknown";
 
 export interface ReviewQueueAttribution {
   waitingOn: ReviewQueueWaitingOn;
+}
+
+export interface ReviewQueueGateClock {
   enteredAt: number | null;
+  createdAt: number | null;
   ageSource: ReviewQueueAgeSource;
 }
 
-export interface ReviewQueueRow extends ReviewQueueAttribution {
+export interface ReviewQueueRow extends ReviewQueueAttribution, ReviewQueueGateClock {
   id: string;
   name: string;
   stage: string;
@@ -47,7 +57,10 @@ export interface ReviewQueueRow extends ReviewQueueAttribution {
 }
 
 export interface ReviewQueueBadge {
+  /** Cards waiting on a person. */
   count: number;
+  /** Cards in a gate that nobody owns; listed, never counted. */
+  unowned: number;
   oldest: string | null;
   label: string;
 }
@@ -70,6 +83,10 @@ export declare const REVIEW_QUEUE_ROW_PX: number;
 export declare const REVIEW_QUEUE_TICK_MS: number;
 export declare const REVIEW_QUEUE_GATES: ReadonlyArray<ReviewQueueGate>;
 export declare const REVIEW_QUEUE_AGE_LEGEND: ReadonlyArray<ReviewQueueLegendEntry>;
+/** The cell a card with no owner prints in place of an age. */
+export declare const REVIEW_QUEUE_UNOWNED_CELL: string;
+/** The cell a card with no recorded stage entry prints in place of an age. */
+export declare const REVIEW_QUEUE_IN_GATE_CELL: string;
 
 export declare function isReviewGate(stage: string): boolean;
 export declare function reviewGateLabel(stage: string): string;
@@ -80,6 +97,8 @@ export declare function attributionOf(
   card: ReviewQueueCard,
   events?: ReadonlyArray<ReviewQueueEvent>,
 ): ReviewQueueAttribution;
+
+export declare function gateClockOf(card: ReviewQueueCard): ReviewQueueGateClock;
 
 export declare function orderQueueRows(rows: ReadonlyArray<ReviewQueueRow>): ReviewQueueRow[];
 

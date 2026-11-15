@@ -57,8 +57,8 @@ const assertReadOnly = (rpc, when) =>
 // --- 1. One read, and it is a read ---------------------------------------
 const rpc = stubRpc();
 const cards = [
-  { id: "a", displayName: "Alpha", stage: PRODUCT_GATE, activity: "idle", updatedAt: T },
-  { id: "b", displayName: "Beta", stage: CODE_GATE, activity: "idle", updatedAt: T },
+  { id: "a", displayName: "Alpha", stage: PRODUCT_GATE, activity: "idle", updatedAt: T, stageEnteredAt: T - 2 * DAY },
+  { id: "b", displayName: "Beta", stage: CODE_GATE, activity: "idle", updatedAt: T, stageEnteredAt: T - DAY },
 ];
 render(h(ReviewQueue, { rpc, cards, onOpenCard: () => {} }));
 await waitFor(() => assert.match(document.getElementById(REVIEW_QUEUE_TRIGGER_ID).textContent, /2 · 2d/));
@@ -89,7 +89,7 @@ window.localStorage.clear();
   const hostileRpc = stubRpc();
   render(h(ReviewQueue, {
     rpc: hostileRpc,
-    cards: [{ id: "a", displayName: hostile, stage: PRODUCT_GATE, activity: "idle", updatedAt: T }],
+    cards: [{ id: "a", displayName: hostile, stage: PRODUCT_GATE, activity: "idle", updatedAt: T, stageEnteredAt: T - 2 * DAY }],
     onOpenCard: () => {},
   }));
   await waitFor(() => assert.match(document.getElementById(REVIEW_QUEUE_TRIGGER_ID).textContent, /1 · 2d/));
@@ -120,6 +120,7 @@ window.localStorage.clear();
       stage: PRODUCT_GATE,
       activity: "idle",
       updatedAt: T,
+      stageEnteredAt: T - 2 * DAY,
       prompt: "SECRET-PROMPT-TEXT",
       lastError: "SECRET-ERROR-TEXT",
       projectName: "SECRET-PROJECT",

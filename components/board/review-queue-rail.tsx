@@ -133,6 +133,15 @@ function RailHeader({
           {rows.length === 1 ? "1 card in a gate" : `${rows.length} cards in gates`}
           {badge.oldest === null ? "" : ` · oldest ${badge.oldest}`}
         </p>
+        {/* Named, not hidden and not counted: the badge says how many are the
+            reader's, and this says how many are in a gate with nobody on them.
+            Without it the list and the number would disagree with no reason
+            given, which reads as a bug rather than as a fact about the board. */}
+        {badge.unowned > 0 ? (
+          <p className={TEXT_META} data-review-queue-unowned>
+            {`+${badge.unowned} without an owner`}
+          </p>
+        ) : null}
       </div>
       <Button
         type="button"
@@ -194,11 +203,15 @@ function RailRows({ rows, nowMs, ledgerOk, roving, onOpenCard }: RowsProps) {
             aria-label={`${row.name}, ${row.gate}, waiting ${queueAgeCell(row, nowMs)}`}
             data-review-queue-row={row.id}
             data-waiting-on={row.waitingOn}
+            data-age-source={row.ageSource}
             onClick={() => onOpenCard(row.id)}
           >
             <span className="min-w-0 flex-1 truncate text-foreground">{row.name}</span>
             <span className="shrink-0 text-muted-foreground">{row.gate}</span>
-            <span className="w-8 shrink-0 text-right font-mono tabular-nums text-muted-foreground">
+            {/* `min-w-8`, not `w-8`: the cell is a number most of the time and a
+                phrase (`no owner named`) the rest of it, and a fixed two rems
+                wrapped the phrase into three lines. */}
+            <span className="min-w-8 shrink-0 whitespace-nowrap text-right font-mono tabular-nums text-muted-foreground">
               {queueAgeCell(row, nowMs)}
             </span>
           </Button>

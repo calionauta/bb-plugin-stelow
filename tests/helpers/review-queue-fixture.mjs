@@ -26,6 +26,10 @@ export function card(id, stage, overrides = {}) {
     stage,
     activity: "idle",
     updatedAt: T,
+    // The gate clock, as `listCards` now carries it. Defaults to the fixture's
+    // "now" so a row without an explicit entry reads `0m` rather than a dash.
+    stageEnteredAt: T,
+    createdAt: T - 30 * DAY,
     ...overrides,
   };
 }
@@ -61,20 +65,45 @@ export function reset() {
   window.localStorage.clear();
 }
 
+/**
+ * Four gate cards, every one of them waiting on the reader.
+ *
+ * The ages come off `stageEnteredAt` — six days, three, two and one hour — so the
+ * reading exercises every unit the cell can print and one row per gate.
+ */
 export const openCards = [
-  card("old_card", PRODUCT_GATE, { updatedAt: T - 6 * DAY }),
-  card("stalled_card", TECH_GATE, { updatedAt: T - 3 * DAY }),
-  card("read_card", DESIGN_GATE, { updatedAt: T - 2 * DAY }),
-  card("new_card", CODE_GATE, { updatedAt: T - 1 }),
+  card("old_card", PRODUCT_GATE, { updatedAt: T - 6 * DAY, stageEnteredAt: T - 6 * DAY }),
+  card("stalled_card", TECH_GATE, { updatedAt: T - 3 * DAY, stageEnteredAt: T - 3 * DAY }),
+  card("read_card", DESIGN_GATE, { updatedAt: T - 2 * DAY, stageEnteredAt: T - 2 * DAY }),
+  card("new_card", CODE_GATE, { updatedAt: T - 1, stageEnteredAt: T - 3_600_000 }),
 ];
 
 export const openLedger = [
-  // An open review request dates the wait exactly.
+  // An open review request: a person owes the next move.
   readEvent("old_card", "completed", T - 6 * DAY),
-  // A stall the worker already recovered from: there is no gate entry in the
-  // data, so this row keeps a bound instead of a number.
-  readEvent("stalled_card", "error", T - 3 * DAY, { resolvedAt: T - 2 * DAY }),
-  // Read but not resolved: still the reader's turn, still dated from the stage
-  // finishing rather than from somebody glancing at it.
+  // A question the reviewer has to answer.
+  readEvent("stalled_card", "question", T - 3 * DAY),
+  // Read but not resolved: still the reader's turn, and the age is still the
+  // gate's entry rather than the moment somebody glanced at the ledger.
   readEvent("read_card", "completed", T - 2 * DAY, { readAt: T - 2 * DAY + 1 }),
+  readEvent("new_card", "question", T - 3_600_000),
+];
+
+/**
+ * The two readings the count cannot carry: a gate card with nobody on it, and a
+ * card the ledger never recorded entering.
+ *
+ * Kept apart from `openCards` so the badge arithmetic in the rest of the suite
+ * stays a plain sum, and so this pair can assert what the queue says when a card
+ * is *not* the reader's.
+ */
+export const mixedCards = [
+  card("mine", PRODUCT_GATE, { stageEnteredAt: T - 5 * 3_600_000 }),
+  card("orphan", CODE_GATE, { stageEnteredAt: T - 9 * DAY }),
+  card("no_entry", DESIGN_GATE, { stageEnteredAt: null, createdAt: T - 3 * DAY }),
+];
+
+export const mixedLedger = [
+  readEvent("mine", "completed", T - 5 * 3_600_000),
+  readEvent("no_entry", "completed", T - 3_600_000),
 ];

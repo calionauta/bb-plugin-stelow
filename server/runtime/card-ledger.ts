@@ -63,6 +63,43 @@ function recordStageEvent(
     detail: { from, to: stage },
   });
 }
+export type StageEntryTimes = Map<string, Map<string, number>>;
+
+/**
+ * When each card entered the stage it is in now -- for a whole board, in one
+ * statement.
+ *
+ * The review queue's age is "how long has this waited in this gate", and the
+ * only row that knows that is this table's. Reading it per card would be N+1 on
+ * the surface that lists every card, so the entries arrive grouped; the caller
+ * picks the stage it cares about. `MAX(entered_at)` and not the newest row: a
+ * card can re-enter a stage it left (a rework sends it back), and the wait it is
+ * serving is the current one.
+ */
+export function stageEntriesByCard(db: Db): StageEntryTimes {
+  const entries: StageEntryTimes = new Map();
+  const rows = db
+    .prepare(
+      "SELECT card_id, stage, MAX(entered_at) AS entered_at FROM card_stage_events GROUP BY card_id, stage",
+    )
+    .all() as Array<{ card_id?: unknown; stage?: unknown; entered_at?: unknown }>;
+  for (const row of rows) {
+    if (typeof row.card_id !== "string" || typeof row.stage !== "string") continue;
+    if (typeof row.entered_at !== "number" || !Number.isFinite(row.entered_at)) continue;
+    const byStage = entries.get(row.card_id);
+    if (!byStage) {
+      entries.set(row.card_id, new Map([[row.stage, row.entered_at]]));
+      continue;
+    }
+    // The statement already groups with MAX, and the comparison stays here too:
+    // the rule "the newest entry wins" is this function's to hold, so a change
+    // to the SQL cannot quietly hand back the stage entry a card left.
+    const seen = byStage.get(row.stage);
+    if (seen === undefined || row.entered_at > seen) byStage.set(row.stage, row.entered_at);
+  }
+  return entries;
+}
+
 function stageEvents(
   deps: CardLedgerDeps,
   cardId: string,
