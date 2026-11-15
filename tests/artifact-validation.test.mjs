@@ -176,7 +176,7 @@ assert.ok(
 const criterion = (i) => [
   `#### ${i}/10 Ensure outcome number ${i}`,
   `- Justification: ideal because ${pad(12)}`,
-  `- Score: impacts factors ${pad(12)} — **Basis:** inferência`,
+  `- Score: impacts factors ${pad(12)} — **Basis:** inference`,
   `- Metrics: speed ease consistency ${pad(52)}`,
   `- Current alternative: mental physical virtual ${pad(12)}`,
 ].join("\n");
@@ -209,7 +209,7 @@ const raw30 = "## Raw Success Criteria\n"
 const financeRow = (i) => [
   `#### ${i + 1}/20 Minimize the cost of item ${i + 1}`,
   `- Justification: ideal because ${pad(8)}`,
-  `- Score: impacts factors ${pad(8)} — **Basis:** inferência`,
+  `- Score: impacts factors ${pad(8)} — **Basis:** inference`,
   `- Metrics: count proportion average ${pad(20)}`,
   `- Current alternative: mental physical virtual ${pad(8)}`,
 ].join("\n");
