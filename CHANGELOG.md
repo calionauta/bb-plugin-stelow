@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.104.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.103.0...v0.104.0) (2026-11-15)
+
+
+### Features
+
+* the jtbd contract is projected from stelow, not retyped here ([#514](https://github.com/calionauta/bb-plugin-stelow/issues/514)) ([02d7b94](https://github.com/calionauta/bb-plugin-stelow/commit/02d7b940e657415b897b197f73463eaea8642d8d))
+* the review queue says what is waiting on you, and for how long ([#516](https://github.com/calionauta/bb-plugin-stelow/issues/516)) ([714f312](https://github.com/calionauta/bb-plugin-stelow/commit/714f312aeff289e0da5ecd9d75b3a2fa44c36add))
+
 ## [0.103.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.102.9...v0.103.0) (2026-11-08)
 
 
