@@ -13,4 +13,5 @@ export const STORAGE_KEYS: {
   buildView: string;
   researchView: string;
   exploreView: string;
+  reviewQueue: string;
 };

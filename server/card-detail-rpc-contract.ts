@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gateClockFields } from "./gate-clock-schema.js";
 import { EXPOSURE_REASONS } from "../lib/shared-checkout-exposure.mjs";
 import {
   attachmentSchema,
@@ -84,6 +85,8 @@ export const cardDetailRpcContract = {
         exploreStage: z.string().nullable(),
         status: cardStatusSchema,
         stage: z.string(),
+        // The board card's gate clock, so the detail's card type stays the board's.
+        ...gateClockFields,
         workerThreadId: z.string().nullable(),
         activity: z.enum(["idle", "running", "awaiting-answer", "error", "held"]),
         lastError: z.string().nullable(),

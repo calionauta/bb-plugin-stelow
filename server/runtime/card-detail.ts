@@ -3,6 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { reviewState } from "../../lib/artifact-review.mjs";
 import { readOpenExpiredQuestions } from "../../lib/question-store.mjs";
 import { labelDetailQuestions } from "../../lib/scope-labels.mjs";
+import { gateClockFor } from "./gate-clock.js";
 import { readFrozenAcceptance } from "./card-detail-frozen.js";
 import { parseWorkflowConfig } from "../../lib/workflow-config.mjs";
 import { STAGE_TO_BAND } from "../../lib/workflow-vocabulary.mjs";
@@ -66,7 +67,7 @@ async function readCardDetail(
     // The board's run-failure signal, so the detail card TYPE matches the board
     // card type. The detail renders `blockingRun` (stage-scoped) instead; this is
     // not a second place the reason is shown.
-    return { ...detail, card: { ...detail.card, runFailure: runFailure(deps.db, card) } };
+    return { ...detail, card: { ...detail.card, runFailure: runFailure(deps.db, card), ...gateClockFor(deps.db, card) } };
 }
 
 /**

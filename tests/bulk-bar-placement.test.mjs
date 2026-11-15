@@ -155,6 +155,10 @@ const BuildPanelView = loadComponent("components/panels/build-panel-view.tsx", "
   "../board/use-delete-archived-cards": { useDeleteArchivedCards: () => async () => {} },
   "../board/board-cards": { BoardCard: marker("BoardCard") },
   "../board/flow-strip": { FlowStrip: marker("FlowStrip") },
+  // The review queue reads the same cards through a hook and its own rail; this
+  // test is about where the bulk bar's strip is reserved, so the queue stands in
+  // as a marker like the other surfaces beside the board.
+  "../board/review-queue": { ReviewQueue: marker("ReviewQueue") },
   "../board/hill-board": { HillBoard: marker("HillBoard") },
   "../board/card-gallery": { BucketGalleryButton: marker("BucketGalleryButton") },
   "../board/build-bulk-bar": { BulkBarSlot: (props) => { slotCalls += 1; return { bulkBar: props.state }; } },

@@ -38,3 +38,7 @@ export declare function reviewWaitMs(db: {
     get(...params: unknown[]): unknown;
   };
 }, options: { cardId: string; nowMs: number }): number | null;
+
+export declare const HUMAN_KINDS: Set<string>;
+
+export declare const SYSTEM_KINDS: Set<string>;

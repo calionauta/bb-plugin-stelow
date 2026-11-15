@@ -18,6 +18,8 @@ import { runFailure } from "../lib/run-failure.mjs";
 import { createCardInternal, type CardCreateInput, type CardsCreateDeps } from "./cards-create.js";
 import { githubUnavailableStatus, type GithubStatus } from "./github-status.js";
 import type { WorkerCard } from "./workers-types.js";
+import { stageEntriesByCard, type StageEntryTimes } from "./runtime/card-ledger.js";
+import { gateClockFrom } from "./runtime/gate-clock.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Workspace = { path: string; hostId: string | null };
@@ -96,11 +98,15 @@ export function createCardsServer(deps: CardsDeps) {
     const projects = await deps.bb.sdk.projects.list();
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
     const summaries = new Map<string, ScopeSummary>();
+    // One statement for the whole board, not one per card: the review queue's age
+    // is the card's gate entry, and the board is the surface that lists them all.
+    const stageEntries = stageEntriesByCard(deps.db, rows.map((row) => row.id));
     const cards = await Promise.all(rows.map((row) => enrichCard(
       deps,
       cardWorkspace,
       summaries,
       projectNames,
+      stageEntries,
       row,
     )));
     return { cards };
@@ -193,6 +199,7 @@ async function enrichCard(
   workspaceFor: (card: WorkerCard) => Promise<Workspace | null>,
   summaries: Map<string, ScopeSummary>,
   projectNames: Map<string, string>,
+  stageEntries: StageEntryTimes,
   row: WorkerCard,
 ) {
   const activity = await liveActivity(deps, row);
@@ -216,6 +223,8 @@ async function enrichCard(
     exploreStage: row.explore_stage ?? null,
     status: readCardStatus(row.status),
     stage: row.stage,
+    // The gate clock the review queue dates its ages by (see gate-clock.ts).
+    ...gateClockFrom(stageEntries, row),
     workerThreadId: row.worker_thread_id,
     activity,
     lastError: row.last_error,

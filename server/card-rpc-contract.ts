@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NO_INPUT, optionalInput } from "./rpc-input.js";
+import { gateClockFields } from "./gate-clock-schema.js";
 import {
   answerResultSchema,
   attachmentSchema,
@@ -115,6 +116,7 @@ export const cardRpcContract = {
           presetProviderId: z.string().nullable(),
           presetModelId: z.string().nullable(),
           updatedAt: z.number(),
+          ...gateClockFields,
           stallCount: z.number(),
           scopeSummary: scopeSummarySchema,
           doingNow: z.array(z.string()),

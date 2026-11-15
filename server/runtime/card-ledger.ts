@@ -63,6 +63,63 @@ function recordStageEvent(
     detail: { from, to: stage },
   });
 }
+export type StageEntryTimes = Map<string, Map<string, number>>;
+
+/** SQLite's classic bound-parameter ceiling is 999; a board chunk stays under it. */
+const STAGE_ENTRY_CHUNK = 900;
+
+/**
+ * When each card entered each stage, for the cards the caller is listing.
+ *
+ * The review queue's age is "how long has this waited in this gate", and the only
+ * row that knows that is this table's. Reading it per card would be N+1 on the
+ * surface that lists every card, so the entries arrive for the whole board in one
+ * statement per chunk of ids -- scoped, because `card_stage_events` keeps every
+ * entry a card ever made and a projection should not pay for the archive on each
+ * refresh. `MAX(entered_at)` and not the newest row: a card can re-enter a stage
+ * it left (a rework sends it back), and the wait it is serving is the current one.
+ *
+ * A database without the table (an install mid-migration, a test fixture) yields
+ * no entries rather than a failed board: the caller answers with the fallback
+ * clock, which is what a card with no trail gets anyway.
+ */
+export function stageEntriesByCard(
+  db: Db,
+  cardIds: readonly string[],
+): StageEntryTimes {
+  const entries: StageEntryTimes = new Map();
+  for (let start = 0; start < cardIds.length; start += STAGE_ENTRY_CHUNK) {
+    const chunk = cardIds.slice(start, start + STAGE_ENTRY_CHUNK);
+    if (chunk.length === 0) continue;
+    let rows: Array<{ card_id?: unknown; stage?: unknown; entered_at?: unknown }>;
+    try {
+      const placeholders = chunk.map(() => "?").join(", ");
+      rows = db
+        .prepare(
+          `SELECT card_id, stage, MAX(entered_at) AS entered_at FROM card_stage_events WHERE card_id IN (${placeholders}) GROUP BY card_id, stage`,
+        )
+        .all(...chunk) as Array<{ card_id?: unknown; stage?: unknown; entered_at?: unknown }>;
+    } catch {
+      return entries;
+    }
+    for (const row of rows) {
+      if (typeof row.card_id !== "string" || typeof row.stage !== "string") continue;
+      if (typeof row.entered_at !== "number" || !Number.isFinite(row.entered_at)) continue;
+      const byStage = entries.get(row.card_id);
+      if (!byStage) {
+        entries.set(row.card_id, new Map([[row.stage, row.entered_at]]));
+        continue;
+      }
+      // The statement already groups with MAX, and the comparison stays here too:
+      // the rule "the newest entry wins" is this function's to hold, so a change
+      // to the SQL cannot quietly hand back the stage entry a card left.
+      const seen = byStage.get(row.stage);
+      if (seen === undefined || row.entered_at > seen) byStage.set(row.stage, row.entered_at);
+    }
+  }
+  return entries;
+}
+
 function stageEvents(
   deps: CardLedgerDeps,
   cardId: string,
