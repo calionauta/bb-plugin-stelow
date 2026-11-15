@@ -100,12 +100,19 @@ assert.deepEqual(
   "the oldest wait is first, the tie breaks on the most recently touched, and an unmeasured row sorts last",
 );
 
-// A card with no stage entry still has a creation date, and that is a clock: it
-// must sort among the measured rather than collect at the bottom.
+// A card with no stage entry is dated by its creation, but that is a bound and
+// not a measurement: it goes after every card whose wait is known, and the
+// creation date only orders it against other bounds. Sorting it by the bound
+// would let a month-old card moved into the gate an hour ago outrank a card that
+// has been ignored for two days.
 assert.deepEqual(
-  orderQueueRows([row("entered", T - HOUR, T), row("created", T - 5 * DAY, T, "created")]).map((r) => r.id),
-  ["created", "entered"],
-  "the fallback clock orders the queue too, so a card without an entry is not shoved last",
+  orderQueueRows([
+    row("entered", T - HOUR, T),
+    row("created", T - 5 * DAY, T, "created"),
+    row("older_bound", T - 9 * DAY, T, "created"),
+  ]).map((r) => r.id),
+  ["entered", "older_bound", "created"],
+  "a bound never outranks a measured wait; among bounds, the older creation is still older",
 );
 
 // With the time and the last-touched stamp equal, the id decides -- otherwise

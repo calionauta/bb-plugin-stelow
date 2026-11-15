@@ -317,7 +317,7 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   );
   assert.deepEqual(
     rows().map((_, index) => rowCell(index)),
-    ["no owner named", "in gate", "5h"],
+    ["no owner named", "5h", "in gate"],
     "and its cell names the problem; the card with no entry says `in gate` instead of inventing a wait",
   );
   const unowned = document.querySelector("[data-review-queue-unowned]");

@@ -26,5 +26,5 @@ export function gateClockFrom(entries: StageEntryTimes, row: WorkerCard): GateCl
 
 /** For a single card: the detail read has one keyword and asks for one card. */
 export function gateClockFor(db: Db, row: WorkerCard): GateClock {
-  return gateClockFrom(stageEntriesByCard(db), row);
+  return gateClockFrom(stageEntriesByCard(db, [row.id]), row);
 }

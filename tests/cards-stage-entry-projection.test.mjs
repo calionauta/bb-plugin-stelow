@@ -23,14 +23,24 @@ import { stageEntriesByCard } from "../server/runtime/card-ledger.ts";
 const T = Date.UTC(2026, 8, 1, 12, 0, 0);
 
 /** A db that records what was prepared and answers by SQL shape. */
-function fakeDb({ stageRows = [], cardRows = [] } = {}) {
+function fakeDb({ stageRows = [], cardRows = [], fail = () => false } = {}) {
   const prepared = [];
+  const params = [];
   return {
     prepared,
+    params,
     prepare(sql) {
       prepared.push(sql);
+      if (fail(sql)) throw new Error("no such table: card_stage_events");
       if (sql.includes("FROM card_stage_events")) {
-        return { all: () => stageRows, get: () => undefined, run: () => ({ changes: 0 }) };
+        return {
+          all: (...args) => {
+            params.push(args);
+            return stageRows;
+          },
+          get: () => undefined,
+          run: () => ({ changes: 0 }),
+        };
       }
       if (sql.includes("FROM cards")) {
         return { all: () => cardRows, get: () => undefined, run: () => ({ changes: 0 }) };
@@ -54,7 +64,7 @@ function fakeDb({ stageRows = [], cardRows = [] } = {}) {
       { card_id: "card_3", stage: "gate", entered_at: null },
     ],
   });
-  const entries = stageEntriesByCard(db);
+  const entries = stageEntriesByCard(db, ["card_1", "card_2"]);
   assert.equal(
     db.prepared.filter((sql) => sql.includes("card_stage_events")).length,
     1,
@@ -71,6 +81,38 @@ function fakeDb({ stageRows = [], cardRows = [] } = {}) {
   assert.equal(entries.get("card_2").get("gate"), 300, "each card keeps its own entries");
   assert.equal(entries.has("card_3"), false, "an entry with no timestamp is not an entry");
   assert.equal(entries.size, 2, "rows without a card id are dropped, not grouped under null");
+  assert.deepEqual(
+    db.params[0],
+    ["card_1", "card_2"],
+    "the read is scoped to the cards the caller is listing, so the archive is not scanned",
+  );
+}
+
+// --- 1b. A missing trail is not a broken board, and the chunks stay bounded --
+{
+  const db = fakeDb({ fail: (sql) => sql.includes("FROM card_stage_events") });
+  assert.deepEqual(
+    stageEntriesByCard(db, ["card_1"]),
+    new Map(),
+    "an install mid-migration keeps its board: no entries, no throw",
+  );
+}
+{
+  const ids = Array.from({ length: 901 }, (_, index) => `card_${index}`);
+  const db = fakeDb();
+  stageEntriesByCard(db, ids);
+  assert.equal(
+    db.params.length,
+    2,
+    "901 ids is two statements, because SQLite's bound parameters are the ceiling",
+  );
+  assert.equal(db.params[0].length, 900, "the first chunk fills the limit");
+  assert.equal(db.params[1].length, 1, "and the remainder is its own statement");
+  assert.equal(
+    stageEntriesByCard(fakeDb(), []).size,
+    0,
+    "an empty board asks the database nothing",
+  );
 }
 
 // --- 2. listCards carries the clock, from the same read -------------------

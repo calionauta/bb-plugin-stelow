@@ -124,6 +124,68 @@ cleanup();
   cleanup();
 }
 
+// --- the two cells the queue grew, rendered and audited --------------------
+//
+// `no owner named` and `in gate` are prose standing where a number usually is.
+// Prose in a numeric column is exactly where a reader loses the plot, so the
+// audit renders them and puts the same lens on the rail: if the marker is
+// unreadable or unnamed, this fails here rather than in someone's morning.
+{
+  const HOUR = 3_600_000;
+  const cards = [
+    {
+      id: "mine",
+      displayName: "Mine",
+      stage: REVIEW_QUEUE_GATES[1].id,
+      activity: "idle",
+      updatedAt: Date.now(),
+      stageEnteredAt: Date.now() - 5 * HOUR,
+    },
+    {
+      id: "orphan",
+      displayName: "Orphan",
+      stage: REVIEW_QUEUE_GATES[2].id,
+      activity: "idle",
+      updatedAt: Date.now(),
+      stageEnteredAt: Date.now() - 26 * HOUR,
+    },
+    {
+      id: "no-entry",
+      displayName: "No entry",
+      stage: REVIEW_QUEUE_GATES[0].id,
+      activity: "idle",
+      updatedAt: Date.now(),
+      createdAt: Date.now() - 72 * HOUR,
+    },
+  ];
+  const rpc = {
+    call: async () => ({
+      notifications: [
+        { cardId: "mine", kind: "completed", occurredAt: Date.now() - HOUR, readAt: null, resolvedAt: null, archivedAt: null },
+        { cardId: "no-entry", kind: "completed", occurredAt: Date.now() - HOUR, readAt: null, resolvedAt: null, archivedAt: null },
+      ],
+    }),
+  };
+  const queue = render(h(ReviewQueue, { rpc, cards, onOpenCard: () => {} }));
+  const trigger = () => document.getElementById(REVIEW_QUEUE_TRIGGER_ID);
+  await waitFor(() => assert.equal(trigger().getAttribute("aria-expanded"), "false"));
+  fireEvent.click(trigger());
+  assert.ok(screen.getAllByText(/no owner named/).length > 0, "the unowned marker renders as text a reader can hear");
+  assert.ok(screen.getAllByText(/in gate/).length > 0, "the fallback clock says what it is instead of printing a wait");
+  assert.ok(screen.getByText(/\+1 without an owner/), "and the count line names the card it excludes");
+  const audit = await axe.run(queue.container, {
+    resultTypes: ["violations"],
+    runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] },
+  });
+  assert.deepEqual(
+    audit.violations.map((violation) => violation.id),
+    [],
+    "the rail stays clean under the same lens with prose in the age column",
+  );
+  window.localStorage.clear();
+  cleanup();
+}
+
 console.log(
   "rendered-ui audit ok: a real component renders and queries, the axe lens is clean on it,"
   + " and a broken tree is flagged by rule — so a green run here means someone looked",

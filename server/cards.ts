@@ -100,7 +100,7 @@ export function createCardsServer(deps: CardsDeps) {
     const summaries = new Map<string, ScopeSummary>();
     // One statement for the whole board, not one per card: the review queue's age
     // is the card's gate entry, and the board is the surface that lists them all.
-    const stageEntries = stageEntriesByCard(deps.db);
+    const stageEntries = stageEntriesByCard(deps.db, rows.map((row) => row.id));
     const cards = await Promise.all(rows.map((row) => enrichCard(
       deps,
       cardWorkspace,
