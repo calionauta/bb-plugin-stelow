@@ -8,111 +8,35 @@ import {
   REVIEW_QUEUE_TRIGGER_ID,
   ReviewQueue,
 } from "../components/board/review-queue.tsx";
-import { REVIEW_QUEUE_GATES, REVIEW_QUEUE_TICK_MS } from "../lib/review-queue.mjs";
+import { REVIEW_QUEUE_TICK_MS } from "../lib/review-queue.mjs";
+import {
+  CODE_GATE,
+  DESIGN_GATE,
+  PRODUCT_GATE,
+  TECH_GATE,
+  openCards,
+  openLedger,
+  reset,
+  stubRpc,
+} from "./helpers/review-queue-fixture.mjs";
 
 /**
- * The review queue as a reader meets it: a trigger on the board's chrome, and a
- * rail that says who is waiting and for how long.
+ * The review queue as a reading: a trigger on the board's chrome, and a rail that
+ * says who is waiting and for how long.
  *
- * Read RENDERED and DRIVEN, not as source text. Every claim below is one a
- * reader can falsify in ten seconds with a mouse: the count is visible with the
- * rail shut, the legend explains the three age cells, Escape closes this and
- * nothing else, `q` is inert while typing, and a read that failed offers a retry
- * instead of an empty panel.
- *
- * The four age/attribution rules themselves are `tests/review-queue.test.mjs`;
- * this file is about what reaches the screen.
+ * Read RENDERED, not as source text. Every claim below is one a reader can
+ * falsify in ten seconds with a mouse: the count is visible with the rail shut,
+ * the legend explains the three age cells, a failed read offers a retry instead
+ * of an empty panel, and a read still in flight says it is checking rather than
+ * announcing four failures. What the keyboard does is
+ * `tests/review-queue-keys.test.mjs`; the four age/attribution rules themselves
+ * are `tests/review-queue.test.mjs`.
  */
-
-const DAY = 86_400_000;
-// Fixtures hang off the real clock, because the cells are read against it: an
-// absolute date would make this file say "81d" a couple of months from now.
-const T = Date.now();
-const [PRODUCT_GATE, DESIGN_GATE, TECH_GATE, CODE_GATE] = REVIEW_QUEUE_GATES.map((gate) => gate.id);
-
-function card(id, stage, overrides = {}) {
-  return {
-    id,
-    displayName: `Card ${id}`,
-    name: id,
-    stage,
-    activity: "idle",
-    updatedAt: T,
-    ...overrides,
-  };
-}
-
-function readEvent(cardId, kind, occurredAt, overrides = {}) {
-  return { cardId, kind, occurredAt, readAt: null, resolvedAt: null, archivedAt: null, ...overrides };
-}
-
-/** A stub rpc that records every call, so "one read" is assertable. */
-function stubRpc(notifications, options = {}) {
-  const calls = [];
-  const rpc = {
-    calls,
-    call: async (name, input) => {
-      calls.push({ name, input });
-      if (options.fail && options.fail()) throw new Error("ledger unavailable");
-      return { notifications };
-    },
-  };
-  return rpc;
-}
-
-/**
- * Unmount and forget the stored preference.
- *
- * Whether the rail is open is persisted — it is a reading surface's preference,
- * like a collapsed column — so a block that leaves it open leaves the NEXT block
- * open too. Resetting is what makes each block start from the board's default
- * rather than from the previous block's last click.
- */
-function reset() {
-  cleanup();
-  window.localStorage.clear();
-}
 
 const rail = () => document.getElementById(REVIEW_QUEUE_RAIL_ID);
 const trigger = () => document.getElementById(REVIEW_QUEUE_TRIGGER_ID);
 const rows = () => Array.from(document.querySelectorAll("[data-review-queue-row]"));
 const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent;
-
-const openCards = [
-  card("old_card", PRODUCT_GATE, { updatedAt: T - 6 * DAY }),
-  card("stalled_card", TECH_GATE, { updatedAt: T - 3 * DAY }),
-  card("read_card", DESIGN_GATE, { updatedAt: T - 2 * DAY }),
-  card("new_card", CODE_GATE, { updatedAt: T - 1 }),
-];
-const openLedger = [
-  // An open review request dates the wait exactly.
-  readEvent("old_card", "completed", T - 6 * DAY),
-  // A stall the worker already recovered from: there is no gate entry in the
-  // data, so this row keeps a bound instead of a number.
-  readEvent("stalled_card", "error", T - 3 * DAY, { resolvedAt: T - 2 * DAY }),
-  // Read but not resolved: still the reader's turn, still dated from the stage
-  // finishing rather than from somebody glancing at it.
-  readEvent("read_card", "completed", T - 2 * DAY, { readAt: T - 2 * DAY + 1 }),
-];
-
-// --- 1. The reading is on the board while the rail is shut -----------------
-{
-  window.localStorage.clear();
-  const rpc = stubRpc(openLedger);
-  render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
-  await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
-  assert.equal(trigger().getAttribute("aria-expanded"), "false", "the trigger says the rail is shut");
-  assert.equal(trigger().getAttribute("aria-controls"), REVIEW_QUEUE_RAIL_ID, "and names what it opens");
-  assert.equal(
-    document.querySelector("[data-review-queue-badge]").textContent,
-    "4 · 6d",
-    "count · oldest wait, visible without opening anything",
-  );
-  assert.equal(rail(), null, "the rail is not mounted until it is asked for");
-  assert.equal(rpc.calls.length, 1, "the ledger is read once, not once per gate");
-  assert.deepEqual(rpc.calls[0], { name: "listNotifications", input: { includeArchived: false } });
-  reset();
-}
 
 // --- 2. Opening: pointer, and the rail is not a modal ---------------------
 {
@@ -153,8 +77,9 @@ const openLedger = [
   fireEvent.click(trigger());
   const legend = document.querySelector("[data-review-queue-legend]");
   assert.ok(legend, "the legend renders with the rail");
-  assert.ok(legend.textContent.includes("4d"), "the exact cell is explained");
-  assert.ok(legend.textContent.includes("~4d"), "the derived cell is explained");
+  assert.match(legend.textContent, /6h/, "the exact cell is explained in the hour unit the cells use");
+  assert.match(legend.textContent, /3d/, "and in the day unit, so both shapes are taught");
+  assert.ok(legend.textContent.includes("~6h"), "the bound is explained with its marker");
   assert.ok(legend.textContent.includes("\u2014"), "the unknown cell is explained");
   assert.ok(
     document.querySelector("[data-review-queue-empty]"),
@@ -192,78 +117,6 @@ const openLedger = [
     ["human", "unattributed", "human", "unattributed"],
     "every row carries the attribution it was counted by, so the diff can be read",
   );
-  reset();
-}
-
-// --- 5. Keyboard: one tab stop, arrows inside, Enter opens ----------------
-{
-  const opened = [];
-  const rpc = stubRpc(openLedger);
-  render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: (id) => opened.push(id) }));
-  await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
-  fireEvent.click(trigger());
-  assert.deepEqual(rows().map((row) => row.tabIndex), [0, -1, -1, -1], "the list is one tab stop");
-  fireEvent.keyDown(rows()[0], { key: "ArrowDown" });
-  assert.equal(document.activeElement, rows()[1], "ArrowDown moves into the list");
-  assert.deepEqual(rows().map((row) => row.tabIndex), [-1, 0, -1, -1], "and the tab stop moves with the focus");
-  fireEvent.keyDown(rows()[1], { key: "End" });
-  assert.equal(document.activeElement, rows()[3], "End jumps to the last row");
-  fireEvent.keyDown(rows()[3], { key: "Home" });
-  assert.equal(document.activeElement, rows()[0], "Home comes back");
-  fireEvent.keyDown(rows()[0], { key: "ArrowUp" });
-  assert.equal(document.activeElement, rows()[0], "the list does not wrap past its first row");
-  assert.equal(rows()[0].tagName, "BUTTON", "a row is a native button, so Enter and Space activate it");
-  assert.equal(rows()[0].getAttribute("type"), "button", "and it submits nothing");
-  assert.equal(
-    fireEvent.keyDown(rows()[0], { key: "Enter" }),
-    true,
-    "Enter is not intercepted: the browser's own activation is what opens the card",
-  );
-  fireEvent.click(rows()[0]);
-  assert.deepEqual(opened, ["old_card"], "a row opens its card");
-  assert.equal(rail(), null, "and the rail gets out of the way");
-  reset();
-}
-
-// --- 6. Escape closes this and nothing else -------------------------------
-{
-  const rpc = stubRpc(openLedger);
-  render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
-  await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
-  fireEvent.click(trigger());
-  fireEvent.keyDown(document.body, { key: "Escape" });
-  assert.ok(rail(), "Escape with focus outside the rail is not the rail's to take: the board owns that one");
-  fireEvent.click(rows()[0]);
-  fireEvent.click(trigger());
-  fireEvent.keyDown(rows()[0], { key: "Escape" });
-  assert.equal(rail(), null, "Escape from inside the rail closes it");
-  assert.equal(document.activeElement, trigger(), "and focus goes back to the trigger, not to <body>");
-  reset();
-}
-
-// --- 7. `q` opens and closes, and is inert while typing -------------------
-{
-  const rpc = stubRpc(openLedger);
-  render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
-  await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
-  fireEvent.keyDown(document.body, { key: "q" });
-  assert.ok(rail(), "q opens the queue from the board");
-  fireEvent.keyDown(document.body, { key: "q" });
-  assert.equal(rail(), null, "and the same key closes it");
-  const input = document.createElement("input");
-  const textarea = document.createElement("textarea");
-  const select = document.createElement("select");
-  const editable = document.createElement("div");
-  editable.setAttribute("contenteditable", "true");
-  document.body.append(input, textarea, select, editable);
-  for (const element of [input, textarea, select, editable]) {
-    fireEvent.keyDown(element, { key: "q" });
-    assert.equal(rail(), null, `q typed into <${element.tagName.toLowerCase()}> must not steal the letter`);
-  }
-  input.remove();
-  textarea.remove();
-  select.remove();
-  editable.remove();
   reset();
 }
 
@@ -360,4 +213,69 @@ const openLedger = [
   reset();
 }
 
+// --- 12. A read still in flight is `checking`, not four failures ----------
+//
+// The defect this replaced: `ledgerOk` was false before the first read came
+// back, so every board load announced four failed gate reads and offered a
+// retry that could not run — a button that lies, on the state a reader sees
+// most often.
+{
+  reset();
+  let calls = 0;
+  const stalled = {
+    call: () => {
+      calls += 1;
+      return new Promise(() => {});
+    },
+  };
+  render(h(ReviewQueue, { rpc: stalled, cards: openCards, onOpenCard: () => {} }));
+  await waitFor(() => assert.equal(calls, 1, "the panel issues its one read on mount"));
+  assert.equal(
+    document.querySelector("[data-review-queue-badge]").textContent,
+    "\u2014",
+    "the count is a dash while the read is in flight: it is unknown, not zero",
+  );
+  fireEvent.click(trigger());
+  assert.ok(document.querySelector("[data-review-queue-checking]"), "the rail says it is checking");
+  assert.equal(
+    document.querySelectorAll("[data-review-queue-failure]").length,
+    0,
+    "and nothing has failed yet, so nothing claims it has",
+  );
+  assert.equal(
+    Array.from(document.querySelectorAll("button")).filter((node) => /retry/i.test(node.textContent)).length,
+    0,
+    "no retry is offered for a read that is still running",
+  );
+  assert.equal(rows().length, 0, "and no row is rendered from a read that has not answered");
+  assert.equal(document.querySelector("[data-review-queue-empty]"), null, "least of all an empty-queue claim");
+  reset();
+}
+
+// --- 14. The door presents the button, and does not claim what it cannot read
+//
+// C1: the affordance copy presents the button, not the chord. And the phrase
+// "waiting on you" was printed beside a dash badge, i.e. beside a reading that
+// says nothing is known.
+{
+  reset();
+  const rpc = stubRpc(openLedger);
+  render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
+  await waitFor(() => assert.match(trigger().textContent, /4 · 6d/));
+  assert.doesNotMatch(trigger().textContent, /\bq\b/, "the visible copy does not teach the chord");
+  assert.match(trigger().textContent, /waiting on you/, "it says what the number means while the read is good");
+  fireEvent.click(trigger());
+  assert.doesNotMatch(trigger().textContent, /\bq\b/, "nor when the rail is open");
+  reset();
+
+  const broken = stubRpc(openLedger, { fail: () => true });
+  render(h(ReviewQueue, { rpc: broken, cards: openCards, onOpenCard: () => {} }));
+  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: \u2014"));
+  assert.doesNotMatch(
+    trigger().textContent,
+    /waiting on you/,
+    "and it does not say a card is waiting while the badge is a dash",
+  );
+  reset();
+}
 console.log("review queue rail test ok");

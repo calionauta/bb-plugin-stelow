@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { TEXT_META } from "../../lib/design-tokens";
 import {
@@ -20,7 +20,7 @@ type RailProps = {
   rows: ReviewQueueRow[];
   badge: ReviewQueueBadge;
   nowMs: number;
-  loading: boolean;
+  checking: boolean;
   ledgerOk: boolean;
   onRetry: () => void;
   onClose: () => void;
@@ -38,8 +38,8 @@ const ROW_CLASS = "h-auto w-full justify-start gap-2 whitespace-normal px-1 py-1
  * column.
  */
 export function ReviewQueueRail(props: RailProps) {
-  const { id, open, rows, badge, nowMs, loading, ledgerOk, onRetry, onClose, onOpenCard } = props;
-  const roving = useRovingRows(rows, onClose);
+  const { id, open, rows, badge, nowMs, checking, ledgerOk, onRetry, onClose, onOpenCard } = props;
+  const roving = useRovingRows(rows, onClose, open);
 
   if (!open) return null;
 
@@ -56,13 +56,15 @@ export function ReviewQueueRail(props: RailProps) {
     >
       <RailHeader rows={rows} badge={badge} onClose={onClose} />
       <AgeLegend />
-      {loading ? (
+      {checking ? (
         <p className={TEXT_META} data-review-queue-checking>
           Checking what is waiting…
         </p>
       ) : null}
-      <RailRows rows={rows} nowMs={nowMs} ledgerOk={ledgerOk} roving={roving} onOpenCard={onOpenCard} />
-      <GateFailures ledgerOk={ledgerOk} onRetry={onRetry} />
+      {checking ? null : (
+        <RailRows rows={rows} nowMs={nowMs} ledgerOk={ledgerOk} roving={roving} onOpenCard={onOpenCard} />
+      )}
+      {checking ? null : <GateFailures ledgerOk={ledgerOk} onRetry={onRetry} />}
     </aside>
   );
 }
@@ -73,10 +75,17 @@ export function ReviewQueueRail(props: RailProps) {
  * Escape closes only from inside the panel. `board-filters` already owns the one
  * document-level Escape on this screen, and a second one would fight it.
  */
-function useRovingRows(rows: ReviewQueueRow[], onClose: () => void) {
+function useRovingRows(rows: ReviewQueueRow[], onClose: () => void, open: boolean) {
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const active = Math.min(activeIndex, Math.max(0, rows.length - 1));
+
+  // Opening lands on the oldest row, so the arrows work without a Tab first and
+  // Escape lands somewhere inside the panel. Pointer and keyboard open alike: the
+  // panel appears, and the panel is where the reading happens.
+  useEffect(() => {
+    if (open) rowRefs.current[0]?.focus();
+  }, [open, rows.length]);
 
   function focusRow(index: number) {
     setActiveIndex(index);

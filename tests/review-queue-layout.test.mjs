@@ -160,6 +160,52 @@ assert.equal(
   "the rail is a sibling of the board, not a child of its scroll container",
 );
 assert.equal(track.contains(trigger()), false, "and so is its trigger: the chrome line is above the board");
+
+// --- 5b. The far column is reached by scrolling, with the rail open -------
+//
+// A1 and A2 of the audit: the end of the track is *reachable*, and a scroll
+// gesture while the rail is open still moves the board. This DOM has no layout
+// engine, so what is asserted is the mechanism and its arithmetic -- the track's
+// own scroll extent, the position taken to its end, and the board moving while
+// the panel stays mounted -- not a painted pixel. A browser look is recorded as
+// the residual gap in the change report rather than pretended here.
+const openRail = document.getElementById(REVIEW_QUEUE_RAIL_ID);
+const maxScrollPx = minTrackPx * tracks.length - 1024;
+assert.ok(maxScrollPx > 0, `${maxScrollPx}px of track sits off-screen at 1024px, so the end is a scroll away`);
+track.scrollLeft = maxScrollPx;
+fireEvent.scroll(track);
+assert.equal(
+  track.scrollLeft,
+  maxScrollPx,
+  "A1: the far end is a scroll position the board takes while the rail is open",
+);
+assert.equal(
+  getComputedStyle(track).overflowX,
+  "auto",
+  "A1: and the element that scrolls there is still the track, not the panel",
+);
+track.scrollLeft = 0;
+fireEvent.scroll(track);
+track.scrollLeft = 480;
+fireEvent.scroll(track);
+assert.equal(track.scrollLeft, 480, "A2: a horizontal scroll while the rail is open moves the board");
+const beforeWheel = track.scrollLeft;
+fireEvent.wheel(openRail, { deltaX: 400, deltaY: 0 });
+assert.equal(
+  track.scrollLeft,
+  beforeWheel,
+  "A2: a wheel gesture over the rail does not move the board -- the panel neither captures nor forwards it",
+);
+assert.equal(
+  document.getElementById(REVIEW_QUEUE_RAIL_ID),
+  openRail,
+  "A2: and moving the board neither closes nor remounts the panel",
+);
+assert.equal(
+  track.contains(openRail),
+  false,
+  "A2: the two never share a scroll position, because the rail is outside the scrolling element",
+);
 cleanup();
 
 // --- 6. Shutting it leaves no residue ------------------------------------

@@ -57,14 +57,11 @@ export function ReviewQueue({ rpc, cards, onOpenCard }: ReviewQueueProps) {
         rows={queue.rows}
         badge={queue.badge}
         nowMs={queue.nowMs}
-        loading={queue.loading}
+        checking={queue.checking}
         ledgerOk={queue.ledgerOk}
         onRetry={queue.retry}
         onClose={closeAndReturn}
-        onOpenCard={(cardId) => {
-          close();
-          onOpenCard(cardId);
-        }}
+        onOpenCard={onOpenCard}
       />
     </>
   );
@@ -95,9 +92,13 @@ function QueueTrigger(props: {
       >
         {queue.badge.label}
       </span>
-      <span className={TEXT_META}>
-        {queue.open ? "waiting on you, q closes" : "waiting on you, q opens"}
-      </span>
+      {/* The affordance is the button, not the chord: the visible copy says what
+          the reading means and leaves the keys to the panel, which documents its
+          own. `waiting on you` is only printed when the read came back and found
+          something, so it never contradicts a `-` badge. */}
+      {queue.ledgerOk && queue.badge.count > 0 ? (
+        <span className={TEXT_META}>waiting on you</span>
+      ) : null}
     </Button>
   );
 }

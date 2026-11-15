@@ -119,8 +119,29 @@ assert.equal(
 assert.equal(queueAgeCell(byId.blank_card, T + 4 * DAY), "\u2014", "an unknown age prints a dash, never 0d");
 
 // A future timestamp (a clock skew, a ledger row from another machine) clamps
-// to zero rather than printing a negative age.
-assert.equal(queueAgeCell(byId.entered_card, T - 5 * DAY), "0d", "skew never renders a negative wait");
+// to zero rather than printing a negative wait.
+assert.equal(queueAgeCell(byId.entered_card, T - 5 * DAY), "0m", "skew never renders a negative wait");
+
+// --- 3b. Hours under a day, days after: the unit a reader can act on ------
+// The defect this replaced: a card waiting since this morning read `0d`, so a
+// queue whose oldest card was hours old told the reader nothing at all.
+const hoursAgo = (hours) =>
+  queueAgeCell({ enteredAt: T - hours * 3600_000, ageSource: "entered" }, T);
+assert.equal(hoursAgo(0.5), "30m", "half an hour is minutes, not zero");
+assert.equal(hoursAgo(3), "3h", "three hours reads three hours");
+assert.equal(hoursAgo(23.5), "23h", "and it stays in hours until the day flips");
+assert.equal(hoursAgo(25), "1d", "a day and an hour reads a day");
+assert.equal(hoursAgo(24 * 4), "4d", "days keep reading days");
+assert.equal(
+  queueAgeCell({ enteredAt: T - 5 * 3600_000, ageSource: "since_created" }, T),
+  "~5h",
+  "a bound uses the same unit, so `~` does not change how the number is read",
+);
+assert.notEqual(
+  queueAgeCell({ enteredAt: T - 5 * 3600_000, ageSource: "entered" }, T),
+  "0d",
+  "this is the regression itself: a fresh wait must never read zero days",
+);
 
 // --- 4. The clock moves the cell, not the data ----------------------------
 const before = reviewQueueRows({ cards: [card("p")], notifications: [event("p", "completed", T)] });
@@ -130,6 +151,14 @@ assert.equal(queueAgeCell(before[0], T + 4 * DAY), "4d", "the same row read thre
 // --- 5. The badge is count and oldest, and `0` is not a panel ------------
 const badge = reviewQueueBadge(before, { nowMs: T + 4 * DAY });
 assert.deepEqual(badge, { count: 1, oldest: "4d", label: "1 · 4d" }, "the trigger reads count · oldest");
+assert.equal(
+  reviewQueueBadge(
+    [{ enteredAt: T - 5 * 3600_000, ageSource: "entered", waitingOn: "human", id: "x" }],
+    { ledgerOk: true, nowMs: T },
+  ).label,
+  "1 · 5h",
+  "a queue younger than a day badges its hours, not `0d`",
+);
 assert.equal(
   reviewQueueBadge([], { nowMs: T }).label,
   "0",

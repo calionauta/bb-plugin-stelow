@@ -36,6 +36,7 @@ export type ReviewQueueState = {
   rows: ReviewQueueRow[];
   badge: ReviewQueueBadge;
   nowMs: number;
+  checking: boolean;
   ledgerOk: boolean;
   loading: boolean;
   retry: () => void;
@@ -116,7 +117,17 @@ function useLedger(rpc: ReviewQueueRpc) {
     itemCountKey: "notifications",
     realtimeChannels: ["card-state", "inbox-changed"],
   });
-  return { notifications, ledgerOk: !isInitialLoad && loadError === null, loading, retry: load };
+  return {
+    notifications,
+    // Three states, because two made a first paint look like a failure. A read
+    // still in flight is `checking`; only a read that came back with an error is
+    // `ledgerOk: false`. The rail draws a line for the first and a retry for the
+    // second, and no state renders "nothing is waiting on you".
+    checking: isInitialLoad && loadError === null,
+    ledgerOk: !isInitialLoad && loadError === null,
+    loading,
+    retry: load,
+  };
 }
 
 /** The clock the ages are read against; it moves without asking the server again. */
@@ -150,7 +161,7 @@ export function useReviewQueue(
   cards: readonly ReviewQueueCard[],
 ): ReviewQueueState {
   const { open, toggle, close } = useOpenPreference();
-  const { notifications, ledgerOk, loading, retry } = useLedger(rpc);
+  const { notifications, checking, ledgerOk, loading, retry } = useLedger(rpc);
   const nowMs = useAgeClock();
 
   const rows = useMemo(
@@ -164,5 +175,5 @@ export function useReviewQueue(
 
   useQueueShortcut(toggle);
 
-  return { open, toggle, close, rows, badge, nowMs, ledgerOk, loading, retry };
+  return { open, toggle, close, rows, badge, nowMs, checking, ledgerOk, loading, retry };
 }
