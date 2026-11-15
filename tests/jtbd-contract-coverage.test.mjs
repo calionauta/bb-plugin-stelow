@@ -33,6 +33,16 @@ const vendored = readFileSync(VENDORED, "utf8");
 const stamp = vendored.match(/Source: stelow ([0-9a-f]{12})/);
 assert.ok(stamp, "lib/stelow-jtbd-contracts.mjs carries no stelow commit stamp — regenerate it, do not edit it");
 
+// A translation pass checked by accent only leaves `Mesmo ator`, `Etapa` and
+// `Nenhum` behind, and those reach this host as data (stelow 0.88.1).
+const portuguese = /\b(mesmo|não|são|você|também|então|etapa|etapas|usuário|nenhum|nenhuma|evidência|pesquisa|inferência|sobre|deve ser|pode ser)\b/i;
+const leftover = JSON.stringify(JTBD_SUBSTEPS).match(portuguese);
+assert.equal(
+  leftover,
+  null,
+  `the vendored stelow contract still carries Portuguese: ${leftover && leftover[0]} — rerun scripts/sync-jtbd-contracts.mjs against a translated stelow`,
+);
+
 const upstream = JTBD_SUBSTEPS.map((substep) => substep.slug);
 assert.ok(upstream.length > 0, "the vendored contract lists no substeps");
 assert.equal(
