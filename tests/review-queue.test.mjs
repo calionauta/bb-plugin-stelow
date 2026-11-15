@@ -201,7 +201,9 @@ const oneHumanOneOrphan = reviewQueueRows({
 const split = reviewQueueBadge(oneHumanOneOrphan, { nowMs: T });
 assert.deepEqual(
   split,
-  { count: 1, unowned: 1, oldest: "5h", label: "1 · 5h" },
+  // The unowned card rides on the chip: the door is the only surface visible
+  // while the rail is shut, so it may not read the same as a queue of one.
+  { count: 1, unowned: 1, oldest: "5h", label: "1 · 5h +1" },
   "an unowned card is not in the count, and it is not silently dropped either: `unowned` carries it",
 );
 assert.equal(
@@ -318,5 +320,20 @@ assert.deepEqual(gateClockOf(card("x", "gate", { stageEnteredAt: "junk", created
   createdAt: null,
   ageSource: "unknown",
 });
+
+// --- 10. A failed read still knows what a worker holds ---------------------
+// The held check reads the card, not the ledger: on a failed read the attribution
+// is `unknown`, so a filter that rode on the attribution would let a running card
+// back in as an unowned row -- precisely the state where nobody can tell it apart.
+{
+  const cards = [
+    card("free"),
+    card("running", "gate", { activity: "running" }),
+    card("asking", "plan-gate", { activity: "held" }),
+  ];
+  const rows = reviewQueueRows({ cards, notifications: [], ledgerOk: false });
+  assert.deepEqual(rows.map((row) => row.id), ["free"], "a card a worker holds is not on the reader, failed read or not");
+  assert.equal(rows[0].waitingOn, "unknown", "and the card that is listed does not claim an owner either");
+}
 
 console.log("review queue projection test ok");

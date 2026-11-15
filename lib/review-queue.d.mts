@@ -114,3 +114,10 @@ export declare function reviewQueueBadge(
   rows: ReadonlyArray<ReviewQueueRow>,
   options?: { ledgerOk?: boolean; nowMs?: number },
 ): ReviewQueueBadge;
+
+export declare function queueBadgeAria(
+  badge: ReviewQueueBadge,
+  ledgerOk?: boolean,
+): string;
+
+export declare function isHeldCard(card: ReviewQueueCard | null | undefined): boolean;

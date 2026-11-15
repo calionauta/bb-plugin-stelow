@@ -75,7 +75,7 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
 {
   const rpc = stubRpc([]);
   render(h(ReviewQueue, { rpc, cards: [], onOpenCard: () => {} }));
-  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: 0"));
+  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: 0 waiting on you"));
   fireEvent.click(trigger());
   const legend = document.querySelector("[data-review-queue-legend]");
   assert.ok(legend, "the legend renders with the rail");
@@ -98,7 +98,11 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
     document.querySelector("[data-review-queue-empty]"),
     "an empty queue says so in words rather than being a blank panel",
   );
-  assert.equal(trigger().getAttribute("aria-label"), "Review queue: 0", "and the badge reads 0, not a dash");
+  assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Review queue: 0 waiting on you",
+    "and the badge reads 0, not a dash",
+  );
   reset();
 }
 
@@ -143,7 +147,9 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   let fail = true;
   const rpc = stubRpc(openLedger, { fail: () => fail });
   render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
-  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: \u2014"));
+  await waitFor(() =>
+    assert.equal(trigger().getAttribute("aria-label"), "Review queue, the ledger could not be read"),
+  );
   assert.equal(
     document.querySelector("[data-review-queue-badge]").textContent,
     "\u2014",
@@ -165,7 +171,9 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   const before = rpc.calls.length;
   fail = false;
   fireEvent.click(failures[3].querySelector("button"));
-  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: 4 · 6d"));
+  await waitFor(() =>
+    assert.equal(trigger().getAttribute("aria-label"), "Review queue: 4 waiting on you, oldest 6d"),
+  );
   assert.equal(rpc.calls.length, before + 1, "a retry re-issues the one read, once");
   assert.deepEqual(rpc.calls.at(-1), { name: "listNotifications", input: { includeArchived: false } });
   assert.equal(document.querySelectorAll("[data-review-queue-failure]").length, 0, "and the failures clear");
@@ -288,7 +296,9 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
 
   const broken = stubRpc(openLedger, { fail: () => true });
   render(h(ReviewQueue, { rpc: broken, cards: openCards, onOpenCard: () => {} }));
-  await waitFor(() => assert.equal(trigger().getAttribute("aria-label"), "Review queue: \u2014"));
+  await waitFor(() =>
+    assert.equal(trigger().getAttribute("aria-label"), "Review queue, the ledger could not be read"),
+  );
   assert.doesNotMatch(
     trigger().textContent,
     /waiting on you/,
@@ -307,8 +317,15 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   render(h(ReviewQueue, { rpc, cards: mixedCards, onOpenCard: () => {} }));
   // Two cards are the reader's: `mine` (5h in the gate) and `no_entry`, which has
   // no recorded entry and therefore no number to add to the oldest.
-  await waitFor(() => assert.match(trigger().textContent, /2 \u00b7 5h/));
+  // F-1: the chip is the only surface visible while the rail is shut, so the
+  // orphan travels on it. `2 \u00b7 5h +1` cannot be mistaken for a queue of two.
+  await waitFor(() => assert.match(trigger().textContent, /2 \u00b7 5h \+1/));
   assert.equal(rows().length, 0, "the rows live in the rail, which is shut");
+  assert.match(
+    trigger().getAttribute("aria-label"),
+    /2 waiting on you, oldest 5h, 1 without an owner/,
+    "and the spoken name says all three things rather than reading the chip out loud",
+  );
   fireEvent.click(trigger());
   assert.deepEqual(
     rows().map((row) => row.getAttribute("data-waiting-on")),
@@ -341,4 +358,25 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   );
   reset();
 }
+// --- 16. A queue of nothing but unowned cards does not read as an empty one
+// F-1's probe: three unowned gate cards used to render the same chip as a queue
+// with no cards at all, on the one surface that is visible while the rail is
+// shut. The chip has to say what is there.
+{
+  const T = Date.now();
+  const orphan = (id) => ({ id, displayName: id, stage: PRODUCT_GATE, activity: "idle", updatedAt: T, stageEnteredAt: T - 3600e3 });
+  const rpc = stubRpc([]);
+  render(h(ReviewQueue, { rpc, cards: [orphan("a"), orphan("b"), orphan("c")], onOpenCard: () => {} }));
+  await waitFor(() => assert.match(trigger().textContent, /0 \+3/));
+  assert.match(
+    trigger().getAttribute("aria-label"),
+    /0 waiting on you, 3 without an owner/,
+    "the chip and its spoken name both carry the three cards nobody owns",
+  );
+  fireEvent.click(trigger());
+  assert.equal(rows().length, 3, "and the rail behind the chip lists all three");
+  assert.equal(document.querySelector("[data-review-queue-unowned]").textContent.trim(), "+3 without an owner");
+  reset();
+}
+
 console.log("review queue rail test ok");

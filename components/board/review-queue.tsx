@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { TEXT_META } from "../../lib/design-tokens";
+import { queueBadgeAria } from "../../lib/review-queue.mjs";
 import { Button } from "../ui/button";
 import { ReviewQueueRail } from "./review-queue-rail";
 import {
@@ -81,7 +82,7 @@ function QueueTrigger(props: {
       variant="ghost"
       aria-expanded={queue.open}
       aria-controls={REVIEW_QUEUE_RAIL_ID}
-      aria-label={`Review queue: ${queue.badge.label}`}
+      aria-label={queueBadgeAria(queue.badge, queue.ledgerOk)}
       onClick={queue.toggle}
       className={TRIGGER_CLASS}
     >

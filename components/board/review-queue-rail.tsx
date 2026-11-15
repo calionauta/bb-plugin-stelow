@@ -225,8 +225,9 @@ function RailRows({ rows, nowMs, ledgerOk, roving, onOpenCard }: RowsProps) {
  * What could not be checked, per gate, with a retry that re-issues the read.
  *
  * A failed read is never an empty queue: the rows that came from the board are
- * still here, with no ages, and this line says why. Silence would be a lie with
- * the shape of good news.
+ * still here and still carry their gate ages, because the clock comes from the
+ * card. What the failure took is the ownership, so that is what this line says
+ * was not checked. Silence would be a lie with the shape of good news.
  */
 function GateFailures({ ledgerOk, onRetry }: { ledgerOk: boolean; onRetry: () => void }) {
   if (ledgerOk) return null;
