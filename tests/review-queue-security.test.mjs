@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+// The host runtime must exist before any component imports the plugin SDK.
+import "./helpers/bb-runtime-stub.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -138,7 +140,7 @@ window.localStorage.clear();
 for (const file of [
   "components/board/review-queue.tsx",
   "components/board/review-queue-rail.tsx",
-  "hooks/use-review-queue.ts",
+  "components/board/use-review-queue.ts",
   "lib/review-queue.mjs",
 ]) {
   const source = readFileSync(join(root, file), "utf8");

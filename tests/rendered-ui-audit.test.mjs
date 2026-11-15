@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+// The host runtime must exist before any component imports the plugin SDK.
+import "./helpers/bb-runtime-stub.mjs";
 import { createElement as h } from "react";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import axe from "axe-core";
 
 // P2 — the UI quality audit, finally rendered.
@@ -14,6 +16,12 @@ import axe from "axe-core";
 // lens can FAIL: a knowingly broken tree must be flagged, by rule name.
 
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card.tsx";
+import {
+  ReviewQueue,
+  REVIEW_QUEUE_RAIL_ID,
+  REVIEW_QUEUE_TRIGGER_ID,
+} from "../components/board/review-queue.tsx";
+import { REVIEW_QUEUE_GATES } from "../lib/review-queue.mjs";
 
 // --- a real component renders, and its text is reachable by query -----------
 
@@ -74,6 +82,47 @@ for (const violation of flagged.violations) {
   assert.ok(violation.nodes.length > 0, `${violation.id} must name the node it is about`);
 }
 cleanup();
+
+// --- the review queue, which is new UI and therefore owes the same lens ------
+//
+// A rail that is opened by a count and closed by Escape is exactly the kind of
+// surface that ships with an unnamed control: the row, the close and the retry
+// are the only things a reader can touch, and none of them has a visible label
+// that names it. So the audit renders it open, as a reader sees it.
+{
+  const cards = [
+    { id: "a", displayName: "Card one", stage: REVIEW_QUEUE_GATES[0].id, activity: "idle", updatedAt: Date.now() },
+    { id: "b", displayName: "Card two", stage: REVIEW_QUEUE_GATES[3].id, activity: "idle", updatedAt: Date.now() },
+  ];
+  const rpc = {
+    call: async () => ({
+      notifications: cards.map((card) => ({
+        cardId: card.id,
+        kind: "completed",
+        occurredAt: Date.now() - 86_400_000,
+        readAt: null,
+        resolvedAt: null,
+        archivedAt: null,
+      })),
+    }),
+  };
+  const queue = render(h(ReviewQueue, { rpc, cards, onOpenCard: () => {} }));
+  const trigger = () => document.getElementById(REVIEW_QUEUE_TRIGGER_ID);
+  await waitFor(() => assert.equal(trigger().getAttribute("aria-expanded"), "false"));
+  fireEvent.click(trigger());
+  assert.ok(document.getElementById(REVIEW_QUEUE_RAIL_ID), "the audit renders the rail open, not just its trigger");
+  const audit = await axe.run(queue.container, {
+    resultTypes: ["violations"],
+    runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] },
+  });
+  assert.deepEqual(
+    audit.violations.map((violation) => violation.id),
+    [],
+    "the review queue is clean under the same lens the rest of the UI is held to",
+  );
+  window.localStorage.clear();
+  cleanup();
+}
 
 console.log(
   "rendered-ui audit ok: a real component renders and queries, the axe lens is clean on it,"

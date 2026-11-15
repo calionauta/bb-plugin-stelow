@@ -1,31 +1,35 @@
+/** A stage a person has to approve, taken from the stage catalog. */
 export interface ReviewQueueGate {
   id: string;
   label: string;
-  phase: string;
 }
 
+/**
+ * One inbox event, as `listNotifications` returns it.
+ *
+ * Only the fields this projection reads; the ledger row is wider than this.
+ */
 export interface ReviewQueueEvent {
-  cardId?: string;
+  cardId: string;
   kind: string;
-  occurredAt: number;
+  occurredAt: number | null;
   readAt?: number | null;
   resolvedAt?: number | null;
   archivedAt?: number | null;
 }
 
+/** The card fields the projection reads off the board's card list. */
 export interface ReviewQueueCard {
   id: string;
-  name?: string | null;
-  displayName?: string | null;
   stage: string;
+  displayName?: string | null;
+  name?: string | null;
   activity?: string | null;
   updatedAt?: number | null;
 }
 
-/** `entered` is the wait's own start; `since_created` a bound read off the card's record. */
 export type ReviewQueueAgeSource = "entered" | "since_created" | "unknown";
 
-/** `system` rows are excluded from the queue: a worker owns the card, not the reader. */
 export type ReviewQueueWaitingOn = "human" | "system" | "unattributed";
 
 export interface ReviewQueueAttribution {
@@ -48,13 +52,6 @@ export interface ReviewQueueBadge {
   label: string;
 }
 
-export interface ReviewQueueGateRead {
-  id: string;
-  label: string;
-  state: "ok" | "failed";
-  count: number;
-}
-
 export interface ReviewQueueLegendEntry {
   cell: string;
   meaning: string;
@@ -72,7 +69,6 @@ export declare const REVIEW_QUEUE_RAIL_STYLE: Readonly<{
 export declare const REVIEW_QUEUE_ROW_PX: number;
 export declare const REVIEW_QUEUE_TICK_MS: number;
 export declare const REVIEW_QUEUE_GATES: ReadonlyArray<ReviewQueueGate>;
-export declare const REVIEW_QUEUE_GATE_IDS: ReadonlyArray<string>;
 export declare const REVIEW_QUEUE_AGE_LEGEND: ReadonlyArray<ReviewQueueLegendEntry>;
 
 export declare function isReviewGate(stage: string): boolean;
@@ -99,8 +95,3 @@ export declare function reviewQueueBadge(
   rows: ReadonlyArray<ReviewQueueRow>,
   options?: { ledgerOk?: boolean; nowMs?: number },
 ): ReviewQueueBadge;
-
-export declare function reviewQueueGateReads(
-  rows: ReadonlyArray<ReviewQueueRow>,
-  options?: { ledgerOk?: boolean },
-): ReviewQueueGateRead[];

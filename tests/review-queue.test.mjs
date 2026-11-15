@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { STAGE_CATALOG } from "../lib/workflow-catalog.mjs";
 import {
   REVIEW_QUEUE_GATES,
-  REVIEW_QUEUE_GATE_IDS,
   attributionOf,
   isHumanWait,
   isReviewGate,
   isSystemWait,
   orderQueueRows,
   queueAgeCell,
+  reviewGateLabel,
   reviewQueueBadge,
-  reviewQueueGateReads,
   reviewQueueRows,
 } from "../lib/review-queue.mjs";
 
@@ -44,17 +42,22 @@ function event(cardId, kind, occurredAt, overrides = {}) {
 }
 
 // --- 1. The gates are the catalog's, not a list printed here ---------------
-const approvalStages = STAGE_CATALOG.filter((stage) => stage.requires_approval === true).map((stage) => stage.id);
+// Named here rather than re-derived from the catalog: a test that re-runs the
+// expression the module runs cannot fail, and this list is the contract.
 assert.deepEqual(
-  [...REVIEW_QUEUE_GATE_IDS],
-  approvalStages,
-  "the queue's gates are the stages the catalog marks as needing approval",
+  REVIEW_QUEUE_GATES.map((gate) => gate.id),
+  ["gate", "int-gate", "plan-gate", "diff-gate"],
+  "the queue's gates are the four stages that end in a person's decision",
 );
-assert.equal(REVIEW_QUEUE_GATES.length, 4, "four review stages carry an approval today");
+assert.deepEqual(
+  REVIEW_QUEUE_GATES.map((gate) => gate.label),
+  ["Product Review", "Design Review", "Technical Review", "Code Review"],
+  "each gate is named in the catalog's words, which is what a failure line quotes back",
+);
 for (const gate of REVIEW_QUEUE_GATES) {
   assert.equal(isReviewGate(gate.id), true, `${gate.id} is a gate stage`);
-  assert.ok(gate.label.length > 0, "a gate is named in the interface's own words");
 }
+assert.equal(reviewGateLabel("diff-gate"), "Code Review", "a row and a failure line read the gate the same way");
 assert.equal(isReviewGate("execution"), false, "execution is not a gate: no person is owed a decision");
 
 // --- 2. Oldest first, ties by updatedAt then id, unmeasured last -----------
@@ -68,6 +71,17 @@ assert.deepEqual(
   tie.map((row) => row.id),
   ["z_oldest", "b_later", "a_earlier", "c_unknown"],
   "the oldest wait is first, the tie breaks on the most recently touched, and an unmeasured row sorts last",
+);
+
+// With the time and the last-touched stamp equal, the id decides -- otherwise
+// two cards that never move would still swap places between reads.
+assert.deepEqual(
+  orderQueueRows([
+    { id: "b", enteredAt: T, ageSource: "entered", updatedAt: T },
+    { id: "a", enteredAt: T, ageSource: "entered", updatedAt: T },
+  ]).map((row) => row.id),
+  ["a", "b"],
+  "equal time, equal touch: the id breaks the tie so the order stops moving",
 );
 
 // The same rows handed over in a different order produce the same queue: an
@@ -85,9 +99,10 @@ const ages = reviewQueueRows({
     // An unread completion is a review request owed to a person: that is the
     // wait's own start, so the cell is exact.
     event("entered_card", "completed", T),
-    // A card with only old, already-read history: the gate entry is not in the
-    // data, so the age is a bound read off the oldest record it does have.
-    event("bound_card", "completed", T - 6 * DAY, { readAt: T - 5 * DAY }),
+    // A card whose only history is a machine stall it already recovered from:
+    // there is no gate entry in the data, so the age is a bound read off the
+    // oldest record it does have.
+    event("bound_card", "error", T - 6 * DAY, { resolvedAt: T - 5 * DAY }),
   ],
 });
 const byId = Object.fromEntries(ages.map((row) => [row.id, row]));
@@ -141,8 +156,13 @@ assert.equal(
 assert.equal(isHumanWait(event("x", "completed", T)), true, "an unread completion is a review request owed");
 assert.equal(
   isHumanWait(event("x", "completed", T, { readAt: T + 1 })),
+  true,
+  "a review request that was read but not resolved is still owed: reading is not approving",
+);
+assert.equal(
+  isHumanWait(event("x", "completed", T, { resolvedAt: T + 1 })),
   false,
-  "once read, the review request is no longer what the card waits on",
+  "a resolved review request is history",
 );
 assert.equal(isHumanWait(event("x", "paused", T)), false, "a pause is not a human wait");
 assert.equal(isSystemWait(event("x", "error", T)), true, "a failure is the machine's turn");
@@ -171,8 +191,12 @@ assert.deepEqual(
   ["read_card", "review_card", "question_card"],
   "only cards a person owes a move on, oldest first: the running card, the failed one and the non-gate ones are out",
 );
-assert.equal(mixed[0].ageSource, "since_created", "the card whose review was already read keeps an honest bound");
-assert.equal(mixed[0].waitingOn, "unattributed", "and it is attributed as nobody-in-particular, not as the reader");
+assert.equal(
+  mixed[0].ageSource,
+  "entered",
+  "a review request that was read but not resolved still dates the wait from when the stage finished",
+);
+assert.equal(mixed[0].waitingOn, "human", "and it is the reader's turn whether or not they have glanced at it");
 assert.equal(mixed[1].waitingOn, "human");
 assert.equal(mixed[2].waitingOn, "human");
 
@@ -198,16 +222,29 @@ assert.deepEqual(
   "and every age says it is unknown rather than inventing one from updatedAt",
 );
 
-// --- 9. Per-gate reads, so a failure can name the gate it could not check ---
-const reads = reviewQueueGateReads(failed, { ledgerOk: false });
-assert.deepEqual(reads.map((gate) => gate.state), ["failed", "failed", "failed", "failed"]);
-assert.deepEqual(reads.map((gate) => gate.label), REVIEW_QUEUE_GATES.map((gate) => gate.label));
-const ok = reviewQueueGateReads(reviewQueueRows({ cards: cache, notifications: [event("b", "completed", T)] }));
-assert.deepEqual(ok.map((gate) => gate.state), ["ok", "ok", "ok", "ok"]);
-assert.deepEqual(
-  ok.map((gate) => gate.count),
-  [1, 0, 0, 1],
-  "each gate reports its own count: one card sits in the Product gate with no record, one in the Code Review gate with an unread review",
+// --- 9. A record with no timestamp is unknown, not 1970 -------------------
+// The ledger is written by more than one writer, and an event with no
+// `occurredAt` used to collapse to zero -- printing a wait of twenty thousand
+// days and sorting that card to the top, which is the confidently wrong number
+// the whole interface is built to avoid.
+const undated = reviewQueueRows({
+  cards: [card("undated_card")],
+  notifications: [
+    { cardId: "undated_card", kind: "completed", readAt: null, resolvedAt: null, archivedAt: null },
+  ],
+});
+assert.equal(undated.length, 1, "a review request nobody dated is still the reader's turn");
+assert.equal(undated[0].ageSource, "unknown", "no occurredAt means no entry time, not epoch zero");
+assert.equal(queueAgeCell(undated[0], T), "\u2014", "and it prints a dash instead of an enormous number");
+assert.equal(
+  reviewQueueRows({
+    cards: [card("undated_card")],
+    notifications: [
+      { cardId: "undated_card", kind: "question", occurredAt: null, readAt: null, resolvedAt: null, archivedAt: null },
+    ],
+  })[0].ageSource,
+  "unknown",
+  "an undated question is undated too",
 );
 
 console.log("review queue projection test ok");

@@ -1,11 +1,13 @@
 import { useCallback, useRef } from "react";
+import { TEXT_META } from "../../lib/design-tokens";
+import { Button } from "../ui/button";
 import { ReviewQueueRail } from "./review-queue-rail";
 import {
   useReviewQueue,
   type ReviewQueueCard,
   type ReviewQueueRpc,
   type ReviewQueueState,
-} from "../../hooks/use-review-queue";
+} from "./use-review-queue";
 
 /**
  * The review queue's trigger and its rail, in one place.
@@ -33,10 +35,8 @@ type ReviewQueueProps = {
 export const REVIEW_QUEUE_TRIGGER_ID = "review-queue-trigger";
 export const REVIEW_QUEUE_RAIL_ID = "review-queue-rail";
 
-const TRIGGER_CLASS = [
-  "flex min-h-11 w-full cursor-pointer flex-wrap items-center gap-2 text-xs",
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
-].join(" ");
+const TRIGGER_CLASS =
+  "h-auto min-h-11 w-full flex-wrap justify-start gap-2 whitespace-normal px-0 py-0 text-xs font-normal";
 
 export function ReviewQueue({ rpc, cards, onOpenCard }: ReviewQueueProps) {
   const queue = useReviewQueue(rpc, cards);
@@ -55,7 +55,6 @@ export function ReviewQueue({ rpc, cards, onOpenCard }: ReviewQueueProps) {
         id={REVIEW_QUEUE_RAIL_ID}
         open={queue.open}
         rows={queue.rows}
-        gates={queue.gates}
         badge={queue.badge}
         nowMs={queue.nowMs}
         loading={queue.loading}
@@ -78,10 +77,11 @@ function QueueTrigger(props: {
 }) {
   const { queue, triggerRef } = props;
   return (
-    <button
+    <Button
       ref={triggerRef}
       id={REVIEW_QUEUE_TRIGGER_ID}
       type="button"
+      variant="ghost"
       aria-expanded={queue.open}
       aria-controls={REVIEW_QUEUE_RAIL_ID}
       aria-label={`Review queue: ${queue.badge.label}`}
@@ -95,9 +95,9 @@ function QueueTrigger(props: {
       >
         {queue.badge.label}
       </span>
-      <span className="text-muted-foreground">
-        {queue.open ? "waiting on you · q closes" : "waiting on you · q opens"}
+      <span className={TEXT_META}>
+        {queue.open ? "waiting on you, q closes" : "waiting on you, q opens"}
       </span>
-    </button>
+    </Button>
   );
 }

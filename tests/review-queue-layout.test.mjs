@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+// The host runtime must exist before any component imports the plugin SDK.
+import "./helpers/bb-runtime-stub.mjs";
 import { createElement as h } from "react";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { ReviewQueue, REVIEW_QUEUE_RAIL_ID, REVIEW_QUEUE_TRIGGER_ID } from "../components/board/review-queue.tsx";
-import { REVIEW_QUEUE_GATES, REVIEW_QUEUE_WIDTH_PX } from "../lib/review-queue.mjs";
+import {
+  REVIEW_QUEUE_GATES,
+  REVIEW_QUEUE_ROW_PX,
+  REVIEW_QUEUE_WIDTH_PX,
+} from "../lib/review-queue.mjs";
 import { kanbanGridColumns } from "../lib/kanban-layout.mjs";
 import { BUILD_BOARD_VISIBLE_COLUMNS } from "../lib/workflow-vocabulary.mjs";
 
@@ -129,7 +135,24 @@ fireEvent.click(trigger());
 assert.equal(document.getElementById(REVIEW_QUEUE_RAIL_ID), null, "closed");
 assert.equal(track.scrollLeft, 700, "and closing it does not jump the board either");
 
-// --- 4. The rail is not inside the track it would otherwise affect -------
+// --- 4. Nothing the component renders is sized like the board's loss -----
+// The way an overlay quietly becomes an in-flow panel is a wrapper that pays for
+// it: padding, a margin, or a spacer as wide as the rail. The rail is the only
+// thing this component renders that carries the published width.
+assert.equal(
+  REVIEW_QUEUE_ROW_PX,
+  44,
+  "a row is 44px: the touch-target floor the rest of the app holds itself to",
+);
+assert.equal(
+  Array.from(chrome.querySelectorAll("*")).filter(
+    (element) => getComputedStyle(element).paddingRight === `${REVIEW_QUEUE_WIDTH_PX}px`,
+  ).length,
+  0,
+  "no element in the queue's own chrome pays the rail's width as padding",
+);
+
+// --- 5. The rail is not inside the track it would otherwise affect -------
 fireEvent.click(trigger());
 assert.equal(
   track.contains(document.getElementById(REVIEW_QUEUE_RAIL_ID)),
@@ -139,7 +162,7 @@ assert.equal(
 assert.equal(track.contains(trigger()), false, "and so is its trigger: the chrome line is above the board");
 cleanup();
 
-// --- 5. Shutting it leaves no residue ------------------------------------
+// --- 6. Shutting it leaves no residue ------------------------------------
 assert.equal(
   document.querySelectorAll("[data-review-queue-rail]").length,
   0,

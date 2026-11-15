@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+// The host runtime must exist before any component imports the plugin SDK.
+import "./helpers/bb-runtime-stub.mjs";
 import { createElement as h } from "react";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import {
@@ -78,16 +80,19 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
 
 const openCards = [
   card("old_card", PRODUCT_GATE, { updatedAt: T - 6 * DAY }),
-  card("mid_card", DESIGN_GATE, { updatedAt: T - 2 * DAY }),
+  card("stalled_card", TECH_GATE, { updatedAt: T - 3 * DAY }),
+  card("read_card", DESIGN_GATE, { updatedAt: T - 2 * DAY }),
   card("new_card", CODE_GATE, { updatedAt: T - 1 }),
-  card("blank_card", TECH_GATE, { updatedAt: T - 2 }),
 ];
 const openLedger = [
-  // An unread review request dates the wait exactly.
+  // An open review request dates the wait exactly.
   readEvent("old_card", "completed", T - 6 * DAY),
-  // Already read, so the wait's own start is not in the data: the row keeps an
-  // honest bound instead of a number.
-  readEvent("mid_card", "completed", T - 2 * DAY, { readAt: T - 2 * DAY + 1 }),
+  // A stall the worker already recovered from: there is no gate entry in the
+  // data, so this row keeps a bound instead of a number.
+  readEvent("stalled_card", "error", T - 3 * DAY, { resolvedAt: T - 2 * DAY }),
+  // Read but not resolved: still the reader's turn, still dated from the stage
+  // finishing rather than from somebody glancing at it.
+  readEvent("read_card", "completed", T - 2 * DAY, { readAt: T - 2 * DAY + 1 }),
 ];
 
 // --- 1. The reading is on the board while the rail is shut -----------------
@@ -168,16 +173,25 @@ const openLedger = [
   assert.equal(rows().length, 4, "every gate card is reported, including the one with no record");
   assert.deepEqual(
     rows().map((row) => row.querySelector("span").textContent),
-    ["Card old_card", "Card mid_card", "Card new_card", "Card blank_card"],
+    ["Card old_card", "Card stalled_card", "Card read_card", "Card new_card"],
     "oldest wait first, unmeasured last",
   );
   assert.deepEqual(
     rows().map((_, index) => rowCell(index)),
-    ["6d", "~2d", "\u2014", "\u2014"],
+    ["6d", "~3d", "2d", "\u2014"],
     "the exact age, the derived age and two blanks — the three age states, all rendered",
   );
   assert.equal(rows()[0].querySelectorAll("span").length, 3, "name, gate and age: the whole row");
   assert.ok(rows()[0].getAttribute("aria-label").includes("Product Review"), "the row names its gate for a screen reader");
+  assert.ok(
+    document.querySelector("[data-review-queue-legend]"),
+    "the legend stays visible with four rows in the queue, not only when the queue is empty",
+  );
+  assert.deepEqual(
+    rows().map((row) => row.getAttribute("data-waiting-on")),
+    ["human", "unattributed", "human", "unattributed"],
+    "every row carries the attribution it was counted by, so the diff can be read",
+  );
   reset();
 }
 
@@ -198,6 +212,13 @@ const openLedger = [
   assert.equal(document.activeElement, rows()[0], "Home comes back");
   fireEvent.keyDown(rows()[0], { key: "ArrowUp" });
   assert.equal(document.activeElement, rows()[0], "the list does not wrap past its first row");
+  assert.equal(rows()[0].tagName, "BUTTON", "a row is a native button, so Enter and Space activate it");
+  assert.equal(rows()[0].getAttribute("type"), "button", "and it submits nothing");
+  assert.equal(
+    fireEvent.keyDown(rows()[0], { key: "Enter" }),
+    true,
+    "Enter is not intercepted: the browser's own activation is what opens the card",
+  );
   fireEvent.click(rows()[0]);
   assert.deepEqual(opened, ["old_card"], "a row opens its card");
   assert.equal(rail(), null, "and the rail gets out of the way");
@@ -231,15 +252,17 @@ const openLedger = [
   assert.equal(rail(), null, "and the same key closes it");
   const input = document.createElement("input");
   const textarea = document.createElement("textarea");
+  const select = document.createElement("select");
   const editable = document.createElement("div");
   editable.setAttribute("contenteditable", "true");
-  document.body.append(input, textarea, editable);
-  for (const element of [input, textarea, editable]) {
+  document.body.append(input, textarea, select, editable);
+  for (const element of [input, textarea, select, editable]) {
     fireEvent.keyDown(element, { key: "q" });
     assert.equal(rail(), null, `q typed into <${element.tagName.toLowerCase()}> must not steal the letter`);
   }
   input.remove();
   textarea.remove();
+  select.remove();
   editable.remove();
   reset();
 }
@@ -277,17 +300,18 @@ const openLedger = [
   assert.equal(document.querySelectorAll("[data-review-queue-failure]").length, 0, "and the failures clear");
   assert.deepEqual(
     rows().map((_, index) => rowCell(index)),
-    ["6d", "~2d", "\u2014", "\u2014"],
+    ["6d", "~3d", "2d", "\u2014"],
     "the ages come back with the read",
   );
   reset();
 }
 
-// --- 9. Reading the ledger is not a poll ----------------------------------
+// --- 9. The ages move on the clock, and the clock is not a fetch -----------
 //
-// The ages move on the clock, not on a fetch: a rail left open for an hour must
-// not have issued 120 reads. The interval is shorter than a person waits for the
-// cell to change unit, and it does not re-read.
+// A rail left open for an hour must not have issued 120 reads. This harness has
+// no fake-timer seam, so what is asserted is what it can see: the tick constant
+// is under a minute, and mounting issues one read rather than one per gate. The
+// interval itself only sets `nowMs`.
 {
   const rpc = stubRpc(openLedger);
   render(h(ReviewQueue, { rpc, cards: openCards, onOpenCard: () => {} }));
