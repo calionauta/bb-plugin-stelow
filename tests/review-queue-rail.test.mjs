@@ -81,6 +81,18 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   assert.match(legend.textContent, /3d/, "and in the day unit, so both shapes are taught");
   assert.ok(legend.textContent.includes("~6h"), "the bound is explained with its marker");
   assert.ok(legend.textContent.includes("\u2014"), "the unknown cell is explained");
+  // F9: a bound must say that it starts at the card's own record, because that
+  // is what makes it a bound rather than a creation date it cannot see.
+  assert.match(
+    legend.textContent,
+    /card's own record/i,
+    "the bound's explanation names the record it is read from",
+  );
+  assert.doesNotMatch(
+    legend.textContent,
+    /creation|created/i,
+    "and does not claim a creation time the projection cannot see",
+  );
   assert.ok(
     document.querySelector("[data-review-queue-empty]"),
     "an empty queue says so in words rather than being a blank panel",
