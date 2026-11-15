@@ -264,6 +264,11 @@ const rowCell = (index) => rows()[index].querySelectorAll("span")[2].textContent
   fireEvent.click(trigger());
   assert.ok(document.querySelector("[data-review-queue-checking]"), "the rail says it is checking");
   assert.equal(
+    trigger().getAttribute("aria-label"),
+    "Review queue, checking what is waiting",
+    "and the door says the same: a read in flight is not a read that failed",
+  );
+  assert.equal(
     document.querySelectorAll("[data-review-queue-failure]").length,
     0,
     "and nothing has failed yet, so nothing claims it has",

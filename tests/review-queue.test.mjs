@@ -10,6 +10,7 @@ import {
   isSystemWait,
   orderQueueRows,
   queueAgeCell,
+  queueBadgeAria,
   reviewGateLabel,
   reviewQueueBadge,
   reviewQueueRows,
@@ -320,6 +321,28 @@ assert.deepEqual(gateClockOf(card("x", "gate", { stageEnteredAt: "junk", created
   createdAt: null,
   ageSource: "unknown",
 });
+
+// --- 9b. The door announces three states, not two -------------------------
+// The trigger's accessible name is the only thing a reader hears until the rail
+// is open, so a read still in flight must not be announced as a failed one.
+{
+  const empty = { count: 0, unowned: 0, oldest: null, label: "0" };
+  assert.equal(
+    queueBadgeAria(empty, "checking"),
+    "Review queue, checking what is waiting",
+    "a first read in flight says it is checking",
+  );
+  assert.equal(
+    queueBadgeAria(empty, "failed"),
+    "Review queue, the ledger could not be read",
+    "and only a read that came back wrong says so",
+  );
+  assert.equal(
+    queueBadgeAria({ count: 0, unowned: 3, oldest: null, label: "0 +3" }, "ok"),
+    "Review queue: 0 waiting on you, 3 without an owner",
+    "the unowned cards are spoken, so the door's count is not the whole story",
+  );
+}
 
 // --- 10. A failed read still knows what a worker holds ---------------------
 // The held check reads the card, not the ledger: on a failed read the attribution

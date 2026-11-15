@@ -117,7 +117,7 @@ export declare function reviewQueueBadge(
 
 export declare function queueBadgeAria(
   badge: ReviewQueueBadge,
-  ledgerOk?: boolean,
+  state?: "ok" | "checking" | "failed",
 ): string;
 
 export declare function isHeldCard(card: ReviewQueueCard | null | undefined): boolean;

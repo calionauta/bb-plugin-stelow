@@ -82,7 +82,7 @@ function QueueTrigger(props: {
       variant="ghost"
       aria-expanded={queue.open}
       aria-controls={REVIEW_QUEUE_RAIL_ID}
-      aria-label={queueBadgeAria(queue.badge, queue.ledgerOk)}
+      aria-label={queueBadgeAria(queue.badge, queue.checking ? "checking" : queue.ledgerOk ? "ok" : "failed")}
       onClick={queue.toggle}
       className={TRIGGER_CLASS}
     >
