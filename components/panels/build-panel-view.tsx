@@ -15,6 +15,7 @@ import { archivedDeleteProps } from "../board/archived-delete-props";
 import { useDeleteArchivedCards } from "../board/use-delete-archived-cards";
 import { BoardCard } from "../board/board-cards";
 import { FlowStrip } from "../board/flow-strip";
+import { ReviewQueue } from "../board/review-queue";
 import { HillBoard } from "../board/hill-board";
 import { BulkBarSlot } from "../board/build-bulk-bar";
 import { boardBottomPadding } from "../../lib/bulk-bar-placement.mjs";
@@ -294,6 +295,14 @@ export function BuildPanelView(props: Props) {
         rpc={state.rpc}
         projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}
         onOpenCard={(kind, cardId) => props.onOpenCard({ kind }, cardId)}
+      />
+      {/* The queue reads the same cards the board renders, so it sits beside the
+          flow line in the chrome rather than inside a column: what it answers is
+          about the whole board, and no single column owns it. */}
+      <ReviewQueue
+        rpc={state.rpc}
+        cards={state.cards}
+        onOpenCard={(cardId) => props.onOpenCard({ kind: "build" }, cardId)}
       />
       <BuildBoardView {...props} />
     </>

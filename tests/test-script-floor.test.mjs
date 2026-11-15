@@ -54,9 +54,15 @@ try {
   //    naming both numbers and the band that went missing from CI.
   assert.ok(testScriptNames(live).includes("test:contrast-wiring"), "the band the #420 merge dropped exists today");
   writeFixture(["test:contrast-wiring"]);
+  // Derived from the floor, not pasted: a message pinned to the numbers of the
+  // day turns every added band into a second edit in this file, which is how a
+  // guard starts being "fixed" by editing the expectation.
+  const belowFloor = new RegExp(
+    `declares ${TEST_SCRIPT_FLOOR - 1} "test:" scripts, below the recorded floor of ${TEST_SCRIPT_FLOOR} \u2014 1 CI band\\(s\\) went missing`,
+  );
   assert.throws(
     () => assertTestScriptFloor(readScripts(fixturePath)),
-    /declares 90 "test:" scripts, below the recorded floor of 91 — 1 CI band\(s\) went missing/,
+    belowFloor,
     "one deleted band falls under the floor and is refused by name, not silently accepted",
   );
 
