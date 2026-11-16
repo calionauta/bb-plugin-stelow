@@ -36,25 +36,26 @@ const proseMention = `# Plan\n\nDone Criterion matters.\n\n| A | B |\n|---|---|\
 assert.ok(hasCode(validateArtifact(proseMention + pad(10), colContract), "missing-table-columns"), "prose mention without the column fails");
 
 // Every migrated slug has a contract citing its upstream reference.
-assert.equal(JTBD_CONTRACTS.length, 10, "ten JTBD depth contracts");
+assert.equal(JTBD_CONTRACTS.length, 11, "eleven JTBD depth contracts");
 for (const contract of JTBD_CONTRACTS) {
   assert.ok(contract.slug && contract.ref.endsWith(".md") && contract.checks.length > 0, `${contract.slug} has ref and checks`);
 }
 assert.equal(contractForSubstep("nope"), null, "unknown slug is unmigrated");
 
-// 1. contextual-segmentation: 8+ complete segment blocks.
-const seg = (i) => `## Segment ${i}\n- Market: people ${pad(8)}\n- Justification: reason ${pad(8)}\n- Situational factors: factors ${pad(8)}\n- Desired Outcomes: outcomes ${pad(20)}\n- Constraints: limits ${pad(20)}\n`;
-const segPass = Array.from({ length: 8 }, (_, i) => seg(i + 1)).join("\n") + pad(150);
+// 1. contextual-segmentation: 4+ complete segment blocks with the new fields.
+const seg = (i) => `## Segment ${i}\n- Market: people ${pad(8)}\n- Justification: reason ${pad(8)}\n- Situational factors: factors ${pad(8)}\n- Scene: a tuesday ${pad(10)}\n- Observable difference: they print ${pad(10)}\n- Cost of failure: late close ${pad(10)}\n`;
+const segPass = Array.from({ length: 6 }, (_, i) => seg(i + 1)).join("\n") + pad(700);
 const segFail = `## Segment 1\n- Market: people\n- Justification: reason\n${pad(50)}`;
-assert.equal(validateSubstep("contextual-segmentation", segPass).pass, true, "full segmentation passes");
+assert.equal(validateSubstep("contextual-segmentation", segPass).pass, true, "six segments pass");
 assert.ok(hasCode(validateSubstep("contextual-segmentation", segFail), "incomplete-blocks"), "partial segments fail");
 
 // 2. thinking-styles: exactly 5 styles, 15 table rows.
 const style = (name) => `## ${name}\n| Element | Description | Voice example | Source & status |\n|---|---|---|---|\n| Thought | thinks ${pad(10)} | "I think" | Simulated hypothesis — not participant data |\n| Emotion | feels ${pad(10)} | "I feel" | Simulated hypothesis — not participant data |\n| Personal Rule | rules ${pad(10)} | "I always" | Simulated hypothesis — not participant data |\n- Brief description: seeks ${pad(8)}\n- Context: works ${pad(8)}\n- Differentiation: adapts ${pad(8)}\n- Top 3 Functional Jobs: plan, monitor, optimize ${pad(8)}\n- Top 2 Emotional Jobs: secure, calm ${pad(8)}\n- Top 2 Social Jobs: organized, reliable ${pad(8)}\n`;
 const stylesPass = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].map(style).join("\n") + "Justification of the five styles. " + pad(170);
 assert.equal(validateSubstep("thinking-styles", stylesPass).pass, true, "five styles pass");
-assert.ok(hasCode(validateSubstep("thinking-styles", ["A", "B", "C", "D"].map(style).join("\n") + pad(60)), "too-few-headings"), "four styles fail");
-assert.ok(hasCode(validateSubstep("thinking-styles", ["A", "B", "C", "D", "E", "F"].map(style).join("\n") + pad(60)), "too-many-headings"), "six styles fail");
+assert.equal(validateSubstep("thinking-styles", ["A","B","C","D"].map(style).join("\n") + pad(170)).pass, true, "four styles pass inside the band");
+assert.ok(hasCode(validateSubstep("thinking-styles", ["A", "B"].map(style).join("\n") + pad(60)), "too-few-headings"), "two styles fail");
+assert.ok(hasCode(validateSubstep("thinking-styles", ["A","B","C","D","E","F","G","H"].map(style).join("\n") + pad(60)), "too-many-headings"), "eight styles fail");
 
 // 3. jtbd-discovery: 3 sections, 20 contextual jobs.
 const discoveryPass = `## Rewritten JTBDs\n- Rewrite and keep records ${pad(40)}\n## Contextual JTBDs\n${Array.from({ length: 20 }, (_, i) => `- Contextual job number ${i + 1} ${pad(10)}`).join("\n")}\n## Higher functional JTBDs\n- Higher job one ${pad(40)}\n` + pad(280);
@@ -67,11 +68,11 @@ const compPass = ["Direct Competitors", "Indirect Competitors", "Hidden Competit
 assert.equal(validateSubstep("competitors", compPass).pass, true, "competitors pass");
 assert.ok(hasCode(validateSubstep("competitors", "## Direct Competitors\n- one\n## Indirect Competitors\n- one\n- two\n- three\n## Hidden Competitors\n- one\n## Key Insights\n- one\n- two\n- three\n" + pad(400)), "too-few-items"), "thin direct section fails");
 
-// 5. job-actors: 12 exact roles.
-const roles = ["Beneficiary", "Performer", "Provider", "Indirect Beneficiary", "Threatened", "Assistant", "Decision Maker", "Purchaser", "Buyer", "Supervisor", "Influencer", "Expert"];
-const actorsPass = roles.map((role) => `## ${role}\nActor group ${pad(48)}\n`).join("\n");
-assert.equal(validateSubstep("job-actors", actorsPass).pass, true, "twelve roles pass");
-assert.ok(hasCode(validateSubstep("job-actors", actorsPass.replace("## Purchaser\n", "")), "missing-section"), "missing role fails");
+// 5. job-actors: a fixed-shape verdict table, one line per role.
+const actorRow = (role) => `| ${role} | Input-derived | actor group ${pad(6)} | market ${pad(6)} | "quote" |`;
+const actorsPass = `| Role | Status | Actor | Market | Warrant |\n|---|---|---|---|---|\n` + ["Beneficiary","Performer","Provider","Indirect Beneficiary","Threatened","Assistant","Decision Maker","Purchaser","Buyer","Supervisor","Influencer","Expert"].map(actorRow).join("\n") + "\n" + pad(200);
+assert.equal(validateSubstep("job-actors", actorsPass).pass, true, "verdict table passes");
+assert.ok(hasCode(validateSubstep("job-actors", actorsPass.replace("| Market |", "| Mercado |")), "missing-table-columns"), "renamed column fails");
 
 // 6. situational-variables: 5 categories, 10 factors.
 const variablePass = ["Where", "With Whom", "When", "Why", "How"].map((cat) => `## Category: ${cat}\n### Situational factor: factor one ${pad(10)}\n- variable one: justification ${pad(15)}\n- variable two: justification ${pad(15)}\n### Situational factor: factor two ${pad(10)}\n- variable three: justification ${pad(15)}\n- variable four: justification ${pad(15)}\n`).join("\n");
@@ -79,7 +80,7 @@ assert.equal(validateSubstep("situational-variables", variablePass).pass, true, 
 assert.ok(hasCode(validateSubstep("situational-variables", "## Category: Where\n### Situational factor: one\n- var: why\n" + pad(500)), "too-few-headings"), "one category fails");
 
 // 7. functional-needs: Top 10 with five fields each + summary table.
-const criterion = (i) => `#### ${i}/10 Ensure outcome number ${i}\n- Alternative: achieve result ${i} ${pad(6)}\n- Justification: ideal because ${pad(12)}\n- Score: impacts factors ${pad(12)}\n- Metrics: speed ease consistency ${pad(52)}\n- Current solutions: mental physical virtual ${pad(12)}\n`;
+const criterion = (i) => `#### ${i}/10 Ensure outcome number ${i}\n- Justification: ideal because ${pad(12)}\n- Score: impacts factors ${pad(12)} — **Basis:** inferência\n- Metrics: speed ease consistency ${pad(52)}\n- Current alternative: mental physical virtual ${pad(12)}\n`;
 const functionalPass = `## Top 10:\n${Array.from({ length: 10 }, (_, i) => criterion(i + 1)).join("\n")}\n## Summary of Success Criteria\n| Success Criterion | Alternative |\n| :--- | :--- |\n${Array.from({ length: 10 }, (_, i) => `| Criterion ${i + 1} | Alternative ${i + 1} |`).join("\n")}\n`;
 assert.equal(validateSubstep("functional-needs", functionalPass).pass, true, "functional needs pass");
 const incidentFunctional = `# Sub-etapa: necessidades funcionais\n## Critérios de sucesso\n- Ensure recebimento do protocolo\n- Ensure compreensão do motivo\n- Ensure conclusão do pedido\n- Avoid deslocamento para consulta\n- Ensure validade do documento\n- Avoid perda do prazo\n- Ensure correção de dado\n- Avoid exposição de dado\n- Ensure comprovação de elegibilidade\n- Avoid fila sem previsão\n`;
@@ -88,21 +89,23 @@ assert.equal(incidentResult.pass, false, "incident-style names-only file fails")
 assert.ok(hasCode(incidentResult, "missing-section"), "names-only file misses Top 10 section");
 
 // 8. financial-needs: 30 raw + Top 20 detailed.
-const raw30 = `## 30 Raw Success Criteria\n${Array.from({ length: 30 }, (_, i) => `- Minimize the cost of item ${i + 1}`).join("\n")}\n`;
-const top20 = `## Top 20:\n${Array.from({ length: 20 }, (_, i) => `#### ${i + 1}/20 Minimize the cost of item ${i + 1}\n- Alternative: reduce spending ${i + 1} ${pad(4)}\n- Justification: ideal because ${pad(8)}\n- Score: impacts factors ${pad(8)}\n- Metrics: count proportion average ${pad(20)}\n- Current solutions: mental physical virtual ${pad(8)}\n`).join("\n")}\n`;
+const raw30 = `## Raw Success Criteria\n${Array.from({ length: 30 }, (_, i) => `- Minimize the cost of item ${i + 1}`).join("\n")}\n`;
+const top20 = `## Top criteria:\n${Array.from({ length: 20 }, (_, i) => `#### ${i + 1}/20 Minimize the cost of item ${i + 1}\n- Justification: ideal because ${pad(8)}\n- Score: impacts factors ${pad(8)} — **Basis:** inferência\n- Metrics: count proportion average ${pad(20)}\n- Current alternative: mental physical virtual ${pad(8)}\n`).join("\n")}\n`;
 assert.equal(validateSubstep("financial-needs", raw30 + top20).pass, true, "financial needs pass");
-assert.ok(hasCode(validateSubstep("financial-needs", "## 30 Raw Success Criteria\n- Minimize the cost of one\n- Minimize the cost of two\n## Top 20:\n" + pad(1500)), "too-few-items"), "two raw criteria fail");
+assert.ok(hasCode(validateSubstep("financial-needs", "## Raw Success Criteria\n- Minimize the cost of one\n## Top criteria:\n" + pad(1500)), "too-few-items"), "two raw criteria fail");
 
-// 9. emotional-social-jobs: both sections, 5 items each.
-const emotionalPass = `### Emotional Jobs:\n${Array.from({ length: 5 }, (_, i) => `  - Feel confident while acting ${i + 1} ${pad(36)}`).join("\n")}\n### Social Jobs:\n${Array.from({ length: 5 }, (_, i) => `  - Be perceived as capable ${i + 1} ${pad(36)}`).join("\n")}\n`;
-assert.equal(validateSubstep("emotional-social-jobs", emotionalPass).pass, true, "emotional/social pass");
-assert.ok(hasCode(validateSubstep("emotional-social-jobs", "### Emotional Jobs:\n  - Feel confident\n" + pad(400)), "missing-section"), "missing social section fails");
+// 9. emotional-social-jobs: anchored table, one emotional and one social per step.
+const emoRow = (i, kind) => `| step ${i} | statement ${kind} ${i} ${pad(6)} | ${kind} | signal ${i} ${pad(6)} | Hypothesis — bet |`;
+const emotionalPass = `| Step | Job | Type | Signal | Status |\n|---|---|---|---|---|\n` + [1,2,3].flatMap((i) => [emoRow(i, "Emotional"), emoRow(i, "Social")]).join("\n") + "\n" + pad(300);
+assert.equal(validateSubstep("emotional-social-jobs", emotionalPass).pass, true, "anchored emotional/social passes");
+assert.ok(hasCode(validateSubstep("emotional-social-jobs", `| Step | Job | Type | Signal | Status |\n|---|---|---|---|---|\n` + emoRow(1, "Emotional") + "\n" + pad(400)), "missing-table-rows"), "one anchored row fails");
 
-// 10. job-map-steps: 6 stages, 12 steps.
-const stages = ["Define and Plan", "Prepare and Execute", "Evaluate and Adjust", "Conclude and Organize", "Document and Share", "Monitor subsequent effects"];
-const mapPass = stages.map((stage) => `# ${stage}\n### Step one ${pad(38)}\n### Step two ${pad(38)}\n`).join("\n");
-assert.equal(validateSubstep("job-map-steps", mapPass).pass, true, "job map passes");
-assert.ok(hasCode(validateSubstep("job-map-steps", "# Define and Plan\n### Step one\n# Prepare and Execute\n### Step two\n" + pad(500)), "missing-section"), "two stages fail");
+// 10. job-map-steps: a fixed-shape step table with at least five rows.
+const stepRow = (i) => `| ${i} | step ${pad(4)} | Prepare and Execute | analyst | Open | output ${pad(4)} | failure ${pad(4)} | Hypothesis — bet |`;
+const mapPass = `| # | Step | Phase | Executor | Decider | Output | Failure mode | Status |\n|---|---|---|---|---|---|---|---|\n` + Array.from({ length: 7 }, (_, i) => stepRow(i + 1)).join("\n") + "\n" + pad(500);
+assert.equal(validateSubstep("job-map-steps", mapPass).pass, true, "step table passes");
+assert.ok(hasCode(validateSubstep("job-map-steps", mapPass.replace("| Decider |", "| Quem decide |")), "missing-table-columns"), "renamed decider column fails");
+assert.ok(hasCode(validateSubstep("job-map-steps", `| # | Step | Phase | Executor | Decider | Output | Failure mode | Status |\n|---|---|---|---|---|---|---|---|\n` + stepRow(1) + "\n" + pad(600)), "missing-table-rows"), "one step fails");
 
 // Wiring: depth failures flow through findInvalidSubsteps into verify text.
 const subs = [{ n: 1, label: "Jobs to be done", slug: "functional-needs", path: "rounds/f.md" }];
