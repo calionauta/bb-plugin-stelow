@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "interfaces/contrast.json#contrast-round-1",
+  "shapeVersion": "plans/spec-product.md#revision-2",
+  "scopeMapVersion": "scope-map.json#mapId=preset-env-kind-map,status=approved,shapeVersion=plans/spec-product.md#revision-2",
+  "selectedBy": "llm",
+  "selectedOptionId": "opt-3",
+  "selection": "On/off control reusing IsolatedWorktreeCheck and ISOLATED_WORKTREE_LABEL, with the off state left silent.",
+  "authority": "agent",
+  "reviewMode": "Auto",
+  "rationale": "Review Mode is Auto with review_gates empty, so the interface pick is the LLM's to make and is never parked on the card. The evidence chose it over the runner-up on a structural rather than a stylistic ground: a silent off state makes the unearned-promise failure impossible rather than merely worded away. opt-2 (radio-card) can only promise by explanation, and explanation is exactly what produced 'Project checkout' in the first place - lib/tracks.mjs:96 stores 'managed' for any project-default, so the label and the stored fact would disagree. opt-3 also inherits min-h-11 and cursor-pointer by construction (isolated-worktree-check.tsx:19-21), satisfying a house rule AGENTS.md itself admits is 'stated, not tested', and it inherits a running test pin (tests/card-start.test.mjs:150) plus an existing consumer.",
+  "rejected": [
+    {
+      "optionId": "opt-2",
+      "why": "Carries the same inexpressible-promise problem as opt-3 in weaker form: the off state must be explained, and a card that lands where BB's own default put it is not a defect to be warned about. Keeps a better unrecognised-value state (a third visible 'neither selected'), which is the one criterion on which it beats opt-3 - accepted as the cost of the pick, not overlooked.",
+      "secondary": "Would fork the isolated-worktree vocabulary away from the module that declares itself its single source."
+    },
+    {
+      "optionId": "opt-4",
+      "why": "ChoiceCards house style is a legitimate and now-verified accessible shape, but it is still a two-option control and therefore still needs an off-state sentence. It refutes the spec's false uniqueness premise without solving the problem that premise was attached to."
+    },
+    {
+      "optionId": "opt-1",
+      "why": "The decision-maker's literal first reaction. Not unbuildable - storage, the RPC enum and the form union all carry it - but invalid as a reader-facing promise, because a card carrying a 'Project checkout' preset is stored with a different word than the control promised. This is the exact failure the request exists to fix. Recorded rather than dropped: it is the request's origin."
+    }
+  ],
+  "acceptedCosts": [
+    "The control is a bare checkbox, not a grouped fieldset: the off state carries no sentence, and the AC 9 unrecognised-value case lives in help text alone. A fieldset could show 'neither option selected' as a third visual state - this is the one criterion where a grouped control is strictly better.",
+    "A visible reference cycle: isolated-worktree-check.tsx's help text points at Agent Presets, which would then render its own words."
+  ],
+  "supersedesClause": {
+    "artifact": "scope-map.json",
+    "scopeId": "env-kind-control",
+    "was": "copying components/creation/strategy-picker.tsx:64-104, the only in-repo radio shape yielding WCAG 2.2 focus appearance today",
+    "now": "reuse of the concept's declared single source (isolated-worktree-check.tsx / ISOLATED_WORKTREE_LABEL); the uniqueness claim was false and is withdrawn, corrected at source in plans/spec-product.md with all three in-repo shapes tabulated",
+    "challengedVia": "scope-map-challenge.json"
+  },
+  "carriedToGate": [
+    "The decision-maker has not been shown that their own phrase 'project checkout' is the unearned promise. It is recorded in state.md and the spec, never confirmed back to them - so this pick must land as an explained re-labelling, not a silent one.",
+    "No first-reader pass distinguishes a checkbox with a silent off state from 'not set up yet'. The pick rests on structure, not on observed comprehension.",
+    "Whether the visible reference cycle is acceptable to the author of the isolated-worktree module is unasked; the module's comment shows the words are deliberately centralised."
+  ],
+  "coordinatorVerification": "Every claim the contrast relied on was re-read directly in the checkout before this receipt was written: creation-settings.tsx:91 (ChoiceCards carries the identical focus treatment plus min-h-11 and cursor-pointer), isolated-worktree-check.tsx:8-14 and :19-21 (declared single source; min-h-11 and cursor-pointer), lib/tracks.mjs:94-100 ('managed' for any project-default), preset-assign-options.tsx:76-88 (no focus rule - the one reuse claim that IS correct)."
+}

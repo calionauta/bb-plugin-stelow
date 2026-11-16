@@ -1,0 +1,25 @@
+## 2026-10-28 — context stage
+- Setup recon retried (exec_g62wux8l failed with no host reason; retry produced exec_wfurtsri, succeeded; artifact runs/exec_wfurtsri/recon/setup.md).
+- Advanced setup -> context.
+- context:5 gate: quality=production, review_mode="Product Spec + Interface + Scopes", intent=feature -> full ask would apply.
+- context:10 ask ATTEMPTED once and created a persisted card question, but the CLI reports "An earlier question is still answerable on this card": two expired questions from the previous worker (thr_77qixxve6v) are still open — (1) which stages to run, (2) run baseline tests now. question-gate.mjs refuses every new ask while expiredQuestions > 0, and --force does not bypass the duplicate guard.
+- Decision recorded: no strategic analysis for this slice (context:20 detects no domain signals: no pricing/promotions/ads/trust/business-model/OSS/health/marketplace language in the request). This is a scoped engineering slice of an internal panel with a completed recon; strategic market analysis is overhead. Domain libraries: none detected.
+## 2026-10-28 — decisions persisted (human answers)
+- Q1 stage selection -> "Interface + Tech Planning". Card route stays the feature route (host-owned); the choice is read as: no heavy shaping cycle, and the interface gets the exploration budget. Product framing inferred from recon; interface + tech planning carry the real design work.
+- Q2 baseline tests -> "Yes — run the fast gates". Fast-gate baseline command: `npm run lint` + `npm run quality:shape`. The shared checkout at /home/deploy/repos/bb-plugin-stelow has node_modules and shows lint warnings + shape violations on another thread's branch; the card's own worktree had no deps, so `npm ci` was run there before any baseline claim is made.
+- shape-recon native run wfr_9102b0c3 succeeded (evidence runs/exec_hvew3r95/recon/shape.md).
+- Wrote plans/spec-product.md from the two recon passes; open questions 1-4 delegated to interface/tech planning as the human's answer implies.
+- shape-recon wfr_9102b0c3 actually SUCCEEDED in BB (evidence written, 524 lines) but the plugin's poll lost the host and marked exec_hvew3r95 failed ("the host stopped answering about this run"), which held the stage. Took the documented door: retry-run exec_hvew3r95 -> exec_w1ti53qw (wfr_00e9d0a9). The spec was written from the first run's evidence, which is complete.
+## 2026-10-28 — gate approved (human)
+- Plan approved at the card gate. Decisions: (1) expansion = slide-over panel; (2) fleet line = newest across all projects + how many shipped; (3) documented-but-untagged release = left out, gap sentence carries it.
+- spec-product.md stamped approved:true with gate_decisions, and the three former open questions became "Decisions taken at the approval gate".
+- Critique: 5 fresh-context reviewers, 20 gaps; 17 resolved in the spec, 3 asked at the gate, 1 carried to planning (test scope). Report: critiques/critique-report.md.
+- shape-recon retry wfr_00e9d0a9 succeeded; re-measured: 48/60 newest releases documented at the tag vs 30/60 at HEAD, 225/928 undocumented tags, takeaways 10 prose / 15 bullet-subject / 5 none, heading position proven unreliable (select rows only by version match).
+- scope-map native run wfr_8898e08f succeeded: scope-map.json (5 scopes, draft). Open decisions resolved by me: fleet line = "projects that carry a release record" + how many carry none (matches the gate answer); remote-host projects stay OUT; placement = Build board only (where FlowStrip mounts); test authorship will be a fresh-context subagent (AGENTS.md forbids implementer-only tests).
+- Scope confirm ask posted (tag scope-adjust, 5 options all preselected). The CLI lost the response ("Unexpected response from the plugin CLI endpoint"), the question persisted and is answerable on the card (questions: expired 1, live 0). Not re-asking; waiting for the card answer.
+- interface stage: wrote interfaces/{alternatives.json,alternatives-verification.json,alternatives.md,contrast.json,interfaces.md} (3 placements + hybrid, wireframes, scope coverage). Advanced to int-gate; gate approved ("Good — let me choose one").
+- Advanced to selection; posted the pick ask with per-option preview + artifact. No answer within the 30-minute window — question persists on the card and stays answerable. Not re-asking.
+## 2026-10-28 — interface pick and architecture
+- Interface: 4 directions written (interfaces/*), int-gate approved, pick = D-hybrid-chip-with-own-drawer (labelled chip + own slide-over). Host record: dec_xpc78x6q. selected-interface.md + breadboard.json written; `bb stelow check breadboard` = 0 errors, 0 gaps.
+- Architecture (worker-adopted, not a human gate in this mode): split reader — pure lib/project-releases.mjs, strict server/runtime/project-releases.ts, one projectReleases call; runGitIn left untouched. architecture/selected-architecture.md.
+- Advanced planning; native run wfr_80a970d0 owns the stage.

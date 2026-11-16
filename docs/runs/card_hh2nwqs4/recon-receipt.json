@@ -1,0 +1,20 @@
+{
+  "contract": "stelow-recon-v2",
+  "kind": "tech-preview",
+  "workspace": {
+    "root": "/home/deploy/repos/bb-plugin-stelow",
+    "git": true
+  },
+  "workflow": {
+    "stateDir": "/home/deploy/repos/bb-plugin-stelow/.stelow/2026-09-30/sw-card_hh2nwqs4"
+  },
+  "tools": {
+    "cymbal": "available",
+    "ripwire": "available",
+    "sem": "available",
+    "ast-grep": "available"
+  },
+  "method": "cymbal",
+  "missing": [],
+  "generatedAt": "2026-09-30T08:59:22.351Z"
+}

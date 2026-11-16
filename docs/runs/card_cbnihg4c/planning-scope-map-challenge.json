@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "challengeId": "preset-env-kind-copy-target-challenge",
+  "mapId": "preset-env-kind-map",
+  "mapShapeVersion": "plans/spec-product.md#revision-2",
+  "kind": "scope-boundary",
+  "affectedScopeIds": ["env-kind-control", "behaviour-tests"],
+  "reason": "scope-map.json env-kind-control pins a copy target by name and the named justification is false. The inScope line reads 'copying components/creation/strategy-picker.tsx:64-104, the only in-repo radio shape yielding WCAG 2.2 focus appearance today'. Two independent reads disprove the uniqueness claim: components/creation/creation-settings.tsx:91 (ChoiceCards) carries the identical 'focus-within:outline focus-within:outline-2 focus-within:outline-primary' treatment plus min-h-11 and cursor-pointer, and components/isolated-worktree-check.tsx is a live exported single source for this exact concept (ISOLATED_WORKTREE_LABEL, line 8) with an existing consumer (github-import-tab.tsx) and an existing running test pin (tests/card-start.test.mjs:150). Both claims were verified directly against the checkout by the coordinator before this challenge was written, not accepted on the recipe's word.",
+  "disposition": "repair-brief",
+  "authority": "agent",
+  "evidence": [
+    "components/creation/creation-settings.tsx:91 - ChoiceCards label carries focus-within:outline focus-within:outline-2 focus-within:outline-primary, min-h-11 and cursor-pointer. The 'only accessible shape' claim is false; at least two shapes yield WCAG 2.2 focus appearance.",
+    "components/isolated-worktree-check.tsx:8 - ISOLATED_WORKTREE_LABEL is the declared single source for the isolated-worktree concept, with the benefit sentence at :9 and progressive-disclosure details at :10-14.",
+    "components/isolated-worktree-check.tsx:19-21 - already min-h-11 and cursor-pointer, satisfying the house rule AGENTS.md admits is 'stated, not tested' by construction rather than by a new test.",
+    "components/github/github-import-tab.tsx:113 and tests/card-start.test.mjs:150 - the component already has a consumer and a running behavioural pin, so reuse inherits coverage instead of requiring new inventory.",
+    "lib/tracks.mjs:94-100 - re-read directly this round: 'managed' for any project-default, 'worktree' only for host + managed-worktree. The unearned-promise finding stands.",
+    "components/settings/preset-assign-options.tsx:76-88 - verified TRUE this round: a visible accent-primary radio with no focus-visible or focus-within rule. One of the three reuse claims was correct, which is why the false one had to be re-read rather than assumed."
+  ],
+  "requestedBy": "stelow-interface-contrast recipe (exec_9od3ezfc), confirmed by the card owner on direct reads of creation-settings.tsx and isolated-worktree-check.tsx",
+  "requestedChanges": [
+    "Keep the on/off primary value. The evidence strengthens it: opt-3 eliminates the unearned-promise failure structurally rather than by careful wording, because the off state is silent by construction.",
+    "Replace the copy target with IsolatedWorktreeCheck and ISOLATED_WORKTREE_LABEL, so the preset editor and the import dialog cannot drift on the words, and record the accepted costs: a visible reference cycle (the component's help text points at Agent Presets, which would then render its words) and a silent off state that carries the unrecognised-value case in help text alone.",
+    "Correct the reuse analysis at source: the spec claims a uniqueness that does not hold. Add the ChoiceCards focus treatment alongside strategy-picker so the false clause is fixed in plans/spec-product.md, not only in this challenge.",
+    "Carry the recipe's three missingInputs into the interface gate, the first of which is that the decision-maker has never been shown that their own phrase 'project checkout' is the unearned promise."
+  ]
+}
