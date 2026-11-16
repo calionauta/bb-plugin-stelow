@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "alternativesId": "card-rbkbfyqy-interfaces-v1",
+  "shapeVersion": "spec-product_v2",
+  "scopeMapVersion": "card-rbkbfyqy-scope-map-v1",
+  "explorationCount": 3,
+  "hybrid": true,
+  "decisionQuestion": "Where does the release line live on the Build board so a reader finds it, it keeps a fixed height, and it stays independent of the finished-card strip?",
+  "alternatives": [
+    {
+      "id": "A-sibling-line",
+      "summary": "A second bordered line directly under the flow strip: its own surface, its own toggle, its own drawer.",
+      "states": [
+        "project selected, releases known",
+        "project selected, no release record",
+        "project selected, unreadable",
+        "no project selected (fleet line)",
+        "no project selected, no project has a release record",
+        "drawer open, rows present",
+        "drawer open, one row without takeaway text",
+        "first paint before the read answers"
+      ],
+      "wireframe": "before the kanban, under the existing flow strip:\n\n ┌───────────────────────────────────────────────┐\n │ Flow · 12 finished · lead 3d · cycle 2d    ›  │\n └───────────────────────────────────────────────┘\n ┌───────────────────────────────────────────────┐\n │ Releases · newest v0.99.0 · 28 Oct         ›  │\n └───────────────────────────────────────────────┘\n ┌───────────┬───────────┬───────────┬───────────┐\n │ Inbox     │ Shaping   │ Build     │ Done      │\n │  ...      │  ...      │  ...      │  ...      │\n └───────────┴───────────┴───────────┴───────────┘\n\nfleet state (no project selected):\n ┌───────────────────────────────────────────────┐\n │ Releases · newest v0.99.0 · 4 projects shipped│\n └───────────────────────────────────────────────┘\n\nslide-over, right edge, board stays mounted:\n                          ┌──────────────────────┐\n                          │ Releases          ✕ │\n                          │ bb-plugin-stelow     │\n                          │ v0.99.0    28 Oct    │\n                          │ A stale stage label… │\n                          │ v0.98.2    27 Oct    │\n                          │ The panel reads the… │\n                          │ v0.98.1    27 Oct    │\n                          │ No takeaway written… │\n                          │ …                    │\n                          └──────────────────────┘",
+      "scopeCoverage": [
+        { "scopeId": "scope-4-board-strip-and-drawer", "effect": "served", "note": "Its own component and drawer satisfy the whole surface scope." },
+        { "scopeId": "scope-3-project-releases-rpc", "effect": "served", "note": "One call fills one line and one drawer." }
+      ]
+    },
+    {
+      "id": "B-segment-in-flow-strip",
+      "summary": "No new band: a releases segment joins the flow strip's summary row, and the existing drawer gains a Releases tab.",
+      "states": [
+        "project selected, releases known",
+        "project selected, no release record",
+        "project selected, unreadable",
+        "no project selected (fleet segment)",
+        "no finished cards but releases exist",
+        "drawer open on the releases tab",
+        "drawer open on the timing tab"
+      ],
+      "wireframe": "one strip, two readings, one toggle:\n\n ┌───────────────────────────────────────────────┐\n │ Flow · 12 finished · lead 3d │ Releases v0.99.0 ›│\n └───────────────────────────────────────────────┘\n ┌───────────┬───────────┬───────────┬───────────┐\n │ Inbox     │ Shaping   │ Build     │ Done      │\n └───────────┴───────────┴───────────┴───────────┘\n\nslide-over with tabs:\n                          ┌──────────────────────┐\n                          │ Flow              ✕ │\n                          │ [ Timing ] [ Releases]│\n                          │ v0.99.0    28 Oct    │\n                          │ A stale stage label… │\n                          └──────────────────────┘",
+      "scopeCoverage": [
+        { "scopeId": "scope-4-board-strip-and-drawer", "effect": "friction", "note": "Must first remove FlowStrip's count===0 early return or releases vanish for a project with no finished cards; two readings share one toggle." }
+      ]
+    },
+    {
+      "id": "C-control-strip-chip",
+      "summary": "A chip beside the board's filters opens the releases slide-over; no band is added to the board at all.",
+      "states": [
+        "project selected, releases known",
+        "project selected, no release record",
+        "project selected, unreadable",
+        "no project selected (fleet chip)",
+        "chip before the read answers",
+        "chip states an unreadable read"
+      ],
+      "wireframe": "in the control strip, next to the filters:\n\n ┌───────────────────────────────────────────────┐\n │ [ All projects ▾ ] [ Intent ▾ ]  [ Releases ›]│\n └───────────────────────────────────────────────┘\n ┌───────────────────────────────────────────────┐\n │ Flow · 12 finished · lead 3d · cycle 2d    ›  │\n └───────────────────────────────────────────────┘\n\nfleet chip:\n │ [ Releases · v0.99.0 · 4 shipped › ]          │",
+      "scopeCoverage": [
+        { "scopeId": "scope-4-board-strip-and-drawer", "effect": "friction", "note": "Zero vertical cost, but a chip is the least findable entry and needs a visible label to survive." }
+      ]
+    },
+    {
+      "id": "D-hybrid-chip-with-own-drawer",
+      "summary": "The chip's placement with the sibling line's independence: no new band, a labelled chip carrying the newest release, and its own slide-over — never the flow strip's.",
+      "states": [
+        "project selected, releases known",
+        "project selected, no release record",
+        "project selected, unreadable",
+        "no project selected (fleet chip)",
+        "chip before the read answers",
+        "drawer open, rows present",
+        "drawer open, one row without takeaway text"
+      ],
+      "wireframe": "control strip entry, own drawer, board untouched:\n\n ┌───────────────────────────────────────────────┐\n │ [ All projects ▾ ] [ Intent ▾ ]               │\n │ [ Releases · v0.99.0 · 28 Oct            › ]  │\n └───────────────────────────────────────────────┘\n ┌───────────────────────────────────────────────┐\n │ Flow · 12 finished · lead 3d · cycle 2d    ›  │\n └───────────────────────────────────────────────┘\n ┌───────────┬───────────┬───────────┬───────────┐\n │ Inbox     │ Shaping   │ Build     │ Done      │\n └───────────┴───────────┴───────────┴───────────┘\n\nfleet chip (no project selected):\n │ [ Releases · v0.99.0 · 4 projects shipped › ] │\n\nslide-over, right edge (own toggle, not FlowStrip's):\n                          ┌──────────────────────┐\n                          │ Releases          ✕ │\n                          │ v0.99.0    28 Oct    │\n                          │ A stale stage label… │\n                          └──────────────────────┘",
+      "scopeCoverage": [
+        { "scopeId": "scope-4-board-strip-and-drawer", "effect": "served", "note": "Independent surface, fixed height, no shared guard." },
+        { "scopeId": "scope-3-project-releases-rpc", "effect": "served", "note": "One call fills the chip and the drawer." }
+      ]
+    }
+  ],
+  "tradeoffs": [
+    {
+      "alternativeId": "A-sibling-line",
+      "benefit": "Most findable: a labelled line in the same band as the flow strip, at a fixed height, with nothing shared.",
+      "cost": "Adds a third stacked band above the kanban, on a board whose vertical budget is already spent."
+    },
+    {
+      "alternativeId": "B-segment-in-flow-strip",
+      "benefit": "Zero added height and one toggle for both readings.",
+      "cost": "Couples releases to finished cards: inherits the count===0 early return, needs that guard changed, and puts two recencies in one row."
+    },
+    {
+      "alternativeId": "C-control-strip-chip",
+      "benefit": "No band, no height, minimal visual weight.",
+      "cost": "Least discoverable entry; an unlabelled chip reads as a filter, and a reader may never open it."
+    },
+    {
+      "alternativeId": "D-hybrid-chip-with-own-drawer",
+      "benefit": "Keeps the chip's zero height and the sibling line's independence, and carries the release itself in the label so the chip is not a mystery.",
+      "cost": "Splits the board's attention between the control strip and the metrics band; the chip must stay a full touch target."
+    }
+  ],
+  "verdict": "ready"
+}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "receipts": [
+    {
+      "schemaVersion": 1,
+      "id": "dec_xpc78x6q",
+      "kind": "selection",
+      "selectedId": "D-hybrid-chip-with-own-drawer",
+      "rejectedOptionIds": [
+        "A-sibling-line",
+        "B-segment-in-flow-strip",
+        "C-control-strip-chip"
+      ],
+      "scopeIds": [
+        "scope-3-project-releases-rpc",
+        "scope-4-board-strip-and-drawer"
+      ],
+      "authorizesVersions": {},
+      "supersedes": [],
+      "supersededBy": null,
+      "challengeId": null,
+      "reason": null,
+      "approvedBy": "operator",
+      "approvedAt": "2026-10-28T21:59:33.766Z"
+    }
+  ],
+  "challenges": []
+}

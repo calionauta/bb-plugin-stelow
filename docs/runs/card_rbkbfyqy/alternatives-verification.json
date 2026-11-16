@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "checkedAgainst": {
+    "alternativesId": "card-rbkbfyqy-interfaces-v1",
+    "shapeVersion": "spec-product_v2",
+    "scopeMapVersion": "card-rbkbfyqy-scope-map-v1"
+  },
+  "checks": [
+    {
+      "id": "wireframe-present",
+      "question": "Does every option carry an ASCII sketch the gate can look at?",
+      "result": "pass",
+      "detail": "All four options carry a wireframe; the fleet state and the drawer are drawn where they differ."
+    },
+    {
+      "id": "states-named",
+      "question": "Does every option name the states it has to survive?",
+      "result": "pass",
+      "detail": "Each option lists between six and eight states, including the unreadable read, the empty fleet and the pre-answer paint."
+    },
+    {
+      "id": "scope-coverage-recorded",
+      "question": "Is each option's impact recorded against the scope map version?",
+      "result": "pass",
+      "detail": "scope-4 is served or friction in every option; two options also record scope-3. Two options record no friction on scope-4 because they add no shared guarantee; option B's friction is the concrete count===0 guard."
+    },
+    {
+      "id": "constraints-respected",
+      "question": "Does any option break a fixed constraint?",
+      "result": "pass",
+      "detail": "No option proposes an inline expander, a per-project stacked list on the fleet state, or a card-detail section. Option B is the closest to a constraint break and is recorded as friction rather than filtered out, because the guard is fixable."
+    },
+    {
+      "id": "independence-of-finished-cards",
+      "question": "Can each option show releases for a project with no finished cards?",
+      "result": "mixed",
+      "detail": "A, C and D can by construction. B cannot without changing FlowStrip's early return, which is why it carries that note."
+    },
+    {
+      "id": "hybrid-derived-from-real-options",
+      "question": "Is the hybrid a recombination of recorded options rather than a fifth invention?",
+      "result": "pass",
+      "detail": "D takes C's placement and A's independent drawer and label; nothing in D appears in neither."
+    }
+  ],
+  "verdict": "ready",
+  "notes": "Three measured dialects of placement, one hybrid. The board's vertical budget and FlowStrip's count===0 guard are the two facts that separate them."
+}

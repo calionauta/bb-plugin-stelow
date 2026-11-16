@@ -1,0 +1,49 @@
+## context stage — corpus calibration evidence (read-only, no state.md writes)
+
+Settles open question #2 from runs/exec_6kds185v/recon/setup.md §8 ("Where is the
+corpus for calibrating?"). Answer: there is effectively none.
+
+Findings (all verified by direct search, not inference):
+
+1. Produced `scope-map.json` instances: ZERO. Only the two schemas exist
+   (`data/stelow-assets/schemas/scope-map{,-challenge}.json`). The Scope stage
+   has never produced a map in this workspace.
+2. `scopes/{scope-id}.json` per-scope contract (tech-output.md:73-80): ZERO
+   instances. `find -path "*scopes*/*.json"` returns nothing.
+3. spec-tech files on disk: 2 total.
+   - `tests/fixtures/review-gates/spec-tech.state.md` — a fixture, no Task tables.
+   - `.stelow-0.3-backup/2026-09-13/sw-card_cpa76qyv/plans/spec-tech_v1.md` —
+     the ONLY real one, and it is in the frozen 0.3 backup.
+4. That one real spec-tech contains ZERO occurrences of "Risk Score", zero
+   `Order Rationale` column, and zero machine `[SCOPE-N]` / human `### SCOPE-N:`
+   headings. It uses `## Scope 1 — feature: ...` prose headings, which
+   `lib/spec-scope-reader.mjs` does not even recognize as a scope block.
+5. Card stage reach across all 19 card state.md files: only `cpa76qyv` ever
+   reached planning/execution. Every other card stopped at or before `gate`
+   (`oqm8gyae`, bugfix, reached gate) or earlier. The two current investigate
+   cards are this one and `1fgz8lge`.
+
+Consequence for the recommendation (this is the load-bearing conclusion):
+
+`docs/decision-routing.md:94` sets the bar for any new point as "tests against
+real artifacts" / "tune on labeled data", and the 2026-09-28 precedent measured
+3 candidates against the LIVE card corpus. There is no such corpus for scope
+mapping or tech planning: n=1, from the frozen 0.3 line, in a dialect the host
+parser does not read, with the very field the rubric depends on absent.
+
+So R1 (`scope-risk` score point) and R3 (`task-order` score point) cannot meet
+the calibration bar today — not because the ideas are wrong, but because the
+evidence to set a threshold does not exist. Recommending them now would repeat
+exactly the mistake the policy doc already recorded for *scope-map challenge*
+("a decision point with nothing reading its answer is advisory theater").
+
+This strengthens rather than weakens the recon's R0-first ordering: the upstream
+`risk`/`type` field (R0) is not merely the cheaper path, it is the only path
+that creates the corpus every later point would need. R0 is deterministic
+(no LLM, no API, no threshold), so it carries no calibration burden.
+
+Also confirmed while checking the transport claim: the recon said "no point
+emits score". Precisely: no *registry entry* in `lib/decision-points.mjs` emits
+`score` (one `choice`, two `noul`). The advisory CLI paths DO build score
+questions — `lib/task-evidence.mjs:30`, `lib/skill-criteria.mjs:87`,
+`lib/gap-registry.mjs:222`. The narrower true claim is about registry entries.

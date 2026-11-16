@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "mapId": "preset-env-kind-map",
+  "status": "approved",
+  "shapeVersion": "plans/spec-product.md#revision-2",
+  "provenance": [
+    "runs/exec_c9qjbaf3/recon/setup.md",
+    "runs/exec_x0ctpt5p/strategic/context.md",
+    "runs/exec_q8bt01c3/recon/shape.md",
+    "critiques/critique-report.md",
+    "plans/spec-product.md",
+    "approvals/spec-product.approved.md"
+  ],
+  "scope_adjustment": "approved under Review Mode=Auto (review_gates: []); selected_by: llm. All seven critical critique gaps were resolved in spec revision 2 before this map was written, each with repository evidence re-verified by the coordinator. No scope-boundary question is open.",
+  "approval": {
+    "receiptId": "approvals/spec-product.approved.md",
+    "approvedBy": "llm (Review Mode=Auto, review_gates empty)"
+  },
+  "openDecisions": [
+    "describeCardEnvironment reads 'managed' for any project-default and 'worktree' only for host+managed-worktree, so non-composer starters keep a different stored label than composer starters for the same preset. Permanent per-path divergence; making the label prefer preset intent touches stored card state and is OUT of this map.",
+    "server/workers.ts:103 keeps delegating to bb's project-default for non-composer callers (GitHub import, CLI split, research fan-out, restart/respawn). Those paths write no substitution notice. Recorded as a known behaviour rather than changed here."
+  ],
+  "scopes": [
+    {
+      "id": "env-seed-mapper",
+      "title": "Pure preset-kind to composer-seed mapping",
+      "outcome": "One total function in lib/ maps a preset's environment_kind to the composer seed, so each kind's behaviour is testable in isolation and an unrecognised kind degrades to today's behaviour instead of throwing.",
+      "status": "current",
+      "capabilities": ["capability-2-honest-wire-mapping"],
+      "inScope": [
+        "A single pure mapper in lib/ returning CreateThreadEnvironmentArgs | undefined",
+        "new-worktree maps to {type:'host', workspace:{type:'managed-worktree', baseBranch:{kind:'default'}}}",
+        "project-default maps to undefined (the prop is omitted, never seeded)",
+        "An unrecognised stored kind maps to undefined, so behaviour matches today",
+        "Module-level frozen constants per kind, not fresh object literals per render, so the value is reference-stable",
+        "Indexed access to the environment type rather than importing an unexported name"
+      ],
+      "outOfScope": [
+        "Renaming the stored enum value",
+        "Changing server/workers.ts:103",
+        "Any server-side or RPC contract change"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "form-extractions",
+      "title": "Extract form body and preset row to clear the source-debt ceilings",
+      "outcome": "PresetManagerFormView and PresetManagerList drop below their exact ceilings and both extracted functions are recorded in inheritedBaseline, so the feature's own edits do not trip tests/debt-baseline.test.mjs.",
+      "status": "current",
+      "capabilities": ["capability-1-authorable-field"],
+      "inScope": [
+        "Extract PresetManagerFormBody out of components/settings/preset-manager-form.tsx",
+        "Extract PresetManagerPresetRow out of components/settings/preset-manager-list.tsx",
+        "The extraction is what makes the inherited set shrink: the two parent entries in scripts/source-debt.json move to their new sizes, or are DELETED if the remainder fits the 50-line budget (tests/debt-baseline.test.mjs:224 rejects an entry that stopped being oversized)",
+        "CORRECTION per planning alignment SR-1: add NOTHING to inheritedBaseline. It is a literal expected-output list in tests/debt-baseline.test.mjs:39 compared against gate stdout, not a waiver registry. The extracted functions are under 50 lines - that is the point of extracting them - so they print nothing and adding them fails the comparison.",
+        "Keep the existing open form body: no new bordered section, per the SECTION_SURFACE rule"
+      ],
+      "outOfScope": [
+        "Adding entries to inheritedBaseline or raising a ceiling rather than earning it",
+        "Moving the control into the shared PresetExecutionPicker"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "env-kind-control",
+      "title": "The on/off worktree field in the preset editor",
+      "outcome": "A person sets a preset's worktree kind entirely from the Agent Presets dialog, with no CLI, and the field promises only what the shipped code keeps.",
+      "status": "current",
+      "capabilities": ["capability-1-authorable-field", "capability-2-honest-wire-mapping"],
+      "inScope": [
+        "New PresetEnvironmentKindField component rendering inside the existing open form body",
+        "Explicit on/off control, NOT a two-option radio, because omitting the seed lets BB resolve its own default and a 'Project checkout' label would be an unearned promise. Its silent off state makes the unearned promise structurally impossible: nothing is claimed, so nothing can be unearned",
+        "Reuses only the concept's NAME: ISOLATED_WORKTREE_LABEL from components/isolated-worktree-check.tsx, so the preset editor and the import dialog cannot drift on the words. CORRECTION per planning alignment F2: the reused symbols are plain strings; min-h-11/cursor-pointer live on the label INSIDE the component and the file has no focus-within at all, so the touch classes and focus treatment are written by hand and pinned as a count, not inherited",
+        "Off-state label promises only 'Uses BB's own default for this project'",
+        "On-state label promises the picker opens already on a worktree the person can change",
+        "A checkbox control reusing the strategy-picker/ChoiceCards focus treatment (focus-within:outline focus-within:outline-2 focus-within:outline-primary). CORRECTION per scope-map-challenge.json: the earlier claim that strategy-picker was the only accessible shape was false - creation-settings.tsx:91 ChoiceCards carries the identical treatment plus min-h-11 and cursor-pointer",
+        "disabled={busy} while a save is in flight; disabled entirely when preset.builtIn, with the cascade named in the help text",
+        "min-h-11 touch targets and cursor-pointer on the clickable",
+        "Explicit unrecognised-value state: renders unchecked, help text names the value, seed treats it as off",
+        "Client-side validation of the kind in savePreset with a reader-facing refusal, so a raw schema string never reaches the single message line",
+        "The field always sends environmentKind explicitly, so the RPC input's .default() cannot silently downgrade a worktree preset"
+      ],
+      "outOfScope": [
+        "Extracting a shared radio primitive from ChoiceCards",
+        "Any new design token or surface",
+        "Showing the kind in the card assign dialog",
+        "Making a built-in preset's kind editable"
+      ],
+      "dependsOn": ["env-seed-mapper", "form-extractions"]
+    },
+    {
+      "id": "preset-list-indicator",
+      "title": "Make the kind visible in the preset list",
+      "outcome": "A worktree preset is distinguishable from a checkout preset in the list without opening it, and the indicator is not clipped by the row's truncate.",
+      "status": "current",
+      "capabilities": ["capability-1-authorable-field"],
+      "inScope": [
+        "A Pill rendered only when environmentKind === 'new-worktree'; absence reads as off",
+        "Rendered as a sibling of the truncating meta span, never inside it: the meta content sits in min-w-0 flex-1 truncate and a second line there is ellipsised",
+        "The row owns this fact",
+        "Inline on the existing row; no fade hook adopted for the capped scroll box"
+      ],
+      "outOfScope": [
+        "Adopting a scroll fade for the max-h-56 list",
+        "Restructuring the list into sections"
+      ],
+      "dependsOn": ["form-extractions"]
+    },
+    {
+      "id": "composer-seed-wiring",
+      "title": "Seed the composer from the preset, stabilised per dialog mount",
+      "outcome": "All three creation dialogs prefill the environment picker from the active preset's kind, and a preset saved while a dialog is open cannot overwrite a human pick.",
+      "status": "current",
+      "capabilities": ["capability-3-seed-never-override"],
+      "inScope": [
+        "Widen the preset prop type on create-build-dialog.tsx, create-research-dialog.tsx and create-explore-dialog.tsx to carry environmentKind",
+        "Pass defaultEnvironment to experimental_NewThreadComposer on all three",
+        "Capture the seed once per dialog mount with a seeded-once ref, so the host's value-compared re-seed rule cannot overwrite a touched picker",
+        "No change to selectCardEnvironment or to the card-environment.mjs:1-11 invariant"
+      ],
+      "outOfScope": [
+        "Inverting selectCardEnvironment precedence",
+        "Closing the create dialog when the preset manager opens",
+        "Seeding personal/exploratory workspaces",
+        "Defending against re-seed by other means than the seeded-once ref"
+      ],
+      "dependsOn": ["env-seed-mapper"]
+    },
+    {
+      "id": "features-doc-truth",
+      "title": "Make the documented behaviour true again",
+      "outcome": "No FEATURES.md sentence and no echoed UI string describes the product as it was before the control existed.",
+      "status": "current",
+      "capabilities": ["capability-3-seed-never-override"],
+      "inScope": [
+        "FEATURES.md:1012-1013 ('Stelow never re-picks it') rewritten: Stelow now seeds the picker and the person may still change it",
+        "FEATURES.md:1206-1207 ('environment kind stays a preset field') rewritten to describe the authoring control",
+        "The five echoed 'create a New-worktree preset' sites reviewed and updated where the affordance framing is now stale",
+        "Record the exploratory-workspace carve-out as a SILENT substitution, not a notice",
+        "Record the per-path environment_label divergence and its trigger",
+        "Record that 'New preset' inherits the default preset's kind",
+        "Record the accepted host re-seed semantics"
+      ],
+      "outOfScope": [
+        "Editing a refusal string that tests/server-github-issue-flow.test.mjs:108,127 pins exactly",
+        "Any behaviour change to the GitHub import default"
+      ],
+      "dependsOn": ["env-kind-control", "composer-seed-wiring", "preset-list-indicator"]
+    },
+    {
+      "id": "behaviour-tests",
+      "title": "Pin behaviour, not literals",
+      "outcome": "Every guarded behaviour has a test that fails when the behaviour breaks, authored by a fresh subagent given the requirements alone.",
+      "status": "current",
+      "capabilities": ["capability-1-authorable-field", "capability-3-seed-never-override"],
+      "inScope": [
+        "What the control writes into form.environmentKind, and that it is disabled for built-ins",
+        "What upsertPreset receives: the existing exact-args pin at tests/component-rule-seams.test.mjs:184-187 is REWRITTEN, not extended. CORRECTION per planning alignment SR-2: its fixture at :158-161 uses environmentKind 'local', which is not in the enum, so the pin today asserts that an out-of-enum kind REACHES the RPC - the opposite of AC 10. Move the fixture to a valid kind, preserve the exact-args assertion, and add a SEPARATE refusal case asserting one reader-facing message and that upsertPreset is never called",
+        "An invalid-kind case asserting the RPC is never called",
+        "What defaultEnvironment the composer receives per preset kind, including the omitted case and the unrecognised case, asserted on the pure mapper",
+        "Reference stability across re-renders, so the re-seed defence is testable without mounting the host composer",
+        "That selectCardEnvironment is unchanged and a honoured seeded worktree produces no notice",
+        "That environmentFallbackNotice still fires on a real substitution",
+        "Interaction-state pins for the CHECKBOX (not a radio): disabled={busy}, the built-in disabled condition, a min-h-11 + cursor-pointer count written by hand on the new control",
+        "No test for AC 11: 'New preset' inheritance already ships via defaultForm(), so it is a documentation criterion, not a behaviour change",
+        "Re-earned, not relaxed: tests/preset-ui.test.mjs composition pins and the two debt-baseline ceilings each encode a rule and are updated to match the extraction"
+      ],
+      "outOfScope": [
+        "A test grepping the form for the literal 'new-worktree', which would pass on broken logic and break on the vocabulary fix",
+        "Adding test files that are wired into no npm script"
+      ],
+      "dependsOn": ["env-kind-control", "composer-seed-wiring", "preset-list-indicator"]
+    }
+  ]
+}

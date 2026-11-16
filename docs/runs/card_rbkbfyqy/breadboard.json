@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "interfaceId": "D-hybrid-chip-with-own-drawer",
+  "selectedBy": "human",
+  "scopeCoverage": [
+    {
+      "scopeId": "scope-4-board-strip-and-drawer",
+      "effect": "served",
+      "note": "The chip and its own slide-over are the whole surface scope; no shared guard with the finished-card strip."
+    },
+    {
+      "scopeId": "scope-3-project-releases-rpc",
+      "effect": "served",
+      "note": "One call fills the chip's line and the slide-over's rows."
+    }
+  ],
+  "places": [
+    {
+      "id": "P1",
+      "name": "Build board",
+      "description": "The board the reader supervises: filters at the top, the finished-card strip, then the kanban. The release chip lives here, beside the filters.",
+      "system": "frontend",
+      "mode": "Board"
+    },
+    {
+      "id": "P2",
+      "name": "Releases slide-over",
+      "description": "A right-side panel over the board listing the last five releases of the selected project. The board stays visible and unblocked behind it.",
+      "system": "frontend",
+      "mode": "Read"
+    }
+  ],
+  "affordances": [
+    {
+      "id": "U1",
+      "kind": "ui",
+      "name": "Release chip",
+      "place": "P1",
+      "component": "components/board/release-chip.tsx",
+      "control": "click",
+      "wiresOut": [
+        "N1",
+        "P2"
+      ],
+      "notes": "Min-h-11 button beside the project and intent filters. Reads 'Releases \u00b7 v0.99.0 \u00b7 28 Oct' with a project selected, 'Releases \u00b7 v0.99.0 \u00b7 4 projects shipped' with none. Carries the loading, five absence sentences and the unreadable state in its own label."
+    },
+    {
+      "id": "U2",
+      "kind": "ui",
+      "name": "Release row",
+      "place": "P2",
+      "component": "components/board/release-list.tsx",
+      "control": "click",
+      "notes": "One row per release: version, day, takeaway clamped to two lines. Expands in place to the full takeaway text; a release without notes shows a fixed phrase."
+    },
+    {
+      "id": "N1",
+      "kind": "code",
+      "name": "projectReleases",
+      "place": "P1",
+      "component": "server/project-releases-contract.ts",
+      "control": "call",
+      "wiresOut": [
+        "N2"
+      ],
+      "notes": "Validated RPC taking {projectId: string|null}; null means the fleet. Every scalar present, no optional keys omitted."
+    },
+    {
+      "id": "N2",
+      "kind": "code",
+      "name": "readProjectReleases",
+      "place": "P1",
+      "component": "server/runtime/project-releases.ts",
+      "control": "call",
+      "wiresOut": [
+        "N3",
+        "N4"
+      ],
+      "notes": "Strict git reader: for-each-ref for the tag spine, git show <tag>:CHANGELOG.md only for a project whose slide-over is open. Ten-second per-command timeout, four-megabyte buffer, aggregate deadline, typed failures."
+    },
+    {
+      "id": "N3",
+      "kind": "code",
+      "name": "selectReleases",
+      "place": "P1",
+      "component": "lib/project-releases.mjs",
+      "control": "call",
+      "notes": "Pure: filters tags through parseReleaseTag, parses changelog headings, matches notes by exact normalized version, orders by day then version text, extracts the takeaway, counts undocumented tags in the window."
+    },
+    {
+      "id": "N4",
+      "kind": "code",
+      "name": "projectRoot",
+      "place": "P1",
+      "component": "server/runtime/root-paths.ts",
+      "control": "call",
+      "notes": "Resolves a project's default source path; its single null is split by the reader into no-repo and path-missing."
+    },
+    {
+      "id": "S1",
+      "kind": "store",
+      "name": "git tags and CHANGELOG.md",
+      "place": "P1",
+      "component": "each project repository",
+      "control": "read",
+      "notes": "The only source of record. Tags give version and day; the changelog at that tag gives the notes. Nothing is persisted into the plugin.",
+      "returnsTo": [
+        "N2"
+      ]
+    }
+  ]
+}

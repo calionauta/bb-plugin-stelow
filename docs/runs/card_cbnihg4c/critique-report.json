@@ -1,0 +1,131 @@
+{
+  "findings": [
+    {
+      "id": "critical-false-premise-orphan-tests",
+      "severity": "critical",
+      "evidence": "The spec (Dangers bullet, DoD item 7, Acceptance Criterion 9, and the final OUT/IN table row) asserts tests/component-rule-seams.test.mjs and tests/card-creator-environment-optional.test.mjs are 'wired into no npm script' and makes wiring them IN scope. Disproved: package.json's test:contracts invokes both (grep over package.json scripts shows test:contracts as the only script referencing each), and `npm test` chains `npm run test:contracts`. Verified empirically - running each file directly passes (component-rule-seams: '# pass 1 # fail 0'; card-creator-environment-optional: 'test ok'). tests/suite-wiring.test.mjs additionally fails the build when any tests/*.test.mjs is unwired, so the premise cannot hold with green CI. Recommendation: delete DoD 7, AC 9, the Test-shape wiring clause and the OUT/IN row; replace with extending the already-running exact-args pin at tests/component-rule-seams.test.mjs:184-190, which already asserts environmentKind in the upsertPreset payload (using the fixture value 'local', itself outside the enum)."
+    },
+    {
+      "id": "critical-source-ceilings-block-prescribed-implementation",
+      "severity": "critical",
+      "evidence": "The spec derives 'it must be a new component' from PresetManagerFormView being at exactly 73 lines (scripts/source-debt.json:19) and PresetManagerList at 74 (scripts/source-debt.json:20), both confirmed against the current source (preset-manager-list.tsx:14-87 = 74 lines). That conclusion is insufficient: rendering a new component from the form body still costs an import line (preset-manager-form.tsx:4-5) plus at least one JSX line inside the 73-line body (preset-manager-form.tsx:59-76), and AC 5's indicator costs >=1 line in a function already at its 74 ceiling. Neither file appears in debt-baseline's inheritedBaseline, so editing either puts its oversized function into the changed set and tests/debt-baseline.test.mjs fails until ledger entries are added in the gate's print order. Recommendation: extract PresetManagerFormBody and PresetManagerPresetRow, add the two inheritedBaseline entries in print order, and lower both ceilings in scripts/source-debt.json in the same commit. Verified the gate is currently green (node tests/debt-baseline.test.mjs: 'shape gate green'), so this is a change-time failure, not a pre-existing break."
+    },
+    {
+      "id": "critical-reseed-overwrites-human-choice-vs-dod-4",
+      "severity": "critical",
+      "evidence": "The spec lists host re-seeding as 'accepted host semantics this cycle; recorded in FEATURES.md, not defended against', with R2 defaulting to documenting. But DoD item 4 states 'Picking something else in the picker always wins. The preset never overrides', and AC 2 requires the changed-environment card be created 'exactly as if no preset existed'. The trigger is reachable in-product, not hypothetical: openPresets (components/panels/build-panel.tsx:145) opens the preset manager without closing the create dialog (both mounted together, build-panel-dialogs.tsx:88-102), a save runs onChanged -> state.load() which replaces data.boardPresets, so analysisPreset returns a new kind (build-panel-state.ts:226-232) under a live composer; the SDK documents that changing any default* prop re-seeds EVERY environment selection including ones already touched (bb-plugin-sdk-app.d.ts:2608-2625). The spec's own mapping returns a fresh object literal per render, so even reference-stability is unproven. Recommendation: commit to a mitigation - compute the seed once per dialog mount (useMemo keyed on environmentKind plus a seeded-once ref, or frozen constants in the lib module) - and add an AC for the changed-preset-while-open case; only keep the documentation fallback if the composer is later observed re-seeding on a stable value."
+    },
+    {
+      "id": "critical-dod5-vs-ac6-contradiction-exploratory",
+      "severity": "critical",
+      "evidence": "DoD item 5 reads 'No card ever lands in a different checkout than the one its dialog showed, with no notice.' AC 6 accepts precisely that case. Verified server/cards-create.ts:249-252 branches on workspace.exploratory and never calls selectCardEnvironment, and the notice writer bails first: server/cards-create-persist.ts:118 is `if (workspace.exploratory) return;`. So on a personal project the seeded worktree is discarded with no log, no comment, no signal. The spec records this as a 'stated limitation' (Dangers bullet and OUT row) without reconciling it against the DoD. Recommendation: add the exploratory carve-out to DoD 5 word for word rather than leaving the reader to reconcile it, and state in FEATURES.md (same commit DoD 8 already requires) that the exploratory substitution is silent rather than noticed."
+    },
+    {
+      "id": "critical-label-project-checkout-unearned",
+      "severity": "critical",
+      "evidence": "The spec's table (Solution section 2) pairs stored 'project-default' with the reader-facing label 'Project checkout' while deliberately omitting the seed prop for that option. The SDK states what omission yields: '{ type: \"project-default\" } seeds nothing; the composer resolves its own default and submits that concrete environment instead' (bb-plugin-sdk-app.d.ts:2651-2652), and the spec's own vocabulary finding records that BB's own project-default now resolves to a fresh managed worktree when git permits (commit 893a05a). The resulting card is stored as 'managed' by lib/tracks.mjs:94-96, not 'shared'. So the reader sees 'Project checkout' on the preset and a different word on the card - the exact failure the request exists to fix. AC 3 only guarantees 'byte-for-byte today's behaviour', which is not a checkout guarantee. Recommendation: rename the option to what omitting the seed means (e.g. 'Project default (BB's own)'), or invert the control to a single 'Isolated worktree: on/off' toggle whose off state needs no guarantee; document the tracks.mjs label consequence in the same table."
+    },
+    {
+      "id": "critical-builtin-default-kind-cascade-unbounded",
+      "severity": "critical",
+      "evidence": "Making the kind authorable exposes a blast radius the spec never bounds. Edit renders unconditionally for built-ins (components/settings/preset-manager-list.tsx:63-70; the !preset.builtIn guard at :71 covers Delete only), and server/preset-handler-crud.ts refuses only rename/duplicate/replace (:23-30) while its UPDATE branch (:89-96) writes every field of a built-in row. Flipping the built-in default to new-worktree therefore: makes firstWorktreePreset return it (server/preset-lookups.ts:114-120), which feeds resolveWorktreePreset for every auto-started GitHub worker (server/github-automation-context.ts:90-92); flips effectiveBuildEnvironmentKind into the automation gate (lib/github-automation-gate.mjs:25-30), un-parking it; and via defaultForm (components/settings/preset-manager-form-state.ts:68-72, verified) becomes the inherited kind of every preset created afterwards. AC 4 blesses built-in round-tripping without noticing any of this. Recommendation: either disable the kind control when preset.builtIn, or add an AC plus a FEATURES.md paragraph naming the cascade."
+    },
+    {
+      "id": "critical-environment-label-permanent-divergence",
+      "severity": "critical",
+      "evidence": "The Dangers bullet says 'environment_label flips: a seeded card stores worktree where it previously stored managed/shared (lib/tracks.mjs:94-101)', which reads as a one-time migration. It is not. describeCardEnvironment (lib/tracks.mjs:94-100, verified) returns 'managed' for any {type:'project-default'} (:96) and reaches 'worktree' only for host + managed-worktree (:97). Auto-start and CLI creators never set input.environment (server/github-automation-rules.ts:145, server/runtime/cli/cli-split.ts:255, server/runtime/research-fanout.ts:102), so they take the selectCardEnvironment(undefined, workerEnvironment(...)) branch (server/cards-create.ts:250-252) and store 'managed'; composer-started cards store 'worktree'. Same preset, two labels, permanently - and the divergence sits directly under DoD 5. Recommendation: restate the bullet as a per-path divergence and decide whether describeCardEnvironment should prefer the preset's intended kind over the submitted shape."
+    },
+    {
+      "id": "important-no-state-for-unknown-stored-kind",
+      "severity": "medium",
+      "evidence": "The listed preset's kind arrives as a plain string (components/settings/preset-manager-types.ts:8, matching the RPC output z.string() at server/platform-rpc-contract.ts:80) and formFromPreset casts it into the union unchecked (preset-manager-types.ts:48-49). An out-of-range value is reachable: upgraded installs add the column via ALTER TABLE with NO CHECK (server/preset-migrations.ts:53-59) while fresh installs get the CHECK (:11), and the CLI casts --workspace blindly and calls the handler directly (server/runtime/cli/cli-draft.ts:100-107). In that state no radio is checked and saving renders a raw enum message into the form's single message line (preset-manager-crud.ts:87-88). The new radio has no defined state for it. Recommendation: make formFromPreset the normalisation point (map anything outside the union to project-default), give the field an explicit unrecognised-value state, and make the seed mapping total so an unknown kind behaves exactly as today."
+    },
+    {
+      "id": "important-raw-schema-error-surface",
+      "severity": "medium",
+      "evidence": "The RPC input is z.enum(['project-default','new-worktree']) (server/platform-rpc-contract.ts:100), so an out-of-enum value is refused at host validation before server/preset-handler-crud.ts:84 is reached, and savePreset writes error.message verbatim into the single message field (components/settings/preset-manager-crud.ts:88). On the upgraded-install path where the CHECK is absent, the value instead reaches the UPDATE and better-sqlite3 raises a CHECK constraint error. Contrast the one hand-written refusal in the same function, which is a sentence: 'Name is required.' (preset-manager-crud.ts:64-67). Per AGENTS.md state-honesty, a refusal names a valid redirect; a raw schema dump is not actionable. Recommendation: validate the kind client-side in savePreset before the RPC call with a reader-facing refusal naming both options, keeping the enum and CHECK as defence in depth, and add the invalid-kind case to tests/component-rule-seams.test.mjs asserting the RPC is never called."
+    },
+    {
+      "id": "important-r1-fallback-contradicts-ac1",
+      "severity": "medium",
+      "evidence": "R1's stated fallback is 'fall back to seeding nothing and saying so', but AC 1 requires unconditionally that 'submitting untouched creates a card whose stored environment label is worktree' - unachievable under that fallback for a non-Git source. The spike also re-asks a question the SDK already answers at bb-plugin-sdk-app.d.ts:2645-2647 ('A host environment whose host no longer exists - or whose project has no source on it - falls back to the composer's default host'), and the spec never says that fallback is silent, which is the one fact a reader needs. Recommendation: delete R1's spike, state the documented SDK behaviour, make AC 1 conditional on a project with a Git source, and add a fourth given under AC 6 for the non-Git case."
+    },
+    {
+      "id": "important-r2-documents-a-dod-violation",
+      "severity": "medium",
+      "evidence": "R2's default is 'Default to documenting host semantics'. That satisfies AC 7 (which only asks for a FEATURES.md note) but contradicts DoD 4 and AC 2, which assert the opposite outcome - see critical-reseed-overwrites-human-choice-vs-dod-4. Recommendation: promote R2's own suggestion (a value-stable seed computed once per dialog mount) from spike to committed mitigation, and demote AC 7 to a fallback that applies only if the composer is later observed re-seeding on a stable value."
+    },
+    {
+      "id": "important-r3-not-a-genuine-unknown",
+      "severity": "medium",
+      "evidence": "R3 asks whether research/explore on a personal project should hide the control. The Agent Presets dialog is opened with no project scope at all - build-panel.tsx:81 is onOpenPresets={() => props.setPresetsOpen(true)}, the state is a bare useState at :119, and renderPresetManager is handed to the host at :93 with no projectId - and the spec's own SCOPE READING assumption already fixed the preset as global. server/cards-create.ts:131-138 also throws outright for a build card on proj_personal or a personal project, so only research/explore can reach the case, which AC 6 already states. Recommendation: drop R3, or reframe it as the copy question it actually is (what the help line says about personal projects) and answer it inside capability 1."
+    },
+    {
+      "id": "important-no-reuse-candidate-named-for-radio",
+      "severity": "medium",
+      "evidence": "There is no shared two-option primitive: components/ui/ holds only button, card, dialog, icon, input, motion and overlay shells. The two in-repo implementations are private and disagree - components/creation/strategy-picker.tsx:64-91 uses an sr-only radio with focus-within:outline focus-within:outline-2 focus-within:outline-primary and a fieldset+sr-only legend (:103-104), while components/settings/preset-assign-options.tsx:64-93 uses a visible accent-primary radio with no focus-visible rule at all. The spec argues DRY only for the control's placement (lines 93-97), never for its visual form, and neither component is exported, so reuse would mean extraction. Recommendation: add one sentence naming which shape is copied and why (the strategy-picker variant is the only one yielding WCAG 2.2 focus appearance today) and note that extraction is out of scope."
+    },
+    {
+      "id": "important-no-interaction-state-spec-for-new-control",
+      "severity": "medium",
+      "evidence": "The spec's Test shape section asserts written and submitted values only; nothing states a semantic element, group/legend, focus order, hover/active states, or the disabled condition - even though the form already threads busy (components/settings/preset-manager-form.tsx:10) and disables Save with it (:84-86), which is exactly what protects AC 4's untouched round-trip. AGENTS.md requires touch targets min-h-11 and cursor-pointer on clickables, and states 'a design rule with no test is not a rule'. Precedent for the pin exists at tests/decision-routers-ui.test.mjs:89-92 (h-11 counting) and :55 (disabled condition). Recommendation: enumerate the applicable states with honest N/A (no async loading, option set closed by schema), require disabled={busy} on the new field, and add a min-h-11 + cursor-pointer count pin in the same commit."
+    },
+    {
+      "id": "important-list-indicator-placement-clipped",
+      "severity": "medium",
+      "evidence": "The spec says only 'The preset list gains one line so the value has a visible home' (line 85) and 'distinguishable from a checkout preset without opening it' (AC 5). The row's meta content sits inside <span className='min-w-0 flex-1 truncate'> (components/settings/preset-manager-list.tsx:41-46); truncate is white-space: nowrap, so a second line added inside that span is ellipsised and never renders. The row's right edge is already occupied by two Pills (:48-51) and a shrink-0 group of three Buttons (:52-81). Recommendation: specify either appending the kind word to the existing meta line with truncate moved onto the meta span, or a Pill rendered only when environmentKind === 'new-worktree' (absence = checkout); state that the row owns this fact."
+    },
+    {
+      "id": "important-stale-copy-claim-unsupported",
+      "severity": "medium",
+      "evidence": "The spec says isolated-worktree-check.tsx:13 'tells the reader they must go elsewhere for something they can now make here'. Verified: that line reads 'Needs a New-worktree preset in Agent Presets - without one the card parks with an explanation instead of starting in your checkout' - it names Agent Presets as the place, and stays true after this change. FEATURES.md:1206-1207 ('environment kind stays a preset field') is an under-description, not a falsehood. Only FEATURES.md:1012-1013 ('environment, branch forwarded unchanged; Stelow never re-picks it') genuinely becomes incomplete. The same sentence is also echoed at server/github-issue-flow.ts:213,232, server/github-rule-rpcs.ts:91, lib/github-automation-gate.mjs:34 and components/github/github-automation-tab.tsx:76, and tests/server-github-issue-flow.test.mjs:108,127 pin two of those strings exactly - the spec names only one file. Recommendation: restate the copy work as three precise edits plus the echoed sites, and drop the 'created elsewhere' framing from DoD item 6."
+    },
+    {
+      "id": "important-server-fallback-not-dead-code",
+      "severity": "medium",
+      "evidence": "The spec's Problem section calls workerEnvironment's result 'dead code on the main path' and lists changing server/workers.ts:103 as OUT. workerEnvironment (server/workers.ts:94-104, verified) remains the sole consumer of preset.environment_kind on every path that sends no explicit environment: GitHub/auto import and CLI-drafted cards (server/cards-create.ts:250-252), plus every restart/respawn of a card with no live worker thread (server/workers.ts:194-205, reached from fresh() at :299-301), including a card parked in the Bucket and started later or a preset swap via refreshRestartPending (server/preset-handler-assignments.ts:60-77). None of those paths writes a substitution notice - the only notice site is create-time and it returns early for exploratory workspaces (server/cards-create-persist.ts:118-122). Recommendation: keep workers.ts unchanged if that is the decision, but state the consequence explicitly and give those paths an observable trail comment, plus an AC naming the worktree a Bucket/import/CLI-started card landed in."
+    },
+    {
+      "id": "important-new-preset-inherits-kind-unchecked",
+      "severity": "medium",
+      "evidence": "defaultForm clones the whole form from the default preset and clears only id and name (components/settings/preset-manager-form-state.ts:68-72, verified), so once the board default is a worktree preset every 'New preset' form opens with Worktree pre-checked and saves that way (preset-manager-crud.ts:78). EMPTY_PRESET_FORM (preset-manager-types.ts:36) applies only when no presets exist. AC 4 covers the edit flow only ('Given a preset being edited...'), so the create-flow state is undefined. Recommendation: add an AC for the create flow (inherit or reset, decided explicitly) and record the choice next to defaultForm's docstring."
+    },
+    {
+      "id": "important-assign-dialog-still-hides-kind",
+      "severity": "medium",
+      "evidence": "PresetSummary already carries environmentKind (components/settings/preset-assign-options.tsx:11) and each option row's subtitle prints provider/model only (:265-272). That dialog is mounted on card detail and is what the CLI refusal copy itself points the reader to (server/runtime/cli/cli-draft.ts:55). The spec's visible-kind scope is the manager list only, so after this change a worktree preset is still indistinguishable at assignment - and assignment is what feeds the respawn fallback. Recommendation: extend the kind to the assign row's subtitle (one line, no new row), or add an explicit OUT entry naming preset-assign-options.tsx with the reason; the plan should state one rather than leave the surface silent."
+    },
+    {
+      "id": "important-deferred-effect-has-no-surface",
+      "severity": "medium",
+      "evidence": "The composer names the active preset but not its kind: create-build-dialog.tsx:119 renders AgentConfigBox with lines={[`Analysis phase runs on ${analysisName}`]}, and the same dialog passes defaultProviderId/defaultModel/defaultReasoningLevel/defaultPermissionMode (:162-165) while the new defaultEnvironment would arrive with no accompanying statement of where it came from. A reader meeting a seeded worktree picker has no way to learn a preset chose it. Compositionally, the new control is also the highest-consequence field in the form (where the agent works) yet the spec gives it the same weight and unspecified position as a free-text name in a two-row collapsed body. Recommendation: name the control's position (after Name, before the pickers it conditions), and extend the composer's preset line to state the kind so the seed's source is legible where the reader meets it."
+    },
+    {
+      "id": "important-lib-module-not-literally-writable",
+      "severity": "medium",
+      "evidence": "The spec specifies presetKind -> CreateThreadEnvironmentArgs | undefined in lib/, but CreateThreadEnvironmentArgs is declared non-exported at bb-plugin-sdk-app.d.ts:368 and absent from the module's export list, so it cannot be imported by name. Every lib/*.mjs module ships a hand-written sibling .d.mts (e.g. lib/card-environment.d.mts) and tests/declaration-surface.test.mjs polices that pairing; no lib/*.mjs currently imports the SDK. Placement is otherwise sound - components/panels/build-panel-state.ts imports several lib/*.mjs modules and lib/card-environment.mjs:25-39 is exactly the pure-mapping shape described. Recommendation: name lib/preset-environment-seed.mjs plus its .d.mts, return NonNullable<NewThreadComposerProps['defaultEnvironment']>, and import it as ../../lib/preset-environment-seed.mjs from each dialog."
+    },
+    {
+      "id": "minor-omitted-kind-silently-downgrades",
+      "severity": "low",
+      "evidence": "server/platform-rpc-contract.ts:100 defaults an absent environmentKind to 'project-default', and writePreset persists input.environmentKind with no presence check (server/preset-handler-crud.ts:84), unlike baseBranch/machineId which use ?? null (:85-86). Any caller that omits the field - a stale bundled client, a future CLI or automation writer - turns a worktree preset into a checkout preset on its next save with no error. AC 4's guarantee is held today only by the single caller that always sends it (components/settings/preset-manager-crud.ts:78). Recommendation: either drop .default(...) so absence is a loud refusal, or add a contract test in tests/server-presets.test.mjs asserting a stored new-worktree preset re-saved without the field keeps new-worktree - and say which, since the spec currently claims 'no contract change'."
+    },
+    {
+      "id": "minor-list-row-overflow-no-affordance",
+      "severity": "low",
+      "evidence": "The preset list is capped at max-h-56 with overflow-auto (components/settings/preset-manager-list.tsx:30) and shows roughly three rows today; the spec's per-row addition halves that and the list has no bottom fade, while the house pattern for a scrollable option list does (components/settings/preset-assign-options.tsx:170-222, useScrollFade). The plan names no overflow state for the row it adds. Recommendation: render the kind as an inline pill on the existing row, or adopt useScrollFade for this list, and state the visible-row count the change costs."
+    },
+    {
+      "id": "minor-ac1-omits-base-branch-limit",
+      "severity": "low",
+      "evidence": "AC 1 states the picker 'is seeded to an isolated worktree' unconditionally, but the chosen shape {type:'host', workspace:{type:'managed-worktree', baseBranch:{kind:'default'}}} (spec table) carries a documented limit: 'A managed-worktree with baseBranch: { kind: \"default\" } leaves the branch picker on its default, which may resolve to a named base branch when the project configures a dedicated worktree base' (bb-plugin-sdk-app.d.ts:2662-2665). The spec's Dangers list records re-seed, exploratory swallow, environment_label flip and copy, but not this. Recommendation: add it beside the environment_label bullet and make AC 1 conditional on the source being Git."
+    },
+    {
+      "id": "minor-no-token-or-scope-statement",
+      "severity": "low",
+      "evidence": "tests/card-design-tokens.test.mjs walks all components/**/*.tsx recursively, so the new PresetEnvironmentKindField is inside the gate and any text-[Npx] must be a named step or a listed TYPE_EXCEPTIONS entry. The plan says nothing about whether the field is form content or a new SECTION_SURFACE; the form body already draws its own surface (components/settings/preset-manager-form.tsx:33) and the list uses bg-muted/30 (:39). Recommendation: name the tokens the group label and help line use, and state that the field is form content that composes with the existing body surface and adds no new border treatment."
+    }
+  ],
+  "questions": [],
+  "verdict": "needs-revision"
+}

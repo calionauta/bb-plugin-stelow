@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "mapId": "card-rbkbfyqy-scope-map-v1",
+  "status": "draft",
+  "shapeVersion": "spec-product_v2",
+  "provenance": [
+    "plans/spec-product.md (v2, approved at the card gate 2026-10-28 with three answered questions)",
+    "runs/exec_w1ti53qw/recon/shape.md (retry pass, measured at 68849b42)",
+    "critiques/critique-report.md",
+    ".stelow/2026-10-10/sw-card_t804npi7/state.md (parent triage, frontmatter only)",
+    "state.md (this card: scope is in-progress, no shape_version line)",
+    "skills/stelow-product-scope-mapping/SKILL.md",
+    "skills/stelow-product-scope-mapping/schemas/scope-map.json",
+    "lib/scope-map.mjs (validateScopeMap, scopeMapFreshness)",
+    "lib/scope-map-approval.mjs (approveScopeMap: an unapproved map cannot be promoted)",
+    "lib/github-release.mjs:19,27 (parseReleaseTag, compareReleaseTags)",
+    "components/board/flow-strip.tsx (191 lines; summary line + right drawer at :64-70, count===0 early return at :44)",
+    "components/ui/responsive-drawer-shell.tsx (side=\"right\" drawer, reused by FlowStrip)",
+    "components/disclosure.tsx:66-73 (startsOpen), :22 (SECTION_SURFACE)",
+    "components/panels/build-panel-view.tsx:357 (FlowStrip mount site, the strip's home)",
+    "server/runtime/git-evidence.ts:61-79 (runGitIn, fail-soft: every failure reads as empty stdout)",
+    "server/runtime/flow-metrics.ts:28-34 (the ledger reads cards WHERE status='completed')",
+    "server/runtime/flow-coverage.ts (async file reads split out of the pure module — the precedent this map follows)",
+    "server/runtime/root-paths.ts:36-49 (projectRoot: null covers both no-source and failed lookup)",
+    "server/runtime/wiring/rpc-surfaces.ts:67-80 (buildFlowMetrics: module-scope handler precedent)",
+    "server/card-rpc-contract.ts (373/400 lines; flowMetrics contract at :173)",
+    "FEATURES.md (3705 lines; job-to-be-done sections, board surfaces in section 2, flow metrics bullet at :2385)",
+    "scripts/check-test-boot-cost.mjs (measured 2026-10-28: 475 leaf commands, 466 start node, 98.1% against a 99.8% ceiling)",
+    "tests/flow-drawer.test.mjs (the rendered-test harness precedent: register-tsx.mjs + dom-setup.mjs)",
+    "AGENTS.md (file/function size limits, test-value rules, feature inventory and blueprint obligations)",
+    "re-measured on this workspace 2026-10-28: bb project list --json -> 14 projects, 7 repos, 6 with semver tags, 6 with CHANGELOG.md; package.json 0.87.0 while the newest tag is v0.100.0 (the shape pass measured v0.99.0 hours earlier)"
+  ],
+  "openDecisions": [
+    "Approval is the gate's, not this run's. This map is `draft`: the task carries humanBoundary: none and approveScopeMap refuses to invent a receipt, so the SCOPE gate (or the human through the card's approve-scope door, which stamps receiptId + approvedBy) turns it approved. Note for that gate: state.md has no shape_version line, so the X-ray will read freshness `unknown` until the host records one; this map records spec-product_v2 from plans/spec-product.md.",
+    "Fleet line semantics: 'how many shipped' can read as 'projects that carry a release record' (6 of 14 today) or as 'projects whose newest tag falls inside the visible window'. This map scopes the first, plus how many carry none, because that is the fact the shape measured; a time-window reading changes the sentence and the count, not the read, and only the gate can settle which claim the line makes.",
+    "A project whose default source is a remote host would stat-fail its path and read `path missing` — a wrong sentence about that project. All 14 are local today, so this map accepts the named state and keeps remote hosts OUT; a `remote` state is the alternative and it widens scope 2 by one read.",
+    "Placement boundary the gate may flip: this map mounts the strip on the Build board only, where FlowStrip already lives (build-panel-view.tsx:357). South of that decision, showing it on the research and explore boards adds two mount sites and two absence-state copies to scope 4.",
+    "Test authorship: three of five scopes carry test obligations, and AGENTS.md forbids the implementer being its test's only author. The plan must name who writes or red-teams the parser, contract and rendered tests (fresh-context subagent) and when, instead of discovering it at review."
+  ],
+  "scopes": [
+    {
+      "id": "scope-1-release-record-module",
+      "title": "Pure release-record module and its node test",
+      "outcome": "Given a project's tag rows and its changelog text, one pure module returns the newest release, the last five rows ordered by tag day then version, the undocumented count and the notes-ahead flag — and a node test fails if any of those readings regress.",
+      "capabilities": [
+        "lib/project-releases.mjs (new)",
+        "parseReleaseTag (lib/github-release.mjs:19)",
+        "compareReleaseTags (lib/github-release.mjs:27)",
+        "release-heading parser",
+        "takeaway extractor",
+        "window selector",
+        "one-line summary formatter",
+        "tests/project-releases.test.mjs"
+      ],
+      "inScope": [
+        "A new lib/project-releases.mjs, pure and synchronous: no db, no fs, no git, no bb — the same split flow-metrics.ts / flow-coverage.ts documents, so a ledger-free read does not grow I/O",
+        "The tag spine is filtered through parseReleaseTag, so archive/, backup/ and pre-merge-backup tags never become rows; the existing filter is reused, never re-spelled (tests/github-release.test.mjs already pins dev -> null)",
+        "One heading regex covers the four measured dialects (release-please linked, Keep a Changelog dashed, semantic-release bare, v-prefixed) and excludes [Unreleased] by the version pattern, not by heading position",
+        "A release body ends at the next *release heading*, never at the next '## ', because '## What's Changed' sits inside a body and a naive split yields zero-byte takeaways (shape D4)",
+        "Tag-to-notes matching is exact normalized version text (leading v stripped, prerelease suffix kept) and never compareReleaseTags, which compares the numeric triple only and treats 0.84.1-alpha as 0.84.1",
+        "Takeaway is the indented prose paragraph when the release has one, else the first bullet, else null — extracted from the file, never generated, and never labelled an explanation when it came from a bullet",
+        "Ordering is tag day descending with version text descending as tie-break, proven total by sorting the same input twice and comparing, because 36 releases share one date in this repository alone",
+        "day is YYYY-MM-DD derived from the tag's own timestamp, and it is both the sort key and the rendered value, so stated order and stated date cannot disagree",
+        "The module also returns what the surface must state rather than guess: documented flag per row, undocumentedCount within the visible window, and notesAhead (a release the changelog documents with no tag anywhere)",
+        "A node test with one case per dialect, per absence state, per refusal (archive tag, Unreleased, inverted heading order), plus the two-sort stability case and 0.84.1-alpha vs 0.84.1 — authored or red-teamed from a fresh context, since the implementer may not be its only author"
+      ],
+      "outOfScope": [
+        "Semver precedence beyond the numeric triple: prerelease ordering (alpha.2 vs alpha.10), ranges, +build metadata",
+        "Changelog dialect autodetection — one regex over measured headings, not a second parser",
+        "Repairing wrapped-line fragments or translating quoted prose (ai-credits writes Portuguese and its paragraphs begin mid-sentence; the row quotes, it never rewrites)",
+        "Takeaway cleanup beyond one readability pass (stripping markdown link targets, bullet markers, commit hashes)",
+        "Any model-written summary, classification or 'takeaway generator'",
+        "Caching, memoization and SQLite persistence — tags are the source; a table would be a second truth to invalidate",
+        "File, git or clock access from inside this module"
+      ],
+      "dependsOn": [],
+      "status": "current"
+    },
+    {
+      "id": "scope-2-strict-tag-reader",
+      "title": "Strict tag reader and bounded fleet fan-out",
+      "outcome": "Each project resolves to exactly one typed state — no repo, no tags, no release record, path missing, unreadable, or ok — within stated bounds, and an unreadable read is never reported as 'no releases'.",
+      "capabilities": [
+        "server/runtime/project-releases.ts (new)",
+        "projectRoot (server/runtime/root-paths.ts:36-49)",
+        "bb.sdk.projects.list",
+        "execFile with timeout and maxBuffer",
+        "typed ProjectReleasesState",
+        "bounded parallel fan-out",
+        "strict-reader node test"
+      ],
+      "inScope": [
+        "A new strict reader as a sibling of runGitIn, not an edit to it: git-evidence.ts:61-79 collapses every failure into {ok:false,stdout:\"\"} and five card surfaces depend on that softness, so they stay untouched",
+        "Exactly two git commands: for-each-ref for the tag spine on every read, and `git show <tag>:CHANGELOG.md` only for a release the drawer is about to render — never on a board render",
+        "Per-command 10 s timeout and a 4 MiB buffer; a buffer overrun reads unreadable, never truncated-to-empty (the largest changelog today is 244,247 B, so the bound is a future project, not a present one)",
+        "Parallel fan-out over bb.sdk.projects.list() with an aggregate deadline, after which any project still unanswered reads unreadable; one failing project is that project's line and never the call's failure",
+        "The five project states and the one row-level state (notes missing) travel as typed data, not as prose a component has to parse, because the distinction is the product requirement",
+        "projectRoot's single null is split at this boundary: no default source reads no repo, a path that no longer stats reads path missing, and the two are never merged",
+        "The five-row window is a count of rows, not a span of days — fleet cadence varies about 20x across the six projects, so one day window fits none of them",
+        "Falling back to the working-tree changelog only when a project has no tags, and saying so on the line that uses it (the one case where the checkout is the only witness)",
+        "A reader test that fails if unreadable collapses into no releases, if the aggregate deadline is not enforced, or if a backup tag survives into the spine"
+      ],
+      "outOfScope": [
+        "Editing runGitIn, git-evidence.ts, or any of its five card-surface consumers",
+        "The GitHub Releases API (no token; 60 requests/hour unauthenticated; answers nothing for a local-only project)",
+        "Projects sourced from another host — all 14 are local today and projectRoot returns a path, not a host",
+        "A cache, memo table or invalidation scheme; a tag key cannot go stale, so v1 re-reads",
+        "Backfilling the 225 undocumented changelog entries across the six repos",
+        "Per-release drilldown reads (tag diffs, commit lists) and any streaming or progress channel",
+        "A fifth command, a retry loop, or per-row subprocess reads"
+      ],
+      "dependsOn": [
+        "scope-1-release-record-module"
+      ],
+      "status": "current"
+    },
+    {
+      "id": "scope-3-project-releases-rpc",
+      "title": "One projectReleases call for one project or the fleet",
+      "outcome": "A single zod-validated call takes {projectId: string|null} and answers, per project, projectId, name, state, newest, releases, undocumentedCount and notesAhead with no optional field left undefined, so both board states read one handler and a failed project is a state inside a successful call.",
+      "capabilities": [
+        "server/project-releases-contract.ts (new)",
+        "server/runtime/wiring/rpc-surfaces.ts",
+        "buildFlowMetrics precedent (rpc-surfaces.ts:67-80)",
+        "rpcContract",
+        "contract refusal test"
+      ],
+      "inScope": [
+        "A new contract file rather than an addition to server/card-rpc-contract.ts, which is 373/400 lines and has 27 lines spare — a sibling contract file follows the card-detail-rpc-contract.ts precedent",
+        "Input {projectId: string|null}, where null means the fleet, so one handler answers the project-filtered board and the all-projects board",
+        "Output is an array of per-project objects with every scalar present: this repository refuses a whole call that carries an undefined field, so 'absent' is a null or a named state, never an omitted key",
+        "The handler is a module-scope builder beside buildFlowMetrics and is registered in the handler table; it composes the reader and the pure module and parses nothing itself",
+        "Fail-soft at the project boundary only: no project can make the call throw, and an empty fleet is a successful call with zero rows rather than an error",
+        "day crosses the wire as a YYYY-MM-DD string, never a Date or an epoch, so no two surfaces can format one instant into different days",
+        "A contract test pins the output shape, the refusal for an unknown projectId, and that unreadable and no-tags survive the wire as two distinct strings"
+      ],
+      "outOfScope": [
+        "Extending the existing `board` call instead of adding one — it would put a subprocess on every board render, which this call exists to avoid",
+        "Caching, pagination, streaming or a subscription channel",
+        "A CLI verb (bb stelow releases): the lib module keeps that cheap later, and it is not this surface",
+        "Per-user preferences, auth or a second scope model",
+        "Any model-backed decision in the read path (docs/decision-routing.md keeps those off artifact surfaces)"
+      ],
+      "dependsOn": [
+        "scope-2-strict-tag-reader"
+      ],
+      "status": "current"
+    },
+    {
+      "id": "scope-4-board-strip-and-drawer",
+      "title": "Board one-line strip and slide-over drawer",
+      "outcome": "With a project selected the board names that project's newest release, version and day, on one fixed-height line; with none it names the fleet's newest release and how many projects shipped; opening the line shows the last five releases per project with one takeaway each, in a right-side drawer that leaves the board in place.",
+      "capabilities": [
+        "components/board/release-strip.tsx (new)",
+        "ResponsiveDrawerShell (side=\"right\")",
+        "DisclosureChevron (components/disclosure.tsx)",
+        "SECTION_SURFACE",
+        "startsOpen",
+        "build-panel-view.tsx:357 mount site",
+        "rendered test (register-tsx.mjs + dom-setup.mjs)"
+      ],
+      "inScope": [
+        "A new components/board/release-strip.tsx mounted beside FlowStrip at build-panel-view.tsx:357; the drawer body gets its own file only if the pair cannot stay readable inside the 400-line file budget, and splitting is preferred to compressing",
+        "Reuse instead of new machinery: ResponsiveDrawerShell side=\"right\" (the gate's slide-over decision, already the FlowStrip pattern at flow-strip.tsx:64-70), DisclosureChevron, the min-h-11 + cursor-pointer summary row, SECTION_SURFACE for the strip, one named type step and no icons",
+        "Two readings of one line: project selected shows version + day, plus the gap sentence when tags outrun the notes; no project shows the fleet's newest release, how many projects shipped, and how many carry no release record — fixed height whatever the project count, never a stacked list",
+        "Drawer body lists the last five releases per project, one row each; the takeaway clamps to two lines and expands in place to the full text; a release with no text says a fixed phrase instead of rendering an empty row",
+        "Every absence state renders its own sentence — the five project states and the row-level no-notes — and none of them can be read as 'nothing shipped'",
+        "The strip is independent of FlowStrip: it must not inherit the count===0 early return at flow-strip.tsx:44, so a project with releases and no finished cards still sees its line",
+        "It starts closed (startsOpen returns false for settled history) and re-reads when the drawer opens, which is why there is no refresh button and no age stamp",
+        "The fleet line never restates a card count: FlowStrip owns finished cards from the ledger, this surface owns releases, and the two claims never appear twice",
+        "A rendered test covers the three states, the fixed phrase for a missing takeaway, and that opening the drawer leaves the board mounted (the no-reflow assertion)"
+      ],
+      "outOfScope": [
+        "An inline expander or accordion that pushes the board down — the bug flow-strip.tsx's own docstring records",
+        "Rendering the per-project breakdown inline on the fleet state",
+        "A tab inside the flow drawer, or any reuse of FlowStrip's shell that would couple the two readings",
+        "Icons, badges, a second border, a new type step, or a height animation beyond the drawer's own transform",
+        "Per-release drilldown (tag diff, commit list), refresh button, age stamp, since-window filter, search or sort controls",
+        "Notifications and digests: 'tell me when' is a different product from 'show me now'",
+        "Research and explore boards — the strip mounts where FlowStrip is; see the placement decision",
+        "A card-detail section repeating a project release fact, which the one-home-per-fact rule forbids"
+      ],
+      "dependsOn": [
+        "scope-3-project-releases-rpc"
+      ],
+      "status": "current"
+    },
+    {
+      "id": "scope-5-inventory-and-proof",
+      "title": "Feature inventory entry, portable pattern, and recorded proof",
+      "outcome": "FEATURES.md names the release surface by its measured behaviour, the upstream blueprint proposal for the pattern is recorded, and the shipped bundle proves the change reached users — all in one commit that carries nothing unrelated.",
+      "capabilities": [
+        "FEATURES.md section 2 (Orient myself)",
+        "docs/host-plugin-blueprint.md proposal",
+        "npm run lint",
+        "npm run quality:shape",
+        "npm run typecheck",
+        "npm test",
+        "npm run build:reload",
+        "dist/ grep proof"
+      ],
+      "inScope": [
+        "One FEATURES.md bullet in section 2 beside the board surfaces, stating measured behaviour: 6 of 14 projects carry a release record, the five absence sentences, date ordering with a version tie-break, and one read call serving both board states",
+        "The entry names releases, never deliveries, and must not claim to replace or extend the flow strip's finished-card count (the neighbouring bullet at FEATURES.md:2385 owns that axis)",
+        "The upstream blueprint proposal (host-plugin-blueprint.md) recorded as an exact section and wording in the run, then landed upstream in a separate commit, because AGENTS.md treats a user-facing pattern with no blueprint entry as not existing outside this plugin",
+        "Gates green: lint and quality:shape before the commit, typecheck and the targeted test subsets during work, full npm test before the push — never a --no-verify to skip the two that are fast",
+        "npm run build:reload, then grep dist/ for a string this change itself emits (a state sentence or the strip's label), because a filename in the bundle is not proof the logic reached it",
+        "One feat: commit whose subject names the feature, since only feat/fix/perf bump the version and a user-facing change under the wrong type ships in no release"
+      ],
+      "outOfScope": [
+        "Landing the blueprint edit in calionauta/stelow from here — proposed in this run, landed upstream by a separate commit",
+        "A new docs/ page: FEATURES.md is the inventory and docs/ is for deep operator guides that README or FEATURES links",
+        "Hand-editing CHANGELOG.md or package.json version — release-please owns both",
+        "Tagging, gh release create, merging the release PR, or widening a recorded marketplace range",
+        "Editing skills/ or data/stelow, which sync from upstream and are overwritten",
+        "Counting a dist/ grep as the feature, or recording a gate as green without running it"
+      ],
+      "dependsOn": [
+        "scope-4-board-strip-and-drawer"
+      ],
+      "status": "current"
+    }
+  ]
+}
