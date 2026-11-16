@@ -34,14 +34,18 @@ function StrategySearchField({ query, onQuery, onClear, searchRef, noun, disable
   );
 }
 
-// Live count over the list: loading, filtered, or full — announced politely.
+// Live count over the list: empty, filtered, or full — announced politely.
+// An empty catalog says so. The panel loads the catalog before the dialog opens
+// (and a failed load is caught into `[]`), so there is no loading state to
+// claim here — "Loading…" for a catalog that never arrives is how a broken data
+// path stayed invisible.
 function StrategyCountLine({ strategies, visible, needle, noun }: {
   strategies: ResearchStrategyOption[]; visible: ResearchStrategyOption[]; needle: string; noun: string;
 }) {
   return (
     <p className="text-xs text-muted-foreground" aria-live="polite">
       {strategies.length === 0
-        ? `Loading ${noun}…`
+        ? `No ${noun} available`
         : needle.length > 0
           ? `${visible.length} of ${strategies.length} ${noun}`
           : `${strategies.length} ${noun}`}

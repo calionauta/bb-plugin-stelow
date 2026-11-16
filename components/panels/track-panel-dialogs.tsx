@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CreateTrackDialog, EXPLORE_DIALOG_CONFIG, RESEARCH_DIALOG_CONFIG, type TrackDialogConfig } from "../creation/create-track-dialog";
 import { STORAGE_KEYS } from "../../lib/panel-storage.mjs";
+import type { TrackPanelData } from "./track-panel-state";
 
 export type TrackDialogsConfig = {
   onboardKey: string;
@@ -8,7 +9,6 @@ export type TrackDialogsConfig = {
   onboardIntro: string;
   showDesignReference?: boolean;
   dialogConfig: TrackDialogConfig;
-  catalogProp: "stages" | "strategies";
   presetProp: "explorePreset" | "researchPreset";
 };
 
@@ -18,7 +18,6 @@ export const EXPLORE_DIALOGS_CONFIG: TrackDialogsConfig = {
   onboardIntro: "Explorations run on the explore band preset — set it once here, or pin a different preset per card in Manage.",
   showDesignReference: true,
   dialogConfig: EXPLORE_DIALOG_CONFIG,
-  catalogProp: "stages",
   presetProp: "explorePreset",
 };
 
@@ -27,14 +26,13 @@ export const RESEARCH_DIALOGS_CONFIG: TrackDialogsConfig = {
   onboardTitle: "Choose your research agent preset",
   onboardIntro: "Investigations run on the research band preset — set it once here, or pin a different preset per card in Manage.",
   dialogConfig: RESEARCH_DIALOG_CONFIG,
-  catalogProp: "strategies",
   presetProp: "researchPreset",
 };
 
 type Props = {
   active: boolean;
   projectId: string | null;
-  data: { projects?: Array<{ id: string }>; stages?: unknown[]; strategies?: unknown[]; presets: Array<{ id: string } & Record<string, unknown>> };
+  data: Pick<TrackPanelData, "projects" | "catalog" | "presets">;
   preset: { preset: { id: string } & Record<string, unknown> | null; hasBandPreset: boolean };
   rpc: unknown;
   createOpen: boolean;
@@ -50,8 +48,9 @@ type Props = {
 };
 
 export function TrackPanelDialogs(props: Props) {
-  const catalog = (props.config.catalogProp === "stages" ? props.data.stages : props.data.strategies) as
-    React.ComponentProps<typeof CreateTrackDialog>["catalog"];
+  // The loader stores both catalogs under `catalog` (the rpc key is the only
+  // per-track part). Reading a per-track key here left the picker empty.
+  const catalog = props.data.catalog;
   return (
     <>
       {props.renderOnboarding({
@@ -67,7 +66,7 @@ export function TrackPanelDialogs(props: Props) {
         onOpenChange={props.onCreateOpenChange}
         activeProjectId={props.projectId}
         validProjectIds={(props.data.projects ?? []).map((project) => project.id)}
-        catalog={catalog ?? []}
+        catalog={catalog}
         preset={props.preset.preset as React.ComponentProps<typeof CreateTrackDialog>["preset"]}
         hasBandPreset={props.preset.hasBandPreset}
         bucketGallery={props.bucketGallery}

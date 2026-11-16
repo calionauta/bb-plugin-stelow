@@ -158,7 +158,7 @@ for (const [name, config, catalogKey] of [
       rpcCalls.push({ method, payload });
       if (method === "projects") return { projects: [] };
       if (method === "listCards") return { cards: [] };
-      if (method === config.catalogRpc) return { [catalogKey]: [] };
+      if (method === config.catalogRpc) return { [catalogKey]: ["entry"] };
       if (method === "listPresets") return { presets: [] };
       if (method === "listBandPresets") return { bands: [] };
       return {};
@@ -170,7 +170,7 @@ for (const [name, config, catalogKey] of [
     ["card-state", "board-changed", "inbox-changed"],
     `${name} refreshes cards, boards, and inbox-driven state changes`,
   );
-  await hookCalls[0].loadData();
+  const loaded = await hookCalls[0].loadData();
   assert.deepEqual(
     rpcCalls,
     [
@@ -182,6 +182,8 @@ for (const [name, config, catalogKey] of [
     ],
     `${name} fetches its dialog and board datasets through one loader and no others`,
   );
+  // One `catalog` key for both tracks (the rpc key is the per-track part).
+  assert.deepEqual(loaded.catalog, ["entry"], `${name} hands its catalog to the dialogs under the key they read`);
 }
 
 // --- the generic panel, asked for its tree --------------------------------
@@ -252,7 +254,7 @@ for (const [name, config] of [
   const onboarding = [];
   const manager = [];
   const preset = { preset: { id: "band-preset" }, hasBandPreset: true };
-  const data = { projects: [{ id: "project_1", name: "One" }], stages: ["map"], strategies: ["deep"], presets: [{ id: "band-preset" }] };
+  const data = { projects: [{ id: "project_1", name: "One" }], catalog: ["deep"], presets: [{ id: "band-preset" }] };
   const onChanged = async () => {};
   const tree = trackDialogs({
     active: true,
@@ -273,7 +275,7 @@ for (const [name, config] of [
   });
   const createDialog = findElement(tree, marker);
   assert.equal(createDialog.props.activeProjectId, "project_1", `${name} creation receives the active project`);
-  assert.deepEqual(createDialog.props.catalog, data[config.catalogProp], `${name} creation receives its own catalog`);
+  assert.deepEqual(createDialog.props.catalog, data.catalog, `${name} creation receives the loader's catalog, not a per-track key`);
   assert.equal(createDialog.props.preset, preset.preset, `${name} creation receives the resolved preset`);
   assert.equal(createDialog.props.hasBandPreset, true, `${name} creation is told whether the band preset is real`);
   assert.equal(createDialog.props.config, config.dialogConfig, `${name} creation delegates with its own dialog config`);
