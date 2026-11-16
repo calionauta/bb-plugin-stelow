@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.104.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.104.0...v0.104.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* the new-research and new-explore dialogs read the catalog the loader writes ([#521](https://github.com/calionauta/bb-plugin-stelow/issues/521)) ([8f473af](https://github.com/calionauta/bb-plugin-stelow/commit/8f473af0d50ee1a3b86bdb42591cc2c92df6a8ff))
+
 ## [0.104.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.103.0...v0.104.0) (2026-11-15)
 
 
