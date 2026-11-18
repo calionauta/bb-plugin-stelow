@@ -47,3 +47,5 @@ export function applyAllowlist(
   diffs: DriftEntry[],
   allowlist: Partial<ForkAllowlist>,
 ): { listed: Array<DriftEntry & { reason: string }>; unlisted: DriftEntry[]; stale: string[] };
+
+export function writePinnedRevision(repoRoot: string, pin: { version: string; commit: string }): { version: string; commit: string };

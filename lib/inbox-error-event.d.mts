@@ -34,3 +34,5 @@ export declare function recordErrorInboxEvent(
   db: unknown,
   event: Omit<InboxEventInput, "dedupeKey" | "occurrences">,
 ): { id: string | null; outcome: ErrorInboxOutcome; occurrences: number };
+
+export function errorInboxKeyPrefix(cardId: string): string;

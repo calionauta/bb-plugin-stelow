@@ -40,3 +40,6 @@ export declare function classifyAskCancel(outcome: string, reason: string | null
 export declare function interruptionWhy(reason: string | null, requestFailed: boolean, elapsedSecs: number): string;
 export declare function isRetryablePersistError(message: unknown): boolean;
 
+export const SINGLE_SELECT_MAX_OPTIONS: number;
+export function askShapeRefusal(input: { groups?: unknown } | null | undefined): string | null;
+export function questionSubstanceGate(input: { groups?: unknown }): { allowed: boolean; error?: string };

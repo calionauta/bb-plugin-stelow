@@ -32,3 +32,6 @@ export declare function mergePlannedTasks<T extends { id?: unknown; tasks?: unkn
   trackedScopes: T[] | null | undefined,
   specContent: unknown,
 ): T[];
+
+export interface PlannedTaskGhost { scopeId: string | null; id: unknown; name: string }
+export function plannedTaskGhosts(trackedScopes: unknown, specContent: unknown): PlannedTaskGhost[];

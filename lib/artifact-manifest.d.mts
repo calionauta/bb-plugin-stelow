@@ -59,3 +59,11 @@ export interface BundleManifestInput {
 }
 
 export function renderBundleManifest(input: BundleManifestInput): string;
+
+/** The heading the renderer writes for registrations it could not read.
+ * Exported because the export accounting parses it back out of the manifest:
+ * one literal, so a rename cannot leave the measure reading a section nobody
+ * writes. */
+export const MISSING_ARTIFACTS_HEADING: string;
+
+export function gapTrailerLine(gapTotals: unknown): string;

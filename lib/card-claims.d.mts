@@ -88,3 +88,5 @@ export declare function lapsedScopeClaims(db: Db, args: {
   files?: string[];
   nowMs?: number;
 }): boolean;
+
+export function uniqueFiles(files: unknown): string[];
