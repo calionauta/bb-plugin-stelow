@@ -31,8 +31,8 @@ type WorktreeEnvironment = {
 };
 
 /** Worktree disk attribution (read-only): every worktree BB reports, sized
- * with du, attributed to cards by thread, heaviest first. Unattributed rows
- * still list — an invisible copy is the failure this exists to prevent.
+ * with `duBytes`, attributed to cards by thread, heaviest first. Unattributed
+ * rows still list — an invisible copy is the failure this exists to prevent.
  * Per-path timeout; unreadable reads unknown. */
 export function createStorageCommand(deps: CliDeps): CliCommandFn {
   return async (argv) => {
