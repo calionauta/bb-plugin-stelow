@@ -19,3 +19,5 @@ export declare function scoreEventSeverity(options: {
 }): SeverityScore;
 
 export declare function parseSeverityReasons(value: unknown): string[];
+
+export const SEVERITY_REVIEW_WAIT_MS: number;

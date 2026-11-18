@@ -9,7 +9,7 @@
 //
 // Pure node:fs, no dependencies — fast enough for the pre-commit hook,
 // which runs it next to lint and shape.
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,4 +47,16 @@ function main() {
   console.log(`AGENTS.md budget ok: ${result.lines} lines, ${result.words} words`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+// `realpathSync` on both sides: macOS resolves `/var` to `/private/var`, so a
+// tmpdir fixture invokes this file by a path that is correct but not equal to
+// `import.meta.url`. Comparing them unresolved made the entrypoint silently not
+// run — exit 0 with no output, which a test reads as a pass.
+function isEntrypoint() {
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) main();

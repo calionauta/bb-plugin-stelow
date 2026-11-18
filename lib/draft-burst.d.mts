@@ -37,3 +37,6 @@ export declare function buildCardNamePrompt(options: { prompt?: string | null; k
 export declare function validateCardName(output: unknown): CardNameValidation;
 
 export declare function heuristicDisplayName(prompt: unknown, fallback: string): string;
+
+export interface BoundedText { ok: boolean; text: string; error?: string; truncated?: boolean }
+export function validateBoundedText(output: unknown, options: { maxChars: number; emptyError: string; truncatedNote: string }): BoundedText;

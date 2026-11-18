@@ -68,3 +68,6 @@ export declare function recordContrastAsks(
   db: Db,
   input?: { cardId?: unknown; artifact?: unknown; askedAt?: unknown; makeId?: unknown; contractId?: unknown },
 ): { declarations: number; recorded: number };
+
+export const QUESTION_KINDS: readonly string[];
+export function loadQuestionContracts(): Array<Record<string, unknown> & { stage: string }>;

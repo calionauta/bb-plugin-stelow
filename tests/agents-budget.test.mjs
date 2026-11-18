@@ -89,7 +89,7 @@ test("the CLI exits 0 on pass and 1 naming both violations on failure", () => {
       encoding: "utf8",
     });
     assert.equal(pass.status, 0, `pass run exits 0, stderr was: ${pass.stderr}`);
-    assert.match(pass.stdout, /budget ok: 2 lines, 2 words/);
+    assert.match(pass.stdout, /AGENTS\.md budget ok: 2 lines, 2 words/);
 
     writeFileSync(
       join(tmpRoot, "scripts", "agents-budget.json"),

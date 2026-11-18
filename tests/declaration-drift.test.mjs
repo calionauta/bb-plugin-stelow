@@ -33,7 +33,7 @@ import { auditTree, summarize } from "../scripts/audit-declarations.mjs";
  * Lowering a number is progress. Raising one needs a reason in the commit that
  * raises it — and the reason cannot be "the new export is fine".
  */
-const BASELINE = Object.freeze({ "ORPHAN-EXPORT": 42, UNCHECKED: 35 });
+const BASELINE = Object.freeze({ "ORPHAN-EXPORT": 0, UNCHECKED: 0, "ORPHAN-MODULE": 0, "STAR-EXPORT": 0, "ARITY": 0, "ORPHAN-DECL": 0 });
 
 const { pairs, findings } = auditTree(new URL("../lib", import.meta.url).pathname);
 const counts = summarize(findings);
@@ -57,5 +57,6 @@ for (const [kind, ceiling] of Object.entries(BASELINE)) {
 console.log(
   `declaration drift ok: ${pairs} pairs, arity 0, ` +
     `${counts["ORPHAN-EXPORT"] ?? 0} invisible exports (ceiling ${BASELINE["ORPHAN-EXPORT"]}), ` +
-    `${counts.UNCHECKED ?? 0} unchecked (ceiling ${BASELINE.UNCHECKED})`,
+    `${counts.UNCHECKED ?? 0} unchecked (ceiling ${BASELINE.UNCHECKED}), ` +
+    `${counts["ORPHAN-MODULE"] ?? 0} modules with no declaration (ceiling ${BASELINE["ORPHAN-MODULE"]})`,
 );

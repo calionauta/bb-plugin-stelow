@@ -9,3 +9,6 @@ export declare function shouldAutoRetryRun(input: {
   errorCode: unknown;
   autoRetryCount: unknown;
 }): boolean;
+
+export const PROVIDER_CATALOG_TIMEOUT: RegExp;
+export function isRetryableRunError(errorCode: unknown): boolean;

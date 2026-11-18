@@ -33,3 +33,6 @@ export declare function dependencyRows(input: {
 
 /** Rows that name a target this card does not have. */
 export declare function missingDependencyRows(rows: DependencyRow[]): DependencyRow[];
+
+export interface DependencyStateEntry { label: string; tone: string; glyph: string }
+export const DEPENDENCY_STATE: Readonly<Record<"satisfied" | "running" | "waiting" | "missing", DependencyStateEntry>>;
